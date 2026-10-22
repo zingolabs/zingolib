@@ -86,31 +86,24 @@ The session's memory of Observations, one per Exit Node, remembered
 only through the Exit Pool's own draws and consulted to order
 sampling: fresh-Proven first, then unknown, Failed only at exhaustion.
 
-**Indexer classification** (ruled 2026-09-14, pending review):
-Every indexer has a role (sync, broadcast, or both), a trust (whether
-its operator may link the wallet to its transactions), and a location
-(local, on the wallet's machine or network, or remote). The consumer
-states role and trust; location comes from the URI. A local indexer is
-trusted by default and a remote one takes the network's remote default.
-_Avoid_: "relay origin" for location.
+**Indexer classification** (retired 2026-10-13):
+Named the role, trust, and location every indexer carried so a draw could pick Destinations. A session now holds one Session Indexer, so nothing is classified.
+_Avoid_: role, trust, or location for an indexer.
 
-**Destination Server set** (ruled 2026-09-11, amended 2026-09-14, pending review):
-The indexers one session may broadcast to: the ones the consumer
-classified and the indexer registry for the wallet's chain, drawn by one
-rule on every transport. Over the mixnet it excludes an untrusted sync
-indexer's operator; over nakednet it never draws the registry; a trusted
-candidate is drawn alone. Derived at session open, never serialized.
-Distinct from the Exit Pool, which holds mixnet exits.
+**Destination Server set** (retired 2026-10-13):
+Named the per-session set of indexers a Transmission could be drawn to. Every Transmission now goes to the Session Indexer.
 _Avoid_: "Destination pool", "curated Destination list".
 
 **IndexerConnection** (ratified 2026-10-09):
 The uniffi record that the Binding Layer's four init functions take in
-place of loose arguments: the indexer's `server_uri` (empty for Offline),
-the `chain_hint`, and the `sync` settings (`SyncSettings`: performance
-level and minimum confirmations). The name carries the domain so the
-record never collides with a consumer's own `Connection` type in Swift
-or Kotlin.
-_Avoid_: bare "Connection" for the record; "WalletConnection".
+place of loose arguments: a typed three-way indexer choice (Offline, the
+chain's Default Indexer, or a named URI; ruled 2026-10-13, replacing the
+`server_uri` string whose empty value meant Offline), the `chain_hint`,
+and the `sync` settings (`SyncSettings`: performance level and minimum
+confirmations). The name carries the domain so the record never collides
+with a consumer's own `Connection` type in Swift or Kotlin.
+_Avoid_: bare "Connection" for the record; "WalletConnection"; an empty
+string or any other magic string for the indexer choice.
 
 ### Command classes
 

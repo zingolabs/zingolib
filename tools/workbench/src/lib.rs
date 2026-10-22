@@ -869,7 +869,7 @@ mod tests {
     fn every_workspace_is_found_by_its_lockfile() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         let found = workspace_manifests(&root)?;
-        for workspace in ["", "zingo-netutils", WORKBENCH_RELATIVE_DIR] {
+        for workspace in ["", WORKBENCH_RELATIVE_DIR] {
             assert!(
                 found.contains(&root.join(workspace).join(MANIFEST)),
                 "{workspace:?}"

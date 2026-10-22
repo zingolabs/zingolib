@@ -25,6 +25,7 @@ pub mod mocks;
 pub mod testutils;
 
 pub use zingo_common_components::protocol::ActivationHeights;
+pub use zingo_netutils::default_indexer;
 pub use zingo_netutils::ensure_default_crypto_provider;
 /// The indexer census (the sole source of truth for indexer endpoints),
 /// re-exported so downstream consumers — the mobile FFI above all — read

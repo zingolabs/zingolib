@@ -12,6 +12,276 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 4f04d38c16cb032edffe1823d07bfc75bcf9103b
+
+Since d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
+  carries a memo: a deshield to a reserved wallet-owned transparent address,
+  then that address paying the vault with the memo in an OP_RETURN. It sends
+  outright and answers `{ txids }` in order, the vault payment last, the shape
+  `confirm` answers with. When the deshield was transmitted and the OP_RETURN
+  step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
+  stays stored with the deshield's txid: `confirm` resumes it and answers the
+  vault payment's txid alone, and proposing again is refused until then.
+- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+  names the deshield's txid.
+- `reserve_refund_address()` reserves the wallet's next refund address and
+  reports it in the shape of `create_new_transparent_address`, for a swap
+  provider to refund a deposit to.
+- `derive_refund_address()` reports that same address without reserving it,
+  for a quote to name while the swap is still being chosen: a dropped quote
+  leaves the refund index where it was, and the commit reserves it.
+
+##### Changed
+- BREAKING: `IndexerConnection.server_uri: String` is now
+  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
+  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
+  `Default` attaches to the chain's Default Indexer (mainnet's is
+  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `Init`), and `Named` carries the URI the string carried before.
+- BREAKING: `change_server(serveruri: String)` is now
+  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
+  session through `go_offline` instead of binding a never-dialed
+  placeholder URI, and a `Default` on a chain without a Default Indexer
+  fails `InvalidInput` (zingo-adrs zingolib/0063).
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Changed
+- `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
+  `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
+  since. A re-org up to 1000 blocks deep is truncated and scanned again,
+  where a re-org deeper than 100 blocks cleared the wallet's chain data
+  before. The wallet keeps the wallet blocks and, through
+  `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE` and `MAX_SHARDTREE_CHECKPOINTS`,
+  the shard tree checkpoints of the last 1000 scanned blocks, and
+  transparent address discovery searches the 1000 blocks below the last
+  known chain height at the start of a sync session. A wallet whose last
+  known chain height is more than 1000 blocks above the server's chain
+  height returns `SyncError::ChainError`, where the bound was 100.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  session's chain height and the wallet's highest scanned block as of the
+  task's selection, in place of the wallet's highest scanned block at
+  processing time. A load's rolling checkpoint window hangs from the chain
+  height, so only the loads inside the top window of the chain place it,
+  whatever task they belong to. Every load also places a checkpoint at its
+  own last block, so a session stopped after it anchors a spend there, and
+  the anchor retention boundaries as of that block or the highest scanned
+  block when that is higher, so such a session anchors a pool crossing
+  too. Before, every load of a task above the highest scanned height placed
+  a full window hanging from its own last block, which the next load's
+  inserts pruned, and the scan and the update could disagree once another
+  task moved the wallet's highest scanned block between a load's scan and
+  its update.
+- A block hash that disagrees more than `MAX_REORG_ALLOWANCE` below the
+  chain height the wallet's scanned state was formed against is a
+  different chain: the wallet is cleared and
+  `ServerError::ChainVerificationError` returned, as for a re-org deeper
+  than the allowance. The depth was measured from the wallet's highest
+  scanned block, so a wallet stopped between the loads of a task that met
+  such a disagreement attempted a truncation, found no checkpoint at the
+  fork, and was cleared with `SyncError::TruncationError` instead.
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
+  blocks of a range scanned above the highest scanned height, the blocks of
+  a lower range inside that window, and the anchor retention boundaries
+  inside their window. Every other block's checkpoint was built, inserted
+  and pruned from each pool's tree for nothing, a fixed cost per block per
+  active pool that grew with the ironwood pool. The window was sized by
+  `MAX_SHARDTREE_CHECKPOINTS` before, which counts the pinned anchor
+  boundaries the rolling budget excludes, so the bottom six blocks of every
+  window were checkpointed and pruned as well. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0063).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
+
+##### Changed
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Added
+- `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
+  answers the zingolabs endpoint a session attaches to when the consumer
+  goes online without naming one, `MAINNET_DEFAULT_INDEXER`
+  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
+
+## d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5
+
+Since 502a453fe3329ecded1872f0c856b56f141c8d6a.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Fixed
+- The `mobile` profile of the root workspace builds with `panic = "unwind"`,
+  the strategy the standalone zingo-netutils workspace already uses for the
+  proxy library. The iOS app links both static archives into one binary, and
+  the two copies of std resolve to one panic runtime, so the abort runtime of
+  `libzingo.a` ended the app on every panic inside a tokio task of the proxy,
+  which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio
+  now contains such a panic to its task, and UniFFI returns a panic at the
+  FFI boundary as an error.
+- `poll_sync` returns `Panic` with the panic's message when the sync task
+  panicked, instead of re-raising the panic under the client lock and
+  poisoning it for the rest of the session.
+- The panic hook writes each panic's message, location and backtrace to the
+  `log` sink and to stderr, where it stored the report in silence before. On
+  iOS the two Binding Layer archives share one std and so one hook, so the
+  proxy's panics are logged by it as well. The hook is installed on the
+  first exported call of any kind; UniFFI offers no hook at library load.
+- The last panic's report lives in a thread-local, so a panic on another
+  thread, such as a Nym SOCKS5 task, no longer overwrites the report that the
+  `Panic` error of a guarded call carries.
+- The recovery contract after `Panic` or `LightclientLockPoisoned`: a panic
+  under the client's write guard poisons the lock, every later call fails
+  with `LightclientLockPoisoned`, and the next `init_*` call clears the
+  poison. A consumer recovers by re-initializing from its saved wallet bytes,
+  as a relaunch did under `panic = "abort"`. A lock-discipline test pins the
+  sequence.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Fixed
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::birthday_adjusted_from` reports the height a wallet was given
+  when the wallet raised it to Sapling activation. It lives in memory for the
+  process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
+  `birthday_adjusted_from` when it is set.
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
+
+##### Changed
+- **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
+  below Sapling activation to the activation height instead of failing, and a
+  raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
+  is removed.
+- **Breaking:** `git_description`, and with it the Binding Layer's
+  `get_version`, returns `zl_<crate version>_<sixteen characters>` on every
+  commit, where the sixteen characters are the prefix of the Published Commit
+  that the Maven version of the Android Prebuilt Bundle also carries. A build
+  from a modified tree still appends `_dirty`. The five-character abbreviation
+  is gone, and so is the release form `zl_<tag version>` that a `zingolib_v*`
+  tag at HEAD produced. A consumer that parses or matches the descriptor must
+  accept the new form. The build script and the workbench take the length and
+  the abbreviation from one source file, `zingolib/short_commit.rs`.
+- **Breaking:** `config::construct_indexer_uri` completes a server string
+  without a scheme to `https://`, and a URI without a port to its scheme's
+  default port (`:443` for `https`, `:80` for `http`), named by the new
+  `config::HTTPS_DEFAULT_PORT`, `config::HTTP_DEFAULT_PORT`, and
+  `config::DEFAULT_INDEXER_SCHEME` constants. The old completion to `http://`
+  and `:9067` is gone: a bare `host` now reaches the indexer the census
+  lists instead of a dead legacy port, and an explicit port is never
+  rewritten.
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
+
+##### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
+
 ## 502a453fe3329ecded1872f0c856b56f141c8d6a
 
 Since ba7336710419c9ac1e9362ac1b4e5b0073ff477e.
