@@ -186,9 +186,9 @@ opt-level = 3
 # one-archive iOS build left the two platforms running the proxy under two
 # profiles, so the profile the wallet ships under is the profile for all.
 # The panic strategy is unwind: a panic inside a tokio task of the proxy
-# unwinds to the task and reaches the app as an error, where an abort
-# runtime ended the app (issue #2926). The workbench test `panic_strategy`
-# holds the profile to it.
+# ends that task and leaves the process running, where an abort runtime
+# ended the app (issue #2926). The workbench test `panic_strategy` holds
+# the profile to it.
 [profile.mobile]
 inherits = "release"
 debug = 1
