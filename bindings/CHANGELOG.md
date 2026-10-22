@@ -12,6 +12,183 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## c060a45041adeeb3f36571bbbdc645a582701bcc
+
+Since 4f04d38c16cb032edffe1823d07bfc75bcf9103b.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
+  carries the proxy crate's UniFFI surface beside the wallet's, built under
+  the crate's new `zingo-nym-proxy-ffi` feature, and
+  `ZingoNymProxyFFI.xcframework` is gone. The app then links one Rust std
+  and one `rust_eh_personality` beside its C++ and Objective-C personality
+  routines, the three that compact unwind encodes. Two archives brought two,
+  and the linker of Xcode 26.3 refused the app's link with "Too many
+  personality routines for compact unwind to encode". The `ZingoBindings`
+  product, which the app imports, is unchanged.
+
+##### Removed
+- BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
+  Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
+  dedicated migration transmission endpoint to set.
+
+##### Fixed
+- `send_swap_deposit` answers `InvalidInput` for a malformed or a
+  non-transparent `vault_address`. It answered `Send`, the class a consumer
+  retries.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Fixed
+- The mempool stream is opened without a call deadline. It was opened with
+  the 20 s bound meant for a finite download, sent to the server as
+  `grpc-timeout`, so on mainnet almost every stream ended with
+  `DEADLINE_EXCEEDED` before the next block, logged a warning, and was
+  reopened with the whole mempool resent. The stream now ends when the
+  server ends it at the next block, which is the signal the monitor
+  already treats as a mined block.
+- The finite streams (block ranges, subtree roots, transparent address
+  transactions) are bounded at 120 s for the whole download in place of
+  20 s. A stall between messages is still caught after 15 s.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `mixnet::speed::WAVE_WIDTH`, the fixed width of every speed-priority wave,
+  which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
+- `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
+  or a hosted enable on a session that holds no Session Indexer.
+
+##### Changed
+- **Breaking:** `LightClient::attach_mixnet` and
+  `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
+  readiness round trip reaches the Session Indexer instead of the census
+  member `zec.rocks`, so an Indexerless session refuses typed with
+  `MixnetProxyError::NoSessionIndexer` before it dials anything (zingo-adrs
+  zingolib/0063).
+- Boot proves three exits, not four. The roles are PriceFetch,
+  IndexerClient, and Spare, assigned in the order the exits confirm; the
+  IndexerSweep role retired with the Server-Selection Sweep (zingo-adrs
+  zingolib/0063). An online session whose exit directory offers fewer than
+  three exits still refuses the enable.
+- **Breaking:** every Transmission and every migration part goes to the Session
+  Indexer over the resolved wire, as one pull under the existing retry policy
+  (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
+  Destinations, and the per-Destination Health filter are gone. An Indexerless
+  session refuses a send with `LightClientError::Offline` on every wire, where
+  a ready mixnet once carried it to drawn Destinations.
+- **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
+  of a failed attempt move from `destination::health`, which is removed. The
+  history no longer folds attempts into a Health.
+- `LightClient::probe_destinations` probes the Session Indexer when no target
+  is named, in place of the census's mixnet-reachable entries. An Indexerless
+  session refuses with `LightClientError::Offline`, and a Session Indexer
+  outside the `https` port 443 shape refuses with
+  `LightClientError::IneligibleProbeTarget`, as a named target always did,
+  where the probe used to answer with an empty list.
+- A send builds one transmit target for the whole send, the session's live
+  indexer client on nakednet or one SOCKS5 client over the mixnet, where it
+  opened a fresh lazy connection to the Session Indexer per transaction.
+- A migration part resolves its wire exactly as a send does, so an
+  Indexerless session with a bootstrapping or dead mixnet refuses the part
+  with `MixnetNotReady` as it refuses a send, where it answered `Offline`.
+
+##### Removed
+- **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
+  re-exports of the indexer census, and the `destination::Correspondable`
+  implementation for its `Indexer` entry. The census is deleted; the
+  Default Indexer table in `zingo_netutils::default_indexer` replaces it,
+  and `config::default_indexer_for` reads it (zingo-adrs zingolib/0063).
+- `lightclient::select`, the Server-Selection Sweep runner:
+  `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
+  `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and
+  `SURVEY_WAVE_WIDTH`; and `mixnet::sweep`, its pure judgment: `Selection`,
+  `LiveCandidate`, `SurveyResult`, `RefusalTally`, `SweepError`,
+  `live_cohort`, `select`, `healthy_draw_verdict`, `assigned_selection`, and
+  `wave_order`. The Session Indexer receives every operation, so no survey
+  selects one (zingo-adrs zingolib/0063).
+- `destination::Operator`, which only the sweep's one-ticket-per-operator
+  draw consumed.
+- The `sweep_harness` test target.
+- **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
+  `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
+  `destination::rotation`, `destination::health`, and
+  `destination::same_operator`; the `config::{IndexerConfig, Location, Role,
+  Trust}` re-exports; `ClientConfigBuilder::{add_indexer,
+  set_remote_indexer_trust, set_migration_transmission_uri}` and
+  `ClientConfig::{indexers, remote_indexer_trust, migration_transmission_uri}`;
+  `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
+  `LightClientError::{NoEligibleDestination,
+  MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
+- **Breaking:** `mixnet::sweep::Selection::transmit_candidates`. The sweep no
+  longer computes the cohort minus the sync operator, because no transmitting
+  surface draws from it (zingo-adrs zingolib/0063).
+
+### zingo-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- The Android library builds under the workspace's `mobile` profile, the one
+  profile of the Binding Layer, and the `proxy` profile is gone. The nym stack
+  beneath the crate now compiles with the same size optimization and overflow
+  checks on both platforms, where the one-archive iOS build had left it checked
+  on iOS and wrapping on Android. A plain-operator overflow in a nym crate is a
+  panic on both platforms, which ends its tokio task and leaves the process
+  running.
+- On iOS the crate ships inside `Zingolib.xcframework`, the one archive of the
+  `ZingoBindings` package, which the wallet crate builds with its
+  `zingo-nym-proxy-ffi` feature. `ZingoNymProxyFFI.xcframework` is gone. The
+  app then links one Rust std and one `rust_eh_personality` beside its C++
+  and Objective-C personality routines, the three that compact unwind
+  encodes. Two archives brought two, and the linker of Xcode 26.3 refused
+  the app's link. The `ZingoBindings` product, which the app imports, is
+  unchanged.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Changed
+- BREAKING: `IndexerChain` lives in `default_indexer`, the table of Default
+  Indexers keyed by chain, now that the census module it partitioned is gone
+  (zingo-adrs zingolib/0063).
+- `Indexer::get_mempool_stream` takes no timeout. The stream is a
+  subscription the server ends at the next block, so a call deadline only
+  ever cut it short. `GrpcIndexer` sends no `grpc-timeout` on it, and the
+  connection it opens on stays bounded by `time::INDEXER_CONNECT_TIMEOUT`.
+- `time::HEAVY_UNARY_TIMEOUT` is `time::FINITE_STREAM_TIMEOUT`, 120 s in
+  place of 20 s. Every caller was a finite server stream (a block range,
+  the subtree roots, a transparent address's transactions) and the bound
+  covers the whole download, which the old value cut short on a slow
+  server or link. A stall between messages is still caught by
+  `time::STREAM_MSG_TIMEOUT`.
+
+##### Removed
+- BREAKING: the `indexers` module: the census `Indexer`, `INDEXERS`, the
+  uptime leaderboard `MOST_UP_INDEXER_URIS`, `active`, `mixnet_eligible`,
+  and `Indexer::operator`. A session attaches to one indexer, the chain's
+  Default Indexer or the one the consumer names, so no table of foreign
+  endpoints remains to draw from (zingo-adrs zingolib/0063).
+- BREAKING: `time::SERVER_RANKING_TIMEOUT`, which only the retired
+  nakednet server-selection probe read.
+- BREAKING: `live_indexer_discovery` and the `live-indexer-discovery` bin. The
+  over-mixnet census survey retired with zingo-adrs zingolib/0063.
+- BREAKING: `indexers::MIXNET_HEALTH_INDEXER`. The attach readiness round trip reaches
+  the Session Indexer, not a census member.
+- BREAKING: `time::TRANSMISSION_HEDGE_INTERVAL`. The send's hedged race across
+  Destinations retired with zingo-adrs zingolib/0063.
+
 ## 4f04d38c16cb032edffe1823d07bfc75bcf9103b
 
 Since d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5.
