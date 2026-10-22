@@ -14,19 +14,12 @@ use zcash_protocol::consensus::{BlockHeight, Parameters};
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 
-pub use crate::destination::servers::{IndexerConfig, Location, Role, Trust};
-
 use crate::wallet::{
     WalletBase, WalletSettings,
     error::{KeyError, WalletError},
     keys::unified::UnifiedKeyStore,
 };
 
-/// The default indexer URIs, from the census (the sole source of truth for
-/// indexer endpoints). NOTE: the census testnet default carries an explicit
-/// `:443`, retiring the old portless string this module completed to
-/// `:9067` — the drift between that completion and the mobile list's `:443`
-/// is what the census exists to end.
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -365,7 +358,7 @@ impl IndexerChoice {
 
 pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
     use zingo_netutils::default_indexer;
-    use zingo_netutils::indexers::IndexerChain;
+    use zingo_netutils::default_indexer::IndexerChain;
 
     match chain {
         ChainType::Mainnet => default_indexer::default_indexer(IndexerChain::Main),
@@ -380,20 +373,6 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
-    /// different server than the one used for synchronization reduces the
-    /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
-    /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
-    /// must be https on a host distinct from an untrusted synchronization
-    /// endpoint's (a shared host is refused). Unset, parts go to one
-    /// drawn Destination per submission. When both are
-    /// `None` the client emits no network traffic and transmission fails
-    /// with [`crate::lightclient::error::LightClientError::Offline`].
-    migration_transmission_uri: Option<http::Uri>,
-    /// The consumer's indexer classifications.
-    indexers: Vec<IndexerConfig>,
-    /// Overrides the chain's trust for an unclassified remote indexer.
-    remote_indexer_trust: Option<Trust>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
     /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
@@ -415,24 +394,6 @@ impl ClientConfig {
     #[must_use]
     pub fn indexer_uri(&self) -> Option<http::Uri> {
         self.indexer_uri.clone()
-    }
-
-    /// Returns the migration transmission URI, if one is configured.
-    #[must_use]
-    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
-        self.migration_transmission_uri.clone()
-    }
-
-    /// Returns the indexer classifications.
-    #[must_use]
-    pub fn indexers(&self) -> &[IndexerConfig] {
-        &self.indexers
-    }
-
-    /// Returns the remote trust override, if any.
-    #[must_use]
-    pub fn remote_indexer_trust(&self) -> Option<Trust> {
-        self.remote_indexer_trust
     }
 
     /// Returns wallet directory.
@@ -473,9 +434,6 @@ impl ClientConfig {
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
     indexer_choice: IndexerChoice,
-    migration_transmission_uri: Option<http::Uri>,
-    indexers: Vec<IndexerConfig>,
-    remote_indexer_trust: Option<Trust>,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -513,25 +471,6 @@ impl ClientConfigBuilder {
     /// ```
     pub fn set_indexer_choice(mut self, choice: IndexerChoice) -> Self {
         self.indexer_choice = choice;
-        self
-    }
-
-    /// Set a dedicated URI for transmitting Ironwood migration parts,
-    /// distinct from the synchronization endpoint.
-    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
-        self.migration_transmission_uri = Some(migration_transmission_uri);
-        self
-    }
-
-    /// Classify one indexer.
-    pub fn add_indexer(mut self, indexer: IndexerConfig) -> Self {
-        self.indexers.push(indexer);
-        self
-    }
-
-    /// Override the chain's trust for an unclassified remote indexer.
-    pub fn set_remote_indexer_trust(mut self, trust: Trust) -> Self {
-        self.remote_indexer_trust = Some(trust);
         self
     }
 
@@ -574,9 +513,6 @@ impl ClientConfigBuilder {
 
         Ok(ClientConfig {
             indexer_uri,
-            migration_transmission_uri: self.migration_transmission_uri,
-            indexers: self.indexers,
-            remote_indexer_trust: self.remote_indexer_trust,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
@@ -589,9 +525,6 @@ impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
             indexer_choice: IndexerChoice::Offline,
-            migration_transmission_uri: None,
-            indexers: Vec::new(),
-            remote_indexer_trust: None,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,

@@ -31,7 +31,7 @@ use zingo_netutils::time::TRANSMIT_RETRY_INTERVAL;
 /// or `None` when no transmission is running. A consumer holding a clone (the
 /// CLI's heartbeat, a UI) polls [`Self::latest`] while the transmitting call
 /// holds `&mut LightClient`. The transmit path updates it as submissions,
-/// retries, probes, and escalation rounds occur. Mirrors the
+/// retries, and probes occur. Mirrors the
 /// `ImmediateMigrationProgressHandle` pattern.
 #[derive(Clone, Debug, Default)]
 pub struct TransmitProgressHandle(Arc<Mutex<Option<String>>>);

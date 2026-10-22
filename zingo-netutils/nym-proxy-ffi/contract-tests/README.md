@@ -25,6 +25,12 @@ pinned bytes produces exactly the canonical value — against the same files:
   `.github/workflows/binding-layer-ios.yaml` runs it on every build. The
   golden directory resolves relative to the file. The builder requires the
   executed test count that xcodebuild reports to equal the suite's size.
+  The test binary also links `app-personalities/`, a C++ throw and an
+  Objective-C throw, so it carries the `__gxx_personality_v0` and
+  `__objc_personality_v0` routines an app brings beside the archive's
+  `rust_eh_personality`. Compact unwind encodes three routines at most, so
+  a bundle that brings two Rust archives, each with its own std, fails this
+  link the way it fails the app's.
 
 A single-language round trip proves only that one side's codec is
 self-inverse. Sharing the pins is what makes the guarantee two-sided at test

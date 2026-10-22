@@ -27,6 +27,12 @@ serde_json = { workspace = true }
 zip32 = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
+# The iOS archive carries the proxy crate's UniFFI surface beside the
+# wallet's, so the app links one Rust std and one `rust_eh_personality`
+# beside its C++ and Objective-C personality routines, the three that
+# compact unwind encodes. The Binding Layer builder turns the feature on for
+# the iOS slices alone; Android keeps the proxy as its own shared library.
+zingo-nym-proxy-ffi = { workspace = true, optional = true }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
@@ -35,3 +41,6 @@ name = "zingo"
 [dev-dependencies]
 quote = { workspace = true }
 syn = { workspace = true }
+
+[features]
+zingo-nym-proxy-ffi = ["dep:zingo-nym-proxy-ffi"]

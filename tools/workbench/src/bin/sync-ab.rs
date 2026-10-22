@@ -110,8 +110,13 @@ const SYNC_SPAN_CLOSE: &str = "SYNC_SPAN=close";
 /// The key on the closing marker carrying the outputs the span scanned.
 const SYNC_SPAN_OUTPUTS: &str = "outputs=";
 
-/// The word a span closes on when the sync failed.
+// The word a span closes on when the sync failed.
 const SPAN_FAILED: &str = "err";
+
+// A sync that closes on an error may be relaunched by the CLI's own
+// recovery, which opens a new span once the prompt redraws. The failure
+// stands only after this long with no new span.
+const RECOVERY_GRACE: Duration = Duration::from_secs(10);
 
 /// The unit suffix the closing marker's duration carries.
 const MILLIS_SUFFIX: &str = "ms";
@@ -158,52 +163,58 @@ const LOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// The degree of freedom a sample standard deviation gives up to its mean.
 const BESSEL_CORRECTION: usize = 1;
 
-/// The directory under the scratch space the session keeps its wallet in.
+// The directory under the scratch space the session keeps its wallet in.
 const WALLETS_DIR: &str = "wallets";
 
-/// The extension the wallet file carries in every era.
-const WALLET_FILE_EXTENSION: &str = "dat";
+// The one file the CLI writes its wallet to, restated from zingolib's
+// `config::DEFAULT_WALLET_NAME` because the workbench is std-only; it must
+// not drift from that constant.
+const WALLET_FILE: &str = "zingo-wallet.dat";
 
-/// The process name the memory reading follows, as the kernel reports it.
+// The process name the memory reading follows, as the kernel reports it.
 const CLI_COMM: &str = "zingo-cli";
 
-/// Where the kernel publishes each process's group and memory.
+// Where the kernel publishes each process's name, children, and memory.
 const PROC: &str = "/proc";
 
-/// The file under a process's `/proc` entry that names it and its group.
+// The file under a process's `/proc` entry that names it.
 const STAT_FILE: &str = "stat";
 
-/// The file under a process's `/proc` entry that carries its memory.
+// The file under a process's `/proc` entry that carries its memory.
 const STATUS_FILE: &str = "status";
 
-/// The position of the process group among the stat fields after the
-/// command name: the state, the parent, then the group.
-const GROUP_FIELD: usize = 2;
+// The directory under a process's `/proc` entry holding one entry per
+// thread, and the file under each thread listing the processes it spawned.
+const TASK_DIR: &str = "task";
+const CHILDREN_FILE: &str = "children";
 
-/// The status line that carries the peak resident set, and its unit.
+// The status line that carries the peak resident set, and its unit.
 const HIGH_WATER_FIELD: &str = "VmHWM:";
 const HIGH_WATER_UNIT: &str = "kB";
 
-/// The units the readings print in.
+// The units the readings print in.
 const KIB: u64 = 1024;
 const MIB: u64 = KIB * KIB;
 const KIB_NAME: &str = "KiB";
 const MIB_NAME: &str = "MiB";
 
-/// The word for a reading the platform did not give.
+// The word for a reading the platform did not give.
 const UNAVAILABLE: &str = "unavailable";
 
-/// How far the arms' output counts may differ before the comparison is
-/// reported as drifted: the tip advances during a run, so a later run scans
-/// a few more outputs than an earlier one.
-const OUTPUT_DRIFT_TOLERANCE: f64 = 0.01;
+// The factor from a ratio to a percentage.
+const PERCENT: f64 = 100.0;
 
-/// How far a bounded run's durations may differ before the comparison is
-/// reported as drifted.
+/// How far the arms' output counts may differ, as a percentage, before the
+/// comparison is reported as drifted: the tip advances during a run, so a
+/// later run scans a few more outputs than an earlier one.
+const OUTPUT_DRIFT_TOLERANCE: f64 = 1.0;
+
+/// How far a bounded run's durations may differ, as a percentage, before
+/// the comparison is reported as drifted.
 // A stop lands after the batch in flight rather than on the instant it is
 // asked for, so a bounded span overshoots by up to one batch and the
 // spread a fixed window allows would fire on that alone.
-const SPAN_DRIFT_TOLERANCE: f64 = 0.10;
+const SPAN_DRIFT_TOLERANCE: f64 = 10.0;
 
 fn main() {
     run("sync-ab", compare, |()| {})
@@ -276,10 +287,11 @@ struct Arm {
     outputs: Vec<u64>,
     boots: Vec<Duration>,
     syncs: Vec<Duration>,
-    /// The CLI's peak resident set per session, in bytes.
-    peaks: Vec<u64>,
-    /// The wallet file's size per session, in bytes.
-    wallet_files: Vec<u64>,
+    // The CLI's peak resident set and the wallet file's size per session,
+    // in bytes, with a session that gave no reading kept as `None` so the
+    // arms are never averaged over different sessions.
+    peaks: Vec<Option<u64>>,
+    wallet_files: Vec<Option<u64>>,
 }
 
 /// One session's reading, taken from the engine's span but for the boot.
@@ -287,9 +299,9 @@ struct Reading {
     boot: Duration,
     sync: Duration,
     outputs: u64,
-    /// The CLI's peak resident set in bytes, when the platform publishes it.
+    // The CLI's peak resident set in bytes, when the platform publishes it,
+    // and the wallet file's size in bytes once the session has quit.
     peak_rss: Option<u64>,
-    /// The wallet file's size in bytes once the session has quit, when it wrote one.
     wallet_file: Option<u64>,
 }
 
@@ -395,18 +407,18 @@ fn compare() -> Result<(), Vec<String>> {
         prepare(&root, &request.specs[1])?,
     ];
 
-    // A failed comparison leaves no checkout behind either: the arms are
-    // rebuilt from scratch by the next one anyway.
-    let measured = rounds(&mut arms, &request);
+    // A failed comparison names a session log inside an arm's checkout, so
+    // the checkouts stay for reading it; the next comparison removes a
+    // stale checkout before adding its own.
+    rounds(&mut arms, &request)?;
     for arm in &arms {
         retire(&root, &arm.worktree);
     }
-    measured?;
     report(&arms, &request);
     Ok(())
 }
 
-/// Warms both arms up, then measures them in alternating rounds.
+// Warms both arms up, then measures them in alternating rounds.
 fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
     // The warm-up pays for each arm's build and is discarded: a first run
     // reads slower than its successors, and both arms deserve the same
@@ -445,8 +457,8 @@ fn rounds(arms: &mut [Arm; 2], request: &Request) -> Result<(), Vec<String>> {
             arm.outputs.push(reading.outputs);
             arm.boots.push(reading.boot);
             arm.syncs.push(reading.sync);
-            arm.peaks.extend(reading.peak_rss);
-            arm.wallet_files.extend(reading.wallet_file);
+            arm.peaks.push(reading.peak_rss);
+            arm.wallet_files.push(reading.wallet_file);
         }
     }
     Ok(())
@@ -654,6 +666,7 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;
     let mut stopped = false;
+    let mut failed_since: Option<Instant> = None;
     let outcome = loop {
         let log = std::fs::read_to_string(&log_path).unwrap_or_default();
         if launched.is_none() && log.contains(SYNC_SPAN_OPEN) {
@@ -683,8 +696,15 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         }
         // A span that closes on an error carries no count, and waiting for
         // one would run the budget out on a failure already written down.
+        // The CLI may still relaunch the sync on its own, so the failure
+        // stands only once the grace for that has passed with no new span.
         if failed_span(&log) {
-            break Err(vec![format!("the sync failed, see {}", log_path.display())]);
+            let since = failed_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= RECOVERY_GRACE {
+                break Err(vec![format!("the sync failed, see {}", log_path.display())]);
+            }
+        } else {
+            failed_since = None;
         }
         if let Ok(Some(status)) = child.try_wait() {
             break Err(vec![format!("the session exited early ({status})")]);
@@ -709,7 +729,6 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     })
 }
 
-/// Writes one line to the session's prompt.
 /// - writes to the child's stdin
 fn tell(child: &mut Child, line: &str) {
     if let Some(stdin) = child.stdin.as_mut() {
@@ -751,11 +770,13 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     Ok(Command::new(arm.worktree.join("target/release/zingo-cli")))
 }
 
-/// Whether a span closed on an error, which the engine logs as `err`.
+// A close on `err` is a failure only while no later span has opened: the
+// CLI's own recovery relaunches a failed sync, and that span's close is the
+// one that counts.
 fn failed_span(log: &str) -> bool {
-    log.split(SYNC_SPAN_CLOSE)
-        .skip(1)
-        .any(|tail| tail.split_whitespace().nth(1) == Some(SPAN_FAILED))
+    log.rsplit_once(SYNC_SPAN_CLOSE).is_some_and(|(_, tail)| {
+        tail.split_whitespace().nth(1) == Some(SPAN_FAILED) && !tail.contains(SYNC_SPAN_OPEN)
+    })
 }
 
 /// The engine's own duration and output count, from the closing line.
@@ -791,42 +812,51 @@ fn closed_segment(tail: &str) -> Option<(u64, u64)> {
     Some((digits.parse().ok()?, counted.parse().ok()?))
 }
 
-/// The peak resident set of the CLI running in the session's process
-/// `group`, in bytes.
-/// - reads every process's stat, and the CLI's status, under `/proc`
-fn cli_high_water(group: u32) -> Option<u64> {
-    std::fs::read_dir(PROC)
-        .ok()?
+// The CLI is the launched process itself for a direct launch and a
+// descendant of it for a hosted one, so the search walks down from the
+// launched process through the kernel's per-thread children lists and
+// stops at the first process named for the CLI, which leaves the proxy
+// below it unread and touches a handful of entries rather than every
+// process on the host.
+/// - reads the stat, the children lists, and the CLI's status under `/proc`
+fn cli_high_water(launched: u32) -> Option<u64> {
+    let mut pending = vec![launched];
+    while let Some(pid) = pending.pop() {
+        let entry = Path::new(PROC).join(pid.to_string());
+        if std::fs::read_to_string(entry.join(STAT_FILE)).is_ok_and(|stat| names_cli(&stat)) {
+            return high_water(&std::fs::read_to_string(entry.join(STATUS_FILE)).ok()?);
+        }
+        pending.extend(children_of(&entry));
+    }
+    None
+}
+
+// The processes every thread of the process at `entry` spawned, since a
+// child is listed under the thread that spawned it.
+fn children_of(entry: &Path) -> Vec<u32> {
+    std::fs::read_dir(entry.join(TASK_DIR))
+        .into_iter()
         .flatten()
-        .filter(|entry| {
-            std::fs::read_to_string(entry.path().join(STAT_FILE))
-                .is_ok_and(|stat| in_group(&stat, group))
+        .flatten()
+        .filter_map(|task| std::fs::read_to_string(task.path().join(CHILDREN_FILE)).ok())
+        .flat_map(|listed| {
+            listed
+                .split_whitespace()
+                .filter_map(|child| child.parse::<u32>().ok())
+                .collect::<Vec<_>>()
         })
-        .filter_map(|entry| {
-            high_water(&std::fs::read_to_string(entry.path().join(STATUS_FILE)).ok()?)
-        })
-        .max()
+        .collect()
 }
 
-/// Whether one process's stat names the CLI inside `group`.
 // The command name sits in parentheses and may hold spaces or parentheses
-// of its own, so the fields are counted from its closing parenthesis.
-fn in_group(stat: &str, group: u32) -> bool {
-    let Some((_, named)) = stat.split_once('(') else {
-        return false;
-    };
-    let Some((name, fields)) = named.rsplit_once(')') else {
-        return false;
-    };
-    name == CLI_COMM
-        && fields
-            .split_whitespace()
-            .nth(GROUP_FIELD)
-            .and_then(|field| field.parse::<u32>().ok())
-            == Some(group)
+// of its own, so it is read up to the last closing parenthesis.
+fn names_cli(stat: &str) -> bool {
+    stat.split_once('(')
+        .and_then(|(_, named)| named.rsplit_once(')'))
+        .is_some_and(|(name, _)| name == CLI_COMM)
 }
 
-/// The high-water mark a process's status reports, in bytes.
+// The high-water mark a process's status reports, in bytes.
 fn high_water(status: &str) -> Option<u64> {
     let kibibytes: u64 = status
         .lines()
@@ -839,19 +869,11 @@ fn high_water(status: &str) -> Option<u64> {
     Some(kibibytes * KIB)
 }
 
-/// The size of the largest wallet file under `wallets`, in bytes.
-/// - reads the directory tree under `wallets`
+/// - reads the wallet file's metadata under `wallets`
 fn wallet_file_size(wallets: &Path) -> Option<u64> {
-    workbench::files_under(wallets, &[])
-        .ok()?
-        .into_iter()
-        .filter(|file| {
-            file.extension()
-                .is_some_and(|extension| extension == WALLET_FILE_EXTENSION)
-        })
-        .filter_map(|file| std::fs::metadata(file).ok())
+    std::fs::metadata(wallets.join(WALLET_FILE))
+        .ok()
         .map(|metadata| metadata.len())
-        .max()
 }
 
 // Whether a testnet comparison carries a mixnet arm, whose attach proof
@@ -918,20 +940,13 @@ fn report(arms: &[Arm; 2], request: &Request) {
         let counted: Vec<u64> = arms.iter().flat_map(|arm| arm.outputs.clone()).collect();
         ("outputs scanned", span(&counted), OUTPUT_DRIFT_TOLERANCE)
     };
-    let drift = if low == 0 {
-        0.0
-    } else {
-        (high - low) as f64 / low as f64
-    };
+    let drift = change(low as f64, high as f64);
     let cause = if bounded {
         "a stop landing after the batch in flight"
     } else {
         "the tip advancing mid-run"
     };
-    println!(
-        "{measured}: {low} to {high} ({:.2}% drift, {cause})",
-        drift * 100.0
-    );
+    println!("{measured}: {low} to {high} ({drift:.2}% drift, {cause})");
     if drift > tolerance {
         let what = if bounded {
             "scanned for materially different spans"
@@ -967,8 +982,11 @@ fn report(arms: &[Arm; 2], request: &Request) {
             mean_bytes(&arms[1].wallet_files),
         ),
     ] {
-        if let (Some(left), Some(right)) = (left, right) {
-            println!("{what}: {:+.1}%", change(left as f64, right as f64));
+        match (left, right) {
+            (Some(left), Some(right)) => {
+                println!("{what}: {:+.1}%", change(left as f64, right as f64));
+            }
+            _ => println!("{what}: {UNAVAILABLE}, a session gave no reading"),
         }
     }
     if bounded {
@@ -976,25 +994,25 @@ fn report(arms: &[Arm; 2], request: &Request) {
     }
 }
 
-/// The change from `left` to `right` as a percentage of `left`.
+// The change from `left` to `right` as a percentage of `left`.
 fn change(left: f64, right: f64) -> f64 {
     if left == 0.0 {
         return 0.0;
     }
-    (right - left) / left * 100.0
+    (right - left) / left * PERCENT
 }
 
-/// The arithmetic mean of sampled byte counts, which no sample leaves
-/// undefined.
-fn mean_bytes(samples: &[u64]) -> Option<u64> {
-    if samples.is_empty() {
-        return None;
-    }
-    Some(samples.iter().sum::<u64>() / samples.len() as u64)
+// The arithmetic mean of sampled byte counts, undefined when there are none
+// or when a session gave no reading, so the arms' means cover the same
+// sessions as their rates.
+fn mean_bytes(samples: &[Option<u64>]) -> Option<u64> {
+    let counted: Option<Vec<u64>> = samples.iter().copied().collect();
+    let counted = counted.filter(|counted| !counted.is_empty())?;
+    Some(counted.iter().sum::<u64>() / counted.len() as u64)
 }
 
-/// A byte count in `unit`, or the word for a reading the platform did
-/// not give.
+// A byte count in `unit`, or the word for a reading the platform did not
+// give.
 fn sized(bytes: Option<u64>, unit: u64, name: &str) -> String {
     bytes.map_or_else(
         || UNAVAILABLE.to_string(),
@@ -1165,8 +1183,9 @@ mod tests {
         assert_eq!(closing_span("SYNC_SPAN=close 1250ms err\n"), None);
     }
 
-    /// HYPOTHESIS: a span that closed on an error is told apart from one
-    /// that finished, one still open, and one whose close is cut short.
+    // HYPOTHESIS: a span that closed on an error is told apart from one
+    // that finished, one still open, one whose close is cut short, and one
+    // the CLI relaunched after the error.
     #[test]
     fn a_failed_close_is_read_as_a_failure() {
         assert!(failed_span("INFO sync: SYNC_SPAN=close 137361ms err\n"));
@@ -1175,6 +1194,13 @@ mod tests {
         ));
         assert!(!failed_span("INFO sync: SYNC_SPAN=open\n"));
         assert!(!failed_span("INFO sync: SYNC_SPAN=close 1250ms er"));
+        assert!(!failed_span(
+            "INFO sync: SYNC_SPAN=close 1200ms err\nINFO sync: SYNC_SPAN=open\n"
+        ));
+        assert!(!failed_span(
+            "INFO sync: SYNC_SPAN=close 1200ms err\nINFO sync: SYNC_SPAN=open\n\
+             INFO sync: SYNC_SPAN=close 1250ms ok outputs=8192\n"
+        ));
     }
 
     #[test]
@@ -1183,22 +1209,30 @@ mod tests {
         assert_eq!(closing_span(log), Some((1250, 8192)));
     }
 
-    /// HYPOTHESIS: a stat line is matched on the command name and the
-    /// group behind it, and on nothing else in the session's tree.
-    /// Falsified if the proxy, the builder, or another group's CLI matches.
+    // HYPOTHESIS: a stat line is matched on the command name alone, read up
+    // to its last closing parenthesis. Falsified if the proxy, the builder,
+    // or a name holding a parenthesis is taken for the CLI.
     #[test]
-    fn a_stat_line_names_the_cli_in_its_group() {
-        const GROUP: u32 = 4100;
-        assert!(in_group("4242 (zingo-cli) S 4200 4100 4100 0 -1", GROUP));
-        assert!(!in_group("4242 (zingo-cli) S 4200 4100 4100 0 -1", 4200));
-        assert!(!in_group("4243 (nym-proxy) S 4242 4243 4100 0 -1", GROUP));
-        assert!(!in_group("4244 (cargo) S 4200 4100 4100 0 -1", GROUP));
-        assert!(!in_group("no fields at all", GROUP));
+    fn a_stat_line_names_the_cli() {
+        assert!(names_cli("4242 (zingo-cli) S 4200 4100 4100 0 -1"));
+        assert!(!names_cli("4243 (nym-proxy) S 4242 4243 4100 0 -1"));
+        assert!(!names_cli("4244 (cargo) S 4200 4100 4100 0 -1"));
+        assert!(!names_cli("4245 (zingo-cli (old)) S 4200 4100 4100 0 -1"));
+        assert!(!names_cli("no fields at all"));
     }
 
-    /// HYPOTHESIS: the high-water mark is read in bytes off its own status
-    /// line. Falsified if another memory line is taken for it or a status
-    /// without one yields a reading.
+    // HYPOTHESIS: a byte mean is undefined as soon as one session gave no
+    // reading, so the arms are never averaged over different sessions.
+    #[test]
+    fn a_missing_reading_leaves_the_mean_undefined() {
+        assert_eq!(mean_bytes(&[Some(KIB), Some(3 * KIB)]), Some(2 * KIB));
+        assert_eq!(mean_bytes(&[Some(KIB), None]), None);
+        assert_eq!(mean_bytes(&[]), None);
+    }
+
+    // HYPOTHESIS: the high-water mark is read in bytes off its own status
+    // line. Falsified if another memory line is taken for it or a status
+    // without one yields a reading.
     #[test]
     fn the_high_water_mark_is_read_in_bytes() {
         let status =

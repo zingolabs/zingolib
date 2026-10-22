@@ -11104,6 +11104,7 @@ dependencies = [
  "zcash_keys",
  "zcash_protocol",
  "zcash_transparent",
+ "zingo-nym-proxy-ffi",
  "zingo_common_components",
  "zingolib",
  "zip32",

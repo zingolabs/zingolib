@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `parse_coingecko_simple` reads the quote as an `f64` and narrows it to
+  `f32` before the finite check, so an overflowing literal is the typed
+  `InvalidPrice` refusal under serde_json's `float_roundtrip` feature as
+  well as without it. A build that unifies the nym stack's features into
+  this crate turned that literal into a deserialization error instead.
+
 ## [0.2.0] - 2026-10-15
 
 ### Added

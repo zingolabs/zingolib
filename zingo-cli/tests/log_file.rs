@@ -231,10 +231,10 @@ async fn tracing_error_from_pepper_sync_goes_to_log_file() {
 const STUB_EXIT_NODE: &str = "stub-exit-node";
 
 /// How many Exit Nodes the stub directory advertises, an agreeing
-/// representation of `zingolib`'s `QUARTET_SIZE`, because a boot draws one
-/// exit per role and refuses outright when the directory offers fewer.
+/// representation of `zingolib`'s `ROLE_EXIT_COUNT`, because a boot draws
+/// one exit per role and refuses outright when the directory offers fewer.
 #[cfg(feature = "nym")]
-const STUB_EXIT_COUNT: usize = 4;
+const STUB_EXIT_COUNT: usize = 3;
 
 /// The SOCKS5 protocol version byte.
 #[cfg(feature = "nym")]

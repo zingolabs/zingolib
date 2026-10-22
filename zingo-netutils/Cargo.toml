@@ -147,14 +147,10 @@ nym = [
 ]
 
 # The spawnable mixnet proxy process (ADR 0011, consumption model A). Built
-# only with the `nym` feature, in this crate's own lockfile; the wallet
-# bundles and spawns it, then dials its local SOCKS5 port.
+# only with the `nym` feature; the wallet bundles and spawns it, then dials
+# its local SOCKS5 port.
 [[bin]]
 name = "nym-proxy"
-required-features = ["nym"]
-
-[[bin]]
-name = "live-indexer-discovery"
 required-features = ["nym"]
 
 [dev-dependencies]
