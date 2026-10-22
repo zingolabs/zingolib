@@ -20,11 +20,6 @@ use crate::wallet::{
     keys::unified::UnifiedKeyStore,
 };
 
-/// The default indexer URIs, from the census (the sole source of truth for
-/// indexer endpoints). NOTE: the census testnet default carries an explicit
-/// `:443`, retiring the old portless string this module completed to
-/// `:9067` — the drift between that completion and the mobile list's `:443`
-/// is what the census exists to end.
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -363,7 +358,7 @@ impl IndexerChoice {
 
 pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
     use zingo_netutils::default_indexer;
-    use zingo_netutils::indexers::IndexerChain;
+    use zingo_netutils::default_indexer::IndexerChain;
 
     match chain {
         ChainType::Mainnet => default_indexer::default_indexer(IndexerChain::Main),
