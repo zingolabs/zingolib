@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on iOS and wrapping on Android. A plain-operator overflow in a nym crate is a
   panic on both platforms, which ends its tokio task and leaves the process
   running.
+- The Binding Layer builder compiles the Android library and the wallet
+  library into one target directory, `target/binding-layer/android`, where
+  each had its own, so the crates the two share compile once per ABI and sit
+  once in the CI cache. The library now lands at
+  `target/binding-layer/android/<triple>/mobile/libzingo_nym_proxy_ffi.so`,
+  where `android/proxy/` held it. The host plan merges the same way under
+  `target/binding-layer/host`. The two cargo invocations stay separate, so
+  each crate keeps its own feature set. A workbench test pins the Android
+  builds to one directory.
 - On iOS the crate ships inside `Zingolib.xcframework`, the one archive of the
   `ZingoBindings` package, which the wallet crate builds with its
   `zingo-nym-proxy-ffi` feature. `ZingoNymProxyFFI.xcframework` is gone. The
