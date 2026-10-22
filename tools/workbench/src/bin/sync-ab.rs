@@ -121,7 +121,7 @@ const LOG_FILTER: &str = "info";
 /// pins.
 const MAINNET: Chain = Chain {
     name: "mainnet",
-    indexer: "https://zec.rocks:443",
+    indexer: "https://mainnet.zainod.zingolabs.dev:443",
 };
 const TESTNET: Chain = Chain {
     name: "testnet",
