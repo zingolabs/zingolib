@@ -604,19 +604,29 @@ pub enum Generation {
     Proxy,
 }
 
-impl Generation {
-    /// The prefix of this binding set's output directory names.
-    pub fn label(self) -> &'static str {
-        match self {
-            Generation::Wallet => "wallet",
-            Generation::Proxy => "proxy",
-        }
-    }
+pub struct GenerationNames {
+    pub label: &'static str,
+    pub lib_name: &'static str,
+    pub crate_dir: &'static str,
+}
 
-    pub fn lib_name(self) -> &'static str {
+const WALLET_NAMES: GenerationNames = GenerationNames {
+    label: "wallet",
+    lib_name: WALLET_LIB_NAME,
+    crate_dir: WALLET_CRATE_DIR,
+};
+
+const PROXY_NAMES: GenerationNames = GenerationNames {
+    label: "proxy",
+    lib_name: PROXY_LIB_NAME,
+    crate_dir: PROXY_CRATE_DIR,
+};
+
+impl Generation {
+    pub fn names(self) -> &'static GenerationNames {
         match self {
-            Generation::Wallet => WALLET_LIB_NAME,
-            Generation::Proxy => PROXY_LIB_NAME,
+            Generation::Wallet => &WALLET_NAMES,
+            Generation::Proxy => &PROXY_NAMES,
         }
     }
 }
@@ -675,24 +685,9 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
         .flat_map(|generation| LANGUAGES.map(|language| (generation, language)))
 }
 
-/// A directory that a bindgen run starts in, which decides whose `uniffi.toml` library mode applies.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Workdir {
-    WalletCrate,
-    /// The proxy crate's directory, where library mode applies the proxy's configuration.
-    ProxyCrate,
-}
-
-pub fn bindgen_workdir(generation: Generation) -> Workdir {
-    match generation {
-        Generation::Wallet => Workdir::WalletCrate,
-        Generation::Proxy => Workdir::ProxyCrate,
-    }
-}
-
 /// The name of the directory that holds one binding set in one language.
 pub fn output_name(generation: Generation, language: &str) -> String {
-    format!("{}-{language}", generation.label())
+    format!("{}-{language}", generation.names().label)
 }
 
 pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec<String> {
@@ -1338,7 +1333,7 @@ mod tests {
 
     #[test]
     fn each_generation_generates_from_its_own_crate() {
-        assert_eq!(bindgen_workdir(Generation::Wallet), Workdir::WalletCrate);
-        assert_eq!(bindgen_workdir(Generation::Proxy), Workdir::ProxyCrate);
+        assert_eq!(Generation::Wallet.names().crate_dir, WALLET_CRATE_DIR);
+        assert_eq!(Generation::Proxy.names().crate_dir, PROXY_CRATE_DIR);
     }
 }

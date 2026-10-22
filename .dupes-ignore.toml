@@ -31,10 +31,6 @@ fingerprint = "0df789c7a8d20ac0"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1588"
 
 [[ignore]]
-fingerprint = "1027450685dce8eb"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/binding_layer.rs:162"
-
-[[ignore]]
 fingerprint = "11252e9d93eb7b0e"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/supervisor.rs:628"
 

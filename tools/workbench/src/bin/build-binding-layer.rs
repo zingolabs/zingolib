@@ -652,7 +652,7 @@ fn bindgen_step(
     env: &[(String, String)],
 ) -> Step {
     Step::Run {
-        workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(generation))),
+        workdir: roots.run_path(generation.names().crate_dir),
         env: env.to_vec(),
         command: [
             vec!["cargo".to_string()],
@@ -957,14 +957,6 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
     )
 }
 
-/// The directory, relative to the zingolib root, that a bindgen working directory names.
-fn workdir_dir(workdir: binding_layer::Workdir) -> &'static str {
-    match workdir {
-        binding_layer::Workdir::WalletCrate => binding_layer::WALLET_CRATE_DIR,
-        binding_layer::Workdir::ProxyCrate => binding_layer::PROXY_CRATE_DIR,
-    }
-}
-
 /// The position of the first element in a sequence.
 const FIRST_POSITION: usize = 0;
 
@@ -984,7 +976,7 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     )];
     let wallet_target = roots.run_path(&format!(
         "{BUILD_ROOT}/ios/{}",
-        binding_layer::Generation::Wallet.label()
+        binding_layer::Generation::Wallet.names().label
     ));
     let with_target = |target_dir: &str| {
         [
@@ -1010,7 +1002,7 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     let universal = |file: &str| slice(UNIVERSAL_SIMULATOR_DIR, file);
     let generated = format!(
         "{GENERATED_DIR}/{}",
-        binding_layer::Generation::Wallet.label()
+        binding_layer::Generation::Wallet.names().label
     );
     let headers = format!("{GENERATED_DIR}/headers");
     let hide = || {
@@ -1021,7 +1013,9 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         );
         let exports = binding_layer::GENERATIONS
             .into_iter()
-            .flat_map(|generation| binding_layer::exported_symbol_patterns(generation.lib_name()))
+            .flat_map(|generation| {
+                binding_layer::exported_symbol_patterns(generation.names().lib_name)
+            })
             .flat_map(|pattern| [EXPORTED_SYMBOL_FLAG.to_string(), pattern])
             .collect::<Vec<_>>();
         iter_ios_targets()
@@ -1876,7 +1870,7 @@ mod tests {
             for target in iter_ios_targets() {
                 let built = format!(
                     "{HOST_ROOT}/{BUILD_ROOT}/ios/{}/{}",
-                    generation.label(),
+                    generation.names().label,
                     target.triple()
                 );
                 assert!(
