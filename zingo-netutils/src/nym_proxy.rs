@@ -1152,9 +1152,12 @@ mod tests {
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
         let proxy = NymProxy::start().await.expect("NymProxy::start");
-        let stream = tokio_socks::tcp::Socks5Stream::connect(proxy.socks5_addr(), "zec.rocks:443")
-            .await
-            .expect("SOCKS5 connect");
+        let stream = tokio_socks::tcp::Socks5Stream::connect(
+            proxy.socks5_addr(),
+            "mainnet.zainod.zingolabs.dev:443",
+        )
+        .await
+        .expect("SOCKS5 connect");
 
         drop(stream);
         proxy.disconnect().await;

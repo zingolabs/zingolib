@@ -12,6 +12,7 @@
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
+use zingo_netutils::default_indexer;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
@@ -29,7 +30,7 @@ const BENCH_BIRTHDAY: u32 = TIP_AT_AUTHORING - SYNC_WINDOW;
 const DEFAULT_BUDGET_SECS: u64 = 600;
 
 /// The default indexer URI, overridable via `SYNC_BENCH_INDEXER`.
-const DEFAULT_INDEXER: &str = "https://zec.rocks:443";
+const DEFAULT_INDEXER: &str = default_indexer::MAINNET_DEFAULT_INDEXER;
 
 /// A BIP-39 mnemonic holding no funds, so the sync measures pure scanning.
 const BENCH_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
