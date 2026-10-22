@@ -382,12 +382,12 @@ mod tests {
         assert_eq!(probe_port(&uri("https://zec.rocks:9067")), 9067);
     }
 
-    /// Live staged probe against a public indexer; run by hand.
+    /// - Dials the mainnet Default Indexer over nakednet.
     #[tokio::test]
-    #[ignore = "contacts a live public indexer over nakednet"]
+    #[ignore = "contacts the live Default Indexer over nakednet; the nightly runs it"]
     async fn live_staged_probe_smoke() {
         let probe = probe_sync_server(
-            &uri("https://zec.rocks:443"),
+            &uri(zingo_netutils::default_indexer::MAINNET_DEFAULT_INDEXER),
             zingo_netutils::time::test::LIVE_STAGE_BOUND,
         )
         .await;
