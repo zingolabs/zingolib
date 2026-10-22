@@ -471,10 +471,6 @@ fingerprint = "bc97950bdb628945"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:795"
 
 [[ignore]]
-fingerprint = "bd1a91191c26fae0"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:495"
-
-[[ignore]]
 fingerprint = "bed8b4d09031ea2f"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:335"
 

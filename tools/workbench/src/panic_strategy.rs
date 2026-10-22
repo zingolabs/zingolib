@@ -296,7 +296,7 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
             .collect();
         assert!(
             aborting.is_empty(),
-            "the profile aborts on panic for {}; both archives link into one iOS binary and share one panic runtime, so a panic in a tokio task of either crate aborts the app (issue #2926)",
+            "the profile aborts on panic for {}; the iOS archive carries both crates under the mobile profile and the Android proxy library ships under the proxy profile, and a panic in a tokio task of the proxy must unwind under both, or it aborts the app (issue #2926)",
             aborting.join(", ")
         );
         Ok(())

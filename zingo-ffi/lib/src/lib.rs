@@ -3,6 +3,8 @@ uniffi::setup_scaffolding!();
 #[macro_use]
 extern crate lazy_static;
 extern crate android_logger;
+#[cfg(feature = "zingo-nym-proxy-ffi")]
+extern crate zingo_nym_proxy_ffi;
 
 #[cfg(target_os = "android")]
 use android_logger::{Config, FilterBuilder};

@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
+  carries the proxy crate's UniFFI surface beside the wallet's, built under
+  the crate's new `zingo-nym-proxy-ffi` feature, and
+  `ZingoNymProxyFFI.xcframework` is gone. The app then links one Rust std
+  and one `rust_eh_personality` beside its C++ and Objective-C personality
+  routines, the three that compact unwind encodes. Two archives brought two,
+  and the linker of Xcode 26.3 refused the app's link with "Too many
+  personality routines for compact unwind to encode". The `ZingoBindings`
+  product, which the app imports, is unchanged.
 - BREAKING: `IndexerConnection.server_uri: String` is now
   `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
   `Default`, and `Named { uri }`. `Offline` replaces the empty string,
