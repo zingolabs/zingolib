@@ -663,23 +663,26 @@ fn bindgen_step(
     }
 }
 
-/// A `Run` step that invokes cargo with the given words, then the profile's arguments, then a package selection.
 fn cargo_step(
     workdir: &str,
     env: &[(String, String)],
     words: &[&str],
     profile: binding_layer::Profile,
-    package: &[&str],
+    selection: &[&str],
 ) -> Step {
     Step::Run {
         workdir: workdir.to_string(),
         env: env.to_vec(),
-        command: cargo_command(words, profile, package),
+        command: cargo_command(words, profile, selection),
     }
 }
 
-fn cargo_command(words: &[&str], profile: binding_layer::Profile, package: &[&str]) -> Vec<String> {
-    [["cargo"].as_slice(), words, profile.cargo_args(), package]
+fn cargo_command(
+    words: &[&str],
+    profile: binding_layer::Profile,
+    selection: &[&str],
+) -> Vec<String> {
+    [["cargo"].as_slice(), words, profile.cargo_args(), selection]
         .concat()
         .into_iter()
         .map(String::from)
@@ -692,10 +695,10 @@ fn describe_step(
     ndk: Option<binding_layer::NdkLink>,
     target: &str,
     profile: binding_layer::Profile,
-    package: &[&str],
+    selection: &[&str],
     to: path::PathBuf,
 ) -> Step {
-    let mut command = cargo_command(&["build", "--target", target], profile, package);
+    let mut command = cargo_command(&["build", "--target", target], profile, selection);
     command.push(binding_layer::MESSAGE_FORMAT_FLAG.to_string());
     Step::Describe {
         workdir: workdir.to_string(),
@@ -1128,7 +1131,7 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 None,
                 triple,
                 BUILDER_PROFILE,
-                &[],
+                &binding_layer::PROXY_FEATURE_ARGS,
                 host_of(roots, &slice(triple, binding_layer::DESCRIPTOR_FILE)),
             )
         });
