@@ -4,39 +4,11 @@
 
 use http::Uri;
 
-/// Something that can be corresponded with over the mixnet: the party a
-/// Transmission addresses, never the path that carries it.
-///
-/// ```
-/// use zingolib::destination::Correspondable;
-///
-/// let indexer = zingolib::indexers::INDEXERS
-///     .iter()
-///     .find(|indexer| indexer.uri == "https://na.zec.rocks:443")
-///     .unwrap();
-/// assert_eq!(Correspondable::address(indexer).scheme_str(), Some("https"));
-/// assert_eq!(
-///     Correspondable::operator(indexer).as_deref(),
-///     Some("zec.rocks")
-/// );
-/// ```
 pub trait Correspondable {
     /// Where a Transmission addresses it.
     fn address(&self) -> Uri;
     /// The accountable operator, where one is known.
     fn operator(&self) -> Option<String>;
-}
-
-impl Correspondable for zingo_netutils::indexers::Indexer {
-    fn address(&self) -> Uri {
-        self.uri
-            .parse()
-            .expect("the registry tests pin every entry parseable")
-    }
-
-    fn operator(&self) -> Option<String> {
-        Some(zingo_netutils::indexers::Indexer::operator(self))
-    }
 }
 
 #[cfg(feature = "nym")]
