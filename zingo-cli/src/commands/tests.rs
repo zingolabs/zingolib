@@ -1943,6 +1943,13 @@ mod attached_exit_reporting {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
         )
         .await;
+        client
+            .set_indexer_uri_lazy(
+                "https://indexer.test:443"
+                    .parse()
+                    .expect("the literal is an absolute https URI with a port"),
+            )
+            .expect("a lazy indexer binds an absolute https URI without dialing it");
         let receiver = client.subscribe_mixnet_status();
         client
             .attach_mixnet(

@@ -58,7 +58,7 @@ use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
-use zingolib::wallet::error::ProposeSendError;
+use zingolib::wallet::error::{ProposeSendError, WalletError};
 use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
@@ -96,8 +96,6 @@ pub enum ZingolibError {
     Send(String),
     #[error("Error: shield: {0}")]
     Shield(String),
-    /// A swap deposit's deshield was transmitted and its OP_RETURN step
-    /// waits in the stored proposal, which `confirm` resumes.
     #[error("Error: send after deshield: {0}")]
     SendAfterDeshield(String),
     #[error("Error: invalid input: {0}")]
@@ -238,6 +236,10 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
                 ZingolibError::Shield(text)
             }
+            SendError::OpReturn(WalletError::ParseError(_))
+            | SendError::OpReturn(WalletError::OpReturnRecipientNotTransparent) => {
+                ZingolibError::InvalidInput(text)
+            }
             SendError::ProposeSendError(_)
             | SendError::CalculateSendError(_)
             | SendError::RetargetError(_)
@@ -258,17 +260,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::Offline => ZingolibError::Offline,
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
-        // A deliberate choice (#1229): exhausting the eligible Destinations
-        // is a server-topology problem, not a mixnet refusal — switching the
-        // synchronization endpoint changes eligibility, so the app's
-        // switch-and-retry routing can genuinely help. Mapping it to Mixnet
-        // would stamp it with the owned refusal marker and turn it
-        // never-retry.
-        LightClientError::NoEligibleDestination(_)
-        | LightClientError::IneligibleProbeTarget(_)
-        | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
-            ZingolibError::Indexer(text)
-        }
+        LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -440,14 +432,6 @@ lazy_static! {
     static ref BATCH_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::BatchProgressHandle>> =
         RwLock::new(None);
 }
-
-// An optional dedicated migration-transmission endpoint, read at every client
-// construction. The library owns the curated Destination pool and always
-// excludes the synchronization operator (zingolib/0022), so a mixnet migration works
-// without any app input. `Some` names one dedicated endpoint distinct from the
-// sync operator; `None` (the default) lets the library draw its curated pool.
-static MIGRATION_TRANSMISSION_URI: Lazy<RwLock<Option<http::Uri>>> =
-    Lazy::new(|| RwLock::new(None));
 
 static PENDING_INDEXER_URI: Lazy<RwLock<Option<http::Uri>>> = Lazy::new(|| RwLock::new(None));
 
@@ -855,43 +839,7 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    // Point migration transmission at a dedicated endpoint when the app set
-    // one. Absent it, the library draws its curated Destination pool.
-    let migration_uri = MIGRATION_TRANSMISSION_URI
-        .read()
-        .ok()
-        .and_then(|uri| uri.clone());
-    let builder = match migration_uri {
-        Some(uri) => builder.set_migration_transmission_uri(uri),
-        None => builder,
-    };
     builder.build().map_err(chained(ZingolibError::Init))
-}
-
-/// Set an optional dedicated migration-transmission endpoint for the next
-/// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
-/// distinct from the sync operator, while `null`, `{}`, or the legacy
-/// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
-/// embedded curated Destination pool, which always excludes the
-/// synchronization operator, routes instead.
-#[uniffi::export]
-pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
-    let parsed = json::parse(&candidates_json).map_err(in_context(
-        ZingolibError::InvalidInput,
-        "invalid candidates json",
-    ))?;
-    let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(in_context(
-            ZingolibError::InvalidInput,
-            format!("invalid transmission uri {uri}"),
-        ))?),
-        None => None,
-    };
-    let is_set = transmission_uri.is_some();
-    *MIGRATION_TRANSMISSION_URI
-        .write()
-        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = transmission_uri;
-    Ok(object! { "transmission_uri_set" => is_set }.pretty(2))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -1152,9 +1100,7 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
 /// The classification seam contract (#1229): the app routes send failures
 /// by our own error variants' display prefixes, so each zingolib failure
 /// must land in the variant whose routing verdict it deserves. A mixnet
-/// refusal is never-retry; the excluded-indexer exhaustion is a
-/// server-topology problem where switching servers genuinely changes
-/// eligibility, so it must NOT carry the mixnet marker.
+/// refusal is never-retry.
 #[cfg(test)]
 mod ffi_error_routing_tests {
     use super::*;
@@ -1172,17 +1118,22 @@ mod ffi_error_routing_tests {
     }
 
     #[test]
-    fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleDestination(
-            zingolib::destination::servers::NoEligibleDestinations::Empty(
-                zingolib::destination::servers::Transport::Mixnet,
-            ),
-        ));
-        assert!(
-            matches!(&mapped, ZingolibError::Indexer(_)),
-            "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
-        );
-        assert!(mapped.to_string().starts_with("Error: indexer:"));
+    fn a_refused_vault_address_is_invalid_input_not_a_send_failure() {
+        let malformed = match ZcashAddress::try_from_encoded("not an address") {
+            Err(parse_error) => parse_error,
+            Ok(_) => unreachable!("the string holds no address encoding"),
+        };
+        for inner in [
+            WalletError::ParseError(malformed),
+            WalletError::OpReturnRecipientNotTransparent,
+        ] {
+            let mapped = ffi_error(LightClientError::SendError(SendError::OpReturn(inner)));
+            assert!(
+                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                "a refused vault address is the caller's input, which the app never retries: {mapped:?}"
+            );
+            assert!(mapped.to_string().starts_with("Error: invalid input:"));
+        }
     }
 }
 
@@ -3178,8 +3129,6 @@ impl NewTransparentAddress {
         Self::next_refund(wallet, wallet::LightWallet::generate_refund_addresses)
     }
 
-    /// Derives the next refund address in `wallet` without reserving it, so
-    /// a quote can name it and a dropped quote leaves the index where it was.
     fn derived_refund(wallet: &mut wallet::LightWallet) -> Self {
         Self::next_refund(wallet, |wallet, n, account| {
             wallet.derive_refund_addresses(n, account)
@@ -3262,8 +3211,6 @@ mod refund_address_tests {
     use super::*;
     use zcash_transparent::keys::NonHardenedChildIndex;
 
-    /// Tests that a reserved refund address reports the `refund` scope and a
-    /// transparent encoding.
     #[test]
     fn a_reserved_refund_address_reports_the_refund_scope() {
         let id = transparent::TransparentAddressId::new(
@@ -3650,7 +3597,8 @@ pub fn shield() -> Result<String, ZingolibError> {
     })
 }
 
-/// Transmits the stored proposal and reports its txids in order.
+/// - Builds and transmits the stored proposal's transactions.
+/// - Restores the sync engine to the mode it held before the proposal.
 async fn transmit_stored_proposal(lightclient: &mut LightClient) -> Result<String, ZingolibError> {
     let txids = lightclient
         .send_stored_proposal(true)
@@ -3667,15 +3615,10 @@ pub fn confirm() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| RT.block_on(transmit_stored_proposal(lightclient)))
 }
 
-/// Pays a swap deposit that carries a memo: a deshield to a reserved
-/// wallet-owned transparent address, then that address paying `vault_address`
-/// with `memo_hex` in an OP_RETURN. Sends outright and answers both txids,
-/// the vault payment last.
-///
-/// When the deshield was transmitted and the OP_RETURN step failed, the
-/// answer is `SendAfterDeshield` and the proposal stays stored with the
-/// deshield's txid. `confirm` resumes it and answers the vault payment's
-/// txid alone. Proposing again is refused until then.
+/// - Stores an OP_RETURN proposal in the wallet, pausing sync while it is built.
+/// - Transmits the deshield, then the vault payment that carries the memo.
+/// - Leaves the proposal stored, with the deshield's txid, when the vault
+///   payment fails after the deshield was transmitted.
 #[uniffi::export]
 pub fn send_swap_deposit(
     vault_address: String,

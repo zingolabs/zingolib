@@ -46,12 +46,12 @@ as a display of the type, never as the type. Endpoint defects are
 deliberately not a variant: the wallet judges a host's reports itself.
 
 **Operator identity → `Operator` newtype.** *Implemented 2026-08-10;
-name ratified 2026-08-10.* Sites:
-`sweep::operator_domain(&str) -> String` and its acknowledged mirror
-`destination::operator_domain`; the census-level `Indexer::operator` is
-the declared eventual owner. One newtype ends the duplicated derivation,
-and the concurrent-Transmission destination ledger (open design) keys
-by it.
+name ratified 2026-08-10; retired 2026-10-21.* The sites were
+`sweep::operator_domain(&str) -> String`, its acknowledged mirror
+`destination::operator_domain`, and the census-level `Indexer::operator`.
+All three left with the sweep and the census under zingo-adrs
+zingolib/0063: the Session Indexer receives every Transmission, so no
+operator-disjointness decision remains.
 
 **Indexer endpoint records → one host type.** *Implemented 2026-08-10
 as the `Host` newtype (working name), chosen over `http::uri::Authority`

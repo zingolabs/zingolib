@@ -42,7 +42,6 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 pub mod crypto;
 pub mod default_indexer;
 pub mod error;
-pub mod indexers;
 
 pub use crypto::ensure_default_crypto_provider;
 
@@ -95,9 +94,6 @@ pub mod provider;
 mod nym_proxy;
 #[cfg(feature = "nym")]
 pub use nym_proxy::{BootstrapEvent, NymProxy};
-
-#[cfg(feature = "nym")]
-pub mod live_indexer_discovery;
 
 #[cfg(feature = "socks5-fetch")]
 pub mod socks5_fetch;
