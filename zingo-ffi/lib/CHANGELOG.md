@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
+  carries the proxy crate's UniFFI surface beside the wallet's, built under
+  the crate's new `zingo-nym-proxy-ffi` feature, and
+  `ZingoNymProxyFFI.xcframework` is gone. The app then links one Rust std
+  and one `rust_eh_personality` beside its C++ and Objective-C personality
+  routines, the three that compact unwind encodes. Two archives brought two,
+  and the linker of Xcode 26.3 refused the app's link with "Too many
+  personality routines for compact unwind to encode". The `ZingoBindings`
+  product, which the app imports, is unchanged.
 - BREAKING: `IndexerConnection.server_uri: String` is now
   `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
   `Default`, and `Named { uri }`. `Offline` replaces the empty string,
@@ -89,7 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
+### Removed
+- BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
+  Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
+  dedicated migration transmission endpoint to set.
+
 ### Fixed
+- `send_swap_deposit` answers `InvalidInput` for a malformed or a
+  non-transparent `vault_address`. It answered `Send`, the class a consumer
+  retries.
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
   the strategy the standalone zingo-netutils workspace already uses for the
   proxy library. The iOS app links both static archives into one binary, and

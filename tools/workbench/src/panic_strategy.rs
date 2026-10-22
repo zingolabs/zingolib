@@ -296,20 +296,34 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
             .collect();
         assert!(
             aborting.is_empty(),
-            "the profile aborts on panic for {}; both archives link into one iOS binary and share one panic runtime, so a panic in a tokio task of either crate aborts the app (issue #2926)",
+            "the profile aborts on panic for {}; the iOS archive carries both crates under the mobile profile and the Android proxy library ships under the proxy profile, and a panic in a tokio task of the proxy must unwind under both, or it aborts the app (issue #2926)",
             aborting.join(", ")
         );
         Ok(())
     }
 
+    /// - Reads the root workspace manifest.
     #[test]
-    fn the_two_archives_build_under_distinct_profiles() -> Result<(), Vec<String>> {
-        let strategies = built_strategies(&repo_root()?)?;
-        let wallet = strategy_of(&strategies, super::WALLET_ARCHIVE)?;
-        let proxy = strategy_of(&strategies, super::PROXY_ARCHIVE)?;
+    fn the_two_archives_build_under_distinct_profile_tables() -> Result<(), Vec<String>> {
+        let root = repo_root()?;
+        let text = crate::at_path(&root.join(crate::MANIFEST), "read", |path| {
+            std::fs::read_to_string(path)
+        })?;
+        let document: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|error| vec![format!("{MANIFEST_NAME} does not parse: {error}")])?;
+        let table = |profile: &str| {
+            document
+                .get(super::PROFILE_KEY)
+                .and_then(|item| item.get(profile))
+                .map(|item| item.to_string())
+                .ok_or_else(|| vec![format!("{MANIFEST_NAME} defines no profile.{profile}")])
+        };
+        let mobile = table(super::MOBILE_PROFILE)?;
+        let proxy = table(super::PROXY_PROFILE)?;
         assert_ne!(
-            wallet.profile, proxy.profile,
-            "the guard compares one profile against itself and can never detect divergence"
+            mobile, proxy,
+            "the two profiles are one table, so the guard compares a profile against itself and can never detect divergence"
         );
         Ok(())
     }

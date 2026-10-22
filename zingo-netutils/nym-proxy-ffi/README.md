@@ -20,8 +20,11 @@ root workspace in `rust/` excludes it.
   loads `libzingo_nym_proxy_ffi.so` through the generated Kotlin bindings
   (`scripts/generate_kotlin_bindings.mjs`, not checked in).
   `rust/workbench` has `bundle-android-shim` and `consume-android-shim`.
-- iOS: `ios/NymTransportModule.swift` links `ZingoNymProxyFFI.xcframework`
-  and the generated Swift bindings. `rust/ios/build_ios.mjs` builds both.
+- iOS: the crate rides inside `Zingolib.xcframework`, the one archive of
+  the `ZingoBindings` package, under the wallet crate's
+  `zingo-nym-proxy-ffi` feature, so the app links one Rust std and one
+  `rust_eh_personality`. `ios/NymTransportModule.swift` imports the
+  generated Swift bindings from `ZingoBindings`.
 - The app hands the endpoint to the wallet FFI's `attachMixnet`.
 
 ## Tests
