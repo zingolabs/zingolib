@@ -942,14 +942,24 @@ mod tests {
                 .and_then(toml_edit::Item::as_bool),
             Some(true)
         );
-        let relative = crate::required(
-            dependency.get("path").and_then(toml_edit::Item::as_str),
-            "the proxy dependency's path",
-        )?;
         assert_eq!(
-            resolved(WALLET_CRATE_DIR, relative),
-            path::Path::new(PROXY_CRATE_DIR)
+            dependency
+                .get("workspace")
+                .and_then(toml_edit::Item::as_bool),
+            Some(true)
         );
+        let root: toml_edit::DocumentMut = include_str!("../../../Cargo.toml")
+            .parse()
+            .map_err(|error| vec![format!("{} does not parse: {error}", crate::MANIFEST)])?;
+        let relative = crate::required(
+            root.get("workspace")
+                .and_then(|table| table.get("dependencies"))
+                .and_then(|table| table.get(PROXY_PACKAGE))
+                .and_then(|entry| entry.get("path"))
+                .and_then(toml_edit::Item::as_str),
+            "the proxy entry's path in the workspace dependency table",
+        )?;
+        assert_eq!(path::Path::new(relative), path::Path::new(PROXY_CRATE_DIR));
         let enabled = crate::required(
             manifest
                 .get("features")

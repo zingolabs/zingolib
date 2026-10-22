@@ -32,7 +32,7 @@ once_cell = { workspace = true }
 # beside its C++ and Objective-C personality routines, the three that
 # compact unwind encodes. The Binding Layer builder turns the feature on for
 # the iOS slices alone; Android keeps the proxy as its own shared library.
-zingo-nym-proxy-ffi = { version = "0.1.0", path = "../../zingo-netutils/nym-proxy-ffi", optional = true }
+zingo-nym-proxy-ffi = { workspace = true, optional = true }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
