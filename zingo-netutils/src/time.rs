@@ -103,25 +103,6 @@ pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
 /// ```
 pub const EXIT_ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
-/// The silence interval before a send's escalation launches a further
-/// Destination arm: the sum of a connect attempt's bound and one mixnet
-/// round trip, so a responsive Destination's confirmed delivery beats the
-/// first hedge by construction, and the interval retunes when either bound
-/// retunes.
-///
-/// ```
-/// use zingo_netutils::time::{
-///     MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT, TRANSMISSION_HEDGE_INTERVAL,
-/// };
-///
-/// assert_eq!(
-///     TRANSMISSION_HEDGE_INTERVAL,
-///     PER_ATTEMPT_CONNECT_TIMEOUT + MIXNET_ROUND_TRIP_BOUND,
-/// );
-/// ```
-pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
-    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
-
 /// How often the mobile shim's monitor dials the local SOCKS5 listener,
 /// faster than the wallet's backstop so the app notices first.
 pub const LISTENER_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
