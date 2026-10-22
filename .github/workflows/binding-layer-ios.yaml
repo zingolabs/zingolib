@@ -13,8 +13,8 @@ on:
         required: false
         type: string
         default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
-      # The commit to build. The publish workflow names a commit the
-      # manifest lists, which is rarely the commit that triggered it.
+      # The commit to build. The publish workflow passes the commit it was
+      # dispatched at, which its relay makes the commit that triggered it.
       ref:
         required: false
         type: string

@@ -207,20 +207,26 @@ async fn calculate(lightclient: &mut LightClient) -> Result<String, CommandError
     }
 }
 
-/// The `change_server` argument: an empty string names the default uri,
-/// as it did when the body parsed the argument itself.
-fn parse_server_uri(raw: &str) -> Result<http::Uri, String> {
-    if raw.is_empty() {
-        return Ok(http::Uri::default());
+const OFFLINE_CHOICE: &str = "offline";
+
+const DEFAULT_CHOICE: &str = "default";
+
+/// The `change_server` argument: `offline`, `default`, or an indexer URI.
+fn parse_indexer_choice(raw: &str) -> Result<zingolib::config::IndexerChoice, String> {
+    match raw {
+        OFFLINE_CHOICE => Ok(zingolib::config::IndexerChoice::Offline),
+        DEFAULT_CHOICE => Ok(zingolib::config::IndexerChoice::Default),
+        uri => http::Uri::from_str(uri)
+            .map(zingolib::config::IndexerChoice::Named)
+            .map_err(|_| "invalid server uri".to_string()),
     }
-    http::Uri::from_str(raw).map_err(|_| "invalid server uri".to_string())
 }
 
 async fn change_server(
-    uri: Option<http::Uri>,
+    choice: zingolib::config::IndexerChoice,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
+    match lightclient.choose_indexer(choice).await {
         Ok(()) => Ok("server set".to_string()),
         Err(e) => Err(not_yet_typed(e)),
     }
@@ -2153,19 +2159,22 @@ pub(crate) enum CliCommand {
     )]
     Calculate,
     #[command(
-        about = "Change indexer server",
+        about = "Change the session's indexer",
         long_about = concat!(
-            "Change the indexer server.\n",
+            "Change the session's indexer: `default` attaches to the chain's Default Indexer, ",
+            "`offline` disconnects every network capability, and a URI names an indexer.\n",
             "\n",
-            "Example:\n",
+            "Examples:\n",
+            "change_server default\n",
+            "change_server offline\n",
             "change_server ",
             crate::examples::server_uri!(),
             "\n",
         )
     )]
     ChangeServer {
-        #[arg(value_parser = parse_server_uri)]
-        uri: Option<http::Uri>,
+        #[arg(value_parser = parse_indexer_choice)]
+        choice: zingolib::config::IndexerChoice,
     },
     #[command(
         about = "Checks if the given encoded address is derived by the wallet's keys.",
@@ -3040,7 +3049,9 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Balance,
         CliCommand::Birthday,
         CliCommand::Calculate,
-        CliCommand::ChangeServer { uri: None },
+        CliCommand::ChangeServer {
+            choice: zingolib::config::IndexerChoice::Default,
+        },
         CliCommand::CheckAddress {
             address: String::new(),
         },
@@ -3252,7 +3263,7 @@ async fn run_parsed(
         CliCommand::Balance => balance(lightclient).await,
         CliCommand::Birthday => birthday(lightclient).await,
         CliCommand::Calculate => calculate(lightclient).await,
-        CliCommand::ChangeServer { uri } => change_server(uri, lightclient).await,
+        CliCommand::ChangeServer { choice } => change_server(choice, lightclient).await,
         CliCommand::CheckAddress { address } => check_address(&address, lightclient).await,
         CliCommand::Clear => clear(lightclient).await,
         CliCommand::Coins { scope } => coins(scope, lightclient).await,

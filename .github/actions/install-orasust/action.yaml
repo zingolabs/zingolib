@@ -1,0 +1,17 @@
+# The registry client is the orasust crate, whose release the workbench
+# manifest pins under [package.metadata.orasust]. The rust-setup action's
+# cargo cache hashes that manifest into its key and keeps the installed
+# binary, so a bump misses the cache once and the build runs once per
+# release. Every job that reaches the registry installs the client through
+# this action, so the pin is read in one place.
+name: Install orasust
+description: Installs the orasust release that tools/workbench/Cargo.toml pins.
+
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned orasust
+      shell: bash
+      run: |
+        version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
+        cargo install --locked "orasust@${version}"
