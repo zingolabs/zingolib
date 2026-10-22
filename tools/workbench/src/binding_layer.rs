@@ -105,11 +105,10 @@ pub const MACOS: &str = "macos";
 
 pub const WALLET_BINARY_TARGET: &str = "Zingolib";
 
+#[cfg(test)]
 const XCFRAMEWORK_SUFFIX: &str = ".xcframework";
 
-pub fn wallet_xcframework() -> String {
-    format!("{WALLET_BINARY_TARGET}{XCFRAMEWORK_SUFFIX}")
-}
+pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
 
 const SWIFT_SOURCES_PARENT: &str = "Sources";
 
@@ -911,11 +910,19 @@ mod tests {
     }
 
     #[test]
+    fn the_wallet_xcframework_is_the_binary_target_with_the_suffix() {
+        assert_eq!(
+            WALLET_XCFRAMEWORK.strip_suffix(XCFRAMEWORK_SUFFIX),
+            Some(WALLET_BINARY_TARGET)
+        );
+    }
+
+    #[test]
     fn the_swift_package_links_one_binary_target_so_the_app_links_one_std() {
         let manifest = include_str!("../../../bindings/swift/Package.swift");
         assert_eq!(manifest.matches(".binaryTarget(").count(), 1);
         assert!(manifest.contains(&format!("name: \"{WALLET_BINARY_TARGET}\"")));
-        assert!(manifest.contains(&format!("/{}\"", wallet_xcframework())));
+        assert!(manifest.contains(&format!("/{WALLET_XCFRAMEWORK}\"")));
         assert!(manifest.contains(&format!("dependencies: [\"{WALLET_BINARY_TARGET}\"]")));
     }
 

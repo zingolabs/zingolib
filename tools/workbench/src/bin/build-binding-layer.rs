@@ -1098,11 +1098,10 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
             .collect(),
     };
     let xcframework = |libraries: Vec<String>| {
-        let name = binding_layer::wallet_xcframework();
-        let output = roots.out_run_path(&name);
+        let output = roots.out_run_path(binding_layer::WALLET_XCFRAMEWORK);
         let header_args = vec!["-headers".to_string(), roots.out_run_path(&headers)];
         [
-            Step::Remove(roots.out_host_path(&name)),
+            Step::Remove(roots.out_host_path(binding_layer::WALLET_XCFRAMEWORK)),
             Step::Run {
                 workdir: roots.run.clone(),
                 env: env.clone(),
