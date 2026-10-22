@@ -258,17 +258,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::Offline => ZingolibError::Offline,
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
-        // A deliberate choice (#1229): exhausting the eligible Destinations
-        // is a server-topology problem, not a mixnet refusal — switching the
-        // synchronization endpoint changes eligibility, so the app's
-        // switch-and-retry routing can genuinely help. Mapping it to Mixnet
-        // would stamp it with the owned refusal marker and turn it
-        // never-retry.
-        LightClientError::NoEligibleDestination(_)
-        | LightClientError::IneligibleProbeTarget(_)
-        | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
-            ZingolibError::Indexer(text)
-        }
+        LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -440,14 +430,6 @@ lazy_static! {
     static ref BATCH_PROGRESS: RwLock<Option<zingolib::lightclient::migrate::BatchProgressHandle>> =
         RwLock::new(None);
 }
-
-// An optional dedicated migration-transmission endpoint, read at every client
-// construction. The library owns the curated Destination pool and always
-// excludes the synchronization operator (zingolib/0022), so a mixnet migration works
-// without any app input. `Some` names one dedicated endpoint distinct from the
-// sync operator; `None` (the default) lets the library draw its curated pool.
-static MIGRATION_TRANSMISSION_URI: Lazy<RwLock<Option<http::Uri>>> =
-    Lazy::new(|| RwLock::new(None));
 
 static PENDING_INDEXER_URI: Lazy<RwLock<Option<http::Uri>>> = Lazy::new(|| RwLock::new(None));
 
@@ -855,43 +837,7 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    // Point migration transmission at a dedicated endpoint when the app set
-    // one. Absent it, the library draws its curated Destination pool.
-    let migration_uri = MIGRATION_TRANSMISSION_URI
-        .read()
-        .ok()
-        .and_then(|uri| uri.clone());
-    let builder = match migration_uri {
-        Some(uri) => builder.set_migration_transmission_uri(uri),
-        None => builder,
-    };
     builder.build().map_err(chained(ZingolibError::Init))
-}
-
-/// Set an optional dedicated migration-transmission endpoint for the next
-/// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
-/// distinct from the sync operator, while `null`, `{}`, or the legacy
-/// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
-/// embedded curated Destination pool, which always excludes the
-/// synchronization operator, routes instead.
-#[uniffi::export]
-pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
-    let parsed = json::parse(&candidates_json).map_err(in_context(
-        ZingolibError::InvalidInput,
-        "invalid candidates json",
-    ))?;
-    let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(in_context(
-            ZingolibError::InvalidInput,
-            format!("invalid transmission uri {uri}"),
-        ))?),
-        None => None,
-    };
-    let is_set = transmission_uri.is_some();
-    *MIGRATION_TRANSMISSION_URI
-        .write()
-        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = transmission_uri;
-    Ok(object! { "transmission_uri_set" => is_set }.pretty(2))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -1152,9 +1098,7 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
 /// The classification seam contract (#1229): the app routes send failures
 /// by our own error variants' display prefixes, so each zingolib failure
 /// must land in the variant whose routing verdict it deserves. A mixnet
-/// refusal is never-retry; the excluded-indexer exhaustion is a
-/// server-topology problem where switching servers genuinely changes
-/// eligibility, so it must NOT carry the mixnet marker.
+/// refusal is never-retry.
 #[cfg(test)]
 mod ffi_error_routing_tests {
     use super::*;
@@ -1169,20 +1113,6 @@ mod ffi_error_routing_tests {
             "a refusal must carry the owned mixnet marker: {mapped:?}"
         );
         assert!(mapped.to_string().starts_with("Error: mixnet:"));
-    }
-
-    #[test]
-    fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleDestination(
-            zingolib::destination::servers::NoEligibleDestinations::Empty(
-                zingolib::destination::servers::Transport::Mixnet,
-            ),
-        ));
-        assert!(
-            matches!(&mapped, ZingolibError::Indexer(_)),
-            "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
-        );
-        assert!(mapped.to_string().starts_with("Error: indexer:"));
     }
 }
 
