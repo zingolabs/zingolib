@@ -60,7 +60,7 @@ use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
-use zingolib::wallet::error::ProposeSendError;
+use zingolib::wallet::error::{ProposeSendError, WalletError};
 use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
@@ -98,8 +98,6 @@ pub enum ZingolibError {
     Send(String),
     #[error("Error: shield: {0}")]
     Shield(String),
-    /// A swap deposit's deshield was transmitted and its OP_RETURN step
-    /// waits in the stored proposal, which `confirm` resumes.
     #[error("Error: send after deshield: {0}")]
     SendAfterDeshield(String),
     #[error("Error: invalid input: {0}")]
@@ -239,6 +237,10 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::SendError(inner) => match inner {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
                 ZingolibError::Shield(text)
+            }
+            SendError::OpReturn(WalletError::ParseError(_))
+            | SendError::OpReturn(WalletError::OpReturnRecipientNotTransparent) => {
+                ZingolibError::InvalidInput(text)
             }
             SendError::ProposeSendError(_)
             | SendError::CalculateSendError(_)
@@ -1115,6 +1117,25 @@ mod ffi_error_routing_tests {
             "a refusal must carry the owned mixnet marker: {mapped:?}"
         );
         assert!(mapped.to_string().starts_with("Error: mixnet:"));
+    }
+
+    #[test]
+    fn a_refused_vault_address_is_invalid_input_not_a_send_failure() {
+        let malformed = match ZcashAddress::try_from_encoded("not an address") {
+            Err(parse_error) => parse_error,
+            Ok(_) => unreachable!("the string holds no address encoding"),
+        };
+        for inner in [
+            WalletError::ParseError(malformed),
+            WalletError::OpReturnRecipientNotTransparent,
+        ] {
+            let mapped = ffi_error(LightClientError::SendError(SendError::OpReturn(inner)));
+            assert!(
+                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                "a refused vault address is the caller's input, which the app never retries: {mapped:?}"
+            );
+            assert!(mapped.to_string().starts_with("Error: invalid input:"));
+        }
     }
 }
 
@@ -3110,8 +3131,6 @@ impl NewTransparentAddress {
         Self::next_refund(wallet, wallet::LightWallet::generate_refund_addresses)
     }
 
-    /// Derives the next refund address in `wallet` without reserving it, so
-    /// a quote can name it and a dropped quote leaves the index where it was.
     fn derived_refund(wallet: &mut wallet::LightWallet) -> Self {
         Self::next_refund(wallet, |wallet, n, account| {
             wallet.derive_refund_addresses(n, account)
@@ -3194,8 +3213,6 @@ mod refund_address_tests {
     use super::*;
     use zcash_transparent::keys::NonHardenedChildIndex;
 
-    /// Tests that a reserved refund address reports the `refund` scope and a
-    /// transparent encoding.
     #[test]
     fn a_reserved_refund_address_reports_the_refund_scope() {
         let id = transparent::TransparentAddressId::new(
@@ -3582,7 +3599,8 @@ pub fn shield() -> Result<String, ZingolibError> {
     })
 }
 
-/// Transmits the stored proposal and reports its txids in order.
+/// - Builds and transmits the stored proposal's transactions.
+/// - Restores the sync engine to the mode it held before the proposal.
 async fn transmit_stored_proposal(lightclient: &mut LightClient) -> Result<String, ZingolibError> {
     let txids = lightclient
         .send_stored_proposal(true)
@@ -3599,15 +3617,10 @@ pub fn confirm() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| RT.block_on(transmit_stored_proposal(lightclient)))
 }
 
-/// Pays a swap deposit that carries a memo: a deshield to a reserved
-/// wallet-owned transparent address, then that address paying `vault_address`
-/// with `memo_hex` in an OP_RETURN. Sends outright and answers both txids,
-/// the vault payment last.
-///
-/// When the deshield was transmitted and the OP_RETURN step failed, the
-/// answer is `SendAfterDeshield` and the proposal stays stored with the
-/// deshield's txid. `confirm` resumes it and answers the vault payment's
-/// txid alone. Proposing again is refused until then.
+/// - Stores an OP_RETURN proposal in the wallet, pausing sync while it is built.
+/// - Transmits the deshield, then the vault payment that carries the memo.
+/// - Leaves the proposal stored, with the deshield's txid, when the vault
+///   payment fails after the deshield was transmitted.
 #[uniffi::export]
 pub fn send_swap_deposit(
     vault_address: String,
