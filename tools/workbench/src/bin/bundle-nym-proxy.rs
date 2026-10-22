@@ -1,21 +1,18 @@
-//! Build the standalone `nym-proxy` binary and bundle it beside the wallet.
-//!
-//! The Nym mixnet transport lives in the `zingo-netutils` workspace, which
-//! carries its own lockfile (ADR 0011): the nym-sdk stack cannot share the main
-//! lock, so an ordinary `cargo build -p zingo-cli` never produces `nym-proxy`.
-//! This tool builds it from that separate workspace and copies it next to the
-//! main `target/<profile>/` binaries, where the CLI's proxy-path resolution
-//! finds it with no configuration (`resolve_proxy_path` in zingo-cli).
-//!
-//! Usage: `bundle-nym-proxy [--release] [--dest <dir>]`. Without `--dest` the
-//! binary is placed in `target/<profile>/` under the repo root.
+//! - Runs `cargo build --package zingo-netutils --features nym --bin nym-proxy` in the repo root.
+//! - Copies the built binary into `--dest <dir>` through a staged rename when that directory is not cargo's own.
 
 #![forbid(unsafe_code)]
 
+use std::io::BufReader;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-use workbench::{parse_dest, repo_root, run};
+use cargo_metadata::Message;
+use workbench::{binding_layer, parse_dest, repo_root, run};
+
+const PACKAGE: &str = "zingo-netutils";
+const FEATURE: &str = "nym";
+const BIN: &str = "nym-proxy";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -26,51 +23,93 @@ fn main() {
     )
 }
 
-/// Build the `nym-proxy` binary from the `zingo-netutils` workspace and copy it
-/// to the destination, returning the bundled path.
+/// - Runs `cargo build` in the repo root and reads the executable path from its JSON messages.
+/// - Writes `<dest>/nym-proxy.staged` and renames it over `<dest>/nym-proxy` when `--dest` names a directory other than cargo's own.
 fn bundle(args: &[String]) -> Result<PathBuf, Vec<String>> {
     let release = args.iter().any(|arg| arg == "--release");
     let explicit_dest = parse_dest(args)?;
     let root = repo_root()?;
-    let profile = if release { "release" } else { "debug" };
-    let binary = format!("nym-proxy{}", std::env::consts::EXE_SUFFIX);
 
-    let manifest = root.join("zingo-netutils/Cargo.toml");
+    // Cargo decides the output directory from CARGO_TARGET_DIR and its
+    // build.target-dir configuration, so the tool reads the executable path
+    // from cargo's own report instead of guessing `target/<profile>`.
     let mut build = Command::new("cargo");
-    build
-        .arg("build")
-        .arg(workbench::MANIFEST_PATH_FLAG)
-        .arg(&manifest)
-        .args(["--features", "nym", "--bin", "nym-proxy"]);
+    build.current_dir(&root).args([
+        "build",
+        "--package",
+        PACKAGE,
+        "--features",
+        FEATURE,
+        "--bin",
+        BIN,
+        binding_layer::MESSAGE_FORMAT_FLAG,
+    ]);
     if release {
         build.arg("--release");
     }
-    let status = build
-        .status()
+    build.stdout(Stdio::piped());
+    let mut child = build
+        .spawn()
         .map_err(|e| vec![format!("failed to run cargo build: {e}")])?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| vec!["cargo build opened no stdout".to_string()])?;
+    let mut executable = None;
+    for message in Message::parse_stream(BufReader::new(stdout)) {
+        let message = message.map_err(|e| vec![format!("cannot read a cargo message: {e}")])?;
+        if let Message::CompilerArtifact(artifact) = message {
+            if artifact.target.name == BIN {
+                if let Some(path) = artifact.executable {
+                    executable = Some(path.into_std_path_buf());
+                }
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|e| vec![format!("failed to wait for cargo build: {e}")])?;
     if !status.success() {
-        return Err(vec![format!("cargo build of nym-proxy failed ({status})")]);
+        return Err(vec![format!("cargo build of {BIN} failed ({status})")]);
     }
+    let source =
+        executable.ok_or_else(|| vec![format!("cargo build reported no executable for {BIN}")])?;
 
-    let source = root
-        .join("zingo-netutils/target")
-        .join(profile)
-        .join(&binary);
-    if !source.is_file() {
-        return Err(vec![format!(
-            "built binary not found at {}",
-            source.display()
-        )]);
-    }
-
-    let dest_dir = explicit_dest.unwrap_or_else(|| root.join("target").join(profile));
+    // Cargo writes the binary beside the wallet binaries of the same profile,
+    // which is where the CLI's proxy-path resolution looks, so the default
+    // run has nothing to copy.
+    let Some(dest_dir) = explicit_dest else {
+        return Ok(source);
+    };
+    // A relative --dest is read against the repo root, and both sides are
+    // canonicalized before the comparison, so any spelling of cargo's own
+    // directory takes the no-copy path.
+    let dest_dir = if dest_dir.is_absolute() {
+        dest_dir
+    } else {
+        root.join(dest_dir)
+    };
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| vec![format!("cannot create {}: {e}", dest_dir.display())])?;
-    let dest = dest_dir.join(&binary);
+    let canonical = |path: &std::path::Path| {
+        path.canonicalize()
+            .map_err(|e| vec![format!("cannot resolve {}: {e}", path.display())])
+    };
+    let source_dir = source
+        .parent()
+        .ok_or_else(|| vec![format!("{} has no parent directory", source.display())])?;
+    if canonical(source_dir)? == canonical(&dest_dir)? {
+        return Ok(source);
+    }
+
+    let binary = source
+        .file_name()
+        .ok_or_else(|| vec![format!("{} has no file name", source.display())])?;
+    let dest = dest_dir.join(binary);
     // The previous session's proxy may still be running from `dest`, and a
     // copy over a running executable fails with "text file busy". A rename
     // replaces the path atomically and leaves the running image untouched.
-    let staged = dest_dir.join(format!("{binary}.staged"));
+    let staged = dest_dir.join(format!("{}.staged", binary.to_string_lossy()));
     std::fs::copy(&source, &staged).map_err(|e| {
         vec![format!(
             "cannot copy {} to {}: {e}",

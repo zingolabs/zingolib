@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       # The nightly builds every ABI, packages one AAR from them, and builds
-      # the XCFrameworks, so it skips this workflow's x86_64 and iOS builds.
+      # the XCFramework, so it skips this workflow's x86_64 and iOS builds.
       skip-binding-layer-build:
         required: false
         type: boolean
@@ -48,11 +48,10 @@ jobs:
     uses: zingolabs/infrastructure/.github/workflows/trailing-whitespace.yaml@20485fed7a080e381130ed8120419dc81acae641
 
   # cargo-deny resolves the dependency graph without compiling, so the
-  # pinned toolchain serves only `cargo metadata`. The root manifest
-  # excludes zingo-netutils, where the nym TLS stack lives, and
-  # tools/workbench is its own workspace, so each of the three is
-  # scanned on its own against the one deny.toml. `--locked` keeps the
-  # scan on the committed lockfile.
+  # pinned toolchain serves only `cargo metadata`. The root workspace
+  # holds every crate but tools/workbench, which is its own workspace, so
+  # each of the two is scanned on its own against the one deny.toml.
+  # `--locked` keeps the scan on the committed lockfile.
   cargo-deny:
     name: Cargo Deny
     runs-on: ubuntu-24.04
@@ -74,11 +73,6 @@ jobs:
       - name: Check bans in the root workspace
         run: cargo deny --locked check --config deny.toml bans
 
-      - name: Check bans in zingo-netutils
-        run: >-
-          cargo deny --manifest-path zingo-netutils/Cargo.toml --locked
-          check --config deny.toml bans
-
       - name: Check bans in tools/workbench
         run: >-
           cargo deny --manifest-path tools/workbench/Cargo.toml --locked
@@ -93,7 +87,9 @@ jobs:
   # checkmate doc phase documented every dependency with warnings denied,
   # six minutes a run that a dependency's rustdoc warning could fail.
   # The check and build phases are covered by the cargo-hack sweep and
-  # the test archive build.
+  # the test archive build. The proxy crate is excluded here because it
+  # turns on the `nym` feature of zingo-netutils, which would unify the
+  # nym-sdk stack into the whole build; the nym feature job lints it.
   root-lints:
     name: Format, clippy and rustdoc (root workspace)
     runs-on: ubuntu-24.04
@@ -111,10 +107,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --exclude zingo-nym-proxy-ffi -- -D warnings
 
       - name: Doc
-        run: cargo doc --workspace --no-deps
+        run: cargo doc --workspace --exclude zingo-nym-proxy-ffi --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -193,22 +189,27 @@ jobs:
         with:
           key: ${{ inputs.cargo-hack-subcommand || 'check' }}
 
-      # The flags are the action's defaults plus one exclusion:
-      # zingo-uniffi-bindgen is a binary with no library target and no
-      # features, and `--lib` fails on a package without one.
+      # The flags are the action's defaults plus two exclusions and one
+      # excluded feature. zingo-uniffi-bindgen is a binary with no library
+      # target and no features, and `--lib` fails on a package without one.
+      # zingo-nym-proxy-ffi turns on the `nym` feature of zingo-netutils, and
+      # `nym` itself is excluded from the powerset, because its nym-sdk stack
+      # would rebuild once per feature subset; the nym feature job below
+      # checks the two crates with every feature on. The rest of netutils'
+      # feature powerset stays in the sweep.
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: ${{ inputs.cargo-hack-subcommand || 'check' }}
-          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --feature-powerset --lib --bins --tests --target-dir target/hack"
+          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --exclude zingo-nym-proxy-ffi --exclude-features nym --feature-powerset --lib --bins --tests --target-dir target/hack"
 
-  # zingo-netutils is excluded from the root workspace and owns its own
-  # Cargo.lock (so a future `nym` build resolves independently of the
-  # zcash crypto-common pin, ADR 0011). The --workspace jobs above and the
-  # nextest archive in test.yaml therefore skip it; this job restores its
-  # coverage against its own manifest.
-  netutils-standalone:
-    name: zingo-netutils (standalone workspace)
+  # The `nym` feature of zingo-netutils compiles the nym-sdk stack, and the
+  # proxy crate turns it on. The --workspace jobs above and the nextest
+  # archive in test.yaml exclude the proxy crate so that feature
+  # unification keeps the stack out of every other build; this job checks
+  # the two crates with every feature on and runs the proxy crate's tests.
+  netutils-nym:
+    name: zingo-netutils (nym feature)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -219,24 +220,19 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
-        with:
-          workspaces: zingo-netutils
-
-      # The workspace holds the proxy crate and the verifier shim beside
-      # zingo-netutils, so every step names the whole workspace.
-      - name: Format
-        run: cargo fmt --manifest-path zingo-netutils/Cargo.toml --all --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path zingo-netutils/Cargo.toml --workspace --all-targets --all-features -- -D warnings
+        run: >-
+          cargo clippy --package zingo-netutils --package zingo-nym-proxy-ffi
+          --all-targets --all-features -- -D warnings
 
       # The proxy crate's live-mixnet feature builds a test that reaches the
       # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
-        run: cargo test --manifest-path zingo-netutils/Cargo.toml --all-features --workspace --exclude zingo-nym-proxy-ffi
+        run: cargo test --package zingo-netutils --all-features
 
       - name: Test the proxy crate
-        run: cargo test --manifest-path zingo-netutils/Cargo.toml --package zingo-nym-proxy-ffi
+        run: cargo test --package zingo-nym-proxy-ffi
 
       # The live test reaches the real Nym network, so it may fail on the
       # network without failing the check (zingolib/0054). One thread keeps
@@ -247,15 +243,16 @@ jobs:
         continue-on-error: true
         timeout-minutes: 25
         run: |
-          cargo test --manifest-path zingo-netutils/Cargo.toml \
-            --package zingo-nym-proxy-ffi \
+          cargo test --package zingo-nym-proxy-ffi \
             --features live-mixnet --test live_mixnet -- --test-threads=1
 
-      # The root-lints job documents only the root workspace, and clippy
-      # does not run rustdoc lints, so the standalone workspace needs its
-      # own doc gate.
+      # The root-lints job documents the members with their default
+      # features and without the proxy crate, and clippy does not run
+      # rustdoc lints, so the nym feature needs its own doc gate.
       - name: Doc
-        run: cargo doc --manifest-path zingo-netutils/Cargo.toml --workspace --all-features --no-deps
+        run: >-
+          cargo doc --package zingo-netutils --package zingo-nym-proxy-ffi
+          --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -309,7 +306,7 @@ jobs:
       version: ${{ needs.binding-layer-names.outputs.maven_version }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
-  # The per-PR tier's iOS half: both XCFrameworks and the Swift sources,
+  # The per-PR tier's iOS half: the XCFramework and the Swift sources,
   # on the WarpBuild macOS runner that binding-layer-ios.yaml names. The
   # Android job above proves the Kotlin Binding Set on every pull request,
   # and this job proves the Swift one the same way, so a change that

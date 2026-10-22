@@ -14,11 +14,14 @@ on:
         type: string
         default: normal
       # Cargo arguments that select what the archive holds, in place of
-      # the default `--workspace`: the packages, the targets, the features.
+      # the default: the packages, the targets, the features. The default
+      # is the workspace without the proxy crate, whose `nym` feature would
+      # compile the nym-sdk stack into every archive; ci-pr.yaml's nym
+      # feature job tests the proxy crate instead.
       archive-args:
         required: false
         type: string
-        default: --workspace
+        default: --workspace --exclude zingo-nym-proxy-ffi
       # The shards that run the archive, as a JSON array of partition
       # numbers. Every shard pays for a checkout, a nextest install, the
       # archive download and a container start before its first test, so
@@ -85,15 +88,15 @@ jobs:
 
       # The arguments reach the shell through the environment rather than
       # by expansion into the script, and an empty string falls back to
-      # the workspace. The expansion stays unquoted so that it splits into
-      # separate arguments.
+      # the input's default: the workspace without the proxy crate. The
+      # expansion stays unquoted so that it splits into separate arguments.
       - name: Build and archive tests
         env:
           ARCHIVE_ARGS: ${{ inputs.archive-args }}
         run: |
           # shellcheck disable=SC2086
           cargo nextest archive --verbose \
-            ${ARCHIVE_ARGS:---workspace} \
+            ${ARCHIVE_ARGS:---workspace --exclude zingo-nym-proxy-ffi} \
             --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive

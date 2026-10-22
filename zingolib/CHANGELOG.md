@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
 - `LightWallet::birthday_adjusted_from` reports the height a wallet was given
   when the wallet raised it to Sapling activation. It lives in memory for the
   process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
@@ -18,8 +27,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::panic_text` renders a panic payload, `&str` or `String`, as text.
 - `LightClientError::SyncPanicked(String)` reports a sync task that panicked
   from `await_sync` and from the launch wait in `sync`.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0063).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
+- `mixnet::speed::WAVE_WIDTH`, the fixed width of every speed-priority wave,
+  which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
+- `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
+  or a hosted enable on a session that holds no Session Indexer.
 
 ### Changed
+- **Breaking:** `LightClient::attach_mixnet` and
+  `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
+  readiness round trip reaches the Session Indexer instead of the census
+  member `zec.rocks`, so an Indexerless session refuses typed with
+  `MixnetProxyError::NoSessionIndexer` before it dials anything (zingo-adrs
+  zingolib/0063).
+- Boot proves three exits, not four. The roles are PriceFetch,
+  IndexerClient, and Spare, assigned in the order the exits confirm; the
+  IndexerSweep role retired with the Server-Selection Sweep (zingo-adrs
+  zingolib/0063). An online session whose exit directory offers fewer than
+  three exits still refuses the enable.
+- **Breaking:** every Transmission and every migration part goes to the Session
+  Indexer over the resolved wire, as one pull under the existing retry policy
+  (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
+  Destinations, and the per-Destination Health filter are gone. An Indexerless
+  session refuses a send with `LightClientError::Offline` on every wire, where
+  a ready mixnet once carried it to drawn Destinations.
+- **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
+  of a failed attempt move from `destination::health`, which is removed. The
+  history no longer folds attempts into a Health.
+- `LightClient::probe_destinations` probes the Session Indexer when no target
+  is named, in place of the census's mixnet-reachable entries. An Indexerless
+  session refuses with `LightClientError::Offline`, and a Session Indexer
+  outside the `https` port 443 shape refuses with
+  `LightClientError::IneligibleProbeTarget`, as a named target always did,
+  where the probe used to answer with an empty list.
+- A send builds one transmit target for the whole send, the session's live
+  indexer client on nakednet or one SOCKS5 client over the mixnet, where it
+  opened a fresh lazy connection to the Session Indexer per transaction.
+- A migration part resolves its wire exactly as a send does, so an
+  Indexerless session with a bootstrapping or dead mixnet refuses the part
+  with `MixnetNotReady` as it refuses a send, where it answered `Offline`.
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
 - **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
   below Sapling activation to the activation height instead of failing, and a
   raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
@@ -62,6 +124,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
+  re-exports of the indexer census, and the `destination::Correspondable`
+  implementation for its `Indexer` entry. The census is deleted; the
+  Default Indexer table in `zingo_netutils::default_indexer` replaces it,
+  and `config::default_indexer_for` reads it (zingo-adrs zingolib/0063).
+- `lightclient::select`, the Server-Selection Sweep runner:
+  `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
+  `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and
+  `SURVEY_WAVE_WIDTH`; and `mixnet::sweep`, its pure judgment: `Selection`,
+  `LiveCandidate`, `SurveyResult`, `RefusalTally`, `SweepError`,
+  `live_cohort`, `select`, `healthy_draw_verdict`, `assigned_selection`, and
+  `wave_order`. The Session Indexer receives every operation, so no survey
+  selects one (zingo-adrs zingolib/0063).
+- `destination::Operator`, which only the sweep's one-ticket-per-operator
+  draw consumed.
+- The `sweep_harness` test target.
+- **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
+  `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
+  `destination::rotation`, `destination::health`, and
+  `destination::same_operator`; the `config::{IndexerConfig, Location, Role,
+  Trust}` re-exports; `ClientConfigBuilder::{add_indexer,
+  set_remote_indexer_trust, set_migration_transmission_uri}` and
+  `ClientConfig::{indexers, remote_indexer_trust, migration_transmission_uri}`;
+  `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
+  `LightClientError::{NoEligibleDestination,
+  MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
+- **Breaking:** `mixnet::sweep::Selection::transmit_candidates`. The sweep no
+  longer computes the cohort minus the sync operator, because no transmitting
+  surface draws from it (zingo-adrs zingolib/0063).
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed

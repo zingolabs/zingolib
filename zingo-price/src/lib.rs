@@ -563,7 +563,7 @@ fn parse_kraken_trades(body: &str) -> Result<Price, PriceError> {
 #[cfg(feature = "socks5-fetch")]
 #[derive(Debug, Deserialize)]
 struct CoinGeckoZecQuote {
-    usd: f32,
+    usd: f64,
     last_updated_at: u32,
 }
 
@@ -576,11 +576,12 @@ struct CoinGeckoSimplePrice {
 #[cfg(feature = "socks5-fetch")]
 fn parse_coingecko_simple(body: &str) -> Result<Price, PriceError> {
     let quote: CoinGeckoSimplePrice = serde_json::from_str(body)?;
-    if !quote.zcash.usd.is_finite() {
+    let price_usd = quote.zcash.usd as f32;
+    if !price_usd.is_finite() {
         return Err(PriceError::InvalidPrice);
     }
     Ok(Price {
-        price_usd: quote.zcash.usd,
+        price_usd,
         time: quote.zcash.last_updated_at,
     })
 }

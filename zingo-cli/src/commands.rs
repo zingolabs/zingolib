@@ -207,20 +207,26 @@ async fn calculate(lightclient: &mut LightClient) -> Result<String, CommandError
     }
 }
 
-/// The `change_server` argument: an empty string names the default uri,
-/// as it did when the body parsed the argument itself.
-fn parse_server_uri(raw: &str) -> Result<http::Uri, String> {
-    if raw.is_empty() {
-        return Ok(http::Uri::default());
+const OFFLINE_CHOICE: &str = "offline";
+
+const DEFAULT_CHOICE: &str = "default";
+
+/// The `change_server` argument: `offline`, `default`, or an indexer URI.
+fn parse_indexer_choice(raw: &str) -> Result<zingolib::config::IndexerChoice, String> {
+    match raw {
+        OFFLINE_CHOICE => Ok(zingolib::config::IndexerChoice::Offline),
+        DEFAULT_CHOICE => Ok(zingolib::config::IndexerChoice::Default),
+        uri => http::Uri::from_str(uri)
+            .map(zingolib::config::IndexerChoice::Named)
+            .map_err(|_| "invalid server uri".to_string()),
     }
-    http::Uri::from_str(raw).map_err(|_| "invalid server uri".to_string())
 }
 
 async fn change_server(
-    uri: Option<http::Uri>,
+    choice: zingolib::config::IndexerChoice,
     lightclient: &mut LightClient,
 ) -> Result<String, CommandError> {
-    match lightclient.set_indexer_uri(uri.unwrap_or_default()).await {
+    match lightclient.choose_indexer(choice).await {
         Ok(()) => Ok("server set".to_string()),
         Err(e) => Err(not_yet_typed(e)),
     }
@@ -1232,21 +1238,6 @@ pub enum NetworkCommandError {
     /// typed refusal naming the transport state and its remedy.
     #[error(transparent)]
     Probe(#[from] zingolib::lightclient::error::LightClientError),
-    /// The `network on` consent act could not resolve any indexer URI while
-    /// switching the session to Online Mode; the session stays offline.
-    /// Reachable only from the quarantined nakednet resolution.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[error("no indexer could be resolved for going online")]
-    ServerResolution(#[from] crate::server_select_nakednet::ResolveServerError),
-    /// The `network on` consent act selected an indexer, but the connection
-    /// failed; the session stays offline. Reachable only from the
-    /// quarantined nakednet resolution.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[error("failed to connect to '{uri}' while switching to Online Mode")]
-    GoOnline {
-        uri: String,
-        source: zingolib::netutils::GetClientError,
-    },
     #[error("Mixnet Mode could not start{}", provisioning_remedy(.source))]
     ProxyStart {
         source: zingolib::mixnet::SessionStartError,
@@ -1571,25 +1562,7 @@ async fn network_command(
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
             // session only by bootstrapping the mixnet. It engages no
-            // nakednet indexer link; the quarantined nakednet resolution
-            // survives only under `nakednet-test-mode`.
-            #[cfg(feature = "nakednet-test-mode")]
-            let went_online = if lightclient.indexer_uri().is_none() {
-                let (server, _ranked) =
-                    crate::server_select_nakednet::resolve_ranked_server().await?;
-                lightclient
-                    .set_indexer_uri(server.clone())
-                    .await
-                    .map_err(|source| NetworkCommandError::GoOnline {
-                        uri: server.to_string(),
-                        source,
-                    })?;
-                Some(server)
-            } else {
-                None
-            };
-            #[cfg(not(feature = "nakednet-test-mode"))]
-            let went_online: Option<http::Uri> = None;
+            // nakednet indexer link.
             // `network on` waits out the standing client's proven birth: the
             // command returns with a client whose exit carried a round trip.
             let started = lightclient
@@ -1616,13 +1589,7 @@ async fn network_command(
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
             };
-            Ok(match went_online {
-                Some(server) => format!(
-                    "WARNING: this consent act switched the session to ONLINE MODE \
-                     (this session only); indexer '{server}'. {readiness}"
-                ),
-                None => readiness,
-            })
+            Ok(readiness)
         }
         NetworkSubCommand::Off => {
             // Zero-emission teardown: the session drops to the unconsented
@@ -2153,19 +2120,22 @@ pub(crate) enum CliCommand {
     )]
     Calculate,
     #[command(
-        about = "Change indexer server",
+        about = "Change the session's indexer",
         long_about = concat!(
-            "Change the indexer server.\n",
+            "Change the session's indexer: `default` attaches to the chain's Default Indexer, ",
+            "`offline` disconnects every network capability, and a URI names an indexer.\n",
             "\n",
-            "Example:\n",
+            "Examples:\n",
+            "change_server default\n",
+            "change_server offline\n",
             "change_server ",
             crate::examples::server_uri!(),
             "\n",
         )
     )]
     ChangeServer {
-        #[arg(value_parser = parse_server_uri)]
-        uri: Option<http::Uri>,
+        #[arg(value_parser = parse_indexer_choice)]
+        choice: zingolib::config::IndexerChoice,
     },
     #[command(
         about = "Checks if the given encoded address is derived by the wallet's keys.",
@@ -3040,7 +3010,9 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Balance,
         CliCommand::Birthday,
         CliCommand::Calculate,
-        CliCommand::ChangeServer { uri: None },
+        CliCommand::ChangeServer {
+            choice: zingolib::config::IndexerChoice::Default,
+        },
         CliCommand::CheckAddress {
             address: String::new(),
         },
@@ -3252,7 +3224,7 @@ async fn run_parsed(
         CliCommand::Balance => balance(lightclient).await,
         CliCommand::Birthday => birthday(lightclient).await,
         CliCommand::Calculate => calculate(lightclient).await,
-        CliCommand::ChangeServer { uri } => change_server(uri, lightclient).await,
+        CliCommand::ChangeServer { choice } => change_server(choice, lightclient).await,
         CliCommand::CheckAddress { address } => check_address(&address, lightclient).await,
         CliCommand::Clear => clear(lightclient).await,
         CliCommand::Coins { scope } => coins(scope, lightclient).await,

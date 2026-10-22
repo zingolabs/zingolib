@@ -94,10 +94,6 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 # The live mixnet harnesses drive nym-gated API, so they build only with
 # the `nym` feature; every other test target stays auto-discovered.
 [[test]]
-name = "sweep_harness"
-required-features = ["nym"]
-
-[[test]]
 name = "price_harness"
 required-features = ["nym"]
 

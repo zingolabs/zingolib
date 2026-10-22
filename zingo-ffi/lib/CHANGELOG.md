@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
+  carries a memo: a deshield to a reserved wallet-owned transparent address,
+  then that address paying the vault with the memo in an OP_RETURN. It sends
+  outright and answers `{ txids }` in order, the vault payment last, the shape
+  `confirm` answers with. When the deshield was transmitted and the OP_RETURN
+  step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
+  stays stored with the deshield's txid: `confirm` resumes it and answers the
+  vault payment's txid alone, and proposing again is refused until then.
+- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+  names the deshield's txid.
+- `reserve_refund_address()` reserves the wallet's next refund address and
+  reports it in the shape of `create_new_transparent_address`, for a swap
+  provider to refund a deposit to.
+- `derive_refund_address()` reports that same address without reserving it,
+  for a quote to name while the swap is still being chosen: a dropped quote
+  leaves the refund index where it was, and the commit reserves it.
 - `status_sync` reports `total_blocks`, the block span from the wallet birthday
   to the last known chain height, beside the `total_blocks_scanned` count. The
   `sync_complete` document of `poll_sync` reports `total_outputs_scanned` and
@@ -36,6 +52,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
+  carries the proxy crate's UniFFI surface beside the wallet's, built under
+  the crate's new `zingo-nym-proxy-ffi` feature, and
+  `ZingoNymProxyFFI.xcframework` is gone. The app then links one Rust std
+  and one `rust_eh_personality` beside its C++ and Objective-C personality
+  routines, the three that compact unwind encodes. Two archives brought two,
+  and the linker of Xcode 26.3 refused the app's link with "Too many
+  personality routines for compact unwind to encode". The `ZingoBindings`
+  product, which the app imports, is unchanged.
+- BREAKING: `IndexerConnection.server_uri: String` is now
+  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
+  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
+  `Default` attaches to the chain's Default Indexer (mainnet's is
+  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `Init`), and `Named` carries the URI the string carried before.
+- BREAKING: `change_server(serveruri: String)` is now
+  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
+  session through `go_offline` instead of binding a never-dialed
+  placeholder URI, and a `Default` on a chain without a Default Indexer
+  fails `InvalidInput` (zingo-adrs zingolib/0063).
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
@@ -62,7 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
+### Removed
+- BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
+  Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
+  dedicated migration transmission endpoint to set.
+
 ### Fixed
+- `send_swap_deposit` answers `InvalidInput` for a malformed or a
+  non-transparent `vault_address`. It answered `Send`, the class a consumer
+  retries.
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
   the strategy the standalone zingo-netutils workspace already uses for the
   proxy library. The iOS app links both static archives into one binary, and

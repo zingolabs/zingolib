@@ -43,8 +43,8 @@ compiles `zingo-cli` with the mixnet (Nym) transport, builds the `nym-proxy`
 binary, and places the proxy beside the CLI, where a session that goes online
 finds it.
 
-The proxy is the reason for the task. `nym-proxy` lives in the separate
-`zingo-netutils` workspace, which keeps its own lockfile (ADR 0011), so a bare
+The proxy is the reason for the task. `nym-proxy` is a binary of
+`zingo-netutils` behind its `nym` feature (ADR 0011), so a bare
 `cargo build -p zingo-cli` never produces it, and a CLI that finds no proxy
 cannot go online.
 
@@ -376,7 +376,7 @@ you the corrected invocation.)
 | Feature | Default | Effect on launch |
 | --- | --- | --- |
 | `nym` | **on** | Compiles in the mixnet transport, so a session can go online. Opting out (`makers run-cli --nakednet`) builds without the transport and bundles no proxy, which makes **Offline Mode the only mode**: the online consent acts refuse loudly and a stored standing consent is reported as inert. |
-| `nakednet-test-mode` | off | Re-enables the quarantined nakednet server-selection sweep. A deliberate, review-gated test build — never for ordinary use. |
+| `nakednet-test-mode` | off | Suspends the go-online refusal of a build without the mixnet, so a measurement can run an Online session with no mixnet beside it. A deliberate, review-gated test build — never for ordinary use. |
 
 The [build procedure](#the-build-procedure) selects features through its
 launcher flags, for example:

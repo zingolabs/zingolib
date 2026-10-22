@@ -8,9 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
+  answers the zingolabs endpoint a session attaches to when the consumer
+  goes online without naming one, `MAINNET_DEFAULT_INDEXER`
+  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ### Changed
 
+- BREAKING: `IndexerChain` lives in `default_indexer`, the table of Default
+  Indexers keyed by chain, now that the census module it partitioned is gone
+  (zingo-adrs zingolib/0063).
 - `Indexer::get_mempool_stream` takes no timeout. The stream is a
   subscription the server ends at the next block, so a call deadline only
   ever cut it short. `GrpcIndexer` sends no `grpc-timeout` on it, and the
@@ -26,6 +34,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- BREAKING: the `indexers` module: the census `Indexer`, `INDEXERS`, the
+  uptime leaderboard `MOST_UP_INDEXER_URIS`, `active`, `mixnet_eligible`,
+  and `Indexer::operator`. A session attaches to one indexer, the chain's
+  Default Indexer or the one the consumer names, so no table of foreign
+  endpoints remains to draw from (zingo-adrs zingolib/0063).
+- BREAKING: `time::SERVER_RANKING_TIMEOUT`, which only the retired
+  nakednet server-selection probe read.
+- BREAKING: `live_indexer_discovery` and the `live-indexer-discovery` bin. The
+  over-mixnet census survey retired with zingo-adrs zingolib/0063.
+- BREAKING: `indexers::MIXNET_HEALTH_INDEXER`. The attach readiness round trip reaches
+  the Session Indexer, not a census member.
+- BREAKING: `time::TRANSMISSION_HEDGE_INTERVAL`. The send's hedged race across
+  Destinations retired with zingo-adrs zingolib/0063.
 - `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
   that bounded the sender's wallet record reaching the mempool retired
   with the regtest removal, and no other test enforced the bound.

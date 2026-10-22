@@ -1,26 +1,27 @@
 [workspace]
 members = [
-    "libtonode-tests",
-    "pepper-sync",
-    "zingo-cli",
-    "zingo-memo",
-    "zingo-net-diag",
-    "zingo-price",
-    "zingo-status",
-    "zingolib",
-    "zingo-ffi/lib",
-    "zingo-ffi/uniffi-bindgen",
+  "libtonode-tests",
+  "pepper-sync",
+  "zingo-cli",
+  "zingo-memo",
+  "zingo-net-diag",
+  "zingo-price",
+  "zingo-status",
+  "zingolib",
+  "zingo-netutils",
+  "zingo-netutils/webpki-verifier-shim",
+  "zingo-netutils/nym-proxy-ffi",
+  "zingo-ffi/lib",
+  "zingo-ffi/uniffi-bindgen",
 ]
-# zingo-netutils is intentionally NOT a member: it carries its own [workspace]
-# and Cargo.lock so it can be built standalone with the `nym` feature, whose
-# nym-sdk stack needs `crypto-common ^0.2`. That was irreconcilable in a shared
-# lock while zcash_primitives 0.29 and 0.30 pinned `crypto-common
-# =0.2.0-rc.1`. The 0.31 cohort resolves to a 0.2 release, so the lock
-# conflict is gone, and readmitting the crate is a separate decision under
-# zingo-adrs zingolib/0011. Members still consume netutils through the
-# `zingo-netutils` path dependency below, resolved in THIS lockfile with
-# `nym` off.
-exclude = ["zingo-netutils"]
+# zingo-netutils, its verifier shim, and the proxy crate are members since
+# PR #3037. The nym-sdk stack once needed `crypto-common ^0.2` while
+# zcash_primitives 0.29 and 0.30 pinned `=0.2.0-rc.1`, which kept netutils in
+# a workspace of its own with a second lockfile (zingo-adrs zingolib/0011,
+# amended 2026-10-21). The 0.31 cohort resolves to a 0.2 release, so one
+# lockfile now holds both stacks. Members consume netutils with `nym` off;
+# only the proxy crate turns it on, and ci-pr.yaml's nym feature job builds
+# the two with every feature.
 resolver = "2"
 
 [workspace.dependencies]
@@ -57,7 +58,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { version = "6.0.0", path = "zingo-netutils", features = ["globally-public-transparent"] }
+zingo-netutils = { version = "6.0.0", path = "zingo-netutils", features = [
+  "globally-public-transparent",
+] }
+zingo-nym-proxy-ffi = { version = "0.1.0", path = "zingo-netutils/nym-proxy-ffi" }
 zingo_common_components = "0.4.0"
 tokio-stream = "0.1"
 
@@ -68,19 +72,21 @@ sapling-crypto = "0.9.0"
 shardtree = "0.8.0"
 zcash_address = "=0.14.0-pre.1"
 zcash_client_backend = { version = "=0.25.0-pre.1", features = [
-    "orchard",
-    "transparent-inputs",
+  "orchard",
+  "transparent-inputs",
 ] }
 zcash_encoding = "0.5.0"
 zcash_keys = { version = "=0.17.0-pre.1", features = [
-    "transparent-inputs",
-    "sapling",
-    "orchard",
+  "transparent-inputs",
+  "sapling",
+  "orchard",
 ] }
 zcash_note_encryption = "0.5.1"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "=0.31.0-pre.1", features = ["non-standard-fees"] }
+zcash_primitives = { version = "=0.31.0-pre.1", features = [
+  "non-standard-fees",
+] }
 zcash_proofs = "=0.31.0-pre.1"
 zcash_protocol = "=0.11.0-pre.0" # public API (TODO: remove from public API)
 zcash_transparent = "=0.11.0-pre.1"
@@ -145,16 +151,46 @@ dirs = "6"
 memuse = "0.2"
 rand = "0.10"
 
+# zingo-netutils and child crates
+rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+  "aws_lc_rs",
+  "logging",
+  "tls12",
+] }
+lightwallet-protocol = "0.4.0"
+hyper-rustls = { version = "0.27", default-features = false, features = [
+  "aws-lc-rs",
+  "http1",
+  "tls12",
+  "logging",
+  "native-tokio",
+] }
+hyper-util = "0.1.20"
+hyper = "1"
+rustls-pemfile = "2"
+reqwest = { version = "0.12.15", default-features = false }
+http-body-util = "0.1.3"
+x509-parser = "0.18"
+
 [profile.test]
 opt-level = 3
 
-# The profile that the Binding Layer builder uses for the mobile libraries.
-# The panic strategy is unwind, the same as the `mobile` profile of the
-# standalone zingo-netutils workspace that builds the proxy library. The iOS
-# app links both static archives into one binary, and the two copies of std
-# resolve to one panic runtime at link time, so an abort here aborted the app
-# on every panic inside a tokio task of the proxy (issue #2926). The workbench
-# test `panic_strategy` holds both workspaces to one strategy.
+# The profile that the Binding Layer builder uses for the wallet library,
+# which on iOS carries the proxy crate as well, under the wallet crate's
+# `zingo-nym-proxy-ffi` feature, so the app links one Rust std. The panic
+# strategy is unwind, the same as the `proxy` profile below. The iOS app
+# once linked two static archives into one binary, and the two copies of
+# std resolved to one panic runtime at link time, so an abort in either
+# aborted the app on every panic inside a tokio task of the proxy (issue
+# #2926). The workbench test `panic_strategy` holds both profiles to one
+# strategy. On iOS the proxy crate and the nym stack beneath it compile
+# under this profile too, with its size optimization and overflow checks,
+# while Android builds them under the `proxy` profile below: the nym
+# stack's arithmetic is checked on iOS and wraps on Android. A profile
+# override names one package or every dependency, never a family, and
+# the stack is 78 packages, so the divergence stands until a ruling
+# changes it.
 [profile.mobile]
 inherits = "release"
 debug = 1
@@ -163,3 +199,24 @@ codegen-units = 1
 overflow-checks = true
 panic = "unwind"
 opt-level = "z"
+
+# The profile that the Binding Layer builder uses for the Android proxy
+# library. It is the plain release profile the proxy shipped under from the standalone
+# zingo-netutils workspace before PR #3037 made the crate a member: the
+# `mobile` profile's size optimization and overflow checks were chosen for
+# the wallet, not for the nym stack's packet crypto, and a profile is
+# workspace-wide, so the proxy keeps its own. The panic strategy is spelled
+# out because it is the one setting the two profiles must share.
+[profile.proxy]
+inherits = "release"
+panic = "unwind"
+
+# zingo-adrs zingolib/0021: the nym stack's TLS verifies against the
+# compiled-in Mozilla bundle instead of rustls-platform-verifier's OS trust
+# store, keeping verification byte-identical on every platform and the
+# workspace free of hand-written unsafe. The stand-in lives under the
+# upstream crate's name. Cargo honours a [patch] table only in the root
+# manifest of the workspace being built, so the table moved here with the
+# crate.
+[patch.crates-io]
+rustls-platform-verifier = { path = "zingo-netutils/webpki-verifier-shim" }

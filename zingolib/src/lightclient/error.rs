@@ -65,22 +65,6 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("probe targets must be https on port 443; got '{0}'")]
     IneligibleProbeTarget(http::Uri),
-    /// The configured migration transmission target shares the
-    /// synchronization endpoint's host, which would let that server correlate
-    /// the wallet's sync stream with its migration cohort (ADR 0011,
-    /// 2026-07-23).
-    #[error(
-        "the migration transmission target '{host}' is the synchronization endpoint; migration \
-         parts never go to the sync server. Configure a different migration_transmission_uri or \
-         remove it to use the Destination Rotation."
-    )]
-    MigrationTransmissionTargetIsSyncEndpoint {
-        /// The host both endpoints share.
-        host: String,
-    },
-    /// No Destination remains to carry migration parts.
-    #[error(transparent)]
-    NoEligibleDestination(#[from] crate::destination::servers::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points
@@ -200,6 +184,15 @@ pub enum SendError {
         /// The failure.
         #[source]
         source: Box<LightClientError>,
+    },
+    /// The stored OP_RETURN proposal transmitted its deshield and waits for
+    /// `send_stored_proposal` to resume it. A new proposal would drop it.
+    #[error(
+        "An OP_RETURN send waits to resume after the deshield {deshield_txid}. Send the stored proposal."
+    )]
+    OpReturnResumePending {
+        /// The transmitted deshield.
+        deshield_txid: TxId,
     },
 }
 
