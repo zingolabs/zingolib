@@ -1238,21 +1238,6 @@ pub enum NetworkCommandError {
     /// typed refusal naming the transport state and its remedy.
     #[error(transparent)]
     Probe(#[from] zingolib::lightclient::error::LightClientError),
-    /// The `network on` consent act could not resolve any indexer URI while
-    /// switching the session to Online Mode; the session stays offline.
-    /// Reachable only from the quarantined nakednet resolution.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[error("no indexer could be resolved for going online")]
-    ServerResolution(#[from] crate::server_select_nakednet::ResolveServerError),
-    /// The `network on` consent act selected an indexer, but the connection
-    /// failed; the session stays offline. Reachable only from the
-    /// quarantined nakednet resolution.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[error("failed to connect to '{uri}' while switching to Online Mode")]
-    GoOnline {
-        uri: String,
-        source: zingolib::netutils::GetClientError,
-    },
     #[error("Mixnet Mode could not start{}", provisioning_remedy(.source))]
     ProxyStart {
         source: zingolib::mixnet::SessionStartError,
@@ -1577,25 +1562,7 @@ async fn network_command(
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
             // session only by bootstrapping the mixnet. It engages no
-            // nakednet indexer link; the quarantined nakednet resolution
-            // survives only under `nakednet-test-mode`.
-            #[cfg(feature = "nakednet-test-mode")]
-            let went_online = if lightclient.indexer_uri().is_none() {
-                let (server, _ranked) =
-                    crate::server_select_nakednet::resolve_ranked_server().await?;
-                lightclient
-                    .set_indexer_uri(server.clone())
-                    .await
-                    .map_err(|source| NetworkCommandError::GoOnline {
-                        uri: server.to_string(),
-                        source,
-                    })?;
-                Some(server)
-            } else {
-                None
-            };
-            #[cfg(not(feature = "nakednet-test-mode"))]
-            let went_online: Option<http::Uri> = None;
+            // nakednet indexer link.
             // `network on` waits out the standing client's proven birth: the
             // command returns with a client whose exit carried a round trip.
             let started = lightclient
@@ -1622,13 +1589,7 @@ async fn network_command(
                     return Err(NetworkCommandError::Bootstrap { report });
                 }
             };
-            Ok(match went_online {
-                Some(server) => format!(
-                    "WARNING: this consent act switched the session to ONLINE MODE \
-                     (this session only); indexer '{server}'. {readiness}"
-                ),
-                None => readiness,
-            })
+            Ok(readiness)
         }
         NetworkSubCommand::Off => {
             // Zero-emission teardown: the session drops to the unconsented

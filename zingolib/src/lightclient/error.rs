@@ -65,22 +65,6 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("probe targets must be https on port 443; got '{0}'")]
     IneligibleProbeTarget(http::Uri),
-    /// The configured migration transmission target shares the
-    /// synchronization endpoint's host, which would let that server correlate
-    /// the wallet's sync stream with its migration cohort (ADR 0011,
-    /// 2026-07-23).
-    #[error(
-        "the migration transmission target '{host}' is the synchronization endpoint; migration \
-         parts never go to the sync server. Configure a different migration_transmission_uri or \
-         remove it to use the Destination Rotation."
-    )]
-    MigrationTransmissionTargetIsSyncEndpoint {
-        /// The host both endpoints share.
-        host: String,
-    },
-    /// No Destination remains to carry migration parts.
-    #[error(transparent)]
-    NoEligibleDestination(#[from] crate::destination::servers::NoEligibleDestinations),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

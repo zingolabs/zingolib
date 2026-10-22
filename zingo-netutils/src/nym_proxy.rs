@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     // Integration tests below require a live Nym network. Run with:
-    //   cargo test --manifest-path zingo-netutils/Cargo.toml --features nym -- --ignored
+    //   cargo test --package zingo-netutils --features nym -- --ignored
 
     /// Start the embedded proxy and verify it reports a valid localhost address.
     #[tokio::test(flavor = "multi_thread")]

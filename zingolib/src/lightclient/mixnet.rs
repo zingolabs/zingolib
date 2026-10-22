@@ -72,7 +72,7 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
                 .acquirer()
                 .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
             let birth = pools
-                .conduit_for(crate::mixnet::quartet::Role::PriceFetch, acquirer.as_ref())
+                .conduit_for(crate::mixnet::roles::Role::PriceFetch, acquirer.as_ref())
                 .await?;
             let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
             let addr = member
@@ -628,7 +628,7 @@ impl LightClient {
     /// use zingolib::config::{ClientConfig, WalletConfig};
     /// use zingolib::lightclient::LightClient;
     /// use zingolib::mixnet::acquire::{HostRefusal, HostedTransport, ProxyHosting, RotationVerdict};
-    /// use zingolib::mixnet::{ExitNodeId, Indicator, TransportError};
+    /// use zingolib::mixnet::{ExitNodeId, Indicator, MixnetProxyError, TransportError};
     ///
     /// // A host that declines every request, standing in for the platform
     /// // that owns the proxy where subprocesses are forbidden.
@@ -675,6 +675,18 @@ impl LightClient {
     ///         .unwrap();
     ///     let mut client = LightClient::new(config, true).await.unwrap();
     ///
+    ///     // An Indexerless session has nothing for the attach readiness
+    ///     // round trip to reach, so the enable refuses before it asks the
+    ///     // host for anything (zingo-adrs zingolib/0063).
+    ///     let indexerless = client.enable_mixnet_via_host(DecliningHost).await;
+    ///     assert!(matches!(
+    ///         indexerless,
+    ///         Err(TransportError::Proxy(MixnetProxyError::NoSessionIndexer))
+    ///     ));
+    ///     client
+    ///         .set_indexer_uri_lazy("https://indexer.test:443".parse().unwrap())
+    ///         .unwrap();
+    ///
     ///     // The standing client births from the host instead of a spawned
     ///     // binary; the host's refusal surfaces typed and the failed
     ///     // enable leaves Unattached — a refusal, never nakednet.
@@ -692,10 +704,14 @@ impl LightClient {
         &mut self,
         host: impl crate::mixnet::acquire::ProxyHosting,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
+        let indexer = self
+            .indexer_uri()
+            .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         self.enable_mixnet_from(std::sync::Arc::new(
-            crate::mixnet::acquire::Acquirer::Hosted(
-                crate::mixnet::acquire::HostedProvider::owned_by(host),
-            ),
+            crate::mixnet::acquire::Acquirer::Hosted(crate::mixnet::acquire::HostedAcquirer {
+                provider: crate::mixnet::acquire::HostedProvider::owned_by(host),
+                indexer,
+            }),
         ))
         .await
     }
@@ -733,19 +749,19 @@ impl LightClient {
                 bootstrap_detail: None,
                 death: None,
             });
-        // Boot proves four exits at once and assigns each a role in the
-        // order it confirms (ADR 0045). The IndexerClient's birth becomes
-        // the session's standing client; the other three are held for the
-        // jobs boot gives them and stop when those jobs end.
-        match crate::mixnet::quartet::prove_quartet(&self.exit_pools, acquirer.as_ref()).await {
-            Ok(quartet) => {
-                let birth = quartet.indexer;
-                // The three unspent conduits go to the exit authority, where
+        // Boot proves three exits at once and assigns each a role in the
+        // order it confirms (ADR 0045, narrowed by ADR 0063). The
+        // IndexerClient's birth becomes the session's standing client; the
+        // other two are held for the jobs boot gives them and stop when
+        // those jobs end.
+        match crate::mixnet::roles::prove_role_exits(&self.exit_pools, acquirer.as_ref()).await {
+            Ok(role_exits) => {
+                let birth = role_exits.indexer;
+                // The two unspent conduits go to the exit authority, where
                 // the job each role names takes its own without a birth.
                 for (role, conduit) in [
-                    (crate::mixnet::quartet::Role::IndexerSweep, quartet.sweep),
-                    (crate::mixnet::quartet::Role::PriceFetch, quartet.price),
-                    (crate::mixnet::quartet::Role::Spare, quartet.spare),
+                    (crate::mixnet::roles::Role::PriceFetch, role_exits.price),
+                    (crate::mixnet::roles::Role::Spare, role_exits.spare),
                 ] {
                     self.exit_pools.hold_conduit(role, conduit);
                 }
@@ -824,6 +840,15 @@ impl LightClient {
     ///         .unwrap();
     ///     let mut client = LightClient::new(config, true).await.unwrap();
     ///
+    ///     // An Indexerless session has nothing for the readiness round
+    ///     // trip to reach, so the attach refuses before it parses anything
+    ///     // (zingo-adrs zingolib/0063).
+    ///     let indexerless = client.attach_mixnet("127.0.0.1:9", &[]).await;
+    ///     assert!(matches!(indexerless, Err(MixnetProxyError::NoSessionIndexer)));
+    ///     client
+    ///         .set_indexer_uri_lazy("https://indexer.test:443".parse().unwrap())
+    ///         .unwrap();
+    ///
     ///     // An unparseable address refuses typed, leaving Unattached.
     ///     let refused = client.attach_mixnet("not-an-address", &[]).await;
     ///     assert!(matches!(
@@ -864,6 +889,9 @@ impl LightClient {
         socks5_addr: &str,
         exits: &[crate::mixnet::ExitNodeId],
     ) -> Result<(), crate::mixnet::MixnetProxyError> {
+        let indexer = self
+            .indexer_uri()
+            .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         let policy_before = self.transmit_policy();
         self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
         self.vacate_mixnet_slot().await;
@@ -876,6 +904,7 @@ impl LightClient {
                 crate::mixnet::MixnetProxy::attach(
                     socks5_addr,
                     exits,
+                    indexer,
                     std::sync::Arc::clone(&self.mixnet_status),
                 )
             });
@@ -913,9 +942,6 @@ impl LightClient {
     /// policy is untouched, so where a send travels afterwards is the
     /// policy's answer, and the mixnet-only surfaces refuse.
     pub async fn disable_mixnet(&mut self) {
-        // Revoked consent stops every networking act this session started:
-        // the health sweep's survey halts with the standing transport.
-        self.abort_health_sweep().await;
         self.vacate_mixnet_slot().await;
         swap_slot(&self.mixnet_slot, crate::mixnet::MixnetSlot::SwitchedOff);
         self.publish_mixnet_slot_state();
@@ -1013,7 +1039,7 @@ impl LightClient {
     /// Switch Mixnet Mode on for a chain-mock test, with the slot reporting
     /// [`Indicator::Ready`](crate::mixnet::Indicator) at `socks5_addr` while
     /// no child, watcher, or probe stands behind it, so the test walks the
-    /// same fail-closed route resolver and escalation orchestration a live
+    /// same fail-closed route resolver and retry policy a live
     /// Ready session does and the transmit path submits over the mock
     /// indexer's channel without ever dialing the address.
     #[cfg(any(test, feature = "testutils"))]
@@ -1136,8 +1162,8 @@ impl LightClient {
 
     /// Runs the mixnet liveness probe — concurrent `GetLightdInfo` calls
     /// through the session's SOCKS5 proxy, each appending its outcome to the
-    /// cross-session indexer history — against `target`, or against every
-    /// Destination when `target` is `None`, with no nakednet leg and a
+    /// cross-session indexer history — against `target`, or against the
+    /// Session Indexer when `target` is `None`, with no nakednet leg and a
     /// refusal while the mixnet transport is not ready.
     pub async fn probe_destinations(
         &self,
@@ -1149,39 +1175,34 @@ impl LightClient {
         // work as outstanding until every leg has finished.
         let dial = self.mixnet_only_route()?.dial();
         let socks5_addr = dial.socks5();
-        if let Some(uri) = &target
-            && !crate::mixnet::probe::probe_eligible(uri)
-        {
+        // An Indexerless session has nothing to probe, and an indexer outside
+        // the exit policy's endpoint shape is refused whether the caller
+        // named it or the session holds it, never answered with silence.
+        let indexer = target
+            .or_else(|| self.indexer_uri())
+            .ok_or(crate::lightclient::error::LightClientError::Offline)?;
+        if !crate::mixnet::probe::probe_eligible(&indexer) {
             return Err(
-                crate::lightclient::error::LightClientError::IneligibleProbeTarget(uri.clone()),
+                crate::lightclient::error::LightClientError::IneligibleProbeTarget(indexer),
             );
         }
-        let targets: Vec<http::Uri> = target
-            .map_or_else(
-                || {
-                    self.destination_servers
-                        .registry_reachable(crate::destination::servers::Transport::Mixnet)
-                },
-                |uri| vec![uri],
-            )
-            .into_iter()
-            .filter(crate::mixnet::probe::probe_eligible)
-            .collect();
-        let history = self.indexer_history.clone();
-        let probes = futures::future::join_all(targets.iter().map(|indexer| {
-            crate::mixnet::probe::probe_indexer(indexer, socks5_addr, timeout, &history)
-        }))
+        let probe = crate::mixnet::probe::probe_indexer(
+            &indexer,
+            socks5_addr,
+            timeout,
+            &self.indexer_history,
+        )
         .await;
-        // Any answered probe is a completed round trip through the Standing
-        // Client, promoting stale proof to earned; a wave nobody answered
-        // raises the suspicion the standing exit is dead, and the arbiter
-        // probe adjudicates.
-        if probes.iter().any(|probe| probe.leg.outcome.is_ok()) {
+        // An answered probe is a completed round trip through the Standing
+        // Client, promoting stale proof to earned; an unanswered one raises
+        // the suspicion the standing exit is dead, and the arbiter probe
+        // adjudicates.
+        if probe.leg.outcome.is_ok() {
             self.note_standing_round_trip();
-        } else if !probes.is_empty() {
+        } else {
             self.note_standing_exit_suspicion();
         }
-        Ok(probes)
+        Ok(vec![probe])
     }
 
     /// Update and return the current ZEC price in USD by racing the price
@@ -1397,55 +1418,18 @@ mod tests {
     mod consent_holds {
         //! Revoked consent stops every networking act the session started
         //! (findings 2 and 9 of the 2026-08-14 PR #2695 review).
-        use crate::lightclient::LightClient;
         use crate::mixnet::ExitNodeId;
-        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-
-        fn wallet() -> crate::wallet::LightWallet {
-            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
-        }
 
         /// A Standing Client over an attach to `addr`, for slot tests.
         fn attached_client(addr: std::net::SocketAddr) -> crate::mixnet::StandingClient {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
+                crate::mixnet::test_indexer(),
                 crate::mixnet::status_publisher(),
             )
             .expect("the attach accepts a bound exit");
             crate::mixnet::StandingClient::new(proxy, None, true)
-        }
-
-        /// HYPOTHESIS: disabling the mixnet halts the health sweep, so the
-        /// consent revocation stops the census probing the session started.
-        /// Falsified if the sweep's task survives the disable.
-        #[tokio::test]
-        async fn disable_mixnet_halts_the_health_sweep() {
-            let mut client = LightClient::new_for_test(wallet()).await;
-            let (held_tx, cancelled_rx) = tokio::sync::oneshot::channel::<()>();
-            let sweep = tokio::spawn(async move {
-                let _held = held_tx;
-                std::future::pending::<()>().await
-            });
-            *client
-                .health_sweep
-                .lock()
-                .expect("the health-sweep slot is never poisoned") = Some(sweep);
-
-            client.disable_mixnet().await;
-
-            assert!(
-                client
-                    .health_sweep
-                    .lock()
-                    .expect("the health-sweep slot is never poisoned")
-                    .is_none(),
-                "the disable takes and halts the sweep"
-            );
-            assert!(
-                cancelled_rx.await.is_err(),
-                "the sweep task was cancelled, not left surveying"
-            );
         }
 
         /// HYPOTHESIS: a failover's replacement installs only while the slot
@@ -1723,6 +1707,7 @@ mod tests {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
+                crate::mixnet::test_indexer(),
                 crate::mixnet::status_publisher(),
             )
             .expect("the attach accepts a bound exit");
@@ -1779,14 +1764,15 @@ mod tests {
         }
 
         /// The exit this harness announces as bound, and the first the
-        /// quartet assigns.
+        /// boot assigns a role.
         const HARNESS_EXIT: &str = "exit-alpha";
 
-        /// Every exit this harness discovers. Boot proves a quartet, so a
-        /// population smaller than [`quartet::QUARTET_SIZE`] cannot fill
-        /// the roles and the enable refuses.
-        const HARNESS_CENSUS: [&str; crate::mixnet::quartet::QUARTET_SIZE] =
-            [HARNESS_EXIT, "exit-beta", "exit-gamma", "exit-delta"];
+        /// Every exit this harness discovers. Boot proves one exit per
+        /// role, so a population smaller than
+        /// [`roles::ROLE_EXIT_COUNT`](crate::mixnet::roles::ROLE_EXIT_COUNT)
+        /// cannot fill the roles and the enable refuses.
+        const HARNESS_CENSUS: [&str; crate::mixnet::roles::ROLE_EXIT_COUNT] =
+            [HARNESS_EXIT, "exit-beta", "exit-gamma"];
 
         /// Yields granted after a publication so a subscriber on another
         /// worker observes it before the watch channel coalesces.
@@ -1889,6 +1875,7 @@ mod tests {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
+                crate::mixnet::test_indexer(),
                 birth_channel,
             )
             .expect("the attach accepts a bound exit");
@@ -1940,6 +1927,19 @@ mod tests {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build()
         }
 
+        /// - Binds a lazy Session Indexer on the client without dialing it.
+        async fn client_with_session_indexer() -> LightClient {
+            let mut client = LightClient::new_for_test(wallet()).await;
+            client
+                .set_indexer_uri_lazy(
+                    "https://indexer.test:443"
+                        .parse()
+                        .expect("the literal is an absolute https URI with a port"),
+                )
+                .expect("a lazy indexer binds an absolute https URI without dialing it");
+            client
+        }
+
         /// HYPOTHESIS: a failed enable hands the session back as the user
         /// had it: from `SwitchedOff` under the nakednet policy, a failed
         /// `attach_mixnet` lands `Unattached` and publishes it, and the
@@ -1948,7 +1948,7 @@ mod tests {
         /// the mode remains `SwitchedOff` or the policy ends elsewhere.
         #[tokio::test]
         async fn a_failed_attach_restores_the_policy_the_user_had() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             client.disable_mixnet().await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             let subscriber = client.subscribe_mixnet_status();
@@ -1988,7 +1988,7 @@ mod tests {
         /// route yields nakednet at any point after the attach.
         #[tokio::test]
         async fn a_send_during_the_bootstrap_refuses_rather_than_leak() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             client.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
             assert_eq!(
                 client.send_route(),
@@ -2140,7 +2140,7 @@ mod tests {
         /// state so a subscriber cannot be left staring at a stale mode.
         #[tokio::test]
         async fn a_failed_forced_on_start_publishes_unattached() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             let subscriber = client.subscribe_mixnet_status();
 
             let error = client
@@ -2180,7 +2180,7 @@ mod tests {
         /// stale death can be published over it.
         #[tokio::test]
         async fn attach_lifecycle_and_disable_reach_subscribers_in_order() {
-            let mut client = LightClient::new_for_test(wallet()).await;
+            let mut client = client_with_session_indexer().await;
             let mut subscriber = client.subscribe_mixnet_status();
 
             client

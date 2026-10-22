@@ -1,12 +1,15 @@
 #![forbid(unsafe_code)]
 
-use crate::indexers::IndexerChain;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexerChain {
+    Main,
+    Test,
+}
 
 pub const MAINNET_DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
 
 /// ```
-/// use zingo_netutils::default_indexer::{MAINNET_DEFAULT_INDEXER, default_indexer};
-/// use zingo_netutils::indexers::IndexerChain;
+/// use zingo_netutils::default_indexer::{IndexerChain, MAINNET_DEFAULT_INDEXER, default_indexer};
 ///
 /// let mainnet = default_indexer(IndexerChain::Main).expect("mainnet has a Default Indexer");
 /// assert_eq!(mainnet.to_string(), format!("{MAINNET_DEFAULT_INDEXER}/"));
