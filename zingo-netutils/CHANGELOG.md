@@ -16,10 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BREAKING: `IndexerChain` lives in `default_indexer`, the table of Default
+  Indexers keyed by chain, now that the census module it partitioned is gone
+  (zingo-adrs zingolib/0063).
+
 ### Deprecated
 
 ### Removed
 
+- BREAKING: the `indexers` module: the census `Indexer`, `INDEXERS`, the
+  uptime leaderboard `MOST_UP_INDEXER_URIS`, `active`, `mixnet_eligible`,
+  and `Indexer::operator`. A session attaches to one indexer, the chain's
+  Default Indexer or the one the consumer names, so no table of foreign
+  endpoints remains to draw from (zingo-adrs zingolib/0063).
+- BREAKING: `time::SERVER_RANKING_TIMEOUT`, which only the retired
+  nakednet server-selection probe read.
 - BREAKING: `live_indexer_discovery` and the `live-indexer-discovery` bin. The
   over-mixnet census survey retired with zingo-adrs zingolib/0063.
 - BREAKING: `indexers::MIXNET_HEALTH_INDEXER`. The attach readiness round trip reaches

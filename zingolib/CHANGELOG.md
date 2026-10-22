@@ -124,6 +124,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
+  re-exports of the indexer census, and the `destination::Correspondable`
+  implementation for its `Indexer` entry. The census is deleted; the
+  Default Indexer table in `zingo_netutils::default_indexer` replaces it,
+  and `config::default_indexer_for` reads it (zingo-adrs zingolib/0063).
 - `lightclient::select`, the Server-Selection Sweep runner:
   `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
   `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and

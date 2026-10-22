@@ -15,12 +15,6 @@
 mod commands;
 mod examples;
 
-// The retired nakednet server-selection sweep. Never compiled by default:
-// the feature is the explicit review act (2026-08-06 ruling) that
-// re-incorporates any of it.
-#[cfg(feature = "nakednet-test-mode")]
-mod server_select_nakednet;
-
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -416,37 +410,11 @@ fn synced_indicator(progress: Option<ScanProgress>) -> String {
     ratio_indicator("Synced", "Synced", progress)
 }
 
-/// Formats the configured indexer for the `servers` command; the session
-/// probes nothing to answer it.
-#[cfg(not(feature = "nakednet-test-mode"))]
-fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
+fn format_session_indexer(cli_config: &CliConfigTemplate) -> String {
     match &cli_config.server {
         Some(server) => format!("Configured indexer: {server}. Nothing was probed."),
         None => "Configured indexer: none. This session is offline and probes nothing.".to_string(),
     }
-}
-
-/// Formats the ranked server list for display by the `servers` command.
-#[cfg(feature = "nakednet-test-mode")]
-fn format_ranked_servers(cli_config: &CliConfigTemplate) -> String {
-    let Some(server) = &cli_config.server else {
-        return "Last Known servers: none. This session is offline and probes nothing.".to_string();
-    };
-    if cli_config.ranked_servers.is_empty() {
-        return format!("Server was set explicitly: {server}\nNo other servers were probed.");
-    }
-    let mut out = String::from("Last Known server ranking, from this session's launch probe:\n");
-    for (i, r) in cli_config.ranked_servers.iter().enumerate() {
-        let marker = if r.uri == *server { " (active)" } else { "" };
-        out.push_str(&format!(
-            "  {:>2}. {} {:>8.1}ms{}\n",
-            i + 1,
-            r.uri,
-            r.latency.as_secs_f64() * 1000.0,
-            marker,
-        ));
-    }
-    out
 }
 
 /// Executes one command against the loop, drains the reply, closes the
@@ -609,7 +577,7 @@ fn start_interactive(cli_config: &CliConfigTemplate, ch: CommandChannel) -> Exit
 
                 // CLI-only commands that don't need the LightClient.
                 if matches!(command, commands::CliCommand::Servers) {
-                    println!("{}", format_ranked_servers(cli_config));
+                    println!("{}", format_session_indexer(cli_config));
                     continue;
                 }
 
@@ -1072,12 +1040,6 @@ pub(crate) struct CliConfigTemplate {
     /// The Session Indexer: `None` when the session is Offline, and the
     /// named or Default Indexer when it is Online.
     server: Option<http::Uri>,
-    /// All servers that responded to `get_info()` during dynamic selection,
-    /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
-    /// Will be used for automatic failover when sync fails.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[allow(dead_code)]
-    ranked_servers: Vec<server_select_nakednet::RankedServer>,
     seed: Option<String>,
     ufvk: Option<String>,
     birthday: u64,
@@ -1115,16 +1077,10 @@ If you don't remember the block height, you can pass '--birthday 0' to scan from
         /// The offline-capable command that was launched with `--online`.
         command: String,
     },
-    /// The nakednet sweep resolved no server.
-    #[cfg(feature = "nakednet-test-mode")]
-    #[error(transparent)]
-    ResolveServer(#[from] server_select_nakednet::ResolveServerError),
     /// The pinned `--server` is not a valid indexer URI.
-    #[cfg(not(feature = "nakednet-test-mode"))]
     #[error("invalid --server URI.")]
     IndexerUri(#[from] http::uri::InvalidUri),
     /// Consent arrived without `--server` on a chain that has no Default Indexer.
-    #[cfg(not(feature = "nakednet-test-mode"))]
     #[error(transparent)]
     NoDefaultIndexer(#[from] zingolib::config::NoDefaultIndexer),
     /// The pinned server misses its scheme, host, or port.
@@ -1193,21 +1149,10 @@ impl CliConfigTemplate {
             ChainType::Mainnet
         };
         // Offline mode never resolves a server: the session's contract is
-        // that no Indexer is ever configured.
-        #[cfg(feature = "nakednet-test-mode")]
-        let (server, ranked_servers) = match communications {
-            Communications::DeliberateOffline | Communications::UnconsentedOffline => {
-                (None, vec![])
-            }
-            Communications::Online => {
-                let (server, ranked_servers) = server_select_nakednet::resolve_server(&matches)?;
-                (Some(server), ranked_servers)
-            }
-        };
-        // Resolution is pure: the named `--server`, or the chain's Default
-        // Indexer when consent arrives without one (zingo-adrs
-        // zingolib/0063). A chain without a Default Indexer refuses typed.
-        #[cfg(not(feature = "nakednet-test-mode"))]
+        // that no Indexer is ever configured. Online resolution is pure: the
+        // named `--server`, or the chain's Default Indexer when consent
+        // arrives without one (zingo-adrs zingolib/0063). A chain without a
+        // Default Indexer refuses typed.
         let server = match communications {
             Communications::DeliberateOffline | Communications::UnconsentedOffline => None,
             Communications::Online => match matches.get_one::<http::Uri>("server") {
@@ -1234,8 +1179,6 @@ impl CliConfigTemplate {
             mode,
             communications,
             server,
-            #[cfg(feature = "nakednet-test-mode")]
-            ranked_servers,
             seed,
             ufvk,
             birthday,

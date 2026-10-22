@@ -1112,7 +1112,7 @@ mod config_template {
 
         /// Consent without `--server` binds the chain's Default Indexer, and
         /// the resolved server pins the session (zingo-adrs zingolib/0063).
-        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
+        #[cfg(feature = "nym")]
         #[test]
         fn online_without_server_binds_the_default_indexer() {
             let config = fill(&[examples::BIN_NAME, "--online"])
@@ -1125,7 +1125,7 @@ mod config_template {
 
         /// A chain without a Default Indexer refuses consent that names no
         /// server, with the chain in the error (zingo-adrs zingolib/0063).
-        #[cfg(all(feature = "nym", not(feature = "nakednet-test-mode")))]
+        #[cfg(feature = "nym")]
         #[test]
         fn online_without_server_on_testnet_refuses() {
             let err = fill(&[examples::BIN_NAME, "--online", "--chain", "testnet"])
