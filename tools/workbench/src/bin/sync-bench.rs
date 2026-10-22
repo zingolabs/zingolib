@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use workbench::chain;
 use workbench::session;
 use workbench::{repo_root, run};
 
@@ -36,9 +37,6 @@ const MILLIS_SUFFIX: &str = "ms";
 /// The log filter the session runs under, since an empty one silences the
 /// markers this reads.
 const LOG_FILTER: &str = "info";
-
-/// The indexer every run pins, so arms compare like with like.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
 
 /// The zingo-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.
@@ -481,7 +479,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     command
         .arg("--online")
         .arg("--server")
-        .arg(PINNED_INDEXER)
+        .arg(chain::Chain::default().indexer())
         .arg("--seed")
         .arg(GUARD_MNEMONIC)
         .arg("--birthday")
