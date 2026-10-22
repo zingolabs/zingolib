@@ -277,12 +277,12 @@ impl MixnetProxy {
     }
 
     /// - Spawns the attached-state driver, whose readiness gate round-trips
-    ///   through `socks5_addr` to `health_indexer`, the Session Indexer.
+    ///   through `socks5_addr` to `indexer`, the Session Indexer.
     /// - Publishes every lifecycle transition into `publisher`.
     pub(crate) fn attach(
         socks5_addr: SocketAddr,
         exits: &[crate::mixnet::ExitNodeId],
-        health_indexer: http::Uri,
+        indexer: http::Uri,
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
         // Ready means the address AND a bound exit, at every door: an
@@ -302,7 +302,7 @@ impl MixnetProxy {
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
             socks5_addr,
-            attach_readiness(socks5_addr, health_indexer),
+            attach_readiness(socks5_addr, indexer),
             move || endpoint_alive(socks5_addr),
             ATTACH_WATCHDOG_INTERVAL,
             publisher,
@@ -1352,7 +1352,7 @@ mod tests {
         match MixnetProxy::attach(
             "127.0.0.1:1080".parse().expect("the test address parses"),
             &[],
-            crate::mixnet::test_health_indexer(),
+            crate::mixnet::test_indexer(),
             test_publisher(),
         ) {
             Err(MixnetProxyError::NoExits) => {}
@@ -1376,7 +1376,7 @@ mod tests {
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
             &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
-            crate::mixnet::test_health_indexer(),
+            crate::mixnet::test_indexer(),
             test_publisher(),
         )
         .expect("a valid address and a named exit attach");
@@ -1405,7 +1405,7 @@ mod tests {
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
             &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
-            crate::mixnet::test_health_indexer(),
+            crate::mixnet::test_indexer(),
             test_publisher(),
         )
         .expect("a valid address and a named exit attach");
