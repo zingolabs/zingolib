@@ -43,8 +43,8 @@ compiles `zingo-cli` with the mixnet (Nym) transport, builds the `nym-proxy`
 binary, and places the proxy beside the CLI, where a session that goes online
 finds it.
 
-The proxy is the reason for the task. `nym-proxy` lives in the separate
-`zingo-netutils` workspace, which keeps its own lockfile (ADR 0011), so a bare
+The proxy is the reason for the task. `nym-proxy` is a binary of
+`zingo-netutils` behind its `nym` feature (ADR 0011), so a bare
 `cargo build -p zingo-cli` never produces it, and a CLI that finds no proxy
 cannot go online.
 
