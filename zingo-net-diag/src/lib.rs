@@ -28,9 +28,9 @@
 //! generic chain inspector. A *consumer* matches on the typed fields and
 //! chooses its own presentation; the `Display` rendering exists for humans
 //! and logs only. The crate is std-only with zero dependencies, a hard
-//! requirement: it is what lets one crate serve two lockfile-isolated cargo
-//! workspaces (the parent workspace and the standalone `zingo-netutils`
-//! workspace) without resolver coupling.
+//! requirement: it let one crate serve the parent workspace and the standalone
+//! `zingo-netutils` workspace while the two kept separate lockfiles, and it
+//! keeps the taxonomy free of resolver coupling now that netutils is a member.
 //!
 //! ```
 //! use zingo_net_diag::{NetOpFailure, NetOpStage};

@@ -88,15 +88,15 @@ jobs:
 
       # The arguments reach the shell through the environment rather than
       # by expansion into the script, and an empty string falls back to
-      # the workspace. The expansion stays unquoted so that it splits into
-      # separate arguments.
+      # the input's default: the workspace without the proxy crate. The
+      # expansion stays unquoted so that it splits into separate arguments.
       - name: Build and archive tests
         env:
           ARCHIVE_ARGS: ${{ inputs.archive-args }}
         run: |
           # shellcheck disable=SC2086
           cargo nextest archive --verbose \
-            ${ARCHIVE_ARGS:---workspace} \
+            ${ARCHIVE_ARGS:---workspace --exclude zingo-nym-proxy-ffi} \
             --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive

@@ -189,17 +189,19 @@ jobs:
         with:
           key: ${{ inputs.cargo-hack-subcommand || 'check' }}
 
-      # The flags are the action's defaults plus three exclusions.
-      # zingo-uniffi-bindgen is a binary with no library target and no
-      # features, and `--lib` fails on a package without one. zingo-netutils
-      # and zingo-nym-proxy-ffi carry the `nym` feature, whose nym-sdk stack
-      # the powerset would rebuild once per feature subset; the nym feature
-      # job below checks the two with every feature on.
+      # The flags are the action's defaults plus two exclusions and one
+      # excluded feature. zingo-uniffi-bindgen is a binary with no library
+      # target and no features, and `--lib` fails on a package without one.
+      # zingo-nym-proxy-ffi turns on the `nym` feature of zingo-netutils, and
+      # `nym` itself is excluded from the powerset, because its nym-sdk stack
+      # would rebuild once per feature subset; the nym feature job below
+      # checks the two crates with every feature on. The rest of netutils'
+      # feature powerset stays in the sweep.
       - name: Run cargo-hack
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: ${{ inputs.cargo-hack-subcommand || 'check' }}
-          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --exclude zingo-netutils --exclude zingo-nym-proxy-ffi --feature-powerset --lib --bins --tests --target-dir target/hack"
+          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --exclude zingo-nym-proxy-ffi --exclude-features nym --feature-powerset --lib --bins --tests --target-dir target/hack"
 
   # The `nym` feature of zingo-netutils compiles the nym-sdk stack, and the
   # proxy crate turns it on. The --workspace jobs above and the nextest
