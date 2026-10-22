@@ -184,7 +184,13 @@ opt-level = 3
 # std resolved to one panic runtime at link time, so an abort in either
 # aborted the app on every panic inside a tokio task of the proxy (issue
 # #2926). The workbench test `panic_strategy` holds both profiles to one
-# strategy.
+# strategy. On iOS the proxy crate and the nym stack beneath it compile
+# under this profile too, with its size optimization and overflow checks,
+# while Android builds them under the `proxy` profile below: the nym
+# stack's arithmetic is checked on iOS and wraps on Android. A profile
+# override names one package or every dependency, never a family, and
+# the stack is 78 packages, so the divergence stands until a ruling
+# changes it.
 [profile.mobile]
 inherits = "release"
 debug = 1

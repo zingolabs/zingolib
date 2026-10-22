@@ -105,11 +105,10 @@ pub const MACOS: &str = "macos";
 
 pub const WALLET_BINARY_TARGET: &str = "Zingolib";
 
+#[cfg(test)]
 const XCFRAMEWORK_SUFFIX: &str = ".xcframework";
 
-pub fn wallet_xcframework() -> String {
-    format!("{WALLET_BINARY_TARGET}{XCFRAMEWORK_SUFFIX}")
-}
+pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
 
 const SWIFT_SOURCES_PARENT: &str = "Sources";
 
@@ -605,19 +604,29 @@ pub enum Generation {
     Proxy,
 }
 
-impl Generation {
-    /// The prefix of this binding set's output directory names.
-    pub fn label(self) -> &'static str {
-        match self {
-            Generation::Wallet => "wallet",
-            Generation::Proxy => "proxy",
-        }
-    }
+pub struct GenerationNames {
+    pub label: &'static str,
+    pub lib_name: &'static str,
+    pub crate_dir: &'static str,
+}
 
-    pub fn lib_name(self) -> &'static str {
+const WALLET_NAMES: GenerationNames = GenerationNames {
+    label: "wallet",
+    lib_name: WALLET_LIB_NAME,
+    crate_dir: WALLET_CRATE_DIR,
+};
+
+const PROXY_NAMES: GenerationNames = GenerationNames {
+    label: "proxy",
+    lib_name: PROXY_LIB_NAME,
+    crate_dir: PROXY_CRATE_DIR,
+};
+
+impl Generation {
+    pub fn names(self) -> &'static GenerationNames {
         match self {
-            Generation::Wallet => WALLET_LIB_NAME,
-            Generation::Proxy => PROXY_LIB_NAME,
+            Generation::Wallet => &WALLET_NAMES,
+            Generation::Proxy => &PROXY_NAMES,
         }
     }
 }
@@ -674,24 +683,9 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
         .flat_map(|generation| LANGUAGES.map(|language| (generation, language)))
 }
 
-/// A directory that a bindgen run starts in, which decides whose `uniffi.toml` library mode applies.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Workdir {
-    WalletCrate,
-    /// The proxy crate's directory, where library mode applies the proxy's configuration.
-    ProxyCrate,
-}
-
-pub fn bindgen_workdir(generation: Generation) -> Workdir {
-    match generation {
-        Generation::Wallet => Workdir::WalletCrate,
-        Generation::Proxy => Workdir::ProxyCrate,
-    }
-}
-
 /// The name of the directory that holds one binding set in one language.
 pub fn output_name(generation: Generation, language: &str) -> String {
-    format!("{}-{language}", generation.label())
+    format!("{}-{language}", generation.names().label)
 }
 
 pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec<String> {
@@ -909,11 +903,19 @@ mod tests {
     }
 
     #[test]
+    fn the_wallet_xcframework_is_the_binary_target_with_the_suffix() {
+        assert_eq!(
+            WALLET_XCFRAMEWORK.strip_suffix(XCFRAMEWORK_SUFFIX),
+            Some(WALLET_BINARY_TARGET)
+        );
+    }
+
+    #[test]
     fn the_swift_package_links_one_binary_target_so_the_app_links_one_std() {
         let manifest = include_str!("../../../bindings/swift/Package.swift");
         assert_eq!(manifest.matches(".binaryTarget(").count(), 1);
         assert!(manifest.contains(&format!("name: \"{WALLET_BINARY_TARGET}\"")));
-        assert!(manifest.contains(&format!("/{}\"", wallet_xcframework())));
+        assert!(manifest.contains(&format!("/{WALLET_XCFRAMEWORK}\"")));
         assert!(manifest.contains(&format!("dependencies: [\"{WALLET_BINARY_TARGET}\"]")));
     }
 
@@ -1327,9 +1329,23 @@ mod tests {
             .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
     }
 
+    // The wallet's patterns cover the proxy's exports by prefix today. The
+    // hide step lists both crates' patterns, so the proxy stays exported
+    // when its lib name stops sharing the prefix.
+    #[test]
+    fn the_wallet_export_patterns_cover_the_proxy_exports_by_prefix_alone() {
+        for (wallet, proxy) in exported_symbol_patterns(WALLET_LIB_NAME)
+            .iter()
+            .zip(exported_symbol_patterns(PROXY_LIB_NAME))
+        {
+            let stem = wallet.trim_end_matches(SYMBOL_WILDCARD);
+            assert!(proxy.starts_with(stem), "{proxy} escapes {wallet}");
+        }
+    }
+
     #[test]
     fn each_generation_generates_from_its_own_crate() {
-        assert_eq!(bindgen_workdir(Generation::Wallet), Workdir::WalletCrate);
-        assert_eq!(bindgen_workdir(Generation::Proxy), Workdir::ProxyCrate);
+        assert_eq!(Generation::Wallet.names().crate_dir, WALLET_CRATE_DIR);
+        assert_eq!(Generation::Proxy.names().crate_dir, PROXY_CRATE_DIR);
     }
 }
