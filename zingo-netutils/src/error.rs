@@ -29,6 +29,9 @@ pub enum GetClientError {
 
     #[error(transparent)]
     Transport(#[from] tonic::transport::Error),
+
+    #[error("the pinned-host TLS configuration failed")]
+    PinnedTlsConfig(#[from] rustls::Error),
 }
 
 /// Error from [`NymProxy`](crate::NymProxy) lifecycle operations. Gated on
