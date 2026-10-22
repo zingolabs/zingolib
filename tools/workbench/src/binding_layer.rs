@@ -1331,6 +1331,20 @@ mod tests {
             .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
     }
 
+    // The wallet's patterns cover the proxy's exports by prefix today. The
+    // hide step lists both crates' patterns, so the proxy stays exported
+    // when its lib name stops sharing the prefix.
+    #[test]
+    fn the_wallet_export_patterns_cover_the_proxy_exports_by_prefix_alone() {
+        for (wallet, proxy) in exported_symbol_patterns(WALLET_LIB_NAME)
+            .iter()
+            .zip(exported_symbol_patterns(PROXY_LIB_NAME))
+        {
+            let stem = wallet.trim_end_matches(SYMBOL_WILDCARD);
+            assert!(proxy.starts_with(stem), "{proxy} escapes {wallet}");
+        }
+    }
+
     #[test]
     fn each_generation_generates_from_its_own_crate() {
         assert_eq!(Generation::Wallet.names().crate_dir, WALLET_CRATE_DIR);

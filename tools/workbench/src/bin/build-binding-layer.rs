@@ -1011,6 +1011,9 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
             binding_layer::WALLET_LIB_NAME,
             OBJECT_SUFFIX,
         );
+        // One pattern pair per crate. The wallet's pair covers the proxy's
+        // exports by prefix today, which the layer's unit test pins as
+        // incidental, so a renamed proxy stays exported.
         let exports = binding_layer::GENERATIONS
             .into_iter()
             .flat_map(|generation| {
