@@ -4,63 +4,22 @@ Zcash light-wallet library, CLI, and integration-test suites.
 
 ## Language
 
-**Network combo**:
-The Indexer+Validator pair a test scenario runs against, fixed at the Core
-stack (zainod + zebrad) in `zingolib_testutils`.
-_Avoid_: test stack, server pair
-
 **Core stack** / **Validator** / **Indexer**:
 Defined in the infrastructure repo's `CONTEXT.md`
 (github.com/zingolabs/infrastructure). This repo uses those terms with
-identical meaning and does not redefine them. The legacy validator-backed
-network combos were removed from this repo in July 2026, and the opt-in
-Legacy-stack indexer combo followed with the darkside-tests retirement.
+identical meaning and does not redefine them.
 
 **Faucet**:
-The test client whose spend capability receives the regtest Validator's
-mining rewards, providing the funds most scenarios start from.
+The test client whose spend capability holds the funds a scenario starts
+from: the mock chain's mined rewards, or the testnet funding seed.
 _Avoid_: miner client, funded client
 
-**Chain shape**:
-The complete set of inputs that determines the chain a test scenario's
-setup generates: the scenario constructor and its chain-affecting
-arguments (miner pool, activation heights, funding amounts) plus the
-Validator that mines it. Tests with the same chain shape are meant to
-observe equivalent chains. Chain shape is the natural key for sharing
-chain caches between tests; today each test owns its cache outright,
-and shape-based sharing is a foreseen consolidation.
-_Avoid_: test's chain
-
-**Chain cache**:
-A replay record of the blocks a test scenario's setup generated, read
-out of the regtest Validator at scenario-setup completion and
-resubmitted to a fresh Validator at launch to replace live setup
-generation. Scenarios that return transaction identifiers record them
-in the cache alongside the blocks, so warm runs return identifiers that
-name transactions in the replayed chain. Each test owns at most one
-cache, keyed by the test's name.
-_Avoid_: chain state snapshot, state-directory copy, send boundary
-(a superseded interim design in which txid-returning scenarios
-snapshotted before their sends; see ADR 0003's history)
-
-**Launch block**:
-The single block `zcash_local_net` mines inside `Zebrad::launch` on
-regtest to prove the mining service before returning. Every freshly
-launched Validator is therefore at height 1, not 0, and block 1's
-coinbase (the pre-NU5 sapling payout the balance constants encode)
-is minted at launch, not by test code. Chain-cache replay submits the
-cached chain as a competitor to the launch block and wins the reorg.
-_Avoid_: genesis block (that is height 0, the network's own)
-
 **Chain-bound test**:
-A test that must run against a live network combo because the behavior
-under test involves chain interaction: mining, mempool acceptance,
-indexer ingestion, or sync. Contrast tests whose wallets come from the
-synthetic-wallet builder and run offline. Chain caches and the
-setup-metrics instrumentation apply only to chain-bound tests; the
-metrics file is the census of them.
-_Avoid_: LocalNet test, online test, live test (that names the Makefile
-package partition, not this category)
+A test whose behaviour under test involves chain interaction (mining,
+mempool acceptance, indexer ingestion, or sync), run on the mock chain or
+as a testnet cell. Contrast tests whose wallets come from the
+synthetic-wallet builder and run offline.
+_Avoid_: LocalNet test, online test, live test, network combo
 
 **Mock chain**:
 The in-process chain and indexer (`MockNet` over `MockChain`) that serves
@@ -73,42 +32,28 @@ _Avoid_: mock indexer (that names the serving half alone), fake chain
 
 **Testnet cell**:
 A chain-bound test behind the non-default `testnet` feature. It is
-compiled on every pull request and run only against the zingolabs
-zainod testnet node: a tagged zaino release, serving TLS, with NU6.3
-active (ruled 2026-10-15). Until that node exists no CI profile
-enables the feature.
+compiled on every pull request and run against the testnet indexer the
+suite names: the public `testnet.zec.rocks` node until the zingolabs
+zainod testnet node exists (interim, ruled 2026-10-22), and that node
+alone once it does: a tagged zaino release, serving TLS, with NU6.3
+active (ruled 2026-10-15).
 _Avoid_: testnet test, networked test, staged test
 
 **Guarantee**:
-A named claim that a group of a test's assertions pins together, written
-as one bullet of the regtest removal ledger. It is the unit of the
-regtest removal (ruled 2026-10-15): each guarantee takes exactly one
-disposition, mock chain, testnet cell, exported, or retired.
+A named claim that a group of a test's assertions pins together. Each
+guarantee has exactly one home: the mock chain, a testnet cell, zaino's
+suite, or retirement.
 _Avoid_: assertion (that names one `assert!` call), check, invariant
 
 **Twin**:
 The mock-chain test that carries every guarantee of one chain-bound
-test. A twin may sharpen a guarantee, never narrow one (ruled
-2026-10-15); it lands in the commit that deletes the chain-bound test.
+test, sharpening but never narrowing any of them.
 _Avoid_: offline twin, port, replacement test
 
-**Primed**:
-The state of an observability instrument (a state watch or a front
-record) whose recording window is open: the priming instant is time
-zero for every event it records. Instruments are primed before the
-observed process launches so the window covers the launch itself.
-Priming is distinct from connection. A front record receives traffic
-only once it is also connected to the process it observes; a
-primed-but-unconnected record is valid and silently empty (how the
-Legacy stack runs, whose Indexer accepts no observer).
-_Avoid_: armed, registered (the superseded pair); started, created
-(neither implies the open recording window)
-
 **Binary e2e test**:
-A test that exercises the shipped zingo-cli binary end-to-end through its
-public CLI surface, driving it as a Wallet (in the infrastructure repo's
-sense) against a live network combo. Contrast libtonode tests, which
-drive the wallet in-process through `LightClient`.
+A test that exercises the shipped zingo-cli binary through its public CLI
+surface against a public network's Indexer. Contrast tests that drive the
+wallet in-process through `LightClient`.
 _Avoid_: CLI live test, harness test
 
 **Phantom unspent note**:
