@@ -72,15 +72,16 @@ pub struct MixnetProbe {
     pub leg: ProbeLeg,
 }
 
-/// The stage of [`GetClientError`] by typed match: a bad URI never touched
-/// the network, and tonic reports its whole connect phase (DNS, TCP, TLS)
-/// as one transport failure, which lands on [`NetOpStage::RemoteConnect`];
-/// the staged probe separates those phases where the distinction matters.
+/// The stage of [`GetClientError`] by typed match: a bad URI or a pinned
+/// TLS configuration that cannot be built never touched the network, and
+/// tonic reports its whole connect phase (DNS, TCP, TLS) as one transport
+/// failure, which lands on [`NetOpStage::RemoteConnect`]; the staged probe
+/// separates those phases where the distinction matters.
 fn get_client_stage(error: &GetClientError) -> NetOpStage {
     match error {
-        GetClientError::InvalidScheme | GetClientError::InvalidAuthority => {
-            NetOpStage::RouteResolution
-        }
+        GetClientError::InvalidScheme
+        | GetClientError::InvalidAuthority
+        | GetClientError::PinnedTlsConfig(_) => NetOpStage::RouteResolution,
         GetClientError::Transport(_) => NetOpStage::RemoteConnect,
     }
 }

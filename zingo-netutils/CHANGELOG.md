@@ -20,10 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches a pin, it covers the host name and the current time, and the
   handshake signature verifies under its key. No root store takes part.
   `KeyPinError` types each refusal. The Default Indexer host
-  `mainnet.zainod.zingolabs.dev` is the one entry, with the single pin
-  `PlaJEXXQ5Jm+3Pq1Pr3bNFYAmlxYzu6VxHH4EX4NpP8=` (base64), observed from the
-  network on 2026-10-21 and awaiting the operator's confirmation. The backup
-  pin the record requires does not exist yet.
+  `mainnet.zainod.zingolabs.dev` is the one entry. Its DNS name is steered
+  across four nodes that each hold their own key, so the entry carries the
+  four node keys (base64 of the SPKI SHA-256), observed from the network on
+  2026-10-21 and awaiting the operator's confirmation from each node's
+  private key: us-west-1 `PlaJEXXQ5Jm+3Pq1Pr3bNFYAmlxYzu6VxHH4EX4NpP8=`,
+  us-east-1 `YSr0xLcrj6vBDqqwLVhUhbdhZg/e25+zDWm3ojvtSlM=`, eu-central-1
+  `CdGeqGp2RAVnsdFn8L0x2OCRJxWOu9my9boSV+Cf9JI=`, and ap-southeast-1
+  `jx8Nlvc+UHV+xdKVxXMxHMtClWjkjIcCQszpVCILH90=`. Every one of them is a key
+  that a live node serves. The offline backup key the record requires does
+  not exist yet.
 
 ### Changed
 
