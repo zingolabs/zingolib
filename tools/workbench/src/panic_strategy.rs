@@ -4,8 +4,6 @@ use crate::{at_path, MANIFEST};
 
 pub const MOBILE_PROFILE: &str = "mobile";
 
-pub const BUILT_PROFILE: &str = MOBILE_PROFILE;
-
 const PROFILE_KEY: &str = "profile";
 const PANIC_KEY: &str = "panic";
 const INHERITS_KEY: &str = "inherits";
@@ -105,12 +103,29 @@ pub fn profile_panic_strategy(
     }
 }
 
+pub fn custom_profiles(manifest_name: &str, manifest: &str) -> Result<Vec<String>, Vec<String>> {
+    let document: toml_edit::DocumentMut = manifest
+        .parse()
+        .map_err(|error| vec![format!("{manifest_name} does not parse: {error}")])?;
+    Ok(document
+        .get(PROFILE_KEY)
+        .and_then(toml_edit::Item::as_table_like)
+        .map(|profiles| {
+            profiles
+                .iter()
+                .map(|(name, _)| name.to_string())
+                .filter(|name| !BUILT_IN_PROFILES.contains(&name.as_str()))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// - Reads the root workspace manifest under `root`.
 pub fn built_strategy(root: &Path) -> Result<PanicStrategy, Vec<String>> {
     let text = at_path(&root.join(MANIFEST), "read", |path| {
         std::fs::read_to_string(path)
     })?;
-    profile_panic_strategy(MANIFEST, &text, BUILT_PROFILE)
+    profile_panic_strategy(MANIFEST, &text, MOBILE_PROFILE)
 }
 
 #[cfg(test)]
@@ -118,7 +133,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{built_strategy, profile_panic_strategy, PanicStrategy};
+    use super::{built_strategy, custom_profiles, profile_panic_strategy, PanicStrategy};
     use crate::{refused, repo_root, scratch_dir, utf8};
 
     const MANIFEST_NAME: &str = "Cargo.toml";
@@ -251,13 +266,22 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     }
 
     #[test]
+    fn a_profile_table_written_inline_counts_among_the_custom_profiles() -> Result<(), Vec<String>>
+    {
+        let inline =
+            "profile = { release = { lto = true }, mobile = { inherits = \"release\" } }\n";
+        assert_eq!(custom_profiles(MANIFEST_NAME, inline)?, ["mobile"]);
+        Ok(())
+    }
+
+    #[test]
     fn the_built_profile_ships_the_unwind_strategy() -> Result<(), Vec<String>> {
         let strategy = built_strategy(&repo_root()?)?;
         assert_eq!(
             strategy,
             PanicStrategy::Unwind,
-            "profile.{} aborts on panic; every Binding Layer library builds under it, and a panic in a tokio task of the proxy must unwind, or it aborts the app (issue #2926)",
-            super::BUILT_PROFILE
+            "profile.{} aborts on panic. Every Binding Layer library builds under it, and a panic in a tokio task of the proxy must unwind, or it aborts the app (issue #2926)",
+            super::MOBILE_PROFILE
         );
         Ok(())
     }
@@ -270,24 +294,12 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
         let text = crate::at_path(&root.join(crate::MANIFEST), "read", |path| {
             std::fs::read_to_string(path)
         })?;
-        let document: toml_edit::DocumentMut = text
-            .parse()
-            .map_err(|error| vec![format!("{MANIFEST_NAME} does not parse: {error}")])?;
-        let custom: Vec<&str> = document
-            .get(super::PROFILE_KEY)
-            .and_then(toml_edit::Item::as_table)
-            .map(|profiles| {
-                profiles
-                    .iter()
-                    .map(|(name, _)| name)
-                    .filter(|name| !super::BUILT_IN_PROFILES.contains(name))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let custom = custom_profiles(MANIFEST_NAME, &text)?;
         assert_eq!(
             custom,
-            [super::BUILT_PROFILE],
-            "the Binding Layer builds under one profile on both platforms, and a second custom profile would let the proxy's crates compile under other settings than the wallet's"
+            [super::MOBILE_PROFILE],
+            "{MANIFEST_NAME} defines the custom profiles {custom:?}. The Binding Layer builds every library under profile.{}, the one custom profile the manifest defines.",
+            super::MOBILE_PROFILE
         );
         Ok(())
     }
@@ -331,7 +343,7 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
                 .map_err(|error| vec![format!("cannot run {}: {error}", executable.display())])?;
             assert!(
                 status.success(),
-                "with the {name} link order the proxy's panic ended the process ({status}); both archives carry {strategy}"
+                "with the {name} link order the proxy's panic ended the process ({status}). Both archives carry {strategy}"
             );
         }
         Ok(())
