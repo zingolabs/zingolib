@@ -1714,6 +1714,11 @@ mod tests {
     }
 
     const IOS_WORKFLOW: &str = ".github/workflows/binding-layer-ios.yaml";
+    const XCODE_VERSION_KEY: &str = "XCODE_VERSION:";
+    const XCODE_VERSION_INPUT: &str = "xcode-version:";
+    const XCODE_VERSION_REFERENCE: &str = "${{ env.XCODE_VERSION }}";
+    const IOS_CACHE_KEY: &str = "key: ios-";
+    const IOS_RESTORE_KEY: &str = "ios-";
     const MATRIX_TARGETS_KEY: &str = "target: [";
     const CARGO_BUILD: &str = "cargo build";
     const LIBRARY_FLAG: &str = "--library";
@@ -1977,6 +1982,57 @@ mod tests {
     }
 
     #[test]
+    fn the_ios_workflow_pins_one_xcode_and_keys_its_caches_by_it() -> Result<(), Vec<String>> {
+        let workflow = workbench::read(&workbench::repo_root()?.join(IOS_WORKFLOW))?;
+        let lines: Vec<&str> = workflow.lines().map(str::trim).collect();
+        let pins: Vec<&str> = lines
+            .iter()
+            .filter(|line| line.starts_with(XCODE_VERSION_KEY))
+            .map(|line| {
+                line.trim_start_matches(XCODE_VERSION_KEY)
+                    .trim()
+                    .trim_matches('\'')
+            })
+            .collect();
+        let [version] = pins[..] else {
+            return Err(vec![format!(
+                "{IOS_WORKFLOW} pins {} Xcode versions, not one",
+                pins.len()
+            )]);
+        };
+        assert!(
+            version
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())),
+            "`{version}` is no explicit Xcode version"
+        );
+        assert_eq!(version, binding_layer::IOS_XCODE_VERSION);
+        let selections: Vec<&&str> = lines
+            .iter()
+            .filter(|line| line.starts_with(XCODE_VERSION_INPUT))
+            .collect();
+        assert!(!selections.is_empty());
+        for selection in selections {
+            assert_eq!(
+                *selection,
+                format!("{XCODE_VERSION_INPUT} {XCODE_VERSION_REFERENCE}")
+            );
+        }
+        let keys: Vec<&&str> = lines
+            .iter()
+            .filter(|line| line.starts_with(IOS_CACHE_KEY) || line.starts_with(IOS_RESTORE_KEY))
+            .collect();
+        assert_eq!(keys.len(), 6);
+        for key in keys {
+            assert!(
+                key.contains(XCODE_VERSION_REFERENCE),
+                "`{key}` is not keyed by the Xcode version"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn the_ios_workflow_matrix_names_every_ios_target() -> Result<(), Vec<String>> {
         let workflow = workbench::read(&workbench::repo_root()?.join(IOS_WORKFLOW))?;
         let line = workflow
@@ -2190,7 +2246,14 @@ mod tests {
                         binding_layer::ndk_env_command(&command[3])
                     );
                 }
-                None => assert_eq!(command[3], IosTarget::Device.triple()),
+                None => {
+                    assert_eq!(command[3], IosTarget::Device.triple());
+                    let described = command[..command.len() - 1].join(" ");
+                    assert!(
+                        commands(&plan).contains(&described),
+                        "the describe step builds `{described}`, which no slice build does"
+                    );
+                }
             }
         }
         Ok(())
