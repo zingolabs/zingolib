@@ -171,7 +171,7 @@ impl TransportAcquirable for AnnouncingAcquirer {
         let proxy = MixnetProxy::attach(
             addr,
             &clutch,
-            crate::mixnet::test_health_indexer(),
+            crate::mixnet::test_indexer(),
             std::sync::Arc::clone(&publisher),
         )?;
         // The candidate announces readiness where a child would: into the
@@ -234,7 +234,7 @@ pub use zingo_netutils::provider::{
 
 pub(crate) struct HostedAcquirer {
     pub(crate) provider: HostedProvider,
-    pub(crate) health_indexer: http::Uri,
+    pub(crate) indexer: http::Uri,
 }
 
 impl TransportAcquirable for HostedAcquirer {
@@ -263,7 +263,7 @@ impl TransportAcquirable for HostedAcquirer {
         MixnetProxy::attach(
             hosted.socks5_addr,
             &[hosted.exit_node],
-            self.health_indexer.clone(),
+            self.indexer.clone(),
             publisher,
         )
         .map_err(TransportError::from)
@@ -360,7 +360,7 @@ mod tests {
     fn hosted(host: ScriptedHost) -> HostedAcquirer {
         HostedAcquirer {
             provider: HostedProvider::owned_by(host),
-            health_indexer: crate::mixnet::test_health_indexer(),
+            indexer: crate::mixnet::test_indexer(),
         }
     }
 

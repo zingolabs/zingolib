@@ -704,13 +704,13 @@ impl LightClient {
         &mut self,
         host: impl crate::mixnet::acquire::ProxyHosting,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
-        let health_indexer = self
+        let indexer = self
             .indexer_uri()
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         self.enable_mixnet_from(std::sync::Arc::new(
             crate::mixnet::acquire::Acquirer::Hosted(crate::mixnet::acquire::HostedAcquirer {
                 provider: crate::mixnet::acquire::HostedProvider::owned_by(host),
-                health_indexer,
+                indexer,
             }),
         ))
         .await
@@ -889,7 +889,7 @@ impl LightClient {
         socks5_addr: &str,
         exits: &[crate::mixnet::ExitNodeId],
     ) -> Result<(), crate::mixnet::MixnetProxyError> {
-        let health_indexer = self
+        let indexer = self
             .indexer_uri()
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         let policy_before = self.transmit_policy();
@@ -904,7 +904,7 @@ impl LightClient {
                 crate::mixnet::MixnetProxy::attach(
                     socks5_addr,
                     exits,
-                    health_indexer,
+                    indexer,
                     std::sync::Arc::clone(&self.mixnet_status),
                 )
             });
@@ -1425,7 +1425,7 @@ mod tests {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
-                crate::mixnet::test_health_indexer(),
+                crate::mixnet::test_indexer(),
                 crate::mixnet::status_publisher(),
             )
             .expect("the attach accepts a bound exit");
@@ -1707,7 +1707,7 @@ mod tests {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
-                crate::mixnet::test_health_indexer(),
+                crate::mixnet::test_indexer(),
                 crate::mixnet::status_publisher(),
             )
             .expect("the attach accepts a bound exit");
@@ -1875,7 +1875,7 @@ mod tests {
             let proxy = crate::mixnet::MixnetProxy::attach(
                 addr,
                 &[ExitNodeId::from("exit-alpha")],
-                crate::mixnet::test_health_indexer(),
+                crate::mixnet::test_indexer(),
                 birth_channel,
             )
             .expect("the attach accepts a bound exit");
