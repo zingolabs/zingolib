@@ -96,9 +96,6 @@ mod nym_proxy;
 #[cfg(feature = "nym")]
 pub use nym_proxy::{BootstrapEvent, NymProxy};
 
-#[cfg(feature = "nym")]
-pub mod live_indexer_discovery;
-
 #[cfg(feature = "socks5-fetch")]
 pub mod socks5_fetch;
 
