@@ -1,6 +1,6 @@
 name: Binding Layer for iOS
 
-# Builds the Binding Layer's two XCFrameworks and the Swift sources of the
+# Builds the Binding Layer's XCFramework and the Swift sources of the
 # ZingoBindings package on this commit, with the builder of tools/workbench.
 
 on:
@@ -50,6 +50,15 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # The newest stable Xcode the runner carries, Xcode 26.1.1 on the
+      # current image, so every slice is built and linked by the toolchain
+      # a release machine uses. The image's default, Xcode 16.4, accepts an
+      # app link that the linker of Xcode 26 refuses.
+      - name: Select the newest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       # The action installs the toolchain rust-toolchain.toml pins, with
       # its components, and the builder adds the iOS target to it itself.
       - name: Setup Rust
@@ -73,7 +82,6 @@ jobs:
             .cargo/registry/cache
             .cargo/git/db
             target/binding-layer/ios/wallet
-            target/binding-layer/ios/proxy
             tools/workbench/target
           key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -98,7 +106,11 @@ jobs:
             "CXXFLAGS_aarch64_apple_ios_sim=$flags" \
             >> "$GITHUB_ENV"
 
-      - name: Build the wallet and proxy libraries for the target
+      # The wallet library carries the proxy crate under the wallet crate's
+      # `zingo-nym-proxy-ffi` feature, so the one archive holds one Rust std
+      # and the app links one `rust_eh_personality` beside its C++ and
+      # Objective-C ones: compact unwind encodes three routines at most.
+      - name: Build the wallet library for the target
         run: |
           cargo run \
             --manifest-path tools/workbench/Cargo.toml \
@@ -132,12 +144,11 @@ jobs:
             .cargo/registry/cache
             .cargo/git/db
             target/binding-layer/ios/wallet
-            target/binding-layer/ios/proxy
             tools/workbench/target
           key: ios-${{ matrix.target }}-${{ steps.cache-key.outputs.rust_hash }}-${{ hashFiles('**/Cargo.lock') }}
 
   build:
-    name: Build the XCFrameworks and the Swift sources
+    name: Build the XCFramework and the Swift sources
     needs: slices
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
@@ -150,6 +161,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
+
+      # The same Xcode as the slices, so the Swift wire-contract test links
+      # under the linker that refuses more than three personality routines.
+      - name: Select the newest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
       - name: Setup Rust
         uses: ./.github/actions/rust-setup
@@ -181,13 +199,16 @@ jobs:
           path: target/binding-layer/ios/slices
           merge-multiple: true
 
-      # The plan first requires every slice's archives and the device's
+      # The plan first requires every slice's archive and the device's
       # descriptor, so a missing download fails by name before any build.
       # The plan ends with the Swift wire-contract test of the proxy crate,
       # which compiles against the Swift Binding Set the package ships and
       # asserts it against the crate's golden pins, which the Rust and
-      # Kotlin suites share. The XCFrameworks hold iOS slices only, so the
-      # builder runs the test on an iOS simulator it picks.
+      # Kotlin suites share. The test binary also links a C++ throw and an
+      # Objective-C throw, so it carries the personality routines an app
+      # brings and fails here if the bundle brings more than one of its
+      # own. The XCFramework holds iOS slices only, so the builder runs the
+      # test on an iOS simulator it picks.
       - name: Assemble the Binding Layer and run the Swift wire-contract test
         run: |
           cargo run \

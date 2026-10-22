@@ -219,7 +219,7 @@ enum Platform {
         /// Whether the calling job already runs in the builder image, so the plan runs on the host.
         in_image: bool,
     },
-    /// The two XCFrameworks and Swift sources for the SwiftPM package.
+    /// The XCFramework and Swift sources for the SwiftPM package.
     Ios(IosPhase),
     /// The Kotlin sources alone, generated on the host for the Gradle checks that compile against them.
     Kotlin,
@@ -653,10 +653,7 @@ fn bindgen_step(
     env: &[(String, String)],
 ) -> Step {
     Step::Run {
-        workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(
-            generation,
-            inputs.language,
-        ))),
+        workdir: roots.run_path(workdir_dir(binding_layer::bindgen_workdir(generation))),
         env: env.to_vec(),
         command: [
             vec!["cargo".to_string()],
@@ -962,7 +959,6 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
 fn workdir_dir(workdir: binding_layer::Workdir) -> &'static str {
     match workdir {
         binding_layer::Workdir::WalletCrate => binding_layer::WALLET_CRATE_DIR,
-        binding_layer::Workdir::WalletWorkspace => WALLET_WORKSPACE_DIR,
         binding_layer::Workdir::ProxyCrate => binding_layer::PROXY_CRATE_DIR,
     }
 }
@@ -984,11 +980,10 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         "IPHONEOS_DEPLOYMENT_TARGET".to_string(),
         IOS_DEPLOYMENT_TARGET.to_string(),
     )];
-    let target_dir_of = |generation: binding_layer::Generation| {
-        roots.run_path(&format!("{BUILD_ROOT}/ios/{}", generation.label()))
-    };
-    let wallet_target = target_dir_of(binding_layer::Generation::Wallet);
-    let proxy_target = target_dir_of(binding_layer::Generation::Proxy);
+    let wallet_target = roots.run_path(&format!(
+        "{BUILD_ROOT}/ios/{}",
+        binding_layer::Generation::Wallet.label()
+    ));
     let with_target = |target_dir: &str| {
         [
             env.clone(),
@@ -1000,43 +995,37 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         .concat()
     };
     let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
-    let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
     let wallet_workspace_dir = roots.run_path(WALLET_WORKSPACE_DIR);
-    let static_library = |lib_name: &str| {
-        binding_layer::library_file(
-            binding_layer::LIBRARY_PREFIX,
-            lib_name,
-            binding_layer::STATIC_SUFFIX,
-        )
-    };
-    let wallet_static = static_library(binding_layer::WALLET_LIB_NAME);
-    let proxy_static = static_library(binding_layer::PROXY_LIB_NAME);
-    let built = |target_dir: &str, triple: &str, profile: binding_layer::Profile, file: &str| {
-        format!("{target_dir}/{triple}/{}/{file}", profile.directory())
-    };
+    let wallet_static = binding_layer::library_file(
+        binding_layer::LIBRARY_PREFIX,
+        binding_layer::WALLET_LIB_NAME,
+        binding_layer::STATIC_SUFFIX,
+    );
     let slices = roots.run_path(&format!("{BUILD_ROOT}/ios/{SLICES_DIR}"));
     let slice_dir = |triple: &str| format!("{slices}/{triple}");
     let slice = |triple: &str, file: &str| format!("{slices}/{triple}/{file}");
     let hidden = |triple: &str, file: &str| slice(triple, &format!("{HIDDEN_DIR}/{file}"));
     let universal = |file: &str| slice(UNIVERSAL_SIMULATOR_DIR, file);
-    let generated_of =
-        |generation: binding_layer::Generation| format!("{GENERATED_DIR}/{}", generation.label());
-    let wallet_generated = generated_of(binding_layer::Generation::Wallet);
-    let proxy_generated = generated_of(binding_layer::Generation::Proxy);
+    let generated = format!(
+        "{GENERATED_DIR}/{}",
+        binding_layer::Generation::Wallet.label()
+    );
     let headers = format!("{GENERATED_DIR}/headers");
-    let hide = |generation: binding_layer::Generation| {
-        let lib_name = generation.lib_name();
-        let archive_file = static_library(lib_name);
-        let object_file =
-            binding_layer::library_file(binding_layer::LIBRARY_PREFIX, lib_name, OBJECT_SUFFIX);
-        let exports = binding_layer::exported_symbol_patterns(lib_name)
+    let hide = || {
+        let object_file = binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            binding_layer::WALLET_LIB_NAME,
+            OBJECT_SUFFIX,
+        );
+        let exports = binding_layer::GENERATIONS
             .into_iter()
+            .flat_map(|generation| binding_layer::exported_symbol_patterns(generation.lib_name()))
             .flat_map(|pattern| [EXPORTED_SYMBOL_FLAG.to_string(), pattern])
             .collect::<Vec<_>>();
         iter_ios_targets()
             .flat_map(|target| {
-                let archive = slice(target.triple(), &archive_file);
-                let hidden_archive = hidden(target.triple(), &archive_file);
+                let archive = slice(target.triple(), &wallet_static);
+                let hidden_archive = hidden(target.triple(), &wallet_static);
                 let object = hidden(target.triple(), &object_file);
                 [
                     Step::Run {
@@ -1083,10 +1072,10 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         wallet_workspace: &format!("{wallet_workspace_dir}/{MANIFEST}"),
         target_dir: &wallet_target,
     };
-    let bindgen = |generation, library: &str, out: &str| {
+    let bindgen = |library: &str, out: &str| {
         bindgen_step(
             roots,
-            generation,
+            binding_layer::Generation::Wallet,
             &inputs,
             library,
             &roots.out_run_path(out),
@@ -1106,15 +1095,12 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
             .chain(["-output".to_string(), universal(file)])
             .collect(),
     };
-    let xcframework = |name: &str, libraries: Vec<String>, with_headers: bool| {
-        let output = roots.out_run_path(name);
-        let header_args = if with_headers {
-            vec!["-headers".to_string(), roots.out_run_path(&headers)]
-        } else {
-            vec![]
-        };
+    let xcframework = |libraries: Vec<String>| {
+        let name = binding_layer::wallet_xcframework();
+        let output = roots.out_run_path(&name);
+        let header_args = vec!["-headers".to_string(), roots.out_run_path(&headers)];
         [
-            Step::Remove(roots.out_host_path(name)),
+            Step::Remove(roots.out_host_path(&name)),
             Step::Run {
                 workdir: roots.run.clone(),
                 env: env.clone(),
@@ -1131,25 +1117,10 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     let host = |relative: &str| roots.out_host_path(relative);
     let slice_steps = |target: IosTarget| {
         let triple = target.triple();
-        let build =
-            |workdir: &str, target_dir: &str, profile: binding_layer::Profile, package: &[&str]| {
-                cargo_step(
-                    workdir,
-                    &with_target(target_dir),
-                    &["build", "--target", triple],
-                    profile,
-                    package,
-                )
-            };
-        let deliver = |generation: binding_layer::Generation,
-                       profile: binding_layer::Profile,
-                       target_dir: &str| {
-            let file = static_library(generation.lib_name());
-            Step::Copy {
-                from: host_of(roots, &built(target_dir, triple, profile, &file)),
-                to: host_of(roots, &slice(triple, &file)),
-            }
-        };
+        let built = format!(
+            "{wallet_target}/{triple}/{}/{wallet_static}",
+            BUILDER_PROFILE.directory()
+        );
         let describe = (target == IosTarget::Device).then(|| {
             describe_step(
                 &wallet_crate_dir,
@@ -1164,25 +1135,17 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         [
             vec![Step::FreshDir(host_of(roots, &slice_dir(triple)))],
             vec![
-                build(&wallet_crate_dir, &wallet_target, BUILDER_PROFILE, &[]),
-                deliver(
-                    binding_layer::Generation::Wallet,
+                cargo_step(
+                    &wallet_crate_dir,
+                    &with_target(&wallet_target),
+                    &["build", "--target", triple],
                     BUILDER_PROFILE,
-                    &wallet_target,
+                    &binding_layer::PROXY_FEATURE_ARGS,
                 ),
-            ],
-            vec![
-                build(
-                    &proxy_crate_dir,
-                    &proxy_target,
-                    PROXY_PROFILE,
-                    &["-p", binding_layer::PROXY_PACKAGE],
-                ),
-                deliver(
-                    binding_layer::Generation::Proxy,
-                    PROXY_PROFILE,
-                    &proxy_target,
-                ),
+                Step::Copy {
+                    from: host_of(roots, &built),
+                    to: host_of(roots, &slice(triple, &wallet_static)),
+                },
             ],
             describe.into_iter().collect(),
         ]
@@ -1194,21 +1157,17 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         let steps: Vec<Vec<Step>> = vec![
             iter_ios_targets()
                 .flat_map(|target| {
-                    binding_layer::GENERATIONS
-                        .map(|generation| static_library(generation.lib_name()))
-                        .into_iter()
+                    iter::once(wallet_static.as_str())
                         .chain(
-                            (target == IosTarget::Device)
-                                .then(|| binding_layer::DESCRIPTOR_FILE.to_string()),
+                            (target == IosTarget::Device).then_some(binding_layer::DESCRIPTOR_FILE),
                         )
                         .map(move |file| {
-                            Step::Require(host_of(roots, &slice(target.triple(), &file)))
+                            Step::Require(host_of(roots, &slice(target.triple(), file)))
                         })
                 })
                 .collect(),
             vec![
-                Step::FreshDir(host(&wallet_generated)),
-                Step::FreshDir(host(&proxy_generated)),
+                Step::FreshDir(host(&generated)),
                 Step::FreshDir(host(&headers)),
                 Step::FreshDir(host_of(roots, &slice_dir(UNIVERSAL_SIMULATOR_DIR))),
             ],
@@ -1216,67 +1175,38 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
                 .map(|target| Step::FreshDir(host_of(roots, &slice(target.triple(), HIDDEN_DIR))))
                 .collect(),
             vec![bindgen(
-                binding_layer::Generation::Wallet,
                 &slice(IosTarget::Device.triple(), &wallet_static),
-                &wallet_generated,
+                &generated,
             )],
-            hide(binding_layer::Generation::Wallet),
+            hide(),
             vec![lipo(&wallet_static)],
-            vec![bindgen(
-                binding_layer::Generation::Proxy,
-                &slice(IosTarget::Device.triple(), &proxy_static),
-                &proxy_generated,
-            )],
-            hide(binding_layer::Generation::Proxy),
-            vec![lipo(&proxy_static)],
-            vec![
-                Step::Copy {
-                    from: host(&format!("{wallet_generated}/{WALLET_HEADER}")),
-                    to: host(&format!("{headers}/{WALLET_HEADER}")),
-                },
-                Step::Copy {
-                    from: host(&format!("{proxy_generated}/{PROXY_HEADER}")),
-                    to: host(&format!("{headers}/{PROXY_HEADER}")),
-                },
-                Step::Concatenate {
-                    sources: vec![
-                        host(&format!("{wallet_generated}/{WALLET_MODULEMAP}")),
-                        host(&format!("{proxy_generated}/{PROXY_MODULEMAP}")),
-                    ],
+            [WALLET_HEADER, PROXY_HEADER]
+                .map(|header| Step::Copy {
+                    from: host(&format!("{generated}/{header}")),
+                    to: host(&format!("{headers}/{header}")),
+                })
+                .into_iter()
+                .chain(iter::once(Step::Concatenate {
+                    sources: [WALLET_MODULEMAP, PROXY_MODULEMAP]
+                        .map(|modulemap| host(&format!("{generated}/{modulemap}")))
+                        .to_vec(),
                     separator: MODULEMAP_SEPARATOR,
                     to: host(&format!("{headers}/{COMBINED_MODULEMAP}")),
-                },
-            ],
-            xcframework(
-                binding_layer::WALLET_XCFRAMEWORK,
-                vec![
-                    hidden(IosTarget::Device.triple(), &wallet_static),
-                    universal(&wallet_static),
-                ],
-                true,
-            )
+                }))
+                .collect(),
+            xcframework(vec![
+                hidden(IosTarget::Device.triple(), &wallet_static),
+                universal(&wallet_static),
+            ])
             .into_iter()
             .collect(),
-            xcframework(
-                binding_layer::PROXY_XCFRAMEWORK,
-                vec![
-                    hidden(IosTarget::Device.triple(), &proxy_static),
-                    universal(&proxy_static),
-                ],
-                false,
-            )
-            .into_iter()
-            .collect(),
-            [
-                (&wallet_generated, binding_layer::WALLET_SWIFT),
-                (&proxy_generated, binding_layer::PROXY_SWIFT),
-            ]
-            .map(|(generated, swift)| Step::Copy {
-                from: host(&format!("{generated}/{swift}")),
-                to: host(&format!("{}/{swift}", binding_layer::swift_sources_dir())),
-            })
-            .into_iter()
-            .collect(),
+            binding_layer::SWIFT_SOURCES
+                .map(|swift| Step::Copy {
+                    from: host(&format!("{generated}/{swift}")),
+                    to: host(&format!("{}/{swift}", binding_layer::swift_sources_dir())),
+                })
+                .into_iter()
+                .collect(),
             vec![Step::Copy {
                 from: host_of(
                     roots,
@@ -1677,60 +1607,93 @@ mod tests {
     }
 
     #[test]
-    fn the_ios_plan_hides_every_symbol_but_the_uniffi_exports_of_each_library(
+    fn the_ios_plan_hides_every_symbol_but_the_uniffi_exports_of_both_crates(
     ) -> Result<(), Vec<String>> {
         let commands = commands(&ios_plan(&host_roots()?, IosPhase::Full));
-        for generation in binding_layer::GENERATIONS {
-            let lib_name = generation.lib_name();
-            let archive_file = ios_static_library(lib_name);
-            let object_file =
-                binding_layer::library_file(binding_layer::LIBRARY_PREFIX, lib_name, OBJECT_SUFFIX);
-            for target in iter_ios_targets() {
-                let slice_dir = format!("{}/{}", ios_slices(), target.triple());
-                let archive = format!("{slice_dir}/{archive_file}");
-                let hidden_archive = format!("{slice_dir}/{HIDDEN_DIR}/{archive_file}");
-                let object = format!("{slice_dir}/{HIDDEN_DIR}/{object_file}");
-                let link = format!(
-                    "ld -r -arch {} -platform_version {} {IOS_DEPLOYMENT_TARGET} {IOS_DEPLOYMENT_TARGET} -force_load {archive} -exported_symbol _uniffi_{lib_name}_* -exported_symbol _ffi_{lib_name}_* -o {object}",
-                    target.arch(), target.platform()
-                );
-                let pack = format!("libtool -static -o {hidden_archive} {object}");
-                let link_at = workbench::required(
-                    commands.iter().position(|command| command == &link),
-                    "the relocatable link",
-                )?;
-                let pack_at = workbench::required(
-                    commands.iter().position(|command| command == &pack),
-                    "the archive step",
-                )?;
-                let bindgen_at = commands
-                    .iter()
-                    .position(|command| command.contains(&format!("--library {archive} ")));
-                assert!(link_at < pack_at);
-                if target == IosTarget::Device {
-                    assert!(workbench::required(bindgen_at, "the bindgen step")? < link_at);
-                } else {
-                    assert!(bindgen_at.is_none());
-                }
-                let mut readers = 0;
-                for (at, command) in commands.iter().enumerate() {
-                    if command.contains(&archive) {
-                        assert!(
-                            [Some(link_at), bindgen_at].contains(&Some(at)),
-                            "{command} reads the raw {archive}"
-                        );
-                    }
-                    if command.contains(&hidden_archive) && at != pack_at {
-                        assert!(
-                            pack_at < at,
-                            "{command} reads {hidden_archive} before it exists"
-                        );
-                        readers += 1;
-                    }
-                }
-                assert!(readers > 0, "nothing reads {hidden_archive}");
+        let archive_file = ios_static_library(binding_layer::WALLET_LIB_NAME);
+        let object_file = binding_layer::library_file(
+            binding_layer::LIBRARY_PREFIX,
+            binding_layer::WALLET_LIB_NAME,
+            OBJECT_SUFFIX,
+        );
+        let exports = [
+            binding_layer::WALLET_LIB_NAME,
+            binding_layer::PROXY_LIB_NAME,
+        ]
+        .map(|lib_name| {
+            format!("-exported_symbol _uniffi_{lib_name}_* -exported_symbol _ffi_{lib_name}_*")
+        })
+        .join(" ");
+        for target in iter_ios_targets() {
+            let slice_dir = format!("{}/{}", ios_slices(), target.triple());
+            let archive = format!("{slice_dir}/{archive_file}");
+            let hidden_archive = format!("{slice_dir}/{HIDDEN_DIR}/{archive_file}");
+            let object = format!("{slice_dir}/{HIDDEN_DIR}/{object_file}");
+            let link = format!(
+                "ld -r -arch {} -platform_version {} {IOS_DEPLOYMENT_TARGET} {IOS_DEPLOYMENT_TARGET} -force_load {archive} {exports} -o {object}",
+                target.arch(),
+                target.platform()
+            );
+            let pack = format!("libtool -static -o {hidden_archive} {object}");
+            let link_at = workbench::required(
+                commands.iter().position(|command| command == &link),
+                "the relocatable link",
+            )?;
+            let pack_at = workbench::required(
+                commands.iter().position(|command| command == &pack),
+                "the archive step",
+            )?;
+            let bindgen_at = commands
+                .iter()
+                .position(|command| command.contains(&format!("--library {archive} ")));
+            assert!(link_at < pack_at);
+            if target == IosTarget::Device {
+                assert!(workbench::required(bindgen_at, "the bindgen step")? < link_at);
+            } else {
+                assert!(bindgen_at.is_none());
             }
+            let mut readers = 0;
+            for (at, command) in commands.iter().enumerate() {
+                if command.contains(&archive) {
+                    assert!(
+                        [Some(link_at), bindgen_at].contains(&Some(at)),
+                        "{command} reads the raw {archive}"
+                    );
+                }
+                if command.contains(&hidden_archive) && at != pack_at {
+                    assert!(
+                        pack_at < at,
+                        "{command} reads {hidden_archive} before it exists"
+                    );
+                    readers += 1;
+                }
+            }
+            assert!(readers > 0, "nothing reads {hidden_archive}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn the_ios_plan_ships_one_rust_archive_so_the_app_links_one_std() -> Result<(), Vec<String>> {
+        let commands = commands(&ios_plan(&host_roots()?, IosPhase::Full));
+        let proxy_archive = ios_static_library(binding_layer::PROXY_LIB_NAME);
+        assert!(commands
+            .iter()
+            .all(|command| !command.contains(&proxy_archive)));
+        for target in iter_ios_targets() {
+            let in_slice = format!("/{}/", target.triple());
+            let links = commands
+                .iter()
+                .filter(|command| command.starts_with(&format!("{LD} ")))
+                .filter(|command| command.contains(&in_slice))
+                .count();
+            assert_eq!(links, 1, "{} merges {links} archives", target.triple());
+        }
+        let xcframeworks = commands
+            .iter()
+            .filter(|command| command.starts_with("xcodebuild -create-xcframework"))
+            .count();
+        assert_eq!(xcframeworks, 1);
         Ok(())
     }
 
@@ -1781,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn the_ios_slice_plan_builds_one_triple_and_delivers_its_archives() -> Result<(), Vec<String>> {
+    fn the_ios_slice_plan_builds_one_triple_and_delivers_its_archive() -> Result<(), Vec<String>> {
         for target in iter_ios_targets() {
             let triple = target.triple();
             let plan = ios_plan(&host_roots()?, IosPhase::Slice(target));
@@ -1793,10 +1756,17 @@ mod tests {
                 .iter()
                 .filter(|command| command.starts_with(CARGO_BUILD))
                 .collect();
-            assert_eq!(builds.len(), GENERATIONS_PER_BUILD);
-            assert!(builds
-                .iter()
-                .all(|command| command.contains(&format!("--target {triple}"))));
+            let [build] = builds[..] else {
+                return Err(vec![format!(
+                    "one cargo build per slice, found {}",
+                    builds.len()
+                )]);
+            };
+            assert!(build.contains(&format!("--target {triple}")));
+            assert!(
+                build.ends_with(&binding_layer::PROXY_FEATURE_ARGS.join(" ")),
+                "{build} leaves the proxy crate out of the archive"
+            );
             assert!(commands.iter().all(|command| {
                 !command.contains(LIBRARY_FLAG)
                     && ASSEMBLY_PROGRAMS
@@ -1804,16 +1774,14 @@ mod tests {
                         .all(|program| !command.starts_with(program))
             }));
             let delivered: Vec<String> = copies(&plan).into_iter().map(|(_, to)| to).collect();
-            let expected: Vec<String> = binding_layer::GENERATIONS
-                .map(|generation| {
-                    format!(
-                        "{}/{triple}/{}",
-                        ios_slices(),
-                        ios_static_library(generation.lib_name())
-                    )
-                })
-                .to_vec();
-            assert_eq!(delivered, expected);
+            assert_eq!(
+                delivered,
+                vec![format!(
+                    "{}/{triple}/{}",
+                    ios_slices(),
+                    ios_static_library(binding_layer::WALLET_LIB_NAME)
+                )]
+            );
             let describes = plan
                 .iter()
                 .filter(|step| matches!(step, Step::Describe { .. }))
@@ -1854,14 +1822,12 @@ mod tests {
             .collect();
         let mut expected = Vec::new();
         for target in iter_ios_targets() {
-            for generation in binding_layer::GENERATIONS {
-                expected.push(format!(
-                    "{}/{}/{}",
-                    ios_slices(),
-                    target.triple(),
-                    ios_static_library(generation.lib_name())
-                ));
-            }
+            expected.push(format!(
+                "{}/{}/{}",
+                ios_slices(),
+                target.triple(),
+                ios_static_library(binding_layer::WALLET_LIB_NAME)
+            ));
             if target == IosTarget::Device {
                 expected.push(format!(
                     "{}/{}/{}",

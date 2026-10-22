@@ -175,10 +175,12 @@ x509-parser = "0.18"
 [profile.test]
 opt-level = 3
 
-# The profile that the Binding Layer builder uses for the wallet library.
-# The panic strategy is unwind, the same as the `proxy` profile below. The
-# iOS app links both static archives into one binary, and the two copies of
-# std resolve to one panic runtime at link time, so an abort in either
+# The profile that the Binding Layer builder uses for the wallet library,
+# which on iOS carries the proxy crate as well, under the wallet crate's
+# `zingo-nym-proxy-ffi` feature, so the app links one Rust std. The panic
+# strategy is unwind, the same as the `proxy` profile below. The iOS app
+# once linked two static archives into one binary, and the two copies of
+# std resolved to one panic runtime at link time, so an abort in either
 # aborted the app on every panic inside a tokio task of the proxy (issue
 # #2926). The workbench test `panic_strategy` holds both profiles to one
 # strategy.
@@ -191,8 +193,8 @@ overflow-checks = true
 panic = "unwind"
 opt-level = "z"
 
-# The profile that the Binding Layer builder uses for the proxy library. It
-# is the plain release profile the proxy shipped under from the standalone
+# The profile that the Binding Layer builder uses for the Android proxy
+# library. It is the plain release profile the proxy shipped under from the standalone
 # zingo-netutils workspace before PR #3037 made the crate a member: the
 # `mobile` profile's size optimization and overflow checks were chosen for
 # the wallet, not for the nym stack's packet crypto, and a profile is

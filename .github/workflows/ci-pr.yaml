@@ -304,7 +304,7 @@ jobs:
       version: ${{ needs.binding-layer-names.outputs.maven_version }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
-  # The per-PR tier's iOS half: both XCFrameworks and the Swift sources,
+  # The per-PR tier's iOS half: the XCFramework and the Swift sources,
   # on the WarpBuild macOS runner that binding-layer-ios.yaml names. The
   # Android job above proves the Kotlin Binding Set on every pull request,
   # and this job proves the Swift one the same way, so a change that

@@ -37,6 +37,8 @@ pub fn exported_symbol_patterns(lib_name: &str) -> [String; 2] {
 /// The proxy crate's package name, which cargo selects in its own workspace.
 pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
 
+pub const PROXY_FEATURE_ARGS: [&str; 2] = ["--features", PROXY_PACKAGE];
+
 pub const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
 
 pub const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
@@ -99,14 +101,13 @@ pub const STATIC_SUFFIX: &str = ".a";
 /// The operating system name that Rust reports on macOS.
 pub const MACOS: &str = "macos";
 
-/// The wallet XCFramework.
-pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
+pub const WALLET_BINARY_TARGET: &str = "Zingolib";
 
-/// The proxy XCFramework.
-pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
+const XCFRAMEWORK_SUFFIX: &str = ".xcframework";
 
-/// Both XCFrameworks, in the order that the builder creates them.
-pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
+pub fn wallet_xcframework() -> String {
+    format!("{WALLET_BINARY_TARGET}{XCFRAMEWORK_SUFFIX}")
+}
 
 const SWIFT_SOURCES_PARENT: &str = "Sources";
 
@@ -151,7 +152,7 @@ const SIMCTL_DEVICE_FIELDS: usize = 3;
 
 const VERSION_SEPARATOR: char = '.';
 
-pub const SWIFT_CONTRACT_TEST_COUNT: usize = 3;
+pub const SWIFT_CONTRACT_TEST_COUNT: usize = 4;
 
 const XCODEBUILD_EXECUTED: &str = "Executed ";
 
@@ -677,18 +678,14 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Workdir {
     WalletCrate,
-    /// The wallet-side workspace's directory, where library mode sees no proxy configuration.
-    WalletWorkspace,
     /// The proxy crate's directory, where library mode applies the proxy's configuration.
     ProxyCrate,
 }
 
-/// The directory that the builder generates one binding set in one language from.
-pub fn bindgen_workdir(generation: Generation, language: &str) -> Workdir {
-    match (generation, language) {
-        (Generation::Wallet, _) => Workdir::WalletCrate,
-        (Generation::Proxy, KOTLIN) => Workdir::ProxyCrate,
-        (Generation::Proxy, _) => Workdir::WalletWorkspace,
+pub fn bindgen_workdir(generation: Generation) -> Workdir {
+    match generation {
+        Generation::Wallet => Workdir::WalletCrate,
+        Generation::Proxy => Workdir::ProxyCrate,
     }
 }
 
@@ -912,6 +909,67 @@ mod tests {
     }
 
     #[test]
+    fn the_swift_package_links_one_binary_target_so_the_app_links_one_std() {
+        let manifest = include_str!("../../../bindings/swift/Package.swift");
+        assert_eq!(manifest.matches(".binaryTarget(").count(), 1);
+        assert!(manifest.contains(&format!("name: \"{WALLET_BINARY_TARGET}\"")));
+        assert!(manifest.contains(&format!("/{}\"", wallet_xcframework())));
+        assert!(manifest.contains(&format!("dependencies: [\"{WALLET_BINARY_TARGET}\"]")));
+    }
+
+    #[test]
+    fn the_wallet_crate_offers_the_proxy_feature_the_ios_build_enables() -> Result<(), Vec<String>>
+    {
+        let manifest: toml_edit::DocumentMut = include_str!("../../../zingo-ffi/lib/Cargo.toml")
+            .parse()
+            .map_err(|error| {
+                vec![format!(
+                    "{WALLET_CRATE_DIR}/{} does not parse: {error}",
+                    crate::MANIFEST
+                )]
+            })?;
+        let [flag, feature] = PROXY_FEATURE_ARGS;
+        assert_eq!(flag, "--features");
+        let dependency = crate::required(
+            manifest
+                .get("dependencies")
+                .and_then(|table| table.get(PROXY_PACKAGE)),
+            "the proxy dependency of the wallet crate",
+        )?;
+        assert_eq!(
+            dependency
+                .get("optional")
+                .and_then(toml_edit::Item::as_bool),
+            Some(true)
+        );
+        let relative = crate::required(
+            dependency.get("path").and_then(toml_edit::Item::as_str),
+            "the proxy dependency's path",
+        )?;
+        assert_eq!(
+            resolved(WALLET_CRATE_DIR, relative),
+            path::Path::new(PROXY_CRATE_DIR)
+        );
+        let enabled = crate::required(
+            manifest
+                .get("features")
+                .and_then(|table| table.get(feature))
+                .and_then(toml_edit::Item::as_array),
+            "the proxy feature of the wallet crate",
+        )?;
+        let dependency_feature = format!("dep:{PROXY_PACKAGE}");
+        assert!(enabled
+            .iter()
+            .any(|value| value.as_str() == Some(&dependency_feature)));
+        let source = include_str!("../../../zingo-ffi/lib/src/lib.rs");
+        assert!(source.contains(&format!(
+            "#[cfg(feature = \"{feature}\")]\nextern crate {};",
+            PROXY_PACKAGE.replace('-', "_")
+        )));
+        Ok(())
+    }
+
+    #[test]
     fn the_android_gradle_files_name_the_maven_publication() {
         let manifest = include_str!("../../../bindings/android/build.gradle.kts");
         let settings = include_str!("../../../bindings/android/settings.gradle.kts");
@@ -1001,6 +1059,8 @@ mod tests {
         lexical(&path::Path::new(base).join(relative))
     }
 
+    const SWIFT_CONTRACT_FIXTURE_TARGET: &str = "AppPersonalities";
+
     #[test]
     fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
         let manifest =
@@ -1010,7 +1070,10 @@ mod tests {
             ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
         )));
         assert!(manifest.contains(&format!(
-            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
+            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\"), \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
+        )));
+        assert!(manifest.contains(&format!(
+            ".target(\n            name: \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
         )));
         assert!(!manifest.contains("products:"));
         let shipped_package = crate::required(
@@ -1255,17 +1318,8 @@ mod tests {
     }
 
     #[test]
-    fn only_the_proxy_kotlin_generates_where_the_proxy_configuration_applies() {
-        assert_eq!(
-            bindgen_workdir(Generation::Proxy, KOTLIN),
-            Workdir::ProxyCrate
-        );
-        assert_eq!(
-            bindgen_workdir(Generation::Proxy, SWIFT),
-            Workdir::WalletWorkspace
-        );
-        assert!(LANGUAGES
-            .iter()
-            .all(|language| bindgen_workdir(Generation::Wallet, language) == Workdir::WalletCrate));
+    fn each_generation_generates_from_its_own_crate() {
+        assert_eq!(bindgen_workdir(Generation::Wallet), Workdir::WalletCrate);
+        assert_eq!(bindgen_workdir(Generation::Proxy), Workdir::ProxyCrate);
     }
 }

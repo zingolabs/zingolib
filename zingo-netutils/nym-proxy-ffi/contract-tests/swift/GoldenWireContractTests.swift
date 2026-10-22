@@ -12,6 +12,7 @@
 // simulator as its last step. The golden directory resolves relative to
 // this file.
 
+import AppPersonalities
 import Foundation
 import XCTest
 import ZingoBindings
@@ -101,6 +102,11 @@ final class GoldenWireContractTests: XCTestCase {
             }
             XCTAssertEqual(lifted, value, "\(name): lifting the pin changed the value")
         }
+    }
+
+    func testTheAppsPersonalityRoutinesLinkBesideTheBindings() {
+        XCTAssertTrue(app_personalities_cxx_catches())
+        XCTAssertTrue(app_personalities_objc_catches())
     }
 
     func testEveryErrorVariantWireEncodingMatchesItsPin() throws {

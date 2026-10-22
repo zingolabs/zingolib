@@ -97,7 +97,7 @@ jobs:
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   # The nightly tier of zingolib/0054: the four Android ABIs in one AAR
-  # inside the Maven layout, and both XCFrameworks with the Swift sources
+  # inside the Maven layout, and the XCFramework with the Swift sources
   # on macOS. Each job runs the builder on this commit.
   binding-layer-android:
     needs: binding-layer-names
