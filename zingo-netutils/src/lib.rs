@@ -682,6 +682,7 @@ mod tests {
     //! - We explicitly install a rustls crypto provider to avoid
     //!   provider-selection panics in test binaries.
 
+    use crate::default_indexer;
     use http::{Request, Response};
     use hyper::{
         body::{Bytes, Incoming},
@@ -1043,7 +1044,7 @@ mod tests {
 
     #[tokio::test]
     async fn connects_to_public_mainnet_indexer_and_gets_info() {
-        let endpoint = "https://zec.rocks:443".to_string();
+        let endpoint = default_indexer::MAINNET_DEFAULT_INDEXER.to_string();
 
         let uri: http::Uri = endpoint.parse().expect("bad mainnet indexer URI");
 
@@ -1082,7 +1083,9 @@ mod tests {
     async fn get_block_range_supports_descending_order() {
         use tokio_stream::StreamExt;
 
-        let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
+        let uri: http::Uri = default_indexer::MAINNET_DEFAULT_INDEXER
+            .parse()
+            .expect("MAINNET_DEFAULT_INDEXER is a literal that parses");
         let mut indexer = GrpcIndexer::new(uri).await.expect("valid URI");
 
         let tip = indexer

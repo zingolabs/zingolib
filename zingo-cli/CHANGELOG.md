@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- The `change_server` example in the command help names
+  `https://mainnet.zainod.zingolabs.dev:443` instead of `https://zec.rocks:443`.
 - An online session no longer runs the Server-Selection Sweep at startup
   or on a sync-recovery redraw. The Session Indexer, named by `--server` or
   the chain's Default Indexer, is bound at config time, and the `--server`

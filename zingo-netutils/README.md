@@ -27,7 +27,7 @@ an additional dependency.
 ```rust
 use zingo_netutils::{GrpcIndexer, Indexer};
 
-let uri: http::Uri = "https://zec.rocks:443".parse().unwrap();
+let uri: http::Uri = "https://mainnet.zainod.zingolabs.dev:443".parse()?;
 let indexer = GrpcIndexer::new(uri)?;
 
 let info = indexer.get_info().await?;

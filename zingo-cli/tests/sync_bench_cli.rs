@@ -15,6 +15,8 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use zingo_netutils::default_indexer;
+
 /// The number of mainnet blocks the benchmark syncs.
 const SYNC_WINDOW: u32 = 20_000;
 
@@ -28,7 +30,7 @@ const BENCH_BIRTHDAY: u32 = TIP_AT_AUTHORING - SYNC_WINDOW;
 const DEFAULT_BUDGET_SECS: u64 = 540;
 
 /// The default indexer URI, overridable via `SYNC_BENCH_INDEXER`.
-const DEFAULT_INDEXER: &str = "https://zec.rocks:443";
+const DEFAULT_INDEXER: &str = default_indexer::MAINNET_DEFAULT_INDEXER;
 
 /// The cadence at which the harness polls the child for exit.
 const CHILD_POLL: Duration = Duration::from_millis(500);

@@ -38,7 +38,7 @@ const MILLIS_SUFFIX: &str = "ms";
 const LOG_FILTER: &str = "info";
 
 /// The indexer every run pins, so arms compare like with like.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
+const PINNED_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
 
 /// The zingo-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.

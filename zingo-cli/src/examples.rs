@@ -48,7 +48,7 @@ pub(crate) use send_all_memo;
 
 macro_rules! server_uri {
     () => {
-        "https://zec.rocks:443"
+        "https://mainnet.zainod.zingolabs.dev:443"
     };
 }
 pub(crate) use server_uri;

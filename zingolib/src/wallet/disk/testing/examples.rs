@@ -5,13 +5,14 @@ use http::Uri;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use zingo_common_components::protocol::ActivationHeights;
+use zingo_netutils::default_indexer;
 use zingo_test_vectors::seeds;
 
 use crate::config::{ChainType, ClientConfig, WalletConfig};
 use crate::testutils::chain_generics::networked::TESTNET_INDEXER;
 
 /// The mainnet indexer these example wallets pin explicitly.
-const MAINNET_INDEXER: &str = "https://zec.rocks:443";
+const MAINNET_INDEXER: &str = default_indexer::MAINNET_DEFAULT_INDEXER;
 
 /// - Reads nothing at run time: the directory is zingolib's manifest directory at compile time, so the
 ///   example wallets resolve the same from every crate that runs a test.

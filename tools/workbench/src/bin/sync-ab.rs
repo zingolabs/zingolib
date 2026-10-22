@@ -119,7 +119,7 @@ const MILLIS_SUFFIX: &str = "ms";
 const LOG_FILTER: &str = "info";
 
 /// The indexer every run pins, so no arm meets a different server.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
+const PINNED_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
 
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
