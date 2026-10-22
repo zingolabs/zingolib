@@ -162,7 +162,7 @@ pub struct IndexerHistoryHandle {
 }
 
 impl IndexerHistoryHandle {
-    /// Keeps one finished attempt in this session's store, dropping the
+    /// Appends one finished attempt to this session's store, dropping the
     /// oldest once the store is full.
     pub(crate) fn record(&self, attempt: &IndexerAttempt) {
         let mut attempts = self.attempts.lock().expect("attempts mutex");
