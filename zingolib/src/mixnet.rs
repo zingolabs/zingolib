@@ -35,7 +35,7 @@ pub mod supervisor;
 pub use acquire::TransportError;
 
 #[cfg(test)]
-pub(crate) fn test_health_indexer() -> http::Uri {
+pub(crate) fn test_indexer() -> http::Uri {
     "https://indexer.test:443"
         .parse()
         .expect("the literal is a well-formed https URI")

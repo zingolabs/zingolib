@@ -641,9 +641,7 @@ pub enum Profile {
     Debug,
     /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
-    /// The `mobile` profile of the root workspace, which the builder ships the wallet library under.
     Mobile,
-    /// The `proxy` profile of the root workspace, the plain release profile the proxy library ships under.
     Proxy,
 }
 

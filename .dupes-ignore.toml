@@ -163,10 +163,6 @@ fingerprint = "4062d60357e0f982"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:1789"
 
 [[ignore]]
-fingerprint = "40cae9468f333294"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/server_select_clearnet.rs:62"
-
-[[ignore]]
 fingerprint = "41f590364d21bf92"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/migration/store.rs:224"
 
