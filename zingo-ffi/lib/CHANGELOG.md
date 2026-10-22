@@ -90,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
 ### Fixed
+- `send_swap_deposit` answers `InvalidInput` for a malformed or a
+  non-transparent `vault_address`. It answered `Send`, the class a consumer
+  retries.
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
   the strategy the standalone zingo-netutils workspace already uses for the
   proxy library. The iOS app links both static archives into one binary, and
