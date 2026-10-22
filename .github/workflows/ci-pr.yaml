@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       # The nightly builds every ABI, packages one AAR from them, and builds
-      # the XCFrameworks, so it skips this workflow's x86_64 and iOS builds.
+      # the XCFramework, so it skips this workflow's x86_64 and iOS builds.
       skip-binding-layer-build:
         required: false
         type: boolean

@@ -219,7 +219,6 @@ enum Platform {
         /// Whether the calling job already runs in the builder image, so the plan runs on the host.
         in_image: bool,
     },
-    /// The XCFramework and Swift sources for the SwiftPM package.
     Ios(IosPhase),
     /// The Kotlin sources alone, generated on the host for the Gradle checks that compile against them.
     Kotlin,
