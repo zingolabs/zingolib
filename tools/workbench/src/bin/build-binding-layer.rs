@@ -763,8 +763,7 @@ fn android_plan(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step>
 
 /// The Android steps before the base environment: bindings, per-ABI libraries, stripping, and copies.
 fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step> {
-    let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/android/wallet"));
-    let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/android/proxy"));
+    let target = roots.run_path(&format!("{BUILD_ROOT}/android"));
     let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
     let shared_library = |lib_name| {
         binding_layer::library_file(
@@ -776,10 +775,10 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     let wallet_file = shared_library(binding_layer::WALLET_LIB_NAME);
     let proxy_file = shared_library(binding_layer::PROXY_LIB_NAME);
     let wallet_library = |abi: &binding_layer::AndroidAbi| {
-        format!("{wallet_target}/{}/{PROFILE_DIR}/{wallet_file}", abi.triple)
+        format!("{target}/{}/{PROFILE_DIR}/{wallet_file}", abi.triple)
     };
     let proxy_library = |abi: &binding_layer::AndroidAbi| {
-        format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
+        format!("{target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
     };
     let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
@@ -787,7 +786,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         language: binding_layer::KOTLIN,
         profile: BUILDER_PROFILE,
         wallet_workspace: &roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
-        target_dir: &wallet_target,
+        target_dir: &target,
     };
     let bindgen = |generation, library: &str, env: &[(String, String)]| {
         bindgen_step(roots, generation, &inputs, library, &kotlin_out, env)
@@ -828,13 +827,13 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     let bindgen_abi = &binding_layer::ANDROID_ABIS[FIRST_POSITION];
     let generate_once = |position, generation, library: String| {
         (position == FIRST_POSITION)
-            .then(|| bindgen(generation, &library, &bindgen_abi.env(&wallet_target)))
+            .then(|| bindgen(generation, &library, &bindgen_abi.env(&target)))
     };
     let wallet_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
         [ndk_build(
             abi,
             &wallet_crate_dir,
-            &wallet_target,
+            &target,
             BUILDER_PROFILE,
             &[],
         )]
@@ -844,13 +843,13 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             binding_layer::Generation::Wallet,
             wallet_library(abi),
         ))
-        .chain(strip(wallet_library(abi), &abi.env(&wallet_target)))
+        .chain(strip(wallet_library(abi), &abi.env(&target)))
     });
     let proxy_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
         [ndk_build(
             abi,
             &proxy_crate_dir,
-            &proxy_target,
+            &target,
             BUILDER_PROFILE,
             &["--package", binding_layer::PROXY_PACKAGE],
         )]
@@ -860,7 +859,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             binding_layer::Generation::Proxy,
             proxy_library(abi),
         ))
-        .chain(strip(proxy_library(abi), &abi.env(&proxy_target)))
+        .chain(strip(proxy_library(abi), &abi.env(&target)))
     });
     let host_copies = abis.iter().flat_map(|abi| {
         let jni = format!("{}/{}", binding_layer::JNI_LIBS_DIR, abi.jni_dir);
@@ -879,7 +878,7 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
     let descriptor = abis.first().map(|abi| {
         describe_step(
             &wallet_crate_dir,
-            &abi.env(&wallet_target),
+            &abi.env(&target),
             Some(abi.ndk_link()),
             abi.triple,
             BUILDER_PROFILE,
@@ -897,14 +896,13 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
 const HOST_PROFILE: binding_layer::Profile = binding_layer::Profile::Debug;
 
 fn kotlin_plan(roots: &Roots) -> Vec<Step> {
-    let wallet_target = roots.run_path(&format!("{BUILD_ROOT}/host/wallet"));
-    let proxy_target = roots.run_path(&format!("{BUILD_ROOT}/host/proxy"));
+    let target = roots.run_path(&format!("{BUILD_ROOT}/host"));
     let kotlin_out = roots.out_run_path(binding_layer::KOTLIN_OUT_DIR);
     let inputs = binding_layer::BindgenInputs {
         language: binding_layer::KOTLIN,
         profile: HOST_PROFILE,
         wallet_workspace: &roots.run_path(&format!("{WALLET_WORKSPACE_DIR}/{MANIFEST}")),
-        target_dir: &wallet_target,
+        target_dir: &target,
     };
     let bindgen = |generation, library: &str| {
         bindgen_step(roots, generation, &inputs, library, &kotlin_out, &[])
@@ -928,19 +926,19 @@ fn kotlin_plan(roots: &Roots) -> Vec<Step> {
         roots,
         &[],
         vec![
-            build(binding_layer::WALLET_CRATE_DIR, &wallet_target, &[]),
+            build(binding_layer::WALLET_CRATE_DIR, &target, &[]),
             bindgen(
                 binding_layer::Generation::Wallet,
-                &host_library(binding_layer::WALLET_LIB_NAME, &wallet_target),
+                &host_library(binding_layer::WALLET_LIB_NAME, &target),
             ),
             build(
                 binding_layer::PROXY_CRATE_DIR,
-                &proxy_target,
+                &target,
                 &["--package", binding_layer::PROXY_PACKAGE],
             ),
             bindgen(
                 binding_layer::Generation::Proxy,
-                &host_library(binding_layer::PROXY_LIB_NAME, &proxy_target),
+                &host_library(binding_layer::PROXY_LIB_NAME, &target),
             ),
         ],
     )
@@ -2464,6 +2462,28 @@ mod tests {
         assert!(
             builds.iter().all(|command| command.contains(&profile)),
             "a library builds under another profile than {profile}: {builds:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn every_android_library_builds_into_one_target_directory() -> Result<(), Vec<String>> {
+        let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
+        let mut targets: Vec<String> = android_plan(&roots()?, &abis)
+            .iter()
+            .filter_map(|step| match step {
+                Step::Run { env, command, .. } if command.iter().any(|arg| arg == "build") => env
+                    .iter()
+                    .find(|(key, _)| key == binding_layer::TARGET_DIR_VARIABLE)
+                    .map(|(_, target)| target.clone()),
+                _ => None,
+            })
+            .collect();
+        targets.dedup();
+        assert_eq!(
+            targets.len(),
+            1,
+            "the wallet and the proxy build into separate target directories, and every dependency they share compiles twice per ABI: {targets:?}"
         );
         Ok(())
     }
