@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `IndexerChain` lives in `default_indexer`, the table of Default
   Indexers keyed by chain, now that the census module it partitioned is gone
   (zingo-adrs zingolib/0063).
+- `Indexer::get_mempool_stream` takes no timeout. The stream is a
+  subscription the server ends at the next block, so a call deadline only
+  ever cut it short. `GrpcIndexer` sends no `grpc-timeout` on it, and the
+  connection it opens on stays bounded by `time::INDEXER_CONNECT_TIMEOUT`.
+- `time::HEAVY_UNARY_TIMEOUT` is `time::FINITE_STREAM_TIMEOUT`, 120 s in
+  place of 20 s. Every caller was a finite server stream (a block range,
+  the subtree roots, a transparent address's transactions) and the bound
+  covers the whole download, which the old value cut short on a slow
+  server or link. A stall between messages is still caught by
+  `time::STREAM_MSG_TIMEOUT`.
 
 ### Deprecated
 
