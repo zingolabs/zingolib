@@ -93,8 +93,8 @@ For a NEW wallet created in Offline mode it is instead an optional override of t
             .arg(Arg::new("server")
                 .long("server")
                 .value_name("server")
-                .help("Pin a specific Indexer server. Without it, an online session's \
-Server-Selection Sweep selects the sync indexer.")
+                .help("Name the Session Indexer. Without it, an online session attaches \
+to the chain's Default Indexer.")
                 .value_parser(parse_uri))
             .arg(Arg::new("offline")
                 .long("offline")
@@ -687,15 +687,8 @@ const SYNC_RECOVERY_ATTEMPT_BUDGET: usize = 3;
 /// What the command loop needs to recover a dead sync without the user.
 #[cfg(feature = "nym")]
 pub(crate) struct SyncRecovery {
-    redraw: Option<RedrawPlan>,
     /// The automatic recoveries left before the session parks.
     attempts_left: usize,
-}
-
-#[cfg(feature = "nym")]
-pub(crate) struct RedrawPlan {
-    chain: zingolib::indexers::IndexerChain,
-    proxy: zingolib::mixnet::provision::ProxyResolution,
 }
 
 /// What the command loop needs to recover a dead sync without the user.
@@ -708,29 +701,20 @@ pub(crate) struct SyncRecovery;
 enum RecoveryAction {
     /// Report the error and wait for the user's `sync run`.
     Park,
-    /// Launch a fresh sync task against the still-bound indexer.
+    /// Launch a fresh sync task against the Session Indexer.
     Relaunch,
-    /// Redraw the sync indexer with a Server-Selection Sweep, then launch
-    /// a fresh sync task against the winner.
-    Redraw,
 }
 
-/// Plans one automatic recovery from the error's typed recommendation, the
-/// attempts left, and whether this session may redraw its indexer.
 #[cfg(feature = "nym")]
-fn plan_recovery(
-    observable: SyncRecoveryObservables,
-    attempts_left: usize,
-    redraw_available: bool,
-) -> RecoveryAction {
+fn plan_recovery(observable: SyncRecoveryObservables, attempts_left: usize) -> RecoveryAction {
     if attempts_left == 0 {
         return RecoveryAction::Park;
     }
     match observable {
-        SyncRecoveryObservables::Abort => RecoveryAction::Park,
+        SyncRecoveryObservables::Abort | SyncRecoveryObservables::ServerUnavailable => {
+            RecoveryAction::Park
+        }
         SyncRecoveryObservables::MaybeRecoverableServer => RecoveryAction::Relaunch,
-        SyncRecoveryObservables::ServerUnavailable if redraw_available => RecoveryAction::Redraw,
-        SyncRecoveryObservables::ServerUnavailable => RecoveryAction::Park,
     }
 }
 
@@ -1085,13 +1069,9 @@ fn get_communications(matches: &clap::ArgMatches) -> std::io::Result<Communicati
 pub(crate) struct CliConfigTemplate {
     mode: Operations,
     communications: Communications,
-    /// The pinned Indexer: `None` when the session is Offline, and equally
-    /// when it is Online unpinned, where the Server-Selection Sweep selects.
+    /// The Session Indexer: `None` when the session is Offline, and the
+    /// named or Default Indexer when it is Online.
     server: Option<http::Uri>,
-    /// True when `--server` was typed on the command line: the pin the
-    /// Server-Selection Sweep surveys and never substitutes.
-    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-    server_pinned: bool,
     /// All servers that responded to `get_info()` during dynamic selection,
     /// sorted fastest to slowest. Empty if `--server` was specified explicitly.
     /// Will be used for automatic failover when sync fails.
@@ -1247,9 +1227,6 @@ impl CliConfigTemplate {
                 });
             }
         }
-        // A resolved server, named or Default, binds the session: the sweep
-        // surveys it alone and never substitutes another (zingolib/0063).
-        let server_pinned = server.is_some();
         let sync = !matches.get_flag("nosync") && communications == Communications::Online;
         let waitsync = matches.get_flag("waitsync");
         let nym_proxy_path = matches.get_one::<String>("nym-proxy").cloned();
@@ -1257,7 +1234,6 @@ impl CliConfigTemplate {
             mode,
             communications,
             server,
-            server_pinned,
             #[cfg(feature = "nakednet-test-mode")]
             ranked_servers,
             seed,
@@ -1380,9 +1356,6 @@ async fn startup_async(
         info!("Starting Zingo-CLI");
         match &filled_template.server {
             Some(server) => info!("Lightclient connecting to {server}"),
-            None if filled_template.communications == Communications::Online => {
-                info!("No pinned Indexer; the Server-Selection Sweep selects the sync indexer")
-            }
             None => info!("Offline mode: no Indexer will be configured this session"),
         }
     }
@@ -1396,7 +1369,7 @@ async fn startup_async(
     // nakednet. Offline sessions never transmit and skip the driver
     // entirely.
     #[cfg(feature = "nym")]
-    let proxy = if filled_template.communications == Communications::Online {
+    if filled_template.communications == Communications::Online {
         use zingolib::mixnet::{MixnetStartPolicy, ProvisionStrategy};
         info!(
             "Mixnet Mode enabling; the nym proxy is bootstrapping. Send and price-fetch \
@@ -1444,7 +1417,10 @@ async fn startup_async(
                 }
             }
         });
-        let resolution = lightclient
+        // The session's Spawned resolution is the proof the mixnet came up
+        // through the bundled binary; the Session Indexer was bound at
+        // config time, so nothing here selects one (zingo-adrs zingolib/0063).
+        lightclient
             .start_mixnet_session(
                 ProvisionStrategy::Spawn(commands::spawn_hints(
                     filled_template.nym_proxy_path.as_deref(),
@@ -1460,27 +1436,9 @@ async fn startup_async(
                     &failure,
                 )
             })?;
-        Some(resolution)
-    } else {
-        None
-    };
+    }
 
-    // The sweep binds the session's indexer, so it runs for every online
-    // session, not only a syncing one: a --nosync session still accepts
-    // interactive sync and send, which need an indexer bound. A pinned
-    // server is bound at config time and surveyed here; an unpinned online
-    // session has no indexer until the sweep selects one.
-    #[cfg(feature = "nym")]
-    let indexer_ready = match &proxy {
-        Some(resolution) => {
-            sweep_select_sync_indexer(&mut lightclient, filled_template, resolution).await
-        }
-        None => true,
-    };
-    #[cfg(not(feature = "nym"))]
-    let indexer_ready = true;
-
-    if filled_template.sync && indexer_ready {
+    if filled_template.sync {
         let sync_run = commands::CliCommand::Sync {
             sub: commands::SyncSubCommand::Run,
         };
@@ -1506,7 +1464,6 @@ async fn startup_async(
     }
 
     if filled_template.sync
-        && indexer_ready
         && filled_template.waitsync
         && let Err(e) = lightclient.await_sync().await
     {
@@ -1515,162 +1472,12 @@ async fn startup_async(
 
     #[cfg(feature = "nym")]
     let sync_recovery = SyncRecovery {
-        redraw: proxy
-            .filter(|_| !filled_template.server_pinned)
-            .and_then(|proxy| {
-                census_chain(&filled_template.chaintype).map(|chain| RedrawPlan { chain, proxy })
-            }),
         attempts_left: SYNC_RECOVERY_ATTEMPT_BUDGET,
     };
     #[cfg(not(feature = "nym"))]
     let sync_recovery = SyncRecovery;
 
     Ok((lightclient, sync_recovery))
-}
-
-/// Maps the session chain to its census chain; `None` for regtest, whose
-/// indexers the census does not carry.
-#[cfg(feature = "nym")]
-fn census_chain(chain: &ChainType) -> Option<zingolib::indexers::IndexerChain> {
-    match chain {
-        ChainType::Mainnet => Some(zingolib::indexers::IndexerChain::Main),
-        ChainType::Testnet => Some(zingolib::indexers::IndexerChain::Test),
-        ChainType::Regtest(_) => None,
-    }
-}
-
-/// Runs the Server-Selection Sweep (ADR 0034), narrating each phase, and
-/// binds a sync indexer; returns whether this Sync Session may open. A
-/// pinned server rides the survey and is chosen when it answers; a pin the
-/// survey found unresponsive is reported with the sweep's verdict offered
-/// as the alternative, and a sweep whose own transport failed never counts
-/// against the pin.
-#[cfg(feature = "nym")]
-async fn sweep_select_sync_indexer(
-    lightclient: &mut LightClient,
-    filled_template: &CliConfigTemplate,
-    proxy: &zingolib::mixnet::provision::ProxyResolution,
-) -> bool {
-    let Some(chain) = census_chain(&filled_template.chaintype) else {
-        return true;
-    };
-    let pin = filled_template
-        .server_pinned
-        .then(|| filled_template.server.clone())
-        .flatten();
-    if let Some(pinned) = &pin
-        && !zingolib::mixnet::probe::probe_eligible(pinned)
-    {
-        eprintln!(
-            "Server-Selection Sweep: pinned server {pinned} is outside the mixnet exit policy \
-             (https on port 443), so no sweep can survey it; binding it directly."
-        );
-        return true;
-    }
-    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
-        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
-        .collect();
-    if let Some(pinned) = &pin
-        && !candidates.contains(pinned)
-    {
-        candidates.push(pinned.clone());
-    }
-    let selection = lightclient
-        .run_server_selection_sweep(
-            std::path::Path::new(&proxy.path),
-            &candidates,
-            pin.as_ref(),
-            narrate_sweep_progress,
-        )
-        .await;
-    match judge_sweep_outcome(&selection, pin.as_ref()) {
-        SweepVerdict::PinStands { notice } => {
-            eprintln!("{notice}");
-            true
-        }
-        SweepVerdict::Refuse { notice } => {
-            eprintln!("{notice}");
-            false
-        }
-        SweepVerdict::BindWinner { chosen, notice } => {
-            match lightclient.set_indexer_uri(chosen.clone()).await {
-                Ok(()) => {
-                    eprintln!("{notice}");
-                    true
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {}. \
-                         This Sync Session does not open.",
-                        commands::render_error_chain(&e),
-                    );
-                    false
-                }
-            }
-        }
-        SweepVerdict::RecommendFallback {
-            alternative,
-            notice,
-        } => {
-            eprintln!("{notice}");
-            if !consent_to_fallback(&filled_template.mode, &alternative) {
-                eprintln!(
-                    "Server-Selection Sweep: fallback declined. This Sync Session does not \
-                     open; run `changeserver {alternative}` at the prompt, or relaunch \
-                     pinning a live server."
-                );
-                return false;
-            }
-            match lightclient.set_indexer_uri(alternative.clone()).await {
-                Ok(()) => {
-                    eprintln!(
-                        "Server-Selection Sweep: sync attaches to {alternative} by your \
-                         explicit consent."
-                    );
-                    true
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Server-Selection Sweep: consented to {alternative}, but binding it \
-                         failed: {}. This Sync Session does not open.",
-                        commands::render_error_chain(&e),
-                    );
-                    false
-                }
-            }
-        }
-    }
-}
-
-/// Narrates one Server-Selection Sweep phase transition on stderr.
-#[cfg(feature = "nym")]
-fn narrate_sweep_progress(phase: zingolib::lightclient::select::SweepProgress) {
-    use zingolib::lightclient::select::SweepProgress;
-    match phase {
-        SweepProgress::TransportBootstrapping => eprintln!(
-            "Server-Selection Sweep: bootstrapping a dedicated sweep transport \
-             (its Exit Node is recycled when the sweep completes)..."
-        ),
-        SweepProgress::Surveying { candidates } => eprintln!(
-            "Server-Selection Sweep: surveying {candidates} candidates over the mixnet..."
-        ),
-        SweepProgress::ExitAbandoned { draw } => eprintln!(
-            "Server-Selection Sweep: the Exit Node of draw {draw} carries nothing — \
-             a reliable address stayed silent through it; abandoning that exit and \
-             surveying again from the start..."
-        ),
-        SweepProgress::Judging { answered, surveyed } => eprintln!(
-            "Server-Selection Sweep: {answered} of {surveyed} candidates answered; \
-             judging the live cohort..."
-        ),
-    }
-}
-
-/// Reports whether two URIs name the same indexer endpoint by scheme, host,
-/// and port, so a bound URI's path rendering never defeats the comparison.
-#[cfg(feature = "nym")]
-fn same_endpoint(a: &http::Uri, b: &http::Uri) -> bool {
-    a.scheme_str() == b.scheme_str() && a.host() == b.host() && a.port_u16() == b.port_u16()
 }
 
 /// Attempts one automatic recovery of a dead sync, returning whether a new
@@ -1684,11 +1491,7 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
     let Some(bound) = lightclient.indexer_uri() else {
         return false;
     };
-    let action = plan_recovery(
-        error.recovery_recommendation(),
-        recovery.attempts_left,
-        recovery.redraw.is_some(),
-    );
+    let action = plan_recovery(error.recovery_recommendation(), recovery.attempts_left);
     let attempt = SYNC_RECOVERY_ATTEMPT_BUDGET - recovery.attempts_left + 1;
     match action {
         RecoveryAction::Park => return false,
@@ -1698,20 +1501,6 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
                 "Sync relaunches against {bound}: the error class says the same server may \
                  recover (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})."
             );
-        }
-        RecoveryAction::Redraw => {
-            let Some(plan) = &recovery.redraw else {
-                return false;
-            };
-            recovery.attempts_left -= 1;
-            eprintln!(
-                "Sync's indexer {bound} failed and the error class condemns the server; \
-                 abandoning it and redrawing \
-                 (automatic recovery {attempt} of {SYNC_RECOVERY_ATTEMPT_BUDGET})..."
-            );
-            if !redraw_sync_indexer(lightclient, plan.chain, &plan.proxy.path, &bound).await {
-                return false;
-            }
         }
     }
     let sync_run = commands::CliCommand::Sync {
@@ -1727,195 +1516,6 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
             false
         }
     }
-}
-
-/// Runs a redraw Server-Selection Sweep that demotes the failed indexer,
-/// surveying it again only when it is the sole candidate, and returns
-/// whether a fresh winner is bound.
-#[cfg(feature = "nym")]
-async fn redraw_sync_indexer(
-    lightclient: &mut LightClient,
-    chain: zingolib::indexers::IndexerChain,
-    proxy_path: &str,
-    failed: &http::Uri,
-) -> bool {
-    let mut candidates: Vec<http::Uri> = zingolib::indexers::mixnet_eligible(chain)
-        .map(|indexer| indexer.uri.parse().expect("census URIs parse"))
-        .collect();
-    if candidates.len() > 1 {
-        candidates.retain(|candidate| !same_endpoint(candidate, failed));
-    }
-    let selection = lightclient
-        .run_server_selection_sweep(
-            std::path::Path::new(proxy_path),
-            &candidates,
-            None,
-            narrate_sweep_progress,
-        )
-        .await;
-    match judge_sweep_outcome(&selection, None) {
-        SweepVerdict::BindWinner { chosen, notice } => {
-            match lightclient.set_indexer_uri(chosen.clone()).await {
-                Ok(()) => {
-                    eprintln!("{notice}");
-                    true
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Server-Selection Sweep: selected {chosen}, but binding it failed: {}.",
-                        commands::render_error_chain(&e),
-                    );
-                    false
-                }
-            }
-        }
-        SweepVerdict::Refuse { notice }
-        | SweepVerdict::PinStands { notice }
-        | SweepVerdict::RecommendFallback { notice, .. } => {
-            eprintln!("{notice}");
-            false
-        }
-    }
-}
-
-/// The decision a finished Server-Selection Sweep leaves the Sync Session
-/// with.
-#[cfg(feature = "nym")]
-#[derive(Debug)]
-enum SweepVerdict {
-    /// The pinned, already-bound server stands and the Sync Session opens.
-    PinStands {
-        /// The narration this decision prints.
-        notice: String,
-    },
-    /// The sweep's winner binds and the Sync Session opens on it.
-    BindWinner {
-        /// The indexer to bind.
-        chosen: http::Uri,
-        /// The narration a successful bind prints.
-        notice: String,
-    },
-    /// The Sync Session does not open.
-    Refuse {
-        /// The narration this refusal prints.
-        notice: String,
-    },
-    /// The survey refused the pin but holds a healthy alternative, which
-    /// binds only by the user's explicit consent, refusing by default.
-    RecommendFallback {
-        /// The healthy indexer the sweep drew.
-        alternative: http::Uri,
-        /// The narration recommending the fallback before the consent ask.
-        notice: String,
-    },
-}
-
-/// Asks explicit consent to open the Sync Session on `alternative` instead
-/// of the refused pin, defaulting to No wherever no interactive terminal
-/// can answer.
-#[cfg(feature = "nym")]
-fn consent_to_fallback(mode: &Operations, alternative: &http::Uri) -> bool {
-    use std::io::IsTerminal as _;
-    if !matches!(mode, Operations::Interactive) || !std::io::stdin().is_terminal() {
-        return false;
-    }
-    eprint!("Server-Selection Sweep: use {alternative} for this Sync Session instead? [y/N] ");
-    let mut answer = String::new();
-    if std::io::stdin().read_line(&mut answer).is_err() {
-        return false;
-    }
-    matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
-}
-
-/// Judges a finished sweep against the pin, deciding whether the Sync
-/// Session opens and on which indexer.
-#[cfg(feature = "nym")]
-fn judge_sweep_outcome(
-    selection: &Result<
-        zingolib::mixnet::sweep::Selection,
-        zingolib::lightclient::select::ServerSelectionError,
-    >,
-    pin: Option<&http::Uri>,
-) -> SweepVerdict {
-    match selection {
-        Ok(selection) => {
-            if let Some(pinned) = pin {
-                if selection.cohort.iter().any(|live| &live.uri == pinned) {
-                    // The user's selection answered the survey: it is chosen,
-                    // and it is already bound from config.
-                    return SweepVerdict::PinStands {
-                        notice: format!(
-                            "Server-Selection Sweep: sync attaches to the pinned server \
-                             {pinned} (live cohort of {}).",
-                            selection.cohort.len(),
-                        ),
-                    };
-                }
-                // The ruled default is No: the recommendation binds the
-                // alternative only through the caller's explicit consent.
-                return SweepVerdict::RecommendFallback {
-                    alternative: selection.sync_indexer.clone(),
-                    notice: format!(
-                        "Server-Selection Sweep: the pinned server {pinned} did not answer the \
-                         survey or lags the live cohort of {}. The sweep drew a healthy \
-                         alternative: {}.",
-                        selection.cohort.len(),
-                        selection.sync_indexer,
-                    ),
-                };
-            }
-            SweepVerdict::BindWinner {
-                chosen: selection.sync_indexer.clone(),
-                notice: format!(
-                    "Server-Selection Sweep: sync attaches to {} (live cohort of {}).",
-                    selection.sync_indexer,
-                    selection.cohort.len(),
-                ),
-            }
-        }
-        Err(e) => {
-            let judged_the_pin = matches!(
-                e,
-                zingolib::lightclient::select::ServerSelectionError::Selection(_)
-            );
-            match pin {
-                // A Selection error means the survey ran through a proven
-                // exit and the pinned candidate was judged with the rest:
-                // opening against it would trust a server just refused.
-                Some(pinned) if judged_the_pin => SweepVerdict::Refuse {
-                    notice: format!(
-                        "Server-Selection Sweep: the survey ran and selected nothing — the \
-                         pinned server {pinned} was judged and refused: {}. This Sync Session \
-                         does not open; run `changeserver` at the prompt, or relaunch pinning \
-                         a live server.",
-                        commands::render_error_chain(e),
-                    ),
-                },
-                Some(pinned) => SweepVerdict::PinStands {
-                    notice: format!(
-                        "Server-Selection Sweep: no verdict: {}. The survey never judged the \
-                         pinned server {pinned}; it stands, and this Sync Session opens \
-                         against it.",
-                        commands::render_error_chain(e),
-                    ),
-                },
-                None => SweepVerdict::Refuse {
-                    notice: sweep_refusal_notice(e),
-                },
-            }
-        }
-    }
-}
-
-/// Composes the notice a refused Server-Selection Sweep prints, stating the
-/// whole source chain of `error`.
-#[cfg(feature = "nym")]
-fn sweep_refusal_notice(error: &zingolib::lightclient::select::ServerSelectionError) -> String {
-    format!(
-        "Server-Selection Sweep: no sync indexer selected: {}. This Sync Session does \
-         not open; the mixnet posture stands, and send and price-fetch continue.",
-        commands::render_error_chain(error)
-    )
 }
 
 /// Falls back to the prefix-only salvage reader when the user asked for

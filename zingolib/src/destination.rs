@@ -1,4 +1,4 @@
-//! The Destination vocabulary: [`Correspondable`], [`Host`], and [`Operator`].
+//! The Destination vocabulary: [`Correspondable`] and [`Host`].
 
 #![forbid(unsafe_code)]
 
@@ -52,39 +52,6 @@ impl Correspondable for zingo_price::PriceSource {
     }
 }
 
-/// The accumulating administrative authority behind a Destination host, keyed by its registrable parent domain.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Operator(String);
-
-#[cfg_attr(not(feature = "nym"), allow(dead_code))]
-impl Operator {
-    /// The Operator of `host`, approximated as the lowercased last two dot-separated labels (the whole host when it has fewer) — an approximation that can only over-exclude, never letting the sync indexer's operator through.
-    pub(crate) fn of_host(host: &str) -> Self {
-        let host = host.to_ascii_lowercase();
-        let labels: Vec<&str> = host.rsplit('.').collect();
-        Operator(
-            labels
-                .iter()
-                .take(2)
-                .rev()
-                .copied()
-                .collect::<Vec<_>>()
-                .join("."),
-        )
-    }
-
-    /// The Operator of `uri`'s host, or `None` when the URI has no host.
-    pub(crate) fn of_uri(uri: &Uri) -> Option<Self> {
-        uri.host().map(Self::of_host)
-    }
-}
-
-impl std::fmt::Display for Operator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 /// The endpoint-grain identity of a Destination host, lowercased because DNS names compare case-insensitively.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Host(String);
@@ -122,23 +89,5 @@ impl From<Host> for String {
 impl From<&Host> for String {
     fn from(host: &Host) -> Self {
         host.0.clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_operator_is_the_registrable_parent_domain_case_insensitively() {
-        assert_eq!(
-            Operator::of_host("EU.zec.rocks"),
-            Operator::of_host("zec.rocks")
-        );
-        assert_ne!(
-            Operator::of_host("zec.rocks"),
-            Operator::of_host("zec.rockz")
-        );
-        assert_eq!(Operator::of_host("localhost").to_string(), "localhost");
     }
 }

@@ -789,25 +789,16 @@ mod sync_recovery {
 
     use crate::{RecoveryAction, SYNC_RECOVERY_ATTEMPT_BUDGET, plan_recovery};
 
+    /// HYPOTHESIS: an error that condemns the Session Indexer parks the
+    /// session, because no other indexer exists to redraw (zingo-adrs
+    /// zingolib/0063). Falsified if the plan relaunches against a
+    /// condemned server.
     #[test]
-    fn a_condemned_server_redraws_when_the_session_may() {
+    fn a_condemned_server_parks_the_session() {
         assert_eq!(
             plan_recovery(
                 SyncRecoveryObservables::ServerUnavailable,
                 SYNC_RECOVERY_ATTEMPT_BUDGET,
-                true,
-            ),
-            RecoveryAction::Redraw
-        );
-    }
-
-    #[test]
-    fn a_condemned_server_parks_a_session_that_may_not_redraw() {
-        assert_eq!(
-            plan_recovery(
-                SyncRecoveryObservables::ServerUnavailable,
-                SYNC_RECOVERY_ATTEMPT_BUDGET,
-                false,
             ),
             RecoveryAction::Park
         );
@@ -819,20 +810,15 @@ mod sync_recovery {
             plan_recovery(
                 SyncRecoveryObservables::MaybeRecoverableServer,
                 SYNC_RECOVERY_ATTEMPT_BUDGET,
-                false,
             ),
             RecoveryAction::Relaunch
         );
     }
 
     #[test]
-    fn an_abort_parks_regardless_of_budget_and_redraw() {
+    fn an_abort_parks_regardless_of_budget() {
         assert_eq!(
-            plan_recovery(
-                SyncRecoveryObservables::Abort,
-                SYNC_RECOVERY_ATTEMPT_BUDGET,
-                true,
-            ),
+            plan_recovery(SyncRecoveryObservables::Abort, SYNC_RECOVERY_ATTEMPT_BUDGET),
             RecoveryAction::Park
         );
     }
@@ -844,7 +830,7 @@ mod sync_recovery {
             SyncRecoveryObservables::ServerUnavailable,
             SyncRecoveryObservables::Abort,
         ] {
-            assert_eq!(plan_recovery(observable, 0, true), RecoveryAction::Park);
+            assert_eq!(plan_recovery(observable, 0), RecoveryAction::Park);
         }
     }
 }
@@ -1022,7 +1008,6 @@ mod config_template {
                 .expect("an explicit --server pins a Server on the template");
             assert_eq!(server.scheme_str(), Some("https"));
             assert_eq!(server.port_u16(), Some(HTTPS_DEFAULT_PORT));
-            assert!(config.server_pinned);
         }
 
         /// `--online` exists as a consented act only in nym builds; the
@@ -1136,7 +1121,6 @@ mod config_template {
                 config.server,
                 zingolib::config::default_indexer_for(&ChainType::Mainnet)
             );
-            assert!(config.server_pinned);
         }
 
         /// A chain without a Default Indexer refuses consent that names no
@@ -1484,155 +1468,5 @@ mod offline_mode_pin {
             "{}",
             crate::DELIBERATE_OFFLINE_NOTICE
         );
-    }
-}
-
-#[cfg(feature = "nym")]
-mod sweep_refusal_notice {
-    use zingolib::lightclient::select::ServerSelectionError;
-    use zingolib::mixnet::MixnetProxyError;
-
-    /// HYPOTHESIS: the refusal notice states the whole source chain of a
-    /// source-only sweep failure, so a reader learns the cause; a notice
-    /// carrying only the outermost line falsifies it.
-    #[test]
-    fn the_refusal_states_the_cause_of_a_source_only_failure() {
-        let refused = ServerSelectionError::Speed(zingolib::mixnet::speed::SpeedError::Transport(
-            zingolib::mixnet::TransportError::Proxy(MixnetProxyError::NoStdout),
-        ));
-        assert_eq!(
-            crate::sweep_refusal_notice(&refused),
-            "Server-Selection Sweep: no sync indexer selected: the sweep reached no live \
-             exit\ncaused by: the nym-proxy child exposed no stdout. This Sync Session does \
-             not open; the mixnet posture stands, and send and price-fetch continue."
-        );
-    }
-}
-
-#[cfg(feature = "nym")]
-mod sweep_pin_policy {
-    //! The pin's judgment discipline (finding 4 of the 2026-08-14 PR #2695
-    //! review): a survey that ran and refused judged its pinned candidate,
-    //! while a sweep that never surveyed judged nothing.
-    use crate::{SweepVerdict, judge_sweep_outcome};
-    use zingolib::lightclient::select::ServerSelectionError;
-    use zingolib::mixnet::TransportError;
-    use zingolib::mixnet::speed::SpeedError;
-    use zingolib::mixnet::sweep::{RefusalTally, SweepError};
-
-    /// The candidate count a refused survey reports in these tests.
-    const SURVEYED: usize = 3;
-
-    /// The answer count of a survey every candidate refused.
-    const NONE_ANSWERED: usize = 0;
-
-    /// The pinned server these tests judge.
-    fn pin() -> http::Uri {
-        "https://pinned.example:443/"
-            .parse()
-            .expect("the pin parses")
-    }
-
-    /// A sweep failure from below the survey, which judged no candidate.
-    fn unsurveyed_failure() -> ServerSelectionError {
-        ServerSelectionError::Speed(SpeedError::Transport(TransportError::DiscoverySpawn(
-            std::io::Error::other("the discover binary is absent"),
-        )))
-    }
-
-    /// HYPOTHESIS: a survey that ran through a proven exit and selected
-    /// nothing judged the pinned server among its candidates, so the Sync
-    /// Session refuses instead of opening against the refused pin.
-    /// Falsified if the judged pin stands.
-    #[test]
-    fn a_surveyed_and_refused_pin_refuses_the_session() {
-        let outcome = Err(ServerSelectionError::Selection(SweepError::EmptyCohort {
-            surveyed: SURVEYED,
-            answered: NONE_ANSWERED,
-            causes: RefusalTally::of(&[]),
-        }));
-        assert!(matches!(
-            judge_sweep_outcome(&outcome, Some(&pin())),
-            SweepVerdict::Refuse { .. }
-        ));
-    }
-
-    /// HYPOTHESIS: a sweep whose transport failed below the survey judged
-    /// nothing, so the pinned server stands and the Sync Session opens.
-    /// Falsified if an unjudged failure condemns the pin.
-    #[test]
-    fn an_unsurveyed_sweep_leaves_the_pin_standing() {
-        assert!(matches!(
-            judge_sweep_outcome(&Err(unsurveyed_failure()), Some(&pin())),
-            SweepVerdict::PinStands { .. }
-        ));
-    }
-
-    /// HYPOTHESIS: with no pin, every sweep failure refuses the Sync
-    /// Session. Falsified if an unpinned failure opens one.
-    #[test]
-    fn an_unpinned_sweep_failure_refuses_the_session() {
-        assert!(matches!(
-            judge_sweep_outcome(&Err(unsurveyed_failure()), None),
-            SweepVerdict::Refuse { .. }
-        ));
-    }
-
-    /// The cohort height these tests report for a live candidate.
-    const LIVE_HEIGHT: u64 = 3_000_000;
-
-    /// A sweep that succeeded on `alternative` with the pin absent from
-    /// its one-candidate cohort.
-    fn success_without_the_pin(alternative: &http::Uri) -> zingolib::mixnet::sweep::Selection {
-        zingolib::mixnet::sweep::Selection {
-            sync_indexer: alternative.clone(),
-            cohort: vec![zingolib::mixnet::sweep::LiveCandidate {
-                uri: alternative.clone(),
-                height: LIVE_HEIGHT,
-            }],
-        }
-    }
-
-    /// HYPOTHESIS: a surveyed-and-refused pin beside a healthy winner
-    /// recommends the fallback for explicit consent instead of silently
-    /// refusing or silently binding. Falsified if the verdict is anything
-    /// but RecommendFallback naming the winner.
-    #[test]
-    fn a_refused_pin_beside_a_healthy_winner_recommends_the_fallback() {
-        let alternative: http::Uri = "https://healthy.example:443/"
-            .parse()
-            .expect("the alternative parses");
-        let outcome = Ok(success_without_the_pin(&alternative));
-        assert!(matches!(
-            judge_sweep_outcome(&outcome, Some(&pin())),
-            SweepVerdict::RecommendFallback { alternative: a, .. } if a == alternative
-        ));
-    }
-
-    /// HYPOTHESIS: a pin inside the live cohort stands and the session
-    /// opens on it. Falsified if a live pin is second-guessed.
-    #[test]
-    fn a_live_pin_stands() {
-        let pinned = pin();
-        let mut selection = success_without_the_pin(&pinned);
-        selection.sync_indexer = pinned.clone();
-        assert!(matches!(
-            judge_sweep_outcome(&Ok(selection), Some(&pinned)),
-            SweepVerdict::PinStands { .. }
-        ));
-    }
-
-    /// HYPOTHESIS: without an interactive terminal the fallback consent
-    /// defaults to No, immediately and without reading anything. Falsified
-    /// if a command-mode session consents or hangs awaiting input.
-    #[test]
-    fn consent_defaults_to_no_without_a_terminal() {
-        let alternative: http::Uri = "https://healthy.example:443/"
-            .parse()
-            .expect("the alternative parses");
-        let command_mode = crate::Operations::NonInteractive {
-            command: crate::commands::CliCommand::Balance,
-        };
-        assert!(!crate::consent_to_fallback(&command_mode, &alternative));
     }
 }

@@ -79,18 +79,6 @@ pub enum FailureKind {
 }
 
 impl FailureKind {
-    /// The category's stable token.
-    #[cfg_attr(not(feature = "nym"), allow(dead_code))]
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            FailureKind::Timeout => "timeout",
-            FailureKind::Unreachable => "unreachable",
-            FailureKind::Queued => "queued",
-            FailureKind::Rejected => "rejected",
-            FailureKind::Other => "other",
-        }
-    }
-
     /// Classify a failure message into its category. Substring matches,
     /// like [`classify_rejection`], because the servers surface failures
     /// untyped (zingolabs/zaino#1392). The message itself is then discarded.
