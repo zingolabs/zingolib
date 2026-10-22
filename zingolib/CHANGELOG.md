@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
 - `LightWallet::birthday_adjusted_from` reports the height a wallet was given
   when the wallet raised it to Sapling activation. It lives in memory for the
   process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
@@ -18,8 +27,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::panic_text` renders a panic payload, `&str` or `String`, as text.
 - `LightClientError::SyncPanicked(String)` reports a sync task that panicked
   from `await_sync` and from the launch wait in `sync`.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0063).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
 
 ### Changed
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
 - **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
   below Sapling activation to the activation height instead of failing, and a
   raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`

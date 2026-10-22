@@ -75,11 +75,17 @@ const BUILD_ROOT: &str = "target/binding-layer";
 /// The directory of the workspace that holds the wallet crate and the bindgen package, which is the zingolib root.
 const WALLET_WORKSPACE_DIR: &str = ".";
 
-/// The profile that the builder builds every library with.
+/// The profile that the builder builds the wallet library and runs the bindgen with.
 const BUILDER_PROFILE: binding_layer::Profile = binding_layer::Profile::Mobile;
+
+/// The profile that the builder builds the proxy library with.
+const PROXY_PROFILE: binding_layer::Profile = binding_layer::Profile::Proxy;
 
 /// The directory under a target directory that the builder profile writes to.
 const PROFILE_DIR: &str = BUILDER_PROFILE.directory();
+
+/// The directory under a target directory that the proxy profile writes to.
+const PROXY_PROFILE_DIR: &str = PROXY_PROFILE.directory();
 
 /// The iOS output subdirectory that holds intermediate generated files.
 const GENERATED_DIR: &str = "generated";
@@ -782,7 +788,10 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
         format!("{wallet_target}/{}/{PROFILE_DIR}/{wallet_file}", abi.triple)
     };
     let proxy_library = |abi: &binding_layer::AndroidAbi| {
-        format!("{proxy_target}/{}/{PROFILE_DIR}/{proxy_file}", abi.triple)
+        format!(
+            "{proxy_target}/{}/{PROXY_PROFILE_DIR}/{proxy_file}",
+            abi.triple
+        )
     };
     let wallet_crate_dir = roots.run_path(binding_layer::WALLET_CRATE_DIR);
     let proxy_crate_dir = roots.run_path(binding_layer::PROXY_CRATE_DIR);
@@ -815,36 +824,46 @@ fn android_steps(roots: &Roots, abis: &[&binding_layer::AndroidAbi]) -> Vec<Step
             command,
         })
     };
-    let ndk_build =
-        |abi: &binding_layer::AndroidAbi, workdir: &str, target_dir: &str, package: &[&str]| {
-            cargo_step(
-                workdir,
-                &abi.env(target_dir),
-                &["ndk", "--target", abi.triple, "build"],
-                BUILDER_PROFILE,
-                package,
-            )
-        };
+    let ndk_build = |abi: &binding_layer::AndroidAbi,
+                     workdir: &str,
+                     target_dir: &str,
+                     profile: binding_layer::Profile,
+                     package: &[&str]| {
+        cargo_step(
+            workdir,
+            &abi.env(target_dir),
+            &["ndk", "--target", abi.triple, "build"],
+            profile,
+            package,
+        )
+    };
     let bindgen_abi = &binding_layer::ANDROID_ABIS[FIRST_POSITION];
     let generate_once = |position, generation, library: String| {
         (position == FIRST_POSITION)
             .then(|| bindgen(generation, &library, &bindgen_abi.env(&wallet_target)))
     };
     let wallet_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
-        [ndk_build(abi, &wallet_crate_dir, &wallet_target, &[])]
-            .into_iter()
-            .chain(generate_once(
-                position,
-                binding_layer::Generation::Wallet,
-                wallet_library(abi),
-            ))
-            .chain(strip(wallet_library(abi), &abi.env(&wallet_target)))
+        [ndk_build(
+            abi,
+            &wallet_crate_dir,
+            &wallet_target,
+            BUILDER_PROFILE,
+            &[],
+        )]
+        .into_iter()
+        .chain(generate_once(
+            position,
+            binding_layer::Generation::Wallet,
+            wallet_library(abi),
+        ))
+        .chain(strip(wallet_library(abi), &abi.env(&wallet_target)))
     });
     let proxy_steps = abis.iter().enumerate().flat_map(|(position, abi)| {
         [ndk_build(
             abi,
             &proxy_crate_dir,
             &proxy_target,
+            PROXY_PROFILE,
             &["--package", binding_layer::PROXY_PACKAGE],
         )]
         .into_iter()
@@ -992,8 +1011,8 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     };
     let wallet_static = static_library(binding_layer::WALLET_LIB_NAME);
     let proxy_static = static_library(binding_layer::PROXY_LIB_NAME);
-    let built = |target_dir: &str, triple: &str, file: &str| {
-        format!("{target_dir}/{triple}/{PROFILE_DIR}/{file}")
+    let built = |target_dir: &str, triple: &str, profile: binding_layer::Profile, file: &str| {
+        format!("{target_dir}/{triple}/{}/{file}", profile.directory())
     };
     let slices = roots.run_path(&format!("{BUILD_ROOT}/ios/{SLICES_DIR}"));
     let slice_dir = |triple: &str| format!("{slices}/{triple}");
@@ -1112,19 +1131,22 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
     let host = |relative: &str| roots.out_host_path(relative);
     let slice_steps = |target: IosTarget| {
         let triple = target.triple();
-        let build = |workdir: &str, target_dir: &str, package: &[&str]| {
-            cargo_step(
-                workdir,
-                &with_target(target_dir),
-                &["build", "--target", triple],
-                BUILDER_PROFILE,
-                package,
-            )
-        };
-        let deliver = |generation: binding_layer::Generation, target_dir: &str| {
+        let build =
+            |workdir: &str, target_dir: &str, profile: binding_layer::Profile, package: &[&str]| {
+                cargo_step(
+                    workdir,
+                    &with_target(target_dir),
+                    &["build", "--target", triple],
+                    profile,
+                    package,
+                )
+            };
+        let deliver = |generation: binding_layer::Generation,
+                       profile: binding_layer::Profile,
+                       target_dir: &str| {
             let file = static_library(generation.lib_name());
             Step::Copy {
-                from: host_of(roots, &built(target_dir, triple, &file)),
+                from: host_of(roots, &built(target_dir, triple, profile, &file)),
                 to: host_of(roots, &slice(triple, &file)),
             }
         };
@@ -1142,16 +1164,25 @@ fn ios_plan(roots: &Roots, phase: IosPhase) -> Vec<Step> {
         [
             vec![Step::FreshDir(host_of(roots, &slice_dir(triple)))],
             vec![
-                build(&wallet_crate_dir, &wallet_target, &[]),
-                deliver(binding_layer::Generation::Wallet, &wallet_target),
+                build(&wallet_crate_dir, &wallet_target, BUILDER_PROFILE, &[]),
+                deliver(
+                    binding_layer::Generation::Wallet,
+                    BUILDER_PROFILE,
+                    &wallet_target,
+                ),
             ],
             vec![
                 build(
                     &proxy_crate_dir,
                     &proxy_target,
+                    PROXY_PROFILE,
                     &["-p", binding_layer::PROXY_PACKAGE],
                 ),
-                deliver(binding_layer::Generation::Proxy, &proxy_target),
+                deliver(
+                    binding_layer::Generation::Proxy,
+                    PROXY_PROFILE,
+                    &proxy_target,
+                ),
             ],
             describe.into_iter().collect(),
         ]

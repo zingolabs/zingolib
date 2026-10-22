@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn the_committed_file_matches_its_published_entries() -> Result<(), Error> {
         let root = crate::repo_root()?;
-        let published = binding_manifest::published_entries(&root)?;
+        let published = binding_manifest::entries_at(&root, None)?;
         assert_eq!(
             crate::read(&root.join(FILE))?,
             regenerated_from(&root, &published)?

@@ -330,6 +330,50 @@ pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
     format!("{scheme}://{authority}:{port}{path_and_query}").parse()
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IndexerChoice {
+    Offline,
+    Default,
+    Named(http::Uri),
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("no Default Indexer exists for {chain}; name an indexer URI")]
+pub struct NoDefaultIndexer {
+    pub chain: ChainType,
+}
+
+impl IndexerChoice {
+    /// ```
+    /// use zingolib::config::{ChainType, IndexerChoice};
+    ///
+    /// let mainnet = IndexerChoice::Default.resolve(&ChainType::Mainnet).expect("mainnet has a Default Indexer");
+    /// assert_eq!(mainnet.and_then(|uri| uri.port_u16()), Some(443));
+    /// assert!(IndexerChoice::Default.resolve(&ChainType::Testnet).is_err());
+    /// assert_eq!(IndexerChoice::Offline.resolve(&ChainType::Testnet).expect("Offline needs no Default Indexer"), None);
+    /// ```
+    pub fn resolve(self, chain: &ChainType) -> Result<Option<http::Uri>, NoDefaultIndexer> {
+        match self {
+            IndexerChoice::Offline => Ok(None),
+            IndexerChoice::Named(uri) => Ok(Some(uri)),
+            IndexerChoice::Default => default_indexer_for(chain)
+                .map(Some)
+                .ok_or(NoDefaultIndexer { chain: *chain }),
+        }
+    }
+}
+
+pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
+    use zingo_netutils::default_indexer;
+    use zingo_netutils::indexers::IndexerChain;
+
+    match chain {
+        ChainType::Mainnet => default_indexer::default_indexer(IndexerChain::Main),
+        ChainType::Testnet => default_indexer::default_indexer(IndexerChain::Test),
+        ChainType::Regtest(_) => None,
+    }
+}
+
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
@@ -428,7 +472,7 @@ impl ClientConfig {
 /// Builder for [`ClientConfig`].
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
-    indexer_uri: Option<http::Uri>,
+    indexer_choice: IndexerChoice,
     migration_transmission_uri: Option<http::Uri>,
     indexers: Vec<IndexerConfig>,
     remote_indexer_trust: Option<Trust>,
@@ -447,11 +491,28 @@ impl ClientConfigBuilder {
     /// Connect to an indexer at the given URI.
     ///
     /// Without this call the client starts offline. See [`Self::build`].
+    pub fn set_indexer_uri(self, indexer_uri: http::Uri) -> Self {
+        self.set_indexer_choice(IndexerChoice::Named(indexer_uri))
+    }
+
+    /// ```
+    /// use zingolib::config::{ChainType, ClientConfig, ClientConfigError, IndexerChoice};
     ///
-    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
-    /// `zingo-netutils` instead of `http::Uri`.
-    pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
-        self.indexer_uri = Some(indexer_uri);
+    /// let mainnet = ClientConfig::builder()
+    ///     .set_chain_type(ChainType::Mainnet)
+    ///     .set_indexer_choice(IndexerChoice::Default)
+    ///     .build()
+    ///     .expect("mainnet has a Default Indexer");
+    /// assert_eq!(mainnet.indexer_uri().and_then(|uri| uri.port_u16()), Some(443));
+    ///
+    /// let testnet = ClientConfig::builder()
+    ///     .set_chain_type(ChainType::Testnet)
+    ///     .set_indexer_choice(IndexerChoice::Default)
+    ///     .build();
+    /// assert!(matches!(testnet, Err(ClientConfigError::NoDefaultIndexer(_))));
+    /// ```
+    pub fn set_indexer_choice(mut self, choice: IndexerChoice) -> Self {
+        self.indexer_choice = choice;
         self
     }
 
@@ -509,9 +570,10 @@ impl ClientConfigBuilder {
     pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
+        let indexer_uri = self.indexer_choice.resolve(&self.chain_type)?;
 
         Ok(ClientConfig {
-            indexer_uri: self.indexer_uri,
+            indexer_uri,
             migration_transmission_uri: self.migration_transmission_uri,
             indexers: self.indexers,
             remote_indexer_trust: self.remote_indexer_trust,
@@ -526,7 +588,7 @@ impl ClientConfigBuilder {
 impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
-            indexer_uri: None,
+            indexer_choice: IndexerChoice::Offline,
             migration_transmission_uri: None,
             indexers: Vec::new(),
             remote_indexer_trust: None,
@@ -598,7 +660,7 @@ fn wallet_dir_or_default(
                     ChainType::Regtest(_) => dir.push("regtest"),
                 }
 
-                Ok(dir)
+                Ok::<PathBuf, ClientConfigError>(dir)
             },
             Ok,
         )?;
@@ -620,6 +682,8 @@ pub enum ClientConfigError {
     UsersDataDirNotFound,
     #[error("Failed to create wallet directory. {0}")]
     FileError(String),
+    #[error(transparent)]
+    NoDefaultIndexer(#[from] NoDefaultIndexer),
 }
 
 #[cfg(test)]

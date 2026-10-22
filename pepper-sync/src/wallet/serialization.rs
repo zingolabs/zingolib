@@ -1445,6 +1445,9 @@ mod tests {
 
     use super::*;
 
+    // checkpoints appended past the rolling window, so pruning has run before a round trip
+    const APPENDED: u32 = SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 49;
+
     fn written(scan_target: &ScanTarget) -> Vec<u8> {
         let mut bytes = Vec::new();
         scan_target.write(&mut bytes).unwrap();
@@ -1846,10 +1849,12 @@ mod tests {
             );
         }
 
+        // a pinned boundary inside the rolling window holds no rolling slot, so the rolling set reaches at
+        // most one height per boundary below the window
         assert!(
             rolling
                 .iter()
-                .all(|height| *height >= TIP - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE),
+                .all(|height| *height >= TIP - MAX_SHARDTREE_CHECKPOINTS),
             "a rolling checkpoint survived below the reorg window: {rolling:?}"
         );
 
@@ -1879,7 +1884,7 @@ mod tests {
 
         let mut shard_trees = ShardTrees::new();
 
-        for height in 1..=150 {
+        for height in 1..=APPENDED {
             let height = BlockHeight::from_u32(height);
             shard_trees
                 .sapling
@@ -1898,7 +1903,8 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         let orchard_store = roundtripped.orchard.store();
 
-        let oldest_kept = BlockHeight::from_u32(150 - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1);
+        let oldest_kept =
+            BlockHeight::from_u32(APPENDED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1);
         fn assert_window<S>(store: &S, oldest_kept: BlockHeight)
         where
             S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
@@ -1913,7 +1919,7 @@ mod tests {
             );
             assert_eq!(
                 store.max_checkpoint_id().expect("infallible"),
-                Some(BlockHeight::from_u32(150))
+                Some(BlockHeight::from_u32(APPENDED))
             );
             assert!(
                 store
@@ -1988,7 +1994,7 @@ mod tests {
             .store_mut()
             .add_retained_checkpoint(pinned)
             .expect("infallible");
-        for height in 1..=150 {
+        for height in 1..=APPENDED {
             shard_trees
                 .sapling
                 .append_checkpoint(BlockHeight::from_u32(height))
