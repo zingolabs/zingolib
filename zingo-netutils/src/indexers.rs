@@ -83,9 +83,9 @@ impl Indexer {
     }
 }
 
-/// The census indexer an attached session round-trips against to prove its
+/// The Default Indexer an attached session round-trips against to prove its
 /// mixnet path carries data.
-pub const MIXNET_HEALTH_INDEXER: &str = "https://zec.rocks:443";
+pub const MIXNET_HEALTH_INDEXER: &str = crate::default_indexer::MAINNET_DEFAULT_INDEXER;
 
 /// The census, chains interleaved; use [`active`] for the common partition.
 pub const INDEXERS: &[Indexer] = &[
@@ -410,15 +410,15 @@ mod tests {
         }
     }
 
-    /// HYPOTHESIS: the attach health target is an active mainnet census
-    /// member, so the readiness round trip dials a real indexer.
+    /// HYPOTHESIS: the attach health target is mainnet's Default Indexer, so
+    /// the readiness round trip dials no other operator's endpoint.
     #[test]
-    fn the_health_indexer_is_an_active_census_member() {
-        let member = INDEXERS
-            .iter()
-            .find(|indexer| indexer.uri == MIXNET_HEALTH_INDEXER)
-            .expect("the health target must be in the census");
-        assert_eq!(member.chain, IndexerChain::Main);
-        assert!(!member.obsolete);
+    fn the_health_indexer_is_the_mainnet_default_indexer() {
+        let default = crate::default_indexer::default_indexer(IndexerChain::Main)
+            .expect("mainnet has a Default Indexer");
+        let health: http::Uri = MIXNET_HEALTH_INDEXER
+            .parse()
+            .expect("MIXNET_HEALTH_INDEXER is the Default Indexer literal, which parses");
+        assert_eq!(health, default);
     }
 }

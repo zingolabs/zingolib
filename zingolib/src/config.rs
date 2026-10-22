@@ -694,8 +694,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri =
-            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
+        let valid_uri = crate::config::construct_indexer_uri(
+            zingo_netutils::default_indexer::MAINNET_DEFAULT_INDEXER.to_string(),
+        )
+        .expect("MAINNET_DEFAULT_INDEXER is a literal the netutils doc-test pins parseable");
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();

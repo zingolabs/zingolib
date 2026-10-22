@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ### Changed
+- `indexers::MIXNET_HEALTH_INDEXER` is `MAINNET_DEFAULT_INDEXER`, so the
+  attach readiness round trip dials the zingolabs Default Indexer instead
+  of `https://zec.rocks:443`. The health target no longer has to be a
+  census member.
 
 ### Deprecated
 

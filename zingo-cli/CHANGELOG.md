@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- The `change_server` example in the command help names
+  `https://mainnet.zainod.zingolabs.dev:443` instead of `https://zec.rocks:443`.
 - BREAKING: a `--server` value without a scheme now completes to `https://`,
   and a value without a port to its scheme's default port (`:443` for
   `https`, `:80` for `http`) instead of `http://` and `:9067`. A plaintext
