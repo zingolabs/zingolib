@@ -2446,13 +2446,18 @@ mod tests {
     #[test]
     fn every_android_library_builds_under_the_one_mobile_profile() -> Result<(), Vec<String>> {
         let abis: Vec<&binding_layer::AndroidAbi> = binding_layer::ANDROID_ABIS.iter().collect();
-        let builds: Vec<String> = commands(&android_plan(&roots()?, &abis))
-            .into_iter()
-            .filter(|command| command.split(' ').any(|word| word == "build"))
+        let builds: Vec<String> = android_plan(&roots()?, &abis)
+            .iter()
+            .filter_map(|step| match step {
+                Step::Run { command, .. } if command.iter().any(|arg| arg == "build") => {
+                    Some(command.join(" "))
+                }
+                _ => None,
+            })
             .collect();
         assert_eq!(
             builds.len(),
-            abis.len() * GENERATIONS_PER_BUILD,
+            abis.len() * binding_layer::BINDING_CRATE_DIRS.len(),
             "{builds:?}"
         );
         let profile = BUILDER_PROFILE.cargo_args().join(" ");
