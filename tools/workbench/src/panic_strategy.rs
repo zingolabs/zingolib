@@ -4,17 +4,6 @@ use crate::{at_path, MANIFEST};
 
 pub const MOBILE_PROFILE: &str = "mobile";
 
-pub const PROXY_PROFILE: &str = "proxy";
-
-pub const WALLET_ARCHIVE: &str = "wallet";
-
-pub const PROXY_ARCHIVE: &str = "proxy";
-
-pub const BUILT_PROFILES: [(&str, &str); 2] = [
-    (WALLET_ARCHIVE, MOBILE_PROFILE),
-    (PROXY_ARCHIVE, PROXY_PROFILE),
-];
-
 const PROFILE_KEY: &str = "profile";
 const PANIC_KEY: &str = "panic";
 const INHERITS_KEY: &str = "inherits";
@@ -51,13 +40,6 @@ impl PanicStrategy {
             )]),
         }
     }
-}
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct ProfileStrategy {
-    pub archive: &'static str,
-    pub profile: &'static str,
-    pub strategy: PanicStrategy,
 }
 
 /// ```
@@ -121,22 +103,29 @@ pub fn profile_panic_strategy(
     }
 }
 
+pub fn custom_profiles(manifest_name: &str, manifest: &str) -> Result<Vec<String>, Vec<String>> {
+    let document: toml_edit::DocumentMut = manifest
+        .parse()
+        .map_err(|error| vec![format!("{manifest_name} does not parse: {error}")])?;
+    Ok(document
+        .get(PROFILE_KEY)
+        .and_then(toml_edit::Item::as_table_like)
+        .map(|profiles| {
+            profiles
+                .iter()
+                .map(|(name, _)| name.to_string())
+                .filter(|name| !BUILT_IN_PROFILES.contains(&name.as_str()))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// - Reads the root workspace manifest under `root`.
-pub fn built_strategies(root: &Path) -> Result<Vec<ProfileStrategy>, Vec<String>> {
+pub fn built_strategy(root: &Path) -> Result<PanicStrategy, Vec<String>> {
     let text = at_path(&root.join(MANIFEST), "read", |path| {
         std::fs::read_to_string(path)
     })?;
-    BUILT_PROFILES
-        .into_iter()
-        .map(|(archive, profile)| {
-            let strategy = profile_panic_strategy(MANIFEST, &text, profile)?;
-            Ok(ProfileStrategy {
-                archive,
-                profile,
-                strategy,
-            })
-        })
-        .collect()
+    profile_panic_strategy(MANIFEST, &text, MOBILE_PROFILE)
 }
 
 #[cfg(test)]
@@ -144,7 +133,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{built_strategies, profile_panic_strategy, PanicStrategy, ProfileStrategy};
+    use super::{built_strategy, custom_profiles, profile_panic_strategy, PanicStrategy};
     use crate::{refused, repo_root, scratch_dir, utf8};
 
     const MANIFEST_NAME: &str = "Cargo.toml";
@@ -197,16 +186,6 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     fn write(file: &Path, text: &str) -> Result<(), Vec<String>> {
         std::fs::write(file, text)
             .map_err(|error| vec![format!("cannot write {}: {error}", file.display())])
-    }
-
-    fn strategy_of<'a>(
-        strategies: &'a [ProfileStrategy],
-        archive: &str,
-    ) -> Result<&'a ProfileStrategy, Vec<String>> {
-        strategies
-            .iter()
-            .find(|found| found.archive == archive)
-            .ok_or_else(|| vec![format!("no {archive} archive among the built profiles")])
     }
 
     /// - Runs `rustc` in the zingolib root, so rustup applies the pinned toolchain.
@@ -287,43 +266,40 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     }
 
     #[test]
-    fn both_built_profiles_ship_the_unwind_strategy() -> Result<(), Vec<String>> {
-        let strategies = built_strategies(&repo_root()?)?;
-        let aborting: Vec<String> = strategies
-            .iter()
-            .filter(|found| found.strategy != PanicStrategy::Unwind)
-            .map(|found| format!("{} ({})", found.profile, found.strategy))
-            .collect();
-        assert!(
-            aborting.is_empty(),
-            "the profile aborts on panic for {}; the iOS archive carries both crates under the mobile profile and the Android proxy library ships under the proxy profile, and a panic in a tokio task of the proxy must unwind under both, or it aborts the app (issue #2926)",
-            aborting.join(", ")
+    fn a_profile_table_written_inline_counts_among_the_custom_profiles() -> Result<(), Vec<String>>
+    {
+        let inline =
+            "profile = { release = { lto = true }, mobile = { inherits = \"release\" } }\n";
+        assert_eq!(custom_profiles(MANIFEST_NAME, inline)?, ["mobile"]);
+        Ok(())
+    }
+
+    #[test]
+    fn the_built_profile_ships_the_unwind_strategy() -> Result<(), Vec<String>> {
+        let strategy = built_strategy(&repo_root()?)?;
+        assert_eq!(
+            strategy,
+            PanicStrategy::Unwind,
+            "profile.{} aborts on panic. Every Binding Layer library builds under it, and a panic in a tokio task of the proxy must unwind, or it aborts the app (issue #2926)",
+            super::MOBILE_PROFILE
         );
         Ok(())
     }
 
     /// - Reads the root workspace manifest.
     #[test]
-    fn the_two_archives_build_under_distinct_profile_tables() -> Result<(), Vec<String>> {
+    fn the_built_profile_is_the_one_profile_table_the_manifest_defines() -> Result<(), Vec<String>>
+    {
         let root = repo_root()?;
         let text = crate::at_path(&root.join(crate::MANIFEST), "read", |path| {
             std::fs::read_to_string(path)
         })?;
-        let document: toml_edit::DocumentMut = text
-            .parse()
-            .map_err(|error| vec![format!("{MANIFEST_NAME} does not parse: {error}")])?;
-        let table = |profile: &str| {
-            document
-                .get(super::PROFILE_KEY)
-                .and_then(|item| item.get(profile))
-                .map(|item| item.to_string())
-                .ok_or_else(|| vec![format!("{MANIFEST_NAME} defines no profile.{profile}")])
-        };
-        let mobile = table(super::MOBILE_PROFILE)?;
-        let proxy = table(super::PROXY_PROFILE)?;
-        assert_ne!(
-            mobile, proxy,
-            "the two profiles are one table, so the guard compares a profile against itself and can never detect divergence"
+        let custom = custom_profiles(MANIFEST_NAME, &text)?;
+        assert_eq!(
+            custom,
+            [super::MOBILE_PROFILE],
+            "{MANIFEST_NAME} defines the custom profiles {custom:?}. The Binding Layer builds every library under profile.{}, the one custom profile the manifest defines.",
+            super::MOBILE_PROFILE
         );
         Ok(())
     }
@@ -333,9 +309,7 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
     #[test]
     fn a_proxy_panic_is_contained_whichever_archive_links_first() -> Result<(), Vec<String>> {
         let root = repo_root()?;
-        let strategies = built_strategies(&root)?;
-        let wallet = strategy_of(&strategies, super::WALLET_ARCHIVE)?.strategy;
-        let proxy = strategy_of(&strategies, super::PROXY_ARCHIVE)?.strategy;
+        let strategy = built_strategy(&root)?;
 
         let scratch = scratch_dir("panic-strategy")?;
         let wallet_source = scratch.join("wallet.rs");
@@ -348,8 +322,8 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
 
         let wallet_archive = scratch.join(WALLET_ARCHIVE_FILE);
         let proxy_archive = scratch.join(PROXY_ARCHIVE_FILE);
-        build_archive(&root, &wallet_source, &wallet_archive, wallet)?;
-        build_archive(&root, &proxy_source, &proxy_archive, proxy)?;
+        build_archive(&root, &wallet_source, &wallet_archive, strategy)?;
+        build_archive(&root, &proxy_source, &proxy_archive, strategy)?;
 
         let orders = [
             (
@@ -369,9 +343,7 @@ int main(void) { return wallet_entry(1) + proxy_entry(); }
                 .map_err(|error| vec![format!("cannot run {}: {error}", executable.display())])?;
             assert!(
                 status.success(),
-                "with the {name} link order the proxy's panic ended the process ({status}); the wallet archive carries {} and the proxy archive carries {}",
-                wallet,
-                proxy
+                "with the {name} link order the proxy's panic ended the process ({status}). Both archives carry {strategy}"
             );
         }
         Ok(())

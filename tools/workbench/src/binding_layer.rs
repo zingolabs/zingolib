@@ -642,7 +642,6 @@ pub enum Profile {
     /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
     Mobile,
-    Proxy,
 }
 
 impl Profile {
@@ -652,7 +651,6 @@ impl Profile {
             Profile::Debug => &[],
             Profile::Release => &["--release"],
             Profile::Mobile => &["--profile", "mobile"],
-            Profile::Proxy => &["--profile", "proxy"],
         }
     }
 
@@ -662,7 +660,6 @@ impl Profile {
             Profile::Debug => "debug",
             Profile::Release => "release",
             Profile::Mobile => "mobile",
-            Profile::Proxy => "proxy",
         }
     }
 }

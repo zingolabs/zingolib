@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- The Android library builds under the workspace's `mobile` profile, the one
+  profile of the Binding Layer, and the `proxy` profile is gone. The nym stack
+  beneath the crate now compiles with the same size optimization and overflow
+  checks on both platforms, where the one-archive iOS build had left it checked
+  on iOS and wrapping on Android. A plain-operator overflow in a nym crate is a
+  panic on both platforms, which ends its tokio task and leaves the process
+  running.
 - On iOS the crate ships inside `Zingolib.xcframework`, the one archive of the
   `ZingoBindings` package, which the wallet crate builds with its
   `zingo-nym-proxy-ffi` feature. `ZingoNymProxyFFI.xcframework` is gone. The
