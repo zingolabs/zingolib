@@ -118,9 +118,6 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run pins, so no arm meets a different server.
-const PINNED_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
-
 /// The BIP-39 mnemonic every arm restores, when `--seed` names no other.
 // A fundless wallet measures pure scanning: every output is trial
 // decrypted and discarded, and none is decrypted twice for its note. A
@@ -620,8 +617,6 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
         command.arg("--waitsync");
     }
     let mut child = command
-        .arg("--server")
-        .arg(PINNED_INDEXER)
         .arg("--seed")
         .arg(&request.seed)
         .arg("--birthday")
