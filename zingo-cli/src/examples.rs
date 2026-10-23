@@ -4,6 +4,8 @@
 //! accepts literals). Each macro has a corresponding `const` re-export for use
 //! in non-macro contexts (tests, runtime code).
 
+use zingolib::default_indexer;
+
 macro_rules! sapling_address {
     () => {
         "ztestsapling1x65nq4dgp0qfywgxcwk9n0fvm4fysmapgr2q00p85ju252h6l7mmxu2jg9cqqhtvzd69jwhgv8d"
@@ -46,12 +48,18 @@ macro_rules! send_all_memo {
 }
 pub(crate) use send_all_memo;
 
-macro_rules! server_uri {
-    () => {
-        "https://mainnet.zainod.zingolabs.dev:443"
-    };
+pub(crate) fn change_server_long_about() -> String {
+    format!(
+        "Change the session's indexer: `default` attaches to the chain's Default Indexer, \
+         `offline` disconnects every network capability, and a URI names an indexer.\n\
+         \n\
+         Examples:\n\
+         change_server default\n\
+         change_server offline\n\
+         change_server {}\n",
+        default_indexer::MAINNET_DEFAULT_INDEXER
+    )
 }
-pub(crate) use server_uri;
 
 /// Const re-exports for use in non-macro contexts (e.g. tests, runtime code).
 /// Values that only appear in help text use the macro form above (for `concat!`).
@@ -71,7 +79,7 @@ pub(crate) const MEMO: &str = memo!();
 #[cfg(test)]
 pub(crate) const SEND_ALL_MEMO: &str = send_all_memo!();
 #[cfg(test)]
-pub(crate) const SERVER_URI: &str = server_uri!();
+pub(crate) const SERVER_URI: &str = default_indexer::MAINNET_DEFAULT_INDEXER;
 #[cfg(test)]
 pub(crate) const SEED_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
 #[cfg(test)]
