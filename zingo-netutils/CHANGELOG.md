@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subscription the server ends at the next block, so a call deadline only
   ever cut it short. `GrpcIndexer` sends no `grpc-timeout` on it, and the
   connection it opens on stays bounded by `time::INDEXER_CONNECT_TIMEOUT`.
+- The crate, its verifier shim and the proxy crate are members of the root
+  workspace, which holds one lockfile for the wallet and nym stacks; the
+  crate's own workspace and lockfile are gone (zingo-adrs zingolib/0011,
+  amended 2026-10-21). Members consume the crate with `nym` off; only the
+  proxy crate turns it on.
 - `time::HEAVY_UNARY_TIMEOUT` is `time::FINITE_STREAM_TIMEOUT`, 120 s in
   place of 20 s. Every caller was a finite server stream (a block range,
   the subtree roots, a transparent address's transactions) and the bound

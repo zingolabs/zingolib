@@ -110,10 +110,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three exits still refuses the enable.
 - **Breaking:** every Transmission and every migration part goes to the Session
   Indexer over the resolved wire, as one pull under the existing retry policy
-  (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
-  Destinations, and the per-Destination Health filter are gone. An Indexerless
-  session refuses a send with `LightClientError::Offline` on every wire, where
-  a ready mixnet once carried it to drawn Destinations.
+  (zingo-adrs zingolib/0063), over one transmit target for the whole send:
+  the session's live indexer client on nakednet, or one SOCKS5 client over
+  the mixnet. The Destination draw, the hedged race across Destinations, and
+  the per-Destination Health filter are gone. An Indexerless session refuses
+  a send, and a migration part, with `LightClientError::Offline` on every
+  wire, where a ready mixnet once carried it to drawn Destinations; a
+  bootstrapping or dead mixnet still refuses both with `MixnetNotReady`.
 - **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
   of a failed attempt move from `destination::health`, which is removed. The
   history no longer folds attempts into a Health.
@@ -123,12 +126,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside the `https` port 443 shape refuses with
   `LightClientError::IneligibleProbeTarget`, as a named target always did,
   where the probe used to answer with an empty list.
-- A send builds one transmit target for the whole send, the session's live
-  indexer client on nakednet or one SOCKS5 client over the mixnet, where it
-  opened a fresh lazy connection to the Session Indexer per transaction.
-- A migration part resolves its wire exactly as a send does, so an
-  Indexerless session with a bootstrapping or dead mixnet refuses the part
-  with `MixnetNotReady` as it refuses a send, where it answered `Offline`.
 - `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
   to 1000, so a legacy witness tree keeps 1000 checkpoints, and
   `LightWallet::clear_all` re-targets only the transactions confirmed more
@@ -201,9 +198,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
   `LightClientError::{NoEligibleDestination,
   MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
-- **Breaking:** `mixnet::sweep::Selection::transmit_candidates`. The sweep no
-  longer computes the cohort minus the sync operator, because no transmitting
-  surface draws from it (zingo-adrs zingolib/0063).
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed
