@@ -33,9 +33,12 @@ cargo run --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -
   ios --assemble
 ```
 
-A change to an exported function, record or error must update
-`zingo-ffi/lib/src/exported_surface.txt` in the same pull request, or the
-test `zingo-ffi/lib/tests/exported_surface.rs` fails.
+`zingo-ffi/lib/src/exported_surface.snapshot.txt` is a snapshot of the
+exported surface. The test `the_library_exports_the_committed_surface` in
+`zingo-ffi/lib/tests/exported_surface.rs` diffs the sources against it on
+every pull request and prints the lines to add or remove. A change to an
+exported function, record or error updates the snapshot in the same pull
+request.
 
 ## Publish and consume
 
