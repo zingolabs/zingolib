@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   published status alone: false with a null percent until the session has
   published one. Unlike `status_sync`, it never reads a stale wallet as
   complete.
+- `default_indexer(chain_hint)` answers the chain's Default Indexer as the URI
+  text a consumer passes back as `IndexerChoice::Named`, or nothing for a chain
+  without one (testnet, regtest). The hint takes the spellings
+  `IndexerConnection.chain_hint` takes, and an unknown hint is an `Init` error.
+  The value is zingolib's `MAINNET_DEFAULT_INDEXER`, so a consumer no longer
+  restates it.
 - `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
   carries a memo: a deshield to a reserved wallet-owned transparent address,
   then that address paying the vault with the memo in an OP_RETURN. It sends
