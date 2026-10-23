@@ -2121,17 +2121,7 @@ pub(crate) enum CliCommand {
     Calculate,
     #[command(
         about = "Change the session's indexer",
-        long_about = concat!(
-            "Change the session's indexer: `default` attaches to the chain's Default Indexer, ",
-            "`offline` disconnects every network capability, and a URI names an indexer.\n",
-            "\n",
-            "Examples:\n",
-            "change_server default\n",
-            "change_server offline\n",
-            "change_server ",
-            crate::examples::server_uri!(),
-            "\n",
-        )
+        long_about = crate::examples::change_server_long_about()
     )]
     ChangeServer {
         #[arg(value_parser = parse_indexer_choice)]

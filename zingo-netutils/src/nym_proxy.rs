@@ -1154,7 +1154,7 @@ mod tests {
         let proxy = NymProxy::start().await.expect("NymProxy::start");
         let stream = tokio_socks::tcp::Socks5Stream::connect(
             proxy.socks5_addr(),
-            "mainnet.zainod.zingolabs.dev:443",
+            crate::default_indexer::MAINNET_DEFAULT_INDEXER.trim_start_matches("https://"),
         )
         .await
         .expect("SOCKS5 connect");
