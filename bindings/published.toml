@@ -1,4 +1,4 @@
-# The Publication Record, defined in bindings/README.md#publication-record:
+# The Publication Record, defined in bindings/README.md#terminology:
 # one entry per Published Commit, oldest first. Each entry records what the
 # registry holds for its commit. The publish workflow, started by
 # `gh workflow run binding-layer-publish.yaml`,

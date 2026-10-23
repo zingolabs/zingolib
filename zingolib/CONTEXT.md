@@ -327,25 +327,25 @@
 
 **Reference Consumer** — A consumer whose charter is to prove zingolib's consumer surface sufficient, not to serve users: it holds no funds and makes no product promises, and its own code is confined to a typed one-to-one projection of the surface, a provisioning adapter, and a renderer — no wallet logic, no policy, no minted strings. It builds against the workspace at HEAD so that a surface change which breaks the consumer contract fails in the merging pull request's CI rather than weeks later in another repo, and it is for that reason the one consumer exempt from ADR 0024's rev-pinning rule, which disciplines external consumers. The first Reference Consumer is the planned `zingo-tauri` desktop app. Ratified 2026-08-03. See `zingo-adrs zingolib/0028`.
 
-**Binding Layer** — Defined once, in [bindings/README.md](../bindings/README.md#binding-layer).
+**Binding Layer** — Defined once, in [bindings/README.md](../bindings/README.md#terminology).
 
 **RN Bridge** — A React Native app's native modules and app shell, which marshal calls between JavaScript and the Binding Layer. Beyond marshalling it owns one thing, the app-serviced host of the Mixnet Session: it holds the Nym proxy's handle, watches for the proxy's death, and releases the handle. Each React Native consumer keeps its own RN Bridge in its own repository. Ruled 2026-09-23, pending review. *Avoid*: native modules (names the mechanism, not the role), FFI. See `zingo-adrs zingolib/0054`.
 
-**Prebuilt Bundle** — Defined once, in [bindings/README.md](../bindings/README.md#prebuilt-bundle).
+**Prebuilt Bundle** — Defined once, in [bindings/README.md](../bindings/README.md#terminology).
 
 **Binding Set** — The generated source code that projects one Binding Layer crate into one language: the Kotlin or the Swift output of UniFFI for the wallet crate or the Nym proxy crate. A Prebuilt Bundle carries one Binding Set per crate for its platform. Ruled 2026-10-12. *Avoid*: the bindings (ambiguous between one Binding Set and the whole Binding Layer).
 
 **Binding Layer Endpoint** — One function or method that the Binding Layer exports to foreign code, such as `get_version`. A consumer's RN Bridge adds one native method per Binding Layer Endpoint it uses. Ruled 2026-10-12. *Avoid*: binding alone, FFI call.
 
-**Bundle Pin** — Defined once, in [bindings/README.md](../bindings/README.md#bundle-pin).
+**Bundle Pin** — Defined once, in [bindings/README.md](../bindings/README.md#terminology).
 
-**Published Commit** — Defined once, in [bindings/README.md](../bindings/README.md#published-commit).
+**Published Commit** — Defined once, in [bindings/README.md](../bindings/README.md#terminology).
 
 **Descriptor** — The display spelling of a build that `get_version` returns and a consumer shows beside its own: the zingolib crate version and the same sixteen-character prefix of the Published Commit that the Coordinate's version carries, on a release as on any other commit. A derived string for humans, never a reference, spelled by the one abbreviation rule the Coordinate uses. Ruled 2026-10-20. *Avoid*: the version string, git describe.
 
 **Coordinate** — The Maven `group:artifact:version` of the Android Prebuilt Bundle, whose version is the zingolib crate version and a prefix of the Published Commit. A derived literal that Gradle must see before any fetch, which the Bundle Pin therefore holds, never a reference. Ruled 2026-10-20. *Avoid*: the Maven version alone, the dependency string. See `zingo-adrs zingolib/0057`.
 
-**Publication Record** — Defined once, in [bindings/README.md](../bindings/README.md#publication-record).
+**Publication Record** — Defined once, in [bindings/README.md](../bindings/README.md#terminology).
 
 ---
 
