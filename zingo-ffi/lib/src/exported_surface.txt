@@ -20,6 +20,8 @@ get_value_transfers() -> Result<String, ZingolibError>
 poll_sync() -> Result<String, ZingolibError>
 run_sync() -> Result<String, ZingolibError>
 pause_sync() -> Result<String, ZingolibError>
+stop_sync() -> Result<String, ZingolibError>
+sync_caught_up() -> Result<String, ZingolibError>
 status_sync() -> Result<String, ZingolibError>
 run_rescan() -> Result<String, ZingolibError>
 info_server() -> Result<String, ZingolibError>
