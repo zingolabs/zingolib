@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `stop_sync()` asks the running session to stop after its next batch, without
+  waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
+  runs answers "Sync already stopped." rather than failing.
+- `sync_caught_up()` answers `{ caught_up, percent }` from the engine's
+  published status alone: false with a null percent until the session has
+  published one. Unlike `status_sync`, it never reads a stale wallet as
+  complete.
 - `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
   carries a memo: a deshield to a reserved wallet-owned transparent address,
   then that address paying the vault with the memo in an OP_RETURN. It sends
@@ -52,9 +59,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- Sync is continuous: wallets are created and loaded with
+  `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
+  the chain tip and never ends on its own. `poll_sync` answers "Sync task is
+  not complete." for as long as it runs; relaunching on that answer is no
+  longer needed. Loading overrides the stored settings, so wallets saved by
+  earlier releases sync continuously too.
 - Wallets are created and loaded with `TransparentAddressDiscovery::default()`
-  (gap limit 10) in place of `minimal()` (gap limit 1). Loading overrides the
-  stored settings, so wallets saved by earlier releases also scan with gap 10.
+  (gap limit 10) in place of `minimal()` (gap limit 1), wallets saved by
+  earlier releases included.
+- Every `init_*` stops the replaced client's sync session. Dropping a client
+  never ended its engine, which kept scanning against the old server.
+- `change_server` stops the running session, which keeps the indexer it was
+  launched with; the next `run_sync` uses the new one.
+- `status_sync` answers with the status the engine last published, and
+  computes it from the wallet only when none has been published.
 - The `bucket_index` of a migration window (`migration_status`'s
   `upcoming_windows`, `window_timeline`) numbers the chain's ZIP 318 grid,
   whose boundaries sit three times as many blocks apart from NU7 activation,

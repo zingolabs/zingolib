@@ -467,8 +467,24 @@ where
     f(&mut guard)
 }
 
+/// Ends the outgoing client's sync session before the client is dropped.
+///
+/// Dropping a `LightClient` does not end its sync engine: the engine runs as a
+/// detached task on `RT` with its own handles on the wallet. Under continuous
+/// sync it never ends on its own, so every client this slot replaced would keep
+/// scanning, against the server it was opened with. Setting the mode is enough:
+/// the engine reads it on its next batch and winds itself down.
+fn retire_client(slot: &Option<LightClient>) {
+    if let Some(outgoing) = slot {
+        // `SyncNotRunning` is the ordinary case: a client that never synced,
+        // or one whose engine has already ended.
+        let _ = outgoing.stop_sync();
+    }
+}
+
 fn reset_lightclient() {
     with_lightclient_write(|slot| {
+        retire_client(slot);
         *slot = None;
     });
     if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
@@ -478,6 +494,7 @@ fn reset_lightclient() {
 
 fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
     with_lightclient_write(|slot| {
+        retire_client(slot);
         *slot = Some(lightclient);
     });
     Ok(())
@@ -814,7 +831,7 @@ fn build_connection_params(
         sync_config: SyncConfig {
             transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: level,
-            shutdown_on_completion: true,
+            shutdown_on_completion: false,
         },
         min_confirmations: NonZeroU32::try_from(connection.sync.min_confirmations)
             .map_err(|_| ZingolibError::init("min_confirmations must be greater than 0"))?,
@@ -2343,9 +2360,51 @@ pub fn pause_sync() -> Result<String, ZingolibError> {
     })
 }
 
+/// Asks the sync session to stop after its next batch. It does not wait: poll
+/// with `poll_sync` until it no longer answers "Sync task is not complete.".
+/// Stopping when nothing runs is not a failure.
+#[uniffi::export]
+pub fn stop_sync() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| match lightclient.stop_sync() {
+        Ok(_) => Ok("Stopping sync task...".to_string()),
+        Err(SyncModeError::SyncNotRunning) => Ok("Sync already stopped.".to_string()),
+        Err(e) => Err(ZingolibError::sync(&e)),
+    })
+}
+
+/// Whether the running session has scanned up to the chain tip it found, and
+/// how far along it is, as `{ caught_up, percent }`.
+///
+/// Read from the engine's published status alone: false and a null percent
+/// until it has published one. `status_sync` cannot answer this, because
+/// before a session's first publish it falls back to the wallet's stored
+/// state, which reads complete for a wallet that was at the tip when it was
+/// last saved. A continuous session never ends on its own, so this is the
+/// signal that it has reached the tip.
+#[uniffi::export]
+pub fn sync_caught_up() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        let Some(status) = lightclient.latest_sync_status() else {
+            return Ok(object! { "caught_up" => false, "percent" => json::Null }.pretty(2));
+        };
+        let caught_up = status.is_complete();
+        let percent = sync_progress::SyncProgress::from(status).percentage_total_outputs_scanned;
+        Ok(object! { "caught_up" => caught_up, "percent" => percent }.pretty(2))
+    })
+}
+
+/// The status the sync engine last published, or the one computed from the
+/// wallet when it has published none (a wallet just opened, or an engine not
+/// running). The published one costs no wallet lock, which the engine would
+/// otherwise contend for on every app poll.
 #[uniffi::export]
 fn status_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
+        if let Some(published) = lightclient.latest_sync_status() {
+            return Ok(
+                json::JsonValue::from(sync_progress::SyncProgress::from(published)).pretty(2),
+            );
+        }
         RT.block_on(async {
             let wallet = lightclient.wallet().read().await;
             match pepper_sync::sync_status(&*wallet).await {
@@ -2682,6 +2741,9 @@ mod wallet_validation_tests {
 pub fn change_server(choice: IndexerChoice) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         let choice = indexer_choice(choice)?;
+        // A running engine keeps the indexer it was launched with, so end it;
+        // the app relaunches it against the new one.
+        let _ = lightclient.stop_sync();
         RT.block_on(async move {
             lightclient
                 .choose_indexer(choice)
