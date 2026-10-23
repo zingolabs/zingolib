@@ -5,6 +5,7 @@ use std::num::NonZeroU32;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zingo_netutils::Indexer as _;
+use zingo_netutils::default_indexer;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
@@ -13,7 +14,7 @@ use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery
 const GUARD_WINDOW: u32 = 5_000;
 
 /// The indexer every guarded run pins, so runs compare like with like.
-const GUARD_INDEXER: &str = "https://zec.rocks:443";
+const GUARD_INDEXER: &str = default_indexer::MAINNET_DEFAULT_INDEXER;
 
 /// The seconds a guarded run may spend before it fails outright.
 const GUARD_BUDGET_SECS: u64 = 900;

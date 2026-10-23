@@ -103,25 +103,6 @@ pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
 /// ```
 pub const EXIT_ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
-/// The silence interval before a send's escalation launches a further
-/// Destination arm: the sum of a connect attempt's bound and one mixnet
-/// round trip, so a responsive Destination's confirmed delivery beats the
-/// first hedge by construction, and the interval retunes when either bound
-/// retunes.
-///
-/// ```
-/// use zingo_netutils::time::{
-///     MIXNET_ROUND_TRIP_BOUND, PER_ATTEMPT_CONNECT_TIMEOUT, TRANSMISSION_HEDGE_INTERVAL,
-/// };
-///
-/// assert_eq!(
-///     TRANSMISSION_HEDGE_INTERVAL,
-///     PER_ATTEMPT_CONNECT_TIMEOUT + MIXNET_ROUND_TRIP_BOUND,
-/// );
-/// ```
-pub const TRANSMISSION_HEDGE_INTERVAL: Duration =
-    Duration::from_secs(PER_ATTEMPT_CONNECT_TIMEOUT.as_secs() + MIXNET_ROUND_TRIP_BOUND.as_secs());
-
 /// How often the mobile shim's monitor dials the local SOCKS5 listener,
 /// faster than the wallet's backstop so the app notices first.
 pub const LISTENER_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
@@ -185,10 +166,13 @@ pub const STREAM_MSG_TIMEOUT: Duration = Duration::from_secs(15);
 /// Bound on one light unary RPC issued by pepper-sync's fetcher.
 pub const UNARY_RPC_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Bound on one heavy unary RPC issued by pepper-sync's fetcher, whose
-/// responses are large enough to deserve more patience than
-/// [`UNARY_RPC_TIMEOUT`].
-pub const HEAVY_UNARY_TIMEOUT: Duration = Duration::from_secs(20);
+/// Bound on one finite server stream issued by pepper-sync's fetcher (a
+/// block range, the subtree roots, a transparent address's transactions),
+/// from the request leaving to the last message arriving. A stall between
+/// messages is caught sooner by [`STREAM_MSG_TIMEOUT`], so this only has to
+/// outlast a legitimately long download. The mempool stream is a
+/// subscription and carries no such bound.
+pub const FINITE_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long pepper-sync's scanner waits for its workers to wind down before
 /// abandoning a clean shutdown.
@@ -315,10 +299,6 @@ pub const CLIENT_ROTATION_MIN: Duration = Duration::from_secs(5 * 60);
 /// ```
 pub const CLIENT_ROTATION_MAX: Duration = Duration::from_secs(10 * 60);
 
-/// Per-server bound on the ranking `get_info` sweep, deliberately tight so
-/// one slow server cannot block the fastest-first ordering.
-pub const SERVER_RANKING_TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Temporal parameters owned by tests. Gated so production code cannot
 /// reference it: this crate's own unit tests see it via `cfg(test)`, and
 /// downstream crates' test code opts in through the `testutils` feature
@@ -335,11 +315,6 @@ pub mod test {
     /// Bound for the TLS-handshake tests' requests against their local
     /// listener.
     pub const LOCAL_TLS_TEST_BOUND: Duration = Duration::from_secs(10);
-
-    /// Idle window after which a quiet chain is declared genuinely quiet:
-    /// the sentinel tests sleep this long, re-query, and assert nothing
-    /// moved.
-    pub const IDLE_OBSERVATION_WINDOW: Duration = Duration::from_secs(5);
 
     /// Deadline for a log line to reach the log file on disk.
     pub const LOG_FLUSH_DEADLINE: Duration = Duration::from_secs(15);
@@ -358,9 +333,6 @@ pub mod test {
 
     /// Bound on one mempool stream request while polling for a transaction.
     pub const MEMPOOL_STREAM_BOUND: Duration = Duration::from_secs(5);
-
-    /// Bound on the wallet record leaving Transmitted status after a sync.
-    pub const WALLET_RECORD_LAG_BOUND: Duration = Duration::from_secs(15);
 
     /// The simulated duration of a transmission in the CLI heartbeat tests.
     pub const SIMULATED_TRANSMIT: Duration = Duration::from_secs(5);

@@ -8,11 +8,11 @@ use bip0039::Mnemonic;
 use pepper_sync::sync::MAX_REORG_ALLOWANCE;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::{BlockHeight, Parameters};
+use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
 use pepper_sync::keys::transparent::{TransparentScope, encode_address};
-use pepper_sync::wallet::{KeyIdInterface, ScanTarget, ShardTrees};
+use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
@@ -76,6 +76,8 @@ pub struct RecoveryInfo {
     pub birthday: u64,
     /// Number of accounts in use.
     pub no_of_accounts: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birthday_adjusted_from: Option<u64>,
 }
 
 impl std::fmt::Display for RecoveryInfo {
@@ -122,6 +124,8 @@ pub struct LightWallet {
     mnemonic: Option<Mnemonic>,
     /// The block height at which the wallet was created.
     birthday: BlockHeight,
+    /// - Process-lifetime state, never written to the wallet file.
+    birthday_adjusted_from: Option<BlockHeight>,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
     /// `Unified_addresses`
@@ -188,16 +192,6 @@ impl LightWallet {
             wallet_settings,
         } = wallet_base;
 
-        let sapling_activation_height = chain_type
-            .activation_height(zcash_protocol::consensus::NetworkUpgrade::Sapling)
-            .expect("should have some sapling activation height");
-        if birthday < sapling_activation_height {
-            return Err(WalletError::BirthdayBelowSapling(
-                u32::from(birthday),
-                u32::from(sapling_activation_height),
-            ));
-        }
-
         let unified_key = unified_key_store
             .get(&zip32::AccountId::ZERO)
             .expect("account 0 must exist");
@@ -232,12 +226,13 @@ impl LightWallet {
             Err(e) => return Err(e.into()),
         }
 
-        Ok(Self {
+        let mut wallet = Self {
             current_version: LightWallet::serialized_version(),
             read_version: LightWallet::serialized_version(),
             chain_type,
             mnemonic,
             birthday: BlockHeight::from_u32(birthday.into()),
+            birthday_adjusted_from: None,
             unified_key_store,
             unified_addresses,
             transparent_addresses,
@@ -253,7 +248,25 @@ impl LightWallet {
             save_required: true,
             send_proposal: None,
             output_locks: locks::OutputLocks::default(),
-        })
+        };
+        wallet.raise_birthday_to_sapling_activation();
+        Ok(wallet)
+    }
+
+    /// - Raises `birthday` to the chain's Sapling activation height and keeps the given height in `birthday_adjusted_from`.
+    /// - Sets `save_required` when it raises.
+    fn raise_birthday_to_sapling_activation(&mut self) {
+        let Some(sapling_activation) =
+            PoolActivation::of(&self.chain_type, zcash_protocol::ShieldedPool::Sapling)
+        else {
+            return;
+        };
+        let sapling_activation_height = sapling_activation.height();
+        if self.birthday < sapling_activation_height {
+            self.birthday_adjusted_from = Some(self.birthday);
+            self.birthday = sapling_activation_height;
+            self.save_required = true;
+        }
     }
 
     /// Returns current wallet version.
@@ -272,6 +285,11 @@ impl LightWallet {
     #[must_use]
     pub fn birthday(&self) -> BlockHeight {
         self.birthday
+    }
+
+    #[must_use]
+    pub fn birthday_adjusted_from(&self) -> Option<BlockHeight> {
+        self.birthday_adjusted_from
     }
 
     /// Returns chain type wallet is connected to.
@@ -366,6 +384,7 @@ impl LightWallet {
             seed_phrase: self.mnemonic_phrase()?,
             birthday: self.birthday.into(),
             no_of_accounts: self.unified_key_store.len() as u32,
+            birthday_adjusted_from: self.birthday_adjusted_from.map(u64::from),
         })
     }
 
@@ -462,11 +481,7 @@ impl LightWallet {
                         transaction
                             .status()
                             .get_confirmed_height()
-                            .map(|height| ScanTarget {
-                                block_height: height,
-                                txid: transaction.txid(),
-                                narrow_scan_area: true,
-                            })
+                            .map(|height| ScanTarget::new(height, Some(transaction.txid())))
                     })
                     .collect::<Vec<_>>(),
             );
@@ -485,8 +500,77 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use incrementalmerkletree::frontier::CommitmentTree;
     use orchard::tree::MerkleHashOrchard;
+    use zcash_protocol::consensus::BlockHeight;
+    use zingo_test_vectors::seeds;
+
+    use super::LightWallet;
+    use crate::config::{ChainType, WalletConfig};
+    use crate::testutils::default_test_wallet_settings;
+
+    const MAINNET_SAPLING_ACTIVATION: u32 = 419_200;
+
+    fn mainnet_wallet(birthday: u32) -> LightWallet {
+        LightWallet::new(
+            ChainType::Mainnet,
+            WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: NonZeroU32::try_from(1).expect("hard-coded non-zero integer"),
+                birthday,
+                wallet_settings: default_test_wallet_settings(),
+            },
+        )
+        .expect("a known seed on mainnet constructs a wallet")
+    }
+
+    #[test]
+    fn restore_below_sapling_activation_starts_at_activation() {
+        let wallet = mainnet_wallet(0);
+        assert_eq!(
+            wallet.birthday(),
+            BlockHeight::from_u32(MAINNET_SAPLING_ACTIVATION)
+        );
+        assert_eq!(
+            wallet.birthday_adjusted_from(),
+            Some(BlockHeight::from_u32(0))
+        );
+    }
+
+    #[test]
+    fn restore_at_sapling_activation_reports_no_adjustment() {
+        let wallet = mainnet_wallet(MAINNET_SAPLING_ACTIVATION);
+        assert_eq!(
+            wallet.birthday(),
+            BlockHeight::from_u32(MAINNET_SAPLING_ACTIVATION)
+        );
+        assert_eq!(wallet.birthday_adjusted_from(), None);
+    }
+
+    #[test]
+    fn read_raises_a_stored_birthday_below_sapling_activation() {
+        let mut written = mainnet_wallet(MAINNET_SAPLING_ACTIVATION);
+        written.birthday = BlockHeight::from_u32(1_000);
+        let mut bytes = Vec::new();
+        written
+            .write(&mut bytes, &ChainType::Mainnet)
+            .expect("a wallet writes into a vec");
+
+        let read = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
+            .expect("the bytes this version wrote read back");
+
+        assert_eq!(
+            read.birthday(),
+            BlockHeight::from_u32(MAINNET_SAPLING_ACTIVATION)
+        );
+        assert_eq!(
+            read.birthday_adjusted_from(),
+            Some(BlockHeight::from_u32(1_000))
+        );
+        assert!(read.save_required);
+    }
 
     // TODO: move to relevant mod
     #[test]

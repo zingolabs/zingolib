@@ -1,15 +1,18 @@
-# The published commits of the Binding Layer, oldest first. A pull request
-# appends one entry with its commit; the publish workflow, started by a
-# maintainer's `/publish` comment, writes the entry's digests and its
-# audited crates and regenerates bindings/CHANGELOG.md in one commit. Until
-# that commit the entry is incomplete, and the checks "Binding Layer
-# manifest" and "Binding Layer changelog" fail on it by design. The
-# manifest check passes only when the registry holds every named
-# platform's Prebuilt Bundle at the entry's digest. The registry keeps
-# every published bundle, so it mirrors this file. An entry never changes
-# after its merge. The workbench tool binding-manifest reads this file, and
-# binding-changelog takes the commits and the audited crates of
-# bindings/CHANGELOG.md from it.
+# The Publication Record of the Binding Layer: zingolib's own record of the
+# Prebuilt Bundles it has published, one entry per Published Commit, oldest
+# first. Each entry records what the registry holds for its commit. The
+# publish workflow, started by `gh workflow run binding-layer-publish.yaml`,
+# pushes the bundles, appends the entry with its digests and its audited
+# crates, regenerates bindings/CHANGELOG.md in the same commit on the branch
+# record/<commit>, and opens the pull request that merges it. An entry is
+# complete when it is written, and no entry is written by hand. The
+# manifest check is a required check that reconciles this record against
+# the registry. It passes only when the registry holds every named
+# platform's Prebuilt Bundle at the entry's digest. The registry is the one
+# source a consumer reads, and a consumer never reads this file. An entry
+# never changes after its merge. The workbench tool binding-manifest reads
+# this file, and binding-changelog takes the commits and the audited crates
+# of bindings/CHANGELOG.md from it.
 #
 # An entry names every platform that binding-manifest requires. The
 # required set lives in REQUIRED_PLATFORMS of
@@ -39,3 +42,27 @@ since = "6d037df7a4f4f72f219fbadd8c6fe34d8c8ea97c"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:9c950b9c10ce62e85de894f73139d9770caa844705c01bfcde4154d2404a50de"
 ios = "sha256:045aa74c2bb591325969fcdbf6923bcd7c9b023665ea2c3cc8e2b2ffbacd1f41"
+
+[[entry]]
+commit = "502a453fe3329ecded1872f0c856b56f141c8d6a"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:edbd449168cc993635098a03388cddf3d078021b739cc6198a19ff64b71cf701"
+ios = "sha256:62c016314e10eb7dbb17fb35e4d20b47b4664df3ec4b9440d2981431a6a3df44"
+
+[[entry]]
+commit = "d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:efae0b719a80805006d6d9ab79f298fbf76fe65ed99c7ec8371ed16073086782"
+ios = "sha256:0fb7f6fc6baa6e99ac58018ae8bbc8d10f7effd8a0415a99734a1d19656fd2fb"
+
+[[entry]]
+commit = "4f04d38c16cb032edffe1823d07bfc75bcf9103b"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:4303c0f64686824316a8fa1cb808c8e35935d3e27a2af2877ae66ad2520be034"
+ios = "sha256:47f954b37da9b182eeb2828481916b4b079bb368538a9effe6eaeb974f692810"
+
+[[entry]]
+commit = "c060a45041adeeb3f36571bbbdc645a582701bcc"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:ffa8e20e3ca4f5934d6daf37f76f81407eb661163848ea72fdc9b67305c09e92"
+ios = "sha256:ac219448a0cb070facd351cca14903c7e48f40210935f31a58bfae80c3519d42"

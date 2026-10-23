@@ -1,7 +1,6 @@
 //! these functions are each meant to be 'test-in-a-box'
 //! simply plug in a mock server as a chain conductor and provide some values
 
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
 
@@ -14,6 +13,13 @@ use crate::testutils::fee_tables;
 use crate::testutils::lightclient::get_base_address;
 use crate::testutils::timed;
 use crate::testutils::timestamped_test_log;
+
+const DESHIELD_PAYMENTS: [u64; 2] = [100_000, 4_000];
+const SHIELDABLE_COINS: usize = 1;
+
+fn zatoshis(value: u64) -> Zatoshis {
+    Zatoshis::from_u64(value).expect("fee-table values stay within the money range")
+}
 
 /// Fixture for testing various vt transactions
 pub async fn create_various_value_transfers<CC>()
@@ -158,10 +164,10 @@ where
                     with_assertions::assure_propose_send_bump_sync_all_recipients(
                         &mut environment,
                         &mut primary,
-                        vec![
-                            (&secondary_taddr, 100_000, None),
-                            (&secondary_taddr, 4_000, None),
-                        ],
+                        DESHIELD_PAYMENTS
+                            .iter()
+                            .map(|value| (secondary_taddr.as_str(), *value, None))
+                            .collect(),
                         vec![&mut secondary],
                         false,
                     ),
@@ -171,7 +177,7 @@ where
                 assert_eq!(
                     (recorded_fee, recorded_value, recorded_change),
                     (
-                        Option::unwrap(MARGINAL_FEE * 4_u64),
+                        zatoshis(fee_tables::deshield(DESHIELD_PAYMENTS.len())),
                         recorded_value,
                         recorded_change
                     )
@@ -190,7 +196,7 @@ where
                 assert_eq!(
                     (recorded_fee, recorded_value),
                     (
-                        Option::unwrap(MARGINAL_FEE * 3_u64),
+                        zatoshis(fee_tables::shield(SHIELDABLE_COINS)),
                         Option::unwrap(Zatoshis::from_u64(100_000).unwrap() - recorded_fee)
                     )
                 );
@@ -215,7 +221,11 @@ where
                 assert_eq!(
                     (recorded_fee, recorded_value, recorded_change),
                     (
-                        Option::unwrap(MARGINAL_FEE * 2_u64),
+                        zatoshis(fee_tables::one_to_one(
+                            Some(ShieldedPool::Ironwood),
+                            PoolType::ORCHARD,
+                            true
+                        )),
                         Zatoshis::from_u64(50_000).unwrap(),
                         recorded_change
                     )

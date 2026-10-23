@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     // Integration tests below require a live Nym network. Run with:
-    //   cargo test --manifest-path zingo-netutils/Cargo.toml --features nym -- --ignored
+    //   cargo test --package zingo-netutils --features nym -- --ignored
 
     /// Start the embedded proxy and verify it reports a valid localhost address.
     #[tokio::test(flavor = "multi_thread")]
@@ -1152,9 +1152,12 @@ mod tests {
     #[ignore = "requires live Nym network"]
     async fn nym_proxy_socks5_tunnel_works() {
         let proxy = NymProxy::start().await.expect("NymProxy::start");
-        let stream = tokio_socks::tcp::Socks5Stream::connect(proxy.socks5_addr(), "zec.rocks:443")
-            .await
-            .expect("SOCKS5 connect");
+        let stream = tokio_socks::tcp::Socks5Stream::connect(
+            proxy.socks5_addr(),
+            "mainnet.zainod.zingolabs.dev:443",
+        )
+        .await
+        .expect("SOCKS5 connect");
 
         drop(stream);
         proxy.disconnect().await;

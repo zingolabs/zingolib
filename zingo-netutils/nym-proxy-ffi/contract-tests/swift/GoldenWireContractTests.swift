@@ -6,21 +6,23 @@
 // values below are shared verbatim across the three suites; the pins under
 // test-data/golden/ are never-regenerate contract artifacts.
 //
-// Execution: compiles against the generated Swift bindings in an XCTest
-// bundle; the Mac-gated step-7 packaging (#2504) wires it in. The golden
-// directory resolves relative to this file, or set ZINGO_GOLDEN_DIR.
+// Execution: compiles against the Swift Binding Set through the test-only
+// package beside this directory, which depends on the shipped package under
+// bindings/swift. The iOS plan of build-binding-layer runs it on an iOS
+// simulator as its last step. The golden directory resolves relative to
+// this file.
 
+import AppPersonalities
 import Foundation
 import XCTest
+import ZingoBindings
 
 final class GoldenWireContractTests: XCTestCase {
     private func goldenDir() -> URL {
-        if let env = ProcessInfo.processInfo.environment["ZINGO_GOLDEN_DIR"] {
-            return URL(fileURLWithPath: env)
-        }
         return URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // swift/
             .deletingLastPathComponent() // contract-tests/
+            .deletingLastPathComponent() // nym-proxy-ffi/
             .appendingPathComponent("test-data/golden")
     }
 
@@ -100,6 +102,11 @@ final class GoldenWireContractTests: XCTestCase {
             }
             XCTAssertEqual(lifted, value, "\(name): lifting the pin changed the value")
         }
+    }
+
+    func testTheAppsPersonalityRoutinesLinkBesideTheBindings() {
+        XCTAssertTrue(app_personalities_cxx_catches())
+        XCTAssertTrue(app_personalities_objc_catches())
     }
 
     func testEveryErrorVariantWireEncodingMatchesItsPin() throws {

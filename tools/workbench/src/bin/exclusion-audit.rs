@@ -14,9 +14,8 @@
 //! member's private dependencies, which is the saving rather than a cost. The
 //! comparison spans third-party crates as well as local ones, because a
 //! feature moving anywhere is a recompile, and because the crates that matter
-//! most here are not all workspace members: `zingo-netutils` is its own
-//! workspace root, and `zcash_address` is a registry crate, yet both sit
-//! under everything the phases share.
+//! most here are not all workspace members: `zcash_address` is a registry
+//! crate, yet it sits under everything the phases share.
 //!
 //! That first pass over-reports. A workspace member's own default features
 //! are activated by the command line rather than by a dependent, and a
@@ -361,10 +360,6 @@ zingo-memo v0.1.1 (/repo/zingo-memo)
         Ok(())
     }
 
-    /// HYPOTHESIS: the graph reaches crates that are not workspace members,
-    /// because the crate this audit most needs to watch is one of them:
-    /// zingo-netutils is its own workspace root. Falsified if a
-    /// members-only view is what gets compared.
     #[test]
     fn a_non_member_crate_is_audited() {
         let graph = resolve(LISTING);

@@ -36,7 +36,7 @@ use crate::{
         transparent::{TransparentAddressId, TransparentScope},
     },
     sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
-    wallet::ScanTarget,
+    wallet::{ScanTarget, ScanTargetOrigin, ScanTargetPools},
 };
 
 use super::{
@@ -85,29 +85,65 @@ pub(crate) fn read_version<R: Read>(
 
 impl ScanTarget {
     fn serialized_version() -> u8 {
-        0
+        // Version 1 makes the txid optional, and replaces the narrow scan area flag with the pools the target's
+        // transaction holds notes of and the target's origin.
+        1
     }
+
+    const INTERNAL_ORIGIN: u8 = 0;
+    const EXTERNAL_ORIGIN: u8 = 1;
 
     /// Deserialize into `reader`
     pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
-        read_version(&mut reader, "ScanTarget", Self::serialized_version())?;
+        let version = read_version(&mut reader, "ScanTarget", Self::serialized_version())?;
         let block_height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
-        let txid = TxId::read(&mut reader)?;
-        let narrow_scan_area = reader.read_u8()? != 0;
+        if version == 0 {
+            // a version 0 target without a particular transaction carried a zero txid, and its narrow scan area
+            // flag is dropped, as the narrow area is now the default. the origin is not recorded, and a version 0
+            // target is taken as external, so a transaction the server does not serve drops it.
+            let txid = TxId::read(&mut reader)?;
+            let _narrow_scan_area = reader.read_u8()?;
+            return Ok(Self::new(
+                block_height,
+                (txid != TxId::from_bytes([0; 32])).then_some(txid),
+            ));
+        }
+        let txid = Optional::read(&mut reader, TxId::read)?;
+        let pools = ScanTargetPools::from_bits(reader.read_u8()?).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "scan target names a shielded pool this version does not know",
+            )
+        })?;
+        let origin = match reader.read_u8()? {
+            Self::INTERNAL_ORIGIN => ScanTargetOrigin::Internal,
+            Self::EXTERNAL_ORIGIN => ScanTargetOrigin::External,
+            unknown => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown scan target origin {unknown}"),
+                ));
+            }
+        };
 
         Ok(Self {
             block_height,
             txid,
-            narrow_scan_area,
+            pools,
+            origin,
         })
     }
 
     /// Serialize into `writer`
     pub fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u8(Self::serialized_version())?;
-        writer.write_u32::<LittleEndian>(self.block_height.into())?;
-        self.txid.write(&mut *writer)?;
-        writer.write_u8(u8::from(self.narrow_scan_area))
+        writer.write_u32::<LittleEndian>(self.block_height().into())?;
+        Optional::write(&mut *writer, self.txid(), |w, txid| txid.write(w))?;
+        writer.write_u8(self.pools().bits())?;
+        writer.write_u8(match self.origin() {
+            ScanTargetOrigin::Internal => Self::INTERNAL_ORIGIN,
+            ScanTargetOrigin::External => Self::EXTERNAL_ORIGIN,
+        })
     }
 }
 
@@ -200,11 +236,7 @@ impl SyncState {
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
                 let txid = TxId::read(r)?;
 
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: true,
-                }
+                ScanTarget::new(block_height, Some(txid))
             })
         })?
         .into_iter()
@@ -332,11 +364,7 @@ impl NullifierMap {
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
                 let txid = TxId::read(r)?;
 
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: false,
-                }
+                ScanTarget::internal(block_height, txid)
             };
 
             Ok((nullifier, scan_target))
@@ -355,11 +383,7 @@ impl NullifierMap {
                 let block_height = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
                 let txid = TxId::read(r)?;
 
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: false,
-                }
+                ScanTarget::internal(block_height, txid)
             };
 
             Ok((nullifier, scan_target))
@@ -1036,12 +1060,7 @@ impl OutgoingSaplingNote {
         Optional::write(
             &mut writer,
             self.recipient_full_unified_address.as_ref(),
-            |w, unified_address| {
-                write_string(
-                    w,
-                    &unified_address.encode_receiver_preserving(consensus_parameters),
-                )
-            },
+            |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
         )?;
 
         Ok(())
@@ -1147,12 +1166,7 @@ fn write_orchard_protocol_outgoing_note<W: Write, P>(
     Optional::write(
         &mut writer,
         note.recipient_full_unified_address.as_ref(),
-        |w, unified_address| {
-            write_string(
-                w,
-                &unified_address.encode_receiver_preserving(consensus_parameters),
-            )
-        },
+        |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
     )?;
 
     Ok(())
@@ -1420,6 +1434,81 @@ mod tests {
     use crate::{sync::MAX_SHARDTREE_CHECKPOINTS, witness::ANCHOR_RETENTION_INTERVALS};
 
     use super::*;
+
+    // checkpoints appended past the rolling window, so pruning has run before a round trip
+    const APPENDED: u32 = SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 49;
+
+    fn written(scan_target: &ScanTarget) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        scan_target.write(&mut bytes).unwrap();
+        bytes
+    }
+
+    #[test]
+    fn scan_target_round_trips_with_its_pools_and_origin() {
+        let txid = TxId::from_bytes([3; 32]);
+        for scan_target in [
+            ScanTarget::new(BlockHeight::from_u32(10), None),
+            ScanTarget::new(BlockHeight::from_u32(10), Some(txid)),
+            ScanTarget::internal(BlockHeight::from_u32(20), txid)
+                .with_pool(zcash_protocol::ShieldedPool::Sapling)
+                .with_pool(zcash_protocol::ShieldedPool::Ironwood),
+        ] {
+            let read = ScanTarget::read(written(&scan_target).as_slice()).unwrap();
+            assert_eq!(read, scan_target);
+            assert_eq!(read.txid(), scan_target.txid());
+            assert_eq!(read.pools(), scan_target.pools());
+            assert_eq!(read.origin(), scan_target.origin());
+        }
+    }
+
+    // A version 0 target carried a zero txid where no particular transaction was wanted, and a narrow scan area
+    // flag. It is read as an external target with no pool.
+    #[test]
+    fn scan_target_version_zero_is_read_as_external() {
+        let v0 = |txid: [u8; 32]| {
+            let mut bytes = vec![0u8];
+            bytes.write_u32::<LittleEndian>(30).unwrap();
+            bytes.extend_from_slice(&txid);
+            bytes.push(1);
+            bytes
+        };
+
+        let without_transaction = ScanTarget::read(v0([0; 32]).as_slice()).unwrap();
+        assert_eq!(
+            without_transaction,
+            ScanTarget::new(BlockHeight::from_u32(30), None)
+        );
+        assert_eq!(without_transaction.txid(), None);
+        assert_eq!(without_transaction.origin(), ScanTargetOrigin::External);
+        assert!(without_transaction.pools().is_empty());
+
+        let with_transaction = ScanTarget::read(v0([5; 32]).as_slice()).unwrap();
+        assert_eq!(with_transaction.txid(), Some(TxId::from_bytes([5; 32])));
+    }
+
+    #[test]
+    fn scan_target_with_an_unknown_pool_or_origin_is_refused() {
+        let mut unknown_pool = written(&ScanTarget::new(BlockHeight::from_u32(10), None));
+        *unknown_pool.last_mut().unwrap() = 0;
+        let pools_index = unknown_pool.len() - 2;
+        unknown_pool[pools_index] = 1 << 3;
+        assert_eq!(
+            ScanTarget::read(unknown_pool.as_slice())
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::InvalidData
+        );
+
+        let mut unknown_origin = written(&ScanTarget::new(BlockHeight::from_u32(10), None));
+        *unknown_origin.last_mut().unwrap() = 2;
+        assert_eq!(
+            ScanTarget::read(unknown_origin.as_slice())
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::InvalidData
+        );
+    }
 
     // Helper: build a minimal v3 SyncState byte blob (no ironwood_shard_ranges).
     // Format: version(1) | scan_ranges[0] | sapling_shard_ranges[0] |
@@ -1694,6 +1783,7 @@ mod tests {
         const INTERVAL: u32 = 144;
         let policy = AnchorRetention::new(
             BlockHeight::from_u32(90_000),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
             AnchorRetentionInterval::default(),
         );
         let mut shard_trees = ShardTrees::new();
@@ -1750,10 +1840,12 @@ mod tests {
             );
         }
 
+        // a pinned boundary inside the rolling window holds no rolling slot, so the rolling set reaches at
+        // most one height per boundary below the window
         assert!(
             rolling
                 .iter()
-                .all(|height| *height >= TIP - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE),
+                .all(|height| *height >= TIP - MAX_SHARDTREE_CHECKPOINTS),
             "a rolling checkpoint survived below the reorg window: {rolling:?}"
         );
 
@@ -1783,7 +1875,7 @@ mod tests {
 
         let mut shard_trees = ShardTrees::new();
 
-        for height in 1..=150 {
+        for height in 1..=APPENDED {
             let height = BlockHeight::from_u32(height);
             shard_trees
                 .sapling
@@ -1802,7 +1894,8 @@ mod tests {
         let sapling_store = roundtripped.sapling.store();
         let orchard_store = roundtripped.orchard.store();
 
-        let oldest_kept = BlockHeight::from_u32(150 - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1);
+        let oldest_kept =
+            BlockHeight::from_u32(APPENDED - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1);
         fn assert_window<S>(store: &S, oldest_kept: BlockHeight)
         where
             S: ShardStore<CheckpointId = BlockHeight, Error = std::convert::Infallible>,
@@ -1817,7 +1910,7 @@ mod tests {
             );
             assert_eq!(
                 store.max_checkpoint_id().expect("infallible"),
-                Some(BlockHeight::from_u32(150))
+                Some(BlockHeight::from_u32(APPENDED))
             );
             assert!(
                 store
@@ -1892,7 +1985,7 @@ mod tests {
             .store_mut()
             .add_retained_checkpoint(pinned)
             .expect("infallible");
-        for height in 1..=150 {
+        for height in 1..=APPENDED {
             shard_trees
                 .sapling
                 .append_checkpoint(BlockHeight::from_u32(height))

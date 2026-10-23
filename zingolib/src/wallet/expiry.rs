@@ -2,24 +2,24 @@
 //!
 //! ZIP 203 sizes the delta in blocks for a wall-clock duration of about 50
 //! minutes, and NU7's shorter block spacing rescales it (zingo-adrs
-//! zingolib/0056). One rule lives here and every build site asks it, since
-//! the builder's own default still predates NU7.
+//! zingolib/0056). One rule lives here and every build site asks it, so a
+//! proposal's expiry is known before the builder exists; the values are the
+//! builder's own per-branch constants.
 
-use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
+use zcash_primitives::transaction::builder::{
+    BLOSSOM_DEFAULT_TX_EXPIRY_DELTA, NU7_DEFAULT_TX_EXPIRY_DELTA,
+};
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
-/// ZIP 218's `NU7PoWTargetSpacingRatio`: the factor by which NU7 shortens
-/// the target block spacing, 75 seconds to 25.
-const NU7_POW_TARGET_SPACING_RATIO: u32 = 3;
-
 /// The expiry delta ZIP 203 recommends from NU7 activation: the 50 minutes
-/// [`DEFAULT_TX_EXPIRY_DELTA`] held at the 75-second spacing, in 25-second
-/// blocks.
-pub const NU7_TX_EXPIRY_DELTA: u32 = DEFAULT_TX_EXPIRY_DELTA * NU7_POW_TARGET_SPACING_RATIO;
+/// [`BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`] held at the 75-second spacing, in
+/// 25-second blocks.
+pub const NU7_TX_EXPIRY_DELTA: u32 = NU7_DEFAULT_TX_EXPIRY_DELTA;
 
 /// The expiry delta of a transaction targeting `target_height`:
-/// [`NU7_TX_EXPIRY_DELTA`] from the NU7 activation, [`DEFAULT_TX_EXPIRY_DELTA`]
-/// below it and on a chain that never activates NU7.
+/// [`NU7_TX_EXPIRY_DELTA`] from the NU7 activation,
+/// [`BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`] below it and on a chain that never
+/// activates NU7.
 pub fn tx_expiry_delta(chain: &impl Parameters, target_height: BlockHeight) -> u32 {
     let nu7_active = chain
         .activation_height(NetworkUpgrade::Nu7)
@@ -27,7 +27,7 @@ pub fn tx_expiry_delta(chain: &impl Parameters, target_height: BlockHeight) -> u
     if nu7_active {
         NU7_TX_EXPIRY_DELTA
     } else {
-        DEFAULT_TX_EXPIRY_DELTA
+        BLOSSOM_DEFAULT_TX_EXPIRY_DELTA
     }
 }
 
@@ -55,7 +55,7 @@ mod tests {
         let chain = chain_activating_nu7_at(Some(ACTIVATION));
         assert_eq!(
             tx_expiry_delta(&chain, BlockHeight::from_u32(ACTIVATION - 1)),
-            DEFAULT_TX_EXPIRY_DELTA
+            BLOSSOM_DEFAULT_TX_EXPIRY_DELTA
         );
         assert_eq!(
             tx_expiry_delta(&chain, BlockHeight::from_u32(ACTIVATION)),
@@ -73,7 +73,7 @@ mod tests {
         let chain = chain_activating_nu7_at(None);
         assert_eq!(
             tx_expiry_delta(&chain, BlockHeight::from_u32(u32::MAX / 2)),
-            DEFAULT_TX_EXPIRY_DELTA
+            BLOSSOM_DEFAULT_TX_EXPIRY_DELTA
         );
     }
 }

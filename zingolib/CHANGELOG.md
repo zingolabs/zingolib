@@ -8,6 +8,221 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::keys::transparent_address_from_encoded` decodes a transparent
+  address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
+  dropped the `TryFromAddress` conversion that did this inline.
+- `LightWallet::pending_op_return_deshield` reports the deshield txid of a
+  stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
+  it.
+- `SendError::OpReturnResumePending`: `propose_send_with_op_return` returns it
+  while such a proposal is stored, since a new proposal would drop the one
+  the resume needs.
+- `testutils::mock_indexer::MockChain::mine_filler_orchard_block` mines a block
+  of orchard actions no wallet decrypts, so a scan task over the mock chain
+  splits into loads by output count.
+- `LightWallet::birthday_adjusted_from` reports the height a wallet was given
+  when the wallet raised it to Sapling activation. It lives in memory for the
+  process lifetime. `RecoveryInfo` and the FFI viewing-key report carry it as
+  `birthday_adjusted_from` when it is set.
+- `data::PollReport::from_join` maps a tokio join outcome to a `PollReport`: a
+  finished task is `Ready`, a panicked task is `Panicked` with the panic's
+  message, and a cancelled task is `Panicked` with tokio's description.
+- `data::panic_text` renders a panic payload, `&str` or `String`, as text.
+- `LightClientError::SyncPanicked(String)` reports a sync task that panicked
+  from `await_sync` and from the launch wait in `sync`.
+- `config::IndexerChoice`, the typed three-way indexer choice `Offline`,
+  `Default`, or `Named(uri)`, with `resolve(chain)` answering the URI a
+  session attaches to and `config::NoDefaultIndexer` when the chain has
+  no Default Indexer. `ClientConfigBuilder::set_indexer_choice` takes it,
+  `set_indexer_uri` is now `set_indexer_choice(Named(uri))`, and
+  `ClientConfigError::NoDefaultIndexer` is the build-time refusal.
+  `config::default_indexer_for(chain)` answers the chain's Default Indexer
+  (zingo-adrs zingolib/0063).
+- `LightClient::choose_indexer`, which applies an `IndexerChoice` to a
+  running session: `Offline` goes offline, `Default` and `Named` replace
+  the indexer connection, with `lightclient::ChooseIndexerError` naming
+  the missing default or the failed connection.
+- The crate re-exports `zingo_netutils::default_indexer`.
+- `mixnet::speed::WAVE_WIDTH`, the fixed width of every speed-priority wave,
+  which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
+- `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
+  or a hosted enable on a session that holds no Session Indexer.
+
+### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
+  pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
+  pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
+  so a mainnet session crosses NU7 on the network's schedule and commits to
+  the NU7 branch id `0x77190AD9` above it. Every type these crates export
+  through zingolib's public API moves with them, so a consumer pins the same
+  cohort.
+- A unified address encodes with every receiver it carries, so a shielded
+  address with a transparent receiver renders with it again in the address
+  listing's `encoded_address` and wherever a wallet address is shown.
+  `zcash_keys` 0.17.0 restored that to `UnifiedAddress::encode`; 7.0.0 had
+  followed the pre-release, which omitted it.
+- A proposal places change only in a pool the account's viewing key receives
+  in, with transparent change as a P2PKH output: `LightWallet` answers the new
+  `InputSource::get_change_receivers` from the account's unified viewing key,
+  and the change strategies consult it. The greedy input selector also
+  spends from a later shielded pool when the preferred pool's change alone
+  would be dust, where it reported insufficient funds.
+- `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
+  `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
+  `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
+  unchanged, and the builder's own default now agrees with the wallet's.
+- `data::transaction_request_from_receivers` returns
+  `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
+  forbids and `zip321` 0.10.0 refuses.
+- **Breaking:** the pool migration schedule follows ZIP 318's NU7 scaling
+  (zingo-adrs zingolib/0056, amended). Bucket boundaries are the chain's
+  ZIP 318 grid, the multiples of `M` below the NU7 activation and of `3·M`
+  from it, the transfer delays are drawn in reference blocks, and the
+  canonical expiry grid spans three times as many blocks from activation,
+  so every duration keeps its length in time at 25-second blocks. A bucket
+  index is now the ordinal of a grid boundary, which equals `height / M`
+  below the activation and departs from it above: the new
+  `migration::BucketGrid`, built by `MigrationParams::grid` from the chain,
+  answers `index_of` and `boundary_of` where `migration::bucket_index` took
+  a modulus, and that function is gone; `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with the new meaning. The window
+  times they estimate count 25 seconds a block from activation. A part
+  whose window straddles the activation, the last bucket below it, is built
+  against the activation height once the chain has crossed it, so its
+  transaction commits to the branch the network validates; the heights a
+  part was built against travel with the proof as `migration::ProvedPart`
+  and are recorded unchanged. `MigrationParams` moves to version 3. A
+  migration section written before this release is renumbered at read: an
+  index below the activation is unchanged, a window above it that the grid
+  does not open moves to the next boundary, and such an anchor is redrawn.
+- A part that slipped past its window counts as within tolerance for two
+  hours of chain time, 96 reference blocks, rather than 96 blocks.
+- **Breaking:** `LightClient::attach_mixnet` and
+  `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
+  readiness round trip reaches the Session Indexer instead of the census
+  member `zec.rocks`, so an Indexerless session refuses typed with
+  `MixnetProxyError::NoSessionIndexer` before it dials anything (zingo-adrs
+  zingolib/0063).
+- Boot proves three exits, not four. The roles are PriceFetch,
+  IndexerClient, and Spare, assigned in the order the exits confirm; the
+  IndexerSweep role retired with the Server-Selection Sweep (zingo-adrs
+  zingolib/0063). An online session whose exit directory offers fewer than
+  three exits still refuses the enable.
+- **Breaking:** every Transmission and every migration part goes to the Session
+  Indexer over the resolved wire, as one pull under the existing retry policy
+  (zingo-adrs zingolib/0063), over one transmit target for the whole send:
+  the session's live indexer client on nakednet, or one SOCKS5 client over
+  the mixnet. The Destination draw, the hedged race across Destinations, and
+  the per-Destination Health filter are gone. An Indexerless session refuses
+  a send, and a migration part, with `LightClientError::Offline` on every
+  wire, where a ready mixnet once carried it to drawn Destinations; a
+  bootstrapping or dead mixnet still refuses both with `MixnetNotReady`.
+- **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
+  of a failed attempt move from `destination::health`, which is removed. The
+  history no longer folds attempts into a Health.
+- `LightClient::probe_destinations` probes the Session Indexer when no target
+  is named, in place of the census's mixnet-reachable entries. An Indexerless
+  session refuses with `LightClientError::Offline`, and a Session Indexer
+  outside the `https` port 443 shape refuses with
+  `LightClientError::IneligibleProbeTarget`, as a named target always did,
+  where the probe used to answer with an empty list.
+- `wallet::legacy::MAX_REORG` follows `pepper_sync::sync::MAX_REORG_ALLOWANCE`
+  to 1000, so a legacy witness tree keeps 1000 checkpoints, and
+  `LightWallet::clear_all` re-targets only the transactions confirmed more
+  than 1000 blocks below the last known chain height.
+- **Breaking:** `LightWallet::new` and `LightWallet::read` raise a birthday
+  below Sapling activation to the activation height instead of failing, and a
+  raise on read marks the wallet for saving. `WalletError::BirthdayBelowSapling`
+  is removed.
+- **Breaking:** `git_description`, and with it the Binding Layer's
+  `get_version`, returns `zl_<crate version>_<sixteen characters>` on every
+  commit, where the sixteen characters are the prefix of the Published Commit
+  that the Maven version of the Android Prebuilt Bundle also carries. A build
+  from a modified tree still appends `_dirty`. The five-character abbreviation
+  is gone, and so is the release form `zl_<tag version>` that a `zingolib_v*`
+  tag at HEAD produced. A consumer that parses or matches the descriptor must
+  accept the new form. The build script and the workbench take the length and
+  the abbreviation from one source file, `zingolib/short_commit.rs`.
+- **Breaking:** `config::construct_indexer_uri` completes a server string
+  without a scheme to `https://`, and a URI without a port to its scheme's
+  default port (`:443` for `https`, `:80` for `http`), named by the new
+  `config::HTTPS_DEFAULT_PORT`, `config::HTTP_DEFAULT_PORT`, and
+  `config::DEFAULT_INDEXER_SCHEME` constants. The old completion to `http://`
+  and `:9067` is gone: a bare `host` now reaches the indexer the census
+  lists instead of a dead legacy port, and an explicit port is never
+  rewritten.
+- **Breaking:** `data::PollReport` gains the `Panicked(String)` variant, which
+  `poll_sync` returns when the sync task panicked and tokio contained the
+  panic. Every exhaustive match on `PollReport` needs an arm for it.
+- **Breaking:** `LightClient::start_mixnet_session` returns
+  `Result<mixnet::SessionStarted, mixnet::SessionStartError>` in place of
+  `Result<(), TransportError>`. `SessionStarted` reports what the driver did:
+  `OptedOut`, `Spawned { resolution }` with the `ProxyResolution` the one
+  precedence rule chose, or `Attached { socks5_addr }`. `SessionStartError`
+  carries the same provenance beside its cause, as `Spawn { resolution,
+  source }` or `Attach { socks5_addr, source }`, so a consumer names the path
+  and the rung of the precedence that chose it without resolving the path a
+  second time.
+- **Breaking:** `mixnet::provision::resolve_proxy_path` returns a
+  `ProxyResolution`, the chosen path with its `ProxySource` (`Explicit`,
+  `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
+  bare path. `ProxyResolution` renders the path and its provenance through
+  `Display`, and the `PathLookup` rendering names every source that was empty.
+
+### Deprecated
+
+### Removed
+- **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
+  re-exports of the indexer census, and the `destination::Correspondable`
+  implementation for its `Indexer` entry. The census is deleted; the
+  Default Indexer table in `zingo_netutils::default_indexer` replaces it,
+  and `config::default_indexer_for` reads it (zingo-adrs zingolib/0063).
+- `lightclient::select`, the Server-Selection Sweep runner:
+  `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
+  `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and
+  `SURVEY_WAVE_WIDTH`; and `mixnet::sweep`, its pure judgment: `Selection`,
+  `LiveCandidate`, `SurveyResult`, `RefusalTally`, `SweepError`,
+  `live_cohort`, `select`, `healthy_draw_verdict`, `assigned_selection`, and
+  `wave_order`. The Session Indexer receives every operation, so no survey
+  selects one (zingo-adrs zingolib/0063).
+- `destination::Operator`, which only the sweep's one-ticket-per-operator
+  draw consumed.
+- The `sweep_harness` test target.
+- **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
+  `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
+  `destination::rotation`, `destination::health`, and
+  `destination::same_operator`; the `config::{IndexerConfig, Location, Role,
+  Trust}` re-exports; `ClientConfigBuilder::{add_indexer,
+  set_remote_indexer_trust, set_migration_transmission_uri}` and
+  `ClientConfig::{indexers, remote_indexer_trust, migration_transmission_uri}`;
+  `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
+  `LightClientError::{NoEligibleDestination,
+  MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
+- **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
+
+### Fixed
+- `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
+  longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
+  contains a task's panic, the join yields an error, and the old `expect`
+  re-raised the panic on the caller's thread, under the FFI's client lock,
+  which poisoned the lock for the rest of the session. A panicked save task
+  restarts, as a failed one does, and the poll reports the panic as an
+  `io::Error`.
+- `migrate_to_ironwood` reconciles once more after its last part confirms,
+  so the migration it returns reports the `Complete` phase. Reconciliation
+  judges completion on the persisted part states, and the pass that promotes
+  the parts to `Confirmed` cannot also complete the migration, so the one-call
+  returned with the phase still `PartsScheduled`.
+- The two-phase migration twin mines the mock chain to the first Ironwood-era
+  transmission window before the one-call and two buckets past each block that
+  confirms transactions, the spans the state machine requires between the
+  activation, a note's confirmation and a part that anchors on it. The twin's
+  regtest ancestor was ignored and never ran.
+
+## [7.0.0] - 2026-10-15
+
+### Added
+
 - `perspective::sync_progress`, the sync-progress editorial types.
   `SyncProgress`, built from a `pepper_sync::sync::SyncStatus`, derives the
   total block and output percentages the engine reported before: the exact
@@ -42,6 +257,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `wallet::keys::WalletKind` and `LightWallet::kind`, the wallet's key material as one of `Mnemonic`, `SpendingKey`, `ViewingKey` with the receivers the key holds, or `NoKeys`, or `KeyError::NoAccountKeys` for a wallet without account zero. zingo-cli and the FFI each computed this themselves.
 
 ### Changed
+
 - `SaplingParams` is a plain struct whose `SPEND` and `OUTPUT` constants are
   the embedded Sapling proving parameters, read by `include_bytes!` straight
   from the parameter cache the build script downloads into. `SaplingParams::get`
@@ -113,8 +329,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reading a wallet file fails with an `InvalidData` error when a pepper-sync, zingo-status or zingo-price type in it has a serialized version above the one this build writes. A change to one of those versions no longer takes a new wallet file version.
 - zingolib sets `shutdown_on_completion` to `false` by default. Wallet files from earlier versions, which lack the `shutdown_on_completion` byte, read it as `false`, so existing wallets also sync continuously. Consumers must set the sync config accordingly before each call to sync. Otherwise, awaiting a sync that is expected to return at the chain tip will wait indefinitely.
 - **Breaking:** `testutils::mock_indexer::MockNet::client` takes an `Option<WalletSettings>`; `None` uses `default_test_wallet_settings`, which now sets `shutdown_on_completion` to `true`.
+- **Breaking:** the values of `LightWallet::outpoint_map`, and the scan
+  targets `LightWallet::clear_all` and the legacy wallet import add, are
+  `pepper_sync::wallet::ScanTarget` with private fields, constructed through
+  `ScanTarget::new(block_height, Option<TxId>)` and read through its
+  accessors. A wallet file written before the change still loads.
+
+### Removed
+
+- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
+- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
+- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
+- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
+- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ### Fixed
+
 - `LightWallet::spendable_balance` and note selection require the anchor's
   shard to be scanned as well as the note's. The witness path's right-hand
   siblings are computed from the anchor's shard up to the anchor, so a note in
@@ -122,13 +352,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built. `InputSource::anchor_computable` checks the anchor's shard, where it
   checked the birthday shard, which is what the backend's canonical crossing
   proposal asks of it. (#2953)
-
-### Removed
-- **Breaking:** remove `LightWallet::get_filtered_balance_mut`, which no code called with a mutating filter. Use `LightWallet::get_filtered_balance`, which keeps its `Fn` bound.
-- **Breaking:** remove the `zennies_for_zingo` parameter from `LightClient::propose_send_all` and `LightClient::max_send_value`, since upstream send-max cannot carry a second payment.
-- **Breaking:** remove `mixnet::resolve_route` and `LightClient::mixnet_route`, replaced by the two resolvers above.
-- **Breaking:** remove the `sync::sync_status` re-export of `pepper_sync::sync_status`. Use `LightClient::latest_sync_status` or `pepper_sync::sync_status` directly.
-- **Breaking:** remove `PriceFetchRoute::Nakednet` and `LightClientError::ProbeRequiresMixnet`, both unreachable once the price fetch and the probe are mixnet-only.
 
 ## [6.0.0] - 2026-09-07
 

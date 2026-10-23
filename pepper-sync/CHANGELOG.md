@@ -7,9 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+- BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
+  `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
+  activation height, 3,543,405.
+- The anchor-checkpoint retention policy runs on the chain's block spacing
+  (`zcash_protocol::zip318::BlockSpacing`): from NU7 activation the ZIP 318
+  anchor grid's boundaries sit three times as many blocks apart, and the
+  retained checkpoints and the retention window, measured in reference
+  blocks, follow them.
+- `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
+  `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
+  since. A re-org up to 1000 blocks deep is truncated and scanned again,
+  where a re-org deeper than 100 blocks cleared the wallet's chain data
+  before. The wallet keeps the wallet blocks and, through
+  `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE` and `MAX_SHARDTREE_CHECKPOINTS`,
+  the shard tree checkpoints of the last 1000 scanned blocks, and
+  transparent address discovery searches the 1000 blocks below the last
+  known chain height at the start of a sync session. A wallet whose last
+  known chain height is more than 1000 blocks above the server's chain
+  height returns `SyncError::ChainError`, where the bound was 100.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  session's chain height and the wallet's highest scanned block as of the
+  task's selection, in place of the wallet's highest scanned block at
+  processing time. A load's rolling checkpoint window hangs from the chain
+  height, so only the loads inside the top window of the chain place it,
+  whatever task they belong to. Every load also places a checkpoint at its
+  own last block, so a session stopped after it anchors a spend there, and
+  the anchor retention boundaries as of that block or the highest scanned
+  block when that is higher, so such a session anchors a pool crossing
+  too. Before, every load of a task above the highest scanned height placed
+  a full window hanging from its own last block, which the next load's
+  inserts pruned, and the scan and the update could disagree once another
+  task moved the wallet's highest scanned block between a load's scan and
+  its update.
+- A block hash that disagrees more than `MAX_REORG_ALLOWANCE` below the
+  chain height the wallet's scanned state was formed against is a
+  different chain: the wallet is cleared and
+  `ServerError::ChainVerificationError` returned, as for a re-org deeper
+  than the allowance. The depth was measured from the wallet's highest
+  scanned block, so a wallet stopped between the loads of a task that met
+  such a disagreement attempted a truncation, found no checkpoint at the
+  fork, and was cleared with `SyncError::TruncationError` instead.
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
+  blocks of a range scanned above the highest scanned height, the blocks of
+  a lower range inside that window, and the anchor retention boundaries
+  inside their window. Every other block's checkpoint was built, inserted
+  and pruned from each pool's tree for nothing, a fixed cost per block per
+  active pool that grew with the ironwood pool. The window was sized by
+  `MAX_SHARDTREE_CHECKPOINTS` before, which counts the pinned anchor
+  boundaries the rolling budget excludes, so the bottom six blocks of every
+  window were checkpointed and pruned as well. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
+
 ### Deprecated
 
+### Removed
+
+### Fixed
+- The mempool stream is opened without a call deadline. It was opened with
+  the 20 s bound meant for a finite download, sent to the server as
+  `grpc-timeout`, so on mainnet almost every stream ended with
+  `DEADLINE_EXCEEDED` before the next block, logged a warning, and was
+  reopened with the whole mempool resent. The stream now ends when the
+  server ends it at the next block, which is the signal the monitor
+  already treats as a mined block.
+- The finite streams (block ranges, subtree roots, transparent address
+  transactions) are bounded at 120 s for the whole download in place of
+  20 s. A stall between messages is still caught after 15 s.
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
+
+## [0.6.0] - 2026-10-15
+
 ### Added
+
 - `sync::SyncStatus::total_blocks`, the block span from the wallet birthday to
   the last known chain height, the denominator `sync_status` already divided
   by and never reported.
@@ -82,8 +171,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncRecoveryObservables::MaybeRecoverableServer`, and syncing again
   truncates the wallet to the server's chain height and verifies it against
   the server's chain.
+- BREAKING: `error::ScanError::TransactionNotServed` variant, returned when
+  the server does not serve a transaction that its own data placed in the
+  chain: one the sync engine discovered through trial decryption, spend
+  detection or transparent address discovery. The served data is inconsistent,
+  so the error recommends `SyncRecoveryObservables::ServerUnavailable`, and
+  the consumer should switch to a different server and sync again. A
+  transaction a consumer's scan target names is not covered: that target is
+  dropped instead.
+- `wallet::ScanTarget::new`, the one constructor of a consumer's scan target
+  from a block height and an optional txid, and the `block_height` and `txid`
+  accessors.
 
 ### Changed
+
 - Scanning reads version 2 zingo memos, which carry a recipient's unified
   address with its ZIP 316 revision and metadata, through
   `ParsedMemo::into_unified_addresses`.
@@ -118,8 +219,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
-- `sync::SyncResult` `Display` output is headed "Sync result" instead of
-  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one
@@ -152,8 +251,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ironwood subtree roots are fetched on every chain. The wallet checks the
   lightwallet protocol version to ensure ironwood is served, so a server that
   does not serve them is an error rather than a chain without NU6.3.
+- BREAKING: `wallet::ScanTarget` has private fields. A consumer constructs a
+  target through `ScanTarget::new(block_height, Option<TxId>)` and reads it
+  through its accessors; the `narrow_scan_area` flag and the all-zero txid
+  standing for "no transaction" are gone. Two targets naming the same block
+  height and txid are the same target, and adding one merges it into the one
+  the sync state holds. A target also records, internally, the shielded pools
+  its transaction was found to hold notes of and whether the sync engine or
+  the consumer added it. `ScanTarget` is serialized as version 1, carrying the
+  optional txid, the pools and the origin; a version 0 target is read as a
+  consumer's target with no pool, a zero txid becoming none. (#2862)
+- The narrow range of blocks prioritised around a scan target is 1,000 blocks,
+  down from 10,000. A detected spend prioritises the narrow range around the
+  spending transaction rather than the whole shard of the spent note's pool: a
+  spent note needs no witness, and a change note in the spending transaction
+  prioritises its own pool's shard when it is found.
+- A pool rescan targets the wallet's transactions above the rescan height as
+  the sync engine's own rather than as a consumer's, since the wallet's
+  records of the pool are wrong and the chain's are not, so one the server no
+  longer serves is reported as an inconsistency.
+
+### Removed
+
+- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
+  `sync::SyncStatus::percentage_total_outputs_scanned`, and
+  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
+  counts and spans the percentages were derived from; the derivation, with its
+  clamp, its reading of an empty span as complete, and its one-step-short
+  reading while nullifiers await retrieval, now lives in
+  `zingolib::perspective::sync_progress`.
+- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
+  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
+  renders both, with the same text and the same JSON keys. pepper-sync no longer
+  depends on the `json` crate.
+- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
+  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
+  computation could abort the process, and no consumer read them: the CLI's progress
+  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
+  `SyncResult` carries the total percentage only. A consumer that wants a session
+  percentage computes it from the session and total counts the struct still reports. The
+  two fields also leave the `json::JsonValue` rendering of a sync status.
 
 ### Fixed
+
 - `sync` makes the server requests of its session start, the chain height,
   the tree states that bound the session and the subtree roots, with the
   wallet lock released, and takes the lock only to apply what they return. A
@@ -317,26 +457,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shard that completed on chain while partially scanned without a computable
   root, and a witness that needed it failed although the note's shard and the
   anchor's shard were scanned. (#2954)
-
-### Removed
-- **Breaking.** `sync::SyncStatus::percentage_total_blocks_scanned`,
-  `sync::SyncStatus::percentage_total_outputs_scanned`, and
-  `sync::SyncResult::percentage_total_outputs_scanned`. The engine reports the
-  counts and spans the percentages were derived from; the derivation, with its
-  clamp, its reading of an empty span as complete, and its one-step-short
-  reading while nullifiers await retrieval, now lives in
-  `zingolib::perspective::sync_progress`.
-- **Breaking.** The `Display` and `From<_> for json::JsonValue` implementations
-  of `sync::SyncStatus` and `sync::SyncResult`. `zingolib::perspective::sync_progress`
-  renders both, with the same text and the same JSON keys. pepper-sync no longer
-  depends on the `json` crate.
-- **Breaking.** `sync::SyncStatus::percentage_session_blocks_scanned` and
-  `sync::SyncStatus::percentage_session_outputs_scanned`. These were the only fields whose
-  computation could abort the process, and no consumer read them: the CLI's progress
-  surfaces take `total_outputs_scanned`, `total_outputs`, and `is_complete()`, and
-  `SyncResult` carries the total percentage only. A consumer that wants a session
-  percentage computes it from the session and total counts the struct still reports. The
-  two fields also leave the `json::JsonValue` rendering of a sync status.
+- The scan ranges prioritised around a scan target at the start of a sync
+  session follow the pools the target's transaction holds notes of, recorded
+  when the notes are found: the whole shard of each such pool, and the narrow
+  range of blocks around a target with none. Every target used to be
+  prioritised as an ironwood target, which `determine_block_range` resolved to
+  the orchard shard before NU6.3 and the ironwood shard after, so a sapling
+  note's shard, or an orchard note's shard once ironwood had completed shards,
+  could be left at `Historic` behind the whole unscanned history. (#2957)
+- A scan target that recorded a pool is kept until, for every such pool, its
+  block lies below the completing block of the pool's newest recorded shard
+  and every recorded shard range holding the block is scanned through its
+  completing block. The target used to be dropped as soon as the fully scanned
+  height passed it, so the rest of a shard mined while the wallet was closed
+  arrived as `Historic` with nothing left to prioritise it. A target on the
+  newest completing block is kept, as that block also holds the first
+  commitments of the incomplete shard. (#2958)
+- A consumer's scan target whose transaction the server does not serve is
+  dropped with a warning and the scan continues, where it used to fail every
+  scan of its range. A consumer's target whose block height lies below the
+  wallet birthday or above the chain height is dropped at the start of the
+  session. Network weather on any target is reported as the transient failure
+  it is and drops nothing. (#2959)
+- A re-org truncation removes the scan targets above the truncation height
+  with the wallet's blocks, transactions, nullifiers and outpoints. A target
+  above it names a transaction in a block the wallet no longer holds and asked
+  the server for it when the replacing blocks were scanned. (#2960)
 
 ## [0.5.0] - 2026-06-10
 

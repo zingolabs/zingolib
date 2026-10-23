@@ -8,12 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- `parse_coingecko_simple` reads the quote as an `f64` and narrows it to
+  `f32` before the finite check, so an overflowing literal is the typed
+  `InvalidPrice` refusal under serde_json's `float_roundtrip` feature as
+  well as without it. A build that unifies the nym stack's features into
+  this crate turned that literal into a deserialization error instead.
+
+## [0.2.0] - 2026-10-15
+
+### Added
+
 - `get_source_price_untunneled`, the untunneled counterpart of
   `get_source_price`, so the wallet can race the same sources over
   nakednet when a switched-off Mixnet Mode consents to it (ADR 0011,
   amendment 2026-08-26). It was previously a test-only helper.
 
+- `first_quote` turns a driven race's outcomes into the first quote, or the
+  report naming every source's typed failure when none answered.
+- `RACED_SOURCES`, the price census a run races, so a caller driving the
+  race asks the same operators in the same order.
+- `get_source_price` is public: one source's fetch, which a caller composes
+  into a race of its own.
+
 ### Changed
+
 - `PriceList::read` returns an `InvalidData` error for a serialized version
   above the one this build writes. It read on at any version before.
 - BREAKING: `PriceError::RequestFailed` carries a
@@ -23,15 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `failure: NetOpFailure` field is unchanged, and the transport error is now
   boxed, which keeps the enum the size it was.
 
-### Removed
-- BREAKING: `reqwest` and `rustls` leave this crate's dependency set. The
-  request builder, the SOCKS5 proxy URL, the crypto-provider install, and the
-  `zingo-net-diag` classification table all move to
-  `zingo_netutils::socks5_fetch`, which serves them through
-  `ConduitDial::fetch_text`. The crate is now the price data model and its
-  parsers.
-
-### Changed
 - BREAKING: `get_source_price` takes a `zingo_netutils::conduit::ConduitDial`
   where it took `Option<&str>`. A price fetch is mixnet-only (ADR 0011), and
   the option let a caller passing `None` route it over nakednet instead. The
@@ -40,17 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fetch the ADR forbids. The `socks5-fetch` feature gains a `zingo-netutils`
   dependency to carry the guard type.
 
-### Deprecated
-
-### Added
-- `first_quote` turns a driven race's outcomes into the first quote, or the
-  report naming every source's typed failure when none answered.
-- `RACED_SOURCES`, the price census a run races, so a caller driving the
-  race asks the same operators in the same order.
-- `get_source_price` is public: one source's fetch, which a caller composes
-  into a race of its own.
-
 ### Removed
+
+- BREAKING: `reqwest` and `rustls` leave this crate's dependency set. The
+  request builder, the SOCKS5 proxy URL, the crypto-provider install, and the
+  `zingo-net-diag` classification table all move to
+  `zingo_netutils::socks5_fetch`, which serves them through
+  `ConduitDial::fetch_text`. The crate is now the price data model and its
+  parsers.
+
 - BREAKING: `race_current_price` and the private `race_sources` are gone.
   The wallet runs one speed-priority wave for every operation that races
   targets through an Exit Node — the Server-Selection Sweep and the price
@@ -63,9 +79,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PriceSource::url` is public, so a Correspondable implementation can
   name the endpoint a source answers at.
 
-### Changed
-
-### Removed
 - The dead sequential fetch path: `fetch_current_price`,
   `fetch_current_price_from`, `PriceList::update_current_price`, and
   `PriceSource::next`. Production moved to `race_current_price`, which races

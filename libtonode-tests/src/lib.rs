@@ -1,1 +1,1 @@
-pub mod chain_generics;
+#![forbid(unsafe_code)]

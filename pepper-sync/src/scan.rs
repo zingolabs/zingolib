@@ -24,7 +24,10 @@ use crate::{
     witness::{self, LocatedTreeData, WitnessData},
 };
 
-use self::{compact_blocks::scan_compact_blocks, transactions::scan_transactions};
+use self::{
+    compact_blocks::scan_compact_blocks,
+    transactions::{ScannedTransactions, scan_transactions},
+};
 
 pub(crate) mod compact_blocks;
 pub(crate) mod task;
@@ -99,6 +102,8 @@ pub(crate) struct ScanResults {
     pub(crate) outpoints: BTreeMap<OutputId, ScanTarget>,
     pub(crate) scanned_blocks: BTreeMap<BlockHeight, WalletBlock>,
     pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
+    /// External scan targets whose transaction the server did not serve, to drop from the sync state.
+    pub(crate) dropped_scan_targets: BTreeSet<ScanTarget>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     pub(crate) orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     pub(crate) ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -151,6 +156,8 @@ where
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
         transparent_scan_floor,
+        chain_height,
+        highest_scanned_height,
     } = scan_task;
 
     if compact_blocks
@@ -184,6 +191,7 @@ where
             outpoints: BTreeMap::new(),
             scanned_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
+            dropped_scan_targets: BTreeSet::new(),
             sapling_located_trees: Vec::new(),
             orchard_located_trees: Vec::new(),
             ironwood_located_trees: Vec::new(),
@@ -203,6 +211,12 @@ where
     )
     .await?;
 
+    let checkpoint_heights = witness::checkpoint_heights(
+        scan_range.block_range(),
+        chain_height,
+        highest_scanned_height,
+        witness::anchor_retention_policy(consensus_parameters).as_ref(),
+    );
     let consensus_parameters_clone = consensus_parameters.clone();
     let ufvks_clone = ufvks.clone();
     let initial_scan_data_clone = initial_scan_data.clone();
@@ -218,6 +232,7 @@ where
             transparent_gap_addresses,
             transparent_gap_limit,
             transparent_scan_floor,
+            &checkpoint_heights,
         )
     })
     .await
@@ -237,7 +252,10 @@ where
     scan_targets.append(&mut decrypted_scan_targets);
     transparent_inuse_addresses.extend(new_transparent_inuse_addresses.clone());
 
-    let wallet_transactions = scan_transactions(
+    let ScannedTransactions {
+        transactions: wallet_transactions,
+        dropped_targets: dropped_scan_targets,
+    } = scan_transactions(
         fetch_request_sender,
         consensus_parameters,
         ufvks,
@@ -286,6 +304,7 @@ where
         outpoints,
         scanned_blocks: wallet_blocks,
         wallet_transactions,
+        dropped_scan_targets,
         sapling_located_trees,
         orchard_located_trees,
         ironwood_located_trees,
@@ -294,78 +313,49 @@ where
     })
 }
 
+fn orchard_nullifier(bytes: &[u8]) -> Result<orchard::note::Nullifier, ScanError> {
+    orchard::note::Nullifier::from_bytes(
+        bytes
+            .try_into()
+            .map_err(|_| ScanError::InvalidOrchardNullifierLength(bytes.len()))?,
+    )
+    .into_option()
+    .ok_or(ScanError::InvalidOrchardNullifier)
+}
+
 /// Converts the nullifiers from a compact transaction and adds them to the nullifier map
 fn collect_nullifiers_compact(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
     transaction: &CompactTx,
 ) -> Result<(), ScanError> {
-    let txid = transaction::get_compact_txid(transaction);
-
-    transaction
+    let scan_target =
+        ScanTarget::internal(block_height, transaction::get_compact_txid(transaction));
+    let sapling = transaction
         .spends
         .iter()
         .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
-        .collect::<Result<Vec<sapling_crypto::Nullifier>, TryFromSliceError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map.sapling.insert(
-                nullifier,
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: false,
-                },
-            );
-        });
-    transaction
+        .collect::<Result<Vec<_>, TryFromSliceError>>()?;
+    let orchard = transaction
         .actions
         .iter()
-        .map(|action| {
-            orchard::note::Nullifier::from_bytes(
-                action.nullifier.as_slice().try_into().map_err(|_| {
-                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
-                })?,
-            )
-            .into_option()
-            .ok_or(ScanError::InvalidOrchardNullifier)
-        })
-        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map.orchard.insert(
-                nullifier,
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: false,
-                },
-            );
-        });
-    transaction
+        .map(|action| orchard_nullifier(&action.nullifier))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ironwood = transaction
         .ironwood_actions
         .iter()
-        .map(|action| {
-            orchard::note::Nullifier::from_bytes(
-                action.nullifier.as_slice().try_into().map_err(|_| {
-                    ScanError::InvalidOrchardNullifierLength(action.nullifier.len())
-                })?,
-            )
-            .into_option()
-            .ok_or(ScanError::InvalidOrchardNullifier)
-        })
-        .collect::<Result<Vec<orchard::note::Nullifier>, ScanError>>()?
-        .into_iter()
-        .for_each(|nullifier| {
-            nullifier_map.ironwood.insert(
-                nullifier,
-                ScanTarget {
-                    block_height,
-                    txid,
-                    narrow_scan_area: false,
-                },
-            );
-        });
+        .map(|action| orchard_nullifier(&action.nullifier))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    nullifier_map
+        .sapling
+        .extend(sapling.into_iter().zip(std::iter::repeat(scan_target)));
+    nullifier_map
+        .orchard
+        .extend(orchard.into_iter().zip(std::iter::repeat(scan_target)));
+    nullifier_map
+        .ironwood
+        .extend(ironwood.into_iter().zip(std::iter::repeat(scan_target)));
     Ok(())
 }
 
@@ -383,11 +373,7 @@ fn collect_outpoints_compact(
         let prevout_txid = TxId::from_bytes(txid_bytes);
         outpoint_map.insert(
             OutputId::new(prevout_txid, outpoint.prevout_index),
-            ScanTarget {
-                block_height,
-                txid,
-                narrow_scan_area: true,
-            },
+            ScanTarget::internal(block_height, txid),
         );
     });
 }

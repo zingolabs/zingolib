@@ -60,10 +60,6 @@ use crate::mixnet::Indicator;
 use crate::mixnet::acquire;
 use crate::mixnet::driver::{MixnetStatus, StatusPublisher};
 
-/// The census indexer an attached session round-trips against to prove its
-/// mixnet path carries data.
-const ATTACH_HEALTH_INDEXER: &str = zingo_netutils::indexers::MIXNET_HEALTH_INDEXER;
-
 /// Readiness round trips through the attached endpoint before it is declared
 /// dead.
 const ATTACH_HEALTH_ATTEMPTS: usize = 2;
@@ -98,6 +94,8 @@ pub enum MixnetProxyError {
     /// The exit report handed to `MixnetProxy::attach` names no Exit Node.
     #[error("the attached endpoint reported no bound exit node")]
     NoExits,
+    #[error("the session has no indexer for the attach readiness round trip")]
+    NoSessionIndexer,
     /// The session could not draw a ledgered Clutch for the spawn.
     #[error(transparent)]
     Acquisition(Box<acquire::TransportError>),
@@ -278,12 +276,13 @@ impl MixnetProxy {
         })
     }
 
-    /// Attaches to an already-running, mobile-platform-hosted SOCKS5 endpoint that
-    /// bound `exits`, judging readiness and continued life by loopback dials
-    /// alone.
+    /// - Spawns the attached-state driver, whose readiness gate round-trips
+    ///   through `socks5_addr` to `indexer`, the Session Indexer.
+    /// - Publishes every lifecycle transition into `publisher`.
     pub(crate) fn attach(
         socks5_addr: SocketAddr,
         exits: &[crate::mixnet::ExitNodeId],
+        indexer: http::Uri,
         publisher: StatusPublisher,
     ) -> Result<Self, MixnetProxyError> {
         // Ready means the address AND a bound exit, at every door: an
@@ -303,7 +302,7 @@ impl MixnetProxy {
         let driver = tokio::spawn(drive_attached_state(
             Arc::clone(&state),
             socks5_addr,
-            attach_readiness(socks5_addr),
+            attach_readiness(socks5_addr, indexer),
             move || endpoint_alive(socks5_addr),
             ATTACH_WATCHDOG_INTERVAL,
             publisher,
@@ -387,13 +386,15 @@ impl MixnetProxy {
     }
 }
 
-/// The attach readiness gate: a data round trip through the endpoint to
-/// [`ATTACH_HEALTH_INDEXER`], bounded per attempt and retried once, because a
-/// listener that accepts TCP proves nothing about the mixnet carrying data.
-async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag::NetOpFailure> {
-    let indexer: http::Uri = ATTACH_HEALTH_INDEXER
-        .parse()
-        .expect("the static health-check URI parses");
+/// - Opens up to [`ATTACH_HEALTH_ATTEMPTS`] data round trips through
+///   `socks5_addr` to `indexer`, the Session Indexer, each bounded by
+///   [`MIXNET_ROUND_TRIP_BOUND`], because a listener that accepts TCP
+///   proves nothing about the mixnet carrying data.
+async fn attach_readiness(
+    socks5_addr: SocketAddr,
+    indexer: http::Uri,
+) -> Result<(), zingo_net_diag::NetOpFailure> {
+    let indexer_text = indexer.to_string();
     let probe = zingo_netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
     let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
@@ -407,7 +408,7 @@ async fn attach_readiness(socks5_addr: SocketAddr) -> Result<(), zingo_net_diag:
                 let target = match stage {
                     zingo_net_diag::NetOpStage::LocalProxyConnect
                     | zingo_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
-                    _ => ATTACH_HEALTH_INDEXER.to_string(),
+                    _ => indexer_text.clone(),
                 };
                 last_failure = Some(zingo_net_diag::NetOpFailure::from_error(
                     stage, target, &error,
@@ -1351,6 +1352,7 @@ mod tests {
         match MixnetProxy::attach(
             "127.0.0.1:1080".parse().expect("the test address parses"),
             &[],
+            crate::mixnet::test_indexer(),
             test_publisher(),
         ) {
             Err(MixnetProxyError::NoExits) => {}
@@ -1374,6 +1376,7 @@ mod tests {
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
             &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
+            crate::mixnet::test_indexer(),
             test_publisher(),
         )
         .expect("a valid address and a named exit attach");
@@ -1402,6 +1405,7 @@ mod tests {
         let proxy = MixnetProxy::attach(
             "127.0.0.1:9".parse().expect("the test address parses"),
             &[crate::mixnet::ExitNodeId::from("host-bound-exit")],
+            crate::mixnet::test_indexer(),
             test_publisher(),
         )
         .expect("a valid address and a named exit attach");
