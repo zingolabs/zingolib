@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::keys::transparent_address_from_encoded` decodes a transparent
+  address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
+  dropped the `TryFromAddress` conversion that did this inline.
 - `LightWallet::pending_op_return_deshield` reports the deshield txid of a
   stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
   it.
@@ -46,6 +49,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a hosted enable on a session that holds no Session Indexer.
 
 ### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
+  pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
+  pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
+  so a mainnet session crosses NU7 on the network's schedule and commits to
+  the NU7 branch id `0x77190AD9` above it. Every type these crates export
+  through zingolib's public API moves with them, so a consumer pins the same
+  cohort.
+- A unified address encodes with every receiver it carries, so a shielded
+  address with a transparent receiver renders with it again in the address
+  listing's `encoded_address` and wherever a wallet address is shown.
+  `zcash_keys` 0.17.0 restored that to `UnifiedAddress::encode`; 7.0.0 had
+  followed the pre-release, which omitted it.
+- A proposal places change only in a pool the account's viewing key receives
+  in, with transparent change as a P2PKH output: `LightWallet` answers the new
+  `InputSource::get_change_receivers` from the account's unified viewing key,
+  and the change strategies consult it. The greedy input selector also
+  spends from a later shielded pool when the preferred pool's change alone
+  would be dust, where it reported insufficient funds.
+- `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
+  `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
+  `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
+  unchanged, and the builder's own default now agrees with the wallet's.
+- `data::transaction_request_from_receivers` returns
+  `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
+  forbids and `zip321` 0.10.0 refuses.
+- The pool migration stays on uniform block spacing: the schedule asks
+  `zcash_pool_migration` 0.2.0 for its canonical expiry and anchor draws on
+  that grid, and `LightWallet` answers `WalletRead::pool_migration_params`
+  with it, so the backend judges a canonical crossing by the grid the anchor
+  was bucketed on. Upstream's grid and expiry span three times as many blocks
+  from NU7 activation; carrying that into bucket space, and into pepper-sync's
+  anchor retention with it, is pending.
 - **Breaking:** `LightClient::attach_mixnet` and
   `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
   readiness round trip reaches the Session Indexer instead of the census

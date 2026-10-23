@@ -4545,8 +4545,13 @@ mod boundary_pruning {
     #[tokio::test]
     async fn unavailable_boundary_tree_state_skips_without_sync_on_the_mock_chain() {
         let anchor_boundary = BlockHeight::from_u32(ANCHOR_BOUNDARY);
+        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
+        ))
+        .await;
         let retention = AnchorRetention::new(
             BlockHeight::from_u32(DEFERRED_NU6_3),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
             AnchorRetentionInterval::default(),
         );
         assert!(
@@ -4556,10 +4561,6 @@ mod boundary_pruning {
             "the canonical retention grid must pin no checkpoint at or below the anchor boundary"
         );
 
-        let mut net = MockNet::launch_with(MockChain::with_activation_heights(
-            mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
-        ))
-        .await;
         let mut params = MigrationParams::provisional(net.chain_type());
         params.bucket_modulus = PRUNED_BUCKET_MODULUS;
         let funding = params.max_residual_value + params.part_fee;

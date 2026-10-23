@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
+  `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
+  activation height, 3,543,405.
+- The anchor-checkpoint retention policy names its block spacing, which
+  `zcash_client_backend` 0.25.0's `AnchorRetention` takes, and keeps the
+  uniform spacing: one block per reference block at every height, the grid the
+  wallet's migration schedule draws its anchors on. Upstream's grid spans
+  three times as many blocks from NU7 activation; retention adopts that with
+  the schedule, not ahead of it.
+- `OutputInterface::encoded_recipient_full_unified_address` still carries
+  every receiver; `zcash_keys` 0.17.0 made that `UnifiedAddress::encode`'s
+  own form, so the receiver-preserving variant it replaces is gone.
 - `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
   `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
   since. A re-org up to 1000 blocks deep is truncated and scanned again,

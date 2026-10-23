@@ -1060,12 +1060,7 @@ impl OutgoingSaplingNote {
         Optional::write(
             &mut writer,
             self.recipient_full_unified_address.as_ref(),
-            |w, unified_address| {
-                write_string(
-                    w,
-                    &unified_address.encode_receiver_preserving(consensus_parameters),
-                )
-            },
+            |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
         )?;
 
         Ok(())
@@ -1171,12 +1166,7 @@ fn write_orchard_protocol_outgoing_note<W: Write, P>(
     Optional::write(
         &mut writer,
         note.recipient_full_unified_address.as_ref(),
-        |w, unified_address| {
-            write_string(
-                w,
-                &unified_address.encode_receiver_preserving(consensus_parameters),
-            )
-        },
+        |w, unified_address| write_string(w, &unified_address.encode(consensus_parameters)),
     )?;
 
     Ok(())
@@ -1793,6 +1783,7 @@ mod tests {
         const INTERVAL: u32 = 144;
         let policy = AnchorRetention::new(
             BlockHeight::from_u32(90_000),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
             AnchorRetentionInterval::default(),
         );
         let mut shard_trees = ShardTrees::new();

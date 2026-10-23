@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation a second time to decide where log output goes.
 
 ### Changed
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins, which
+  sets the NU7 mainnet activation height, 3,543,405. A shielded unified
+  address with a transparent receiver is rendered with that receiver again,
+  as it was before the pre-release cohort.
 - The `change_server` example in the command help names
   `https://mainnet.zainod.zingolabs.dev:443` instead of `https://zec.rocks:443`.
 - An online session no longer runs the Server-Selection Sweep at startup

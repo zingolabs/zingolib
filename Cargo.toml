@@ -70,13 +70,13 @@ incrementalmerkletree = "0.9.0"
 orchard = "0.16.0"
 sapling-crypto = "0.9.0"
 shardtree = "0.8.0"
-zcash_address = "=0.14.0-pre.1"
-zcash_client_backend = { version = "=0.25.0-pre.1", features = [
+zcash_address = "=0.14.0"
+zcash_client_backend = { version = "=0.25.0", features = [
   "orchard",
   "transparent-inputs",
 ] }
 zcash_encoding = "0.5.0"
-zcash_keys = { version = "=0.17.0-pre.1", features = [
+zcash_keys = { version = "=0.17.0", features = [
   "transparent-inputs",
   "sapling",
   "orchard",
@@ -84,12 +84,12 @@ zcash_keys = { version = "=0.17.0-pre.1", features = [
 zcash_note_encryption = "0.5.1"
 # non-standard-fees: exposes `fees::fixed`, used to pin the exact planned fee
 # on Ironwood migration transactions.
-zcash_primitives = { version = "=0.31.0-pre.1", features = [
+zcash_primitives = { version = "=0.31.0", features = [
   "non-standard-fees",
 ] }
-zcash_proofs = "=0.31.0-pre.1"
-zcash_protocol = "=0.11.0-pre.0" # public API (TODO: remove from public API)
-zcash_transparent = "=0.11.0-pre.1"
+zcash_proofs = "=0.31.0"
+zcash_protocol = "=0.11.0" # public API (TODO: remove from public API)
+zcash_transparent = "=0.11.0"
 
 ### Blockchain Protocol
 bip0039 = { version = "0.14", features = ["rand"] }

@@ -397,6 +397,13 @@ pub(crate) fn get_ironwood_tree(
 /// stay pinned: the ZIP 318 anchor age cap plus two intervals of slack.
 pub(crate) const ANCHOR_RETENTION_INTERVALS: u32 = zcash_protocol::zip318::ANCHOR_AGE_CAP + 2;
 
+/// The block spacing the anchor grid is retained on: one block per reference block at every
+/// height. The wallet's migration schedule draws its anchors on that uniform grid, so retention
+/// pins the same boundaries; the NU7 spacing change, under which the canonical grid spans three
+/// times as many blocks from activation, is adopted with the schedule, not ahead of it.
+pub(crate) const ANCHOR_GRID_SPACING: zcash_protocol::zip318::BlockSpacing =
+    zcash_protocol::zip318::BlockSpacing::UNIFORM;
+
 /// The anchor-checkpoint retention policy in force for `consensus_parameters` — the ZIP 318
 /// grid from the Ironwood pool's activation — or `None` when that upgrade never activates.
 pub(crate) fn anchor_retention_policy(
@@ -404,12 +411,16 @@ pub(crate) fn anchor_retention_policy(
 ) -> Option<AnchorRetention> {
     crate::wallet::PoolActivation::of(consensus_parameters, zcash_protocol::ShieldedPool::Ironwood)
         .map(|activation| {
-            AnchorRetention::new(activation.height(), AnchorRetentionInterval::default())
+            AnchorRetention::new(
+                activation.height(),
+                ANCHOR_GRID_SPACING,
+                AnchorRetentionInterval::default(),
+            )
         })
 }
 
 /// The height range whose grid-boundary checkpoints must currently be pinned, given `as_of`,
-/// the wallet's newest scanned block.
+/// the wallet's newest scanned block. The span is in blocks of [`ANCHOR_GRID_SPACING`].
 pub(crate) fn anchor_retention_window(
     policy: &AnchorRetention,
     as_of: BlockHeight,
@@ -596,6 +607,7 @@ mod tests {
         fn policy() -> AnchorRetention {
             AnchorRetention::new(
                 BlockHeight::from_u32(1),
+                zcash_protocol::zip318::BlockSpacing::UNIFORM,
                 AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
             )
         }
@@ -696,8 +708,11 @@ mod tests {
             - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE / INTERVAL
             - 1;
 
-        let policy =
-            AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            AnchorRetentionInterval::default(),
+        );
         let mut tree = empty_shard_tree::<
             sapling_crypto::Node,
             { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },

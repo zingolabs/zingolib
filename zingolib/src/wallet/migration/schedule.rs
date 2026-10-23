@@ -61,7 +61,19 @@ const TARGET_BLOCK_SPACING_SECONDS: u64 = 75;
 use std::num::NonZeroU32;
 
 use rand::CryptoRng;
-use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
+use zcash_pool_migration::scheduling::{
+    AnchorBucketInterval, AnchorGrid, BlockSpacing, SchedulingParams,
+};
+
+/// The block spacing the bucket arithmetic of this module runs on.
+///
+/// Every height here is a bucket index times `bucket_modulus`, one block per
+/// reference block, and the canonical crate's spacing-aware draws are asked
+/// on that same uniform grid so the delegated results land in bucket space
+/// unchanged. The NU7 spacing change, under which the canonical grid and
+/// expiry span three times as many blocks from activation, is not yet
+/// carried into bucket space.
+const BUCKET_SPACING: BlockSpacing = BlockSpacing::UNIFORM;
 
 /// The canonical ZIP 318 expiry for a transfer scheduled to transmit at
 /// `transmission_height`: the most recent multiple of `EXPIRY_MODULUS` at or
@@ -70,7 +82,7 @@ use zcash_pool_migration::scheduling::{AnchorBucketInterval, SchedulingParams};
 /// coarse period. See
 /// <https://zips.z.cash/zip-0318#canonicalmigrationtransactionstructure>.
 pub fn canonical_expiry_height(transmission_height: BlockHeight) -> BlockHeight {
-    zcash_pool_migration::scheduling::expiry_height(transmission_height)
+    zcash_pool_migration::scheduling::expiry_height(&BUCKET_SPACING, transmission_height)
 }
 
 /// The bucket containing `height`.
@@ -171,7 +183,7 @@ pub fn draw_anchor_bucket(
         NonZeroU32::new(bucket_modulus).expect("bucket modulus is nonzero by params invariant"),
     );
     let anchor = zcash_pool_migration::scheduling::draw_anchor_boundary(
-        interval,
+        AnchorGrid::new(interval, BUCKET_SPACING),
         floor.activation.height(),
         floor
             .note_confirmed_at
@@ -1194,7 +1206,7 @@ mod tests {
         }
 
         /// The `zcash_pool_migration` release this workspace has adjudicated.
-        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.2.0-pre.1";
+        const ADJUDICATED_UPSTREAM_VERSION: &str = "0.2.0";
 
         /// Fails when the migration dependency moves (ADR 0020's movement
         /// tripwire). Reads the workspace lockfile rather than any crate

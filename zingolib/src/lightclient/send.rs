@@ -1552,7 +1552,7 @@ mod built_transaction_shape {
         assert_boundary_adjacent_build_uses_post_activation_branch_id(
             heights,
             boundary,
-            zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA,
+            zcash_primitives::transaction::builder::BLOSSOM_DEFAULT_TX_EXPIRY_DELTA,
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
                 .orchard_note(100_000),
         )

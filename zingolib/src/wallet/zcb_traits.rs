@@ -2,7 +2,6 @@ use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range
 
 use secrecy::SecretVec;
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
-use zcash_address::ZcashAddress;
 use zcash_client_backend::{
     data_api::{
         Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
@@ -168,6 +167,21 @@ impl WalletRead for LightWallet {
         Ok(None)
     }
 
+    /// The ZIP 318 parameters the backend judges a canonical crossing by, on
+    /// the uniform block spacing the wallet's migration schedule draws its
+    /// anchors on (`wallet::migration::schedule`), so bucketing an anchor and
+    /// judging the crossing ask the same grid. The NU7 spacing change is
+    /// adopted with the schedule, not ahead of it.
+    fn pool_migration_params<P: consensus::Parameters>(
+        &self,
+        _params: &P,
+    ) -> zcash_client_backend::data_api::anchor_retention::PoolMigrationParams {
+        zcash_client_backend::data_api::anchor_retention::PoolMigrationParams::new(
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            self.anchor_retention_interval(),
+        )
+    }
+
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
         unimplemented!()
     }
@@ -280,9 +294,10 @@ impl WalletRead for LightWallet {
                 address_id.account_id() == account && address_id.scope() != TransparentScope::Refund
             })
             .map(|(address_id, encoded_address)| {
-                let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
-                    .expect("incorrect network should be checked on wallet load");
+                let address = crate::wallet::keys::transparent_address_from_encoded(
+                    self.chain_type.network_type(),
+                    encoded_address,
+                )?;
                 let address_metadata = TransparentAddressMetadata::derived(
                     address_id.scope().into(),
                     address_id.address_index(),
@@ -307,9 +322,10 @@ impl WalletRead for LightWallet {
                 address_id.account_id() == account && address_id.scope() == TransparentScope::Refund
             })
             .map(|(address_id, encoded_address)| {
-                let address = ZcashAddress::try_from_encoded(encoded_address)?
-                    .convert_if_network::<TransparentAddress>(self.chain_type.network_type())
-                    .expect("incorrect network should be checked on wallet load");
+                let address = crate::wallet::keys::transparent_address_from_encoded(
+                    self.chain_type.network_type(),
+                    encoded_address,
+                )?;
                 let address_metadata = TransparentAddressMetadata::derived(
                     address_id.scope().into(),
                     address_id.address_index(),
@@ -538,6 +554,14 @@ impl WalletWrite for LightWallet {
     fn delete_account(
         &mut self,
         _account: <Self as WalletRead>::AccountId,
+    ) -> Result<(), <Self as WalletRead>::Error> {
+        unimplemented!()
+    }
+
+    fn set_account_name(
+        &mut self,
+        _account: <Self as WalletRead>::AccountId,
+        _name: &str,
     ) -> Result<(), <Self as WalletRead>::Error> {
         unimplemented!()
     }
@@ -1267,6 +1291,22 @@ impl InputSource for LightWallet {
         _lock_filter: LockFilter<'_>,
     ) -> Result<zcash_client_backend::data_api::AccountMeta, Self::Error> {
         unimplemented!()
+    }
+
+    /// The pools an account's viewing key receives in, which is where the
+    /// change strategies place its change.
+    fn get_change_receivers(
+        &self,
+        account: Self::AccountId,
+    ) -> Result<zcash_client_backend::data_api::ChangeReceivers, Self::Error> {
+        let unified_key_store = self
+            .unified_key_store
+            .get(&account)
+            .ok_or(super::error::KeyError::NoAccountKeys)?;
+        let ufvk = UnifiedFullViewingKey::try_from(unified_key_store)?;
+        Ok(zcash_client_backend::data_api::ChangeReceivers::from_uivk(
+            &ufvk.to_unified_incoming_viewing_key(),
+        ))
     }
 
     fn get_unspent_transparent_output(

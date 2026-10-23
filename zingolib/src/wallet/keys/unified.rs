@@ -12,7 +12,7 @@ use zcash_client_backend::address::UnifiedAddress;
 use zcash_client_backend::keys::{Era, UnifiedSpendingKey};
 use zcash_encoding::CompactSize;
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::{NetworkConstants, Parameters};
+use zcash_protocol::consensus::Parameters;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::keys::{IncomingViewingKey, NonHardenedChildIndex};
 use zip32::{AccountId, DiversifierIndex};
@@ -78,7 +78,9 @@ impl UnifiedKeyStore {
 
     /// Create a unified key store from unified full viewing key encoded string.
     pub fn new_from_ufvk(chain_type: ChainType, ufvk_encoded: String) -> Result<Self, KeyError> {
-        if ufvk_encoded.starts_with(chain_type.hrp_sapling_extended_full_viewing_key()) {
+        if ufvk_encoded.starts_with(
+            zcash_keys::constants::hrp_sapling_extended_full_viewing_key(chain_type.network_type()),
+        ) {
             return Err(KeyError::InvalidFormat);
         }
         let (network_type, _revision, ufvk) =

@@ -107,7 +107,10 @@ impl LightWallet {
         )
         .is_ok_and(|canonical_fee| {
             proposal.steps().iter().any(|step| {
-                step.is_canonical_crossing(&self.pool_migration_params(), canonical_fee)
+                step.is_canonical_crossing(
+                    &self.pool_migration_params(&self.chain_type),
+                    canonical_fee,
+                )
             })
         });
         (!holds_canonical_crossing).then(|| {
