@@ -57,10 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose boundaries sit three times as many blocks apart from NU7 activation,
   and the window times count 25 seconds a block from there (zingo-adrs
   zingolib/0056, amended). Below the activation nothing changes.
-- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins, which
-  sets the NU7 mainnet activation height, 3,543,405. A shielded unified
-  address with a transparent receiver is rendered with that receiver again,
-  as it was before the pre-release cohort.
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins
+  (`zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives`
+  0.31.0, `zcash_protocol` 0.11.0 and their siblings), which sets the NU7
+  mainnet activation height, 3,543,405. The viewing key parser lists a P2SH
+  viewing key item as `transparent` beside a P2PKH one, and a shielded
+  unified address with a transparent receiver is rendered with that
+  receiver.
 - The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
   carries the proxy crate's UniFFI surface beside the wallet's, built under
   the crate's new `zingo-nym-proxy-ffi` feature, and
@@ -70,17 +73,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the linker of Xcode 26.3 refused the app's link with "Too many
   personality routines for compact unwind to encode". The `ZingoBindings`
   product, which the app imports, is unchanged.
-- BREAKING: `IndexerConnection.server_uri: String` is now
-  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
-  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
-  `Default` attaches to the chain's Default Indexer (mainnet's is
+- BREAKING: `change_server(choice: IndexerChoice)` takes the uniffi enum
+  `IndexerChoice` of `Offline`, `Default`, and `Named { uri }` in place of a
+  `serveruri: String`. `Offline` disconnects the session through
+  `go_offline` instead of binding a never-dialed placeholder URI, `Default`
+  attaches to the chain's Default Indexer (mainnet's is
   `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
-  `Init`), and `Named` carries the URI the string carried before.
-- BREAKING: `change_server(serveruri: String)` is now
-  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
-  session through `go_offline` instead of binding a never-dialed
-  placeholder URI, and a `Default` on a chain without a Default Indexer
-  fails `InvalidInput` (zingo-adrs zingolib/0063).
+  `InvalidInput`), and `Named` carries the URI the string carried before
+  (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
+  label `serveruri`, so the Swift label stays `serveruri:`.
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
@@ -89,15 +90,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `uniffi_zingo`, so the Android loader does not change. A consumer regenerates
   its bindings; the old generated files do not load the new library.
 - **Breaking:** `init_new`, `init_from_seed`, `init_from_ufvk` and
-  `init_from_bytes` take one `IndexerConnection` record (`server_uri`,
-  `chain_hint` and `sync`) in place of the four loose arguments, and
-  `set_config_wallet_to_prod` takes one `SyncSettings` record
-  (`performance_level` and `min_confirmations`). `get_latest_block_server` and
-  `change_server` keep their UDL argument label `serveruri`, so the Swift label
-  stays `serveruri:`.
-- BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
-  pins. The viewing key parser lists a P2SH viewing key item as `transparent`
-  beside a P2PKH one.
+  `init_from_bytes` take one `IndexerConnection` record (`indexer`, an
+  `IndexerChoice` where `Offline` replaces the empty server string and
+  `Default` attaches to the chain's Default Indexer, failing `Init` on a
+  chain without one; `chain_hint`; and `sync`) in place of the four loose
+  arguments, and `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`).
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
   `zm_description` build script are gone; a consumer computes its own
@@ -117,8 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-transparent `vault_address`. It answered `Send`, the class a consumer
   retries.
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
-  the strategy the standalone zingo-netutils workspace already uses for the
-  proxy library. The iOS app links both static archives into one binary, and
+  the strategy the proxy library already used in its former workspace. The
+  iOS app links both static archives into one binary, and
   the two copies of std resolve to one panic runtime, so the abort runtime of
   `libzingo.a` ended the app on every panic inside a tokio task of the proxy,
   which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio

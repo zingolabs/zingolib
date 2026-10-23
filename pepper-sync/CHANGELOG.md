@@ -18,9 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   anchor grid's boundaries sit three times as many blocks apart, and the
   retained checkpoints and the retention window, measured in reference
   blocks, follow them.
-- `OutputInterface::encoded_recipient_full_unified_address` still carries
-  every receiver; `zcash_keys` 0.17.0 made that `UnifiedAddress::encode`'s
-  own form, so the receiver-preserving variant it replaces is gone.
 - `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
   `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
   since. A re-org up to 1000 blocks deep is truncated and scanned again,

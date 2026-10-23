@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pin, and `zingo-uniffi-bindgen` generates the crate's bindings in library
   mode from the compiled library. A consumer regenerates its bindings; the
   generated files of an older uniffi do not load the new library.
-- The crate joins the zingo-netutils workspace. Its own lockfile, `[patch]`
-  stanza and nextest configuration move to that workspace, whose CI job tests
-  the crate without `live-mixnet`.
+- The crate joins the root workspace, with zingo-netutils and its verifier
+  shim. Its own lockfile, `[patch]` stanza and nextest configuration are
+  gone; the root lockfile resolves it, and the root CI's nym feature job
+  tests it without `live-mixnet` (zingo-adrs zingolib/0011, amended
+  2026-10-21).

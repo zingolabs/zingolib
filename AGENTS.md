@@ -170,6 +170,18 @@ module-level blocks.
 
 - No heredocs (<< EOF, << 'EOF') in bash or other shell scripts. They're hard to read, break on escaping, and bury content that should be its own file. Use a real file, a templating step, or printf with explicit lines instead.
 
+## Changelogs
+
+Each crate's `CHANGELOG.md` keeps a Keep a Changelog `[Unreleased]` section.
+An entry there describes the change a consumer sees between the crate's last
+release and the next one, never a step between two unreleased states. When a
+later change on `dev` supersedes, reverts or reshapes an unreleased entry,
+rewrite that entry to the net result rather than appending a second one; an
+entry whose subject arrived and left again within the same unreleased span is
+removed. The release itself then needs no editing beyond the version
+heading. `bindings/CHANGELOG.md` is generated from the audited crates'
+changelogs per publication and is never edited by hand.
+
 ## Agent skills
 
 ### Issue tracker
