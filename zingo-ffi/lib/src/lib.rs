@@ -771,10 +771,8 @@ struct ConnectionParams {
     lightwalletd_uri: Option<http::Uri>,
 }
 
-fn build_connection_params(
-    connection: IndexerConnection,
-) -> Result<ConnectionParams, ZingolibError> {
-    let chain_type = match connection.chain_hint.as_str() {
+fn chain_type_from_hint(hint: &str) -> Result<ChainType, ZingolibError> {
+    Ok(match hint {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
@@ -791,7 +789,13 @@ fn build_connection_params(
             }
             None => return Err(ZingolibError::init("Not a valid chain hint!")),
         },
-    };
+    })
+}
+
+fn build_connection_params(
+    connection: IndexerConnection,
+) -> Result<ConnectionParams, ZingolibError> {
+    let chain_type = chain_type_from_hint(&connection.chain_hint)?;
 
     // Offline → no Indexer is ever configured; the client stays Indexerless
     // (zingolib/0001), and `require_indexer()` gates sync/send with
@@ -2700,6 +2704,18 @@ pub fn change_server(choice: IndexerChoice) -> Result<String, ZingolibError> {
             Ok("server set".to_string())
         })
     })
+}
+
+#[uniffi::export]
+pub fn default_indexer(chain_hint: String) -> Result<Option<String>, ZingolibError> {
+    let chain_type = chain_type_from_hint(&chain_hint)?;
+    Ok(config::default_indexer_for(&chain_type).map(|uri| {
+        let text = uri.to_string();
+        match text.strip_suffix('/') {
+            Some(bare) => bare.to_string(),
+            None => text,
+        }
+    }))
 }
 
 impl Report for keys::WalletKind {

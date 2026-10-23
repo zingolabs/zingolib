@@ -37,9 +37,6 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run pins, so arms compare like with like.
-const PINNED_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
-
 /// The zingo-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.
 const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
@@ -480,8 +477,6 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut command = run_cli(root, arm);
     command
         .arg("--online")
-        .arg("--server")
-        .arg(PINNED_INDEXER)
         .arg("--seed")
         .arg(GUARD_MNEMONIC)
         .arg("--birthday")
