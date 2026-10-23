@@ -32,10 +32,11 @@ _Avoid_: mock indexer (that names the serving half alone), fake chain
 
 **Testnet cell**:
 A chain-bound test behind the non-default `testnet` feature. It is
-compiled on every pull request and run only against the zingolabs
-zainod testnet node: a tagged zaino release, serving TLS, with NU6.3
-active (ruled 2026-10-15). Until that node exists no CI profile
-enables the feature.
+compiled on every pull request and run against the testnet indexer the
+suite names: the public `testnet.zec.rocks` node until the zingolabs
+zainod testnet node exists (interim, ruled 2026-10-22), and that node
+alone once it does: a tagged zaino release, serving TLS, with NU6.3
+active (ruled 2026-10-15).
 _Avoid_: testnet test, networked test, staged test
 
 **Guarantee**:
