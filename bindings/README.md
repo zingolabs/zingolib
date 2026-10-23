@@ -1,18 +1,13 @@
 # The Binding Layer
 
-zingolib supports React Native mobile development. This file is the guide
-to building and publishing the Binding Layer.
-
-## Terminology
-
-The glossary in [`zingolib/CONTEXT.md`](../zingolib/CONTEXT.md#consumers)
-defines these terms:
-
 - [Binding Layer](../zingolib/CONTEXT.md#consumers)
 - [Prebuilt Bundle](../zingolib/CONTEXT.md#consumers)
 - [Bundle Pin](../zingolib/CONTEXT.md#consumers)
 - [Published Commit](../zingolib/CONTEXT.md#consumers)
 - [Publication Record](../zingolib/CONTEXT.md#consumers)
+
+zingolib supports React Native mobile development. This file is the guide
+to building and publishing the Binding Layer.
 
 ## Build
 
