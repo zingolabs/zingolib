@@ -19,7 +19,7 @@ directories only.
 
 ## The Bundle Pin
 
-The Bundle Pin is defined in [bindings/README.md][vocabulary]. The file is
+The Bundle Pin is defined in [the zingolib glossary][vocabulary]. The file is
 `binding-layer.json` at the consumer's root. It names the Published Commit,
 the digest of that commit's Prebuilt Bundle for each platform the consumer
 uses, and, for each platform whose bundle is a Maven repository, the
@@ -165,4 +165,4 @@ raise the version, and the same workflow fails the pull request when it does
 not.
 
 [pin]: https://github.com/zingolabs/zingolib/tree/14405155a52f47a9ab690ba99197a3422e5445c9/bindings/pin#zingolib-bundle-pin
-[vocabulary]: https://github.com/zingolabs/zingolib/blob/dev/bindings/README.md#terminology
+[vocabulary]: https://github.com/zingolabs/zingolib/blob/dev/zingolib/CONTEXT.md#consumers

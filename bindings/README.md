@@ -1,25 +1,18 @@
 # The Binding Layer
 
-zingolib supports React Native mobile development. This file is the one
-definition of the terms below and the one guide to building and publishing.
+zingolib supports React Native mobile development. This file is the guide
+to building and publishing the Binding Layer.
 
 ## Terminology
 
-- **Binding Layer** — The foreign-language projection of zingolib: the wallet
-  crate and the Nym proxy crate exported through uniffi, their Kotlin and
-  Swift Binding Sets, and the packaging that ships them. *Avoid*: FFI.
-- **Prebuilt Bundle** — The Binding Layer built and packaged for one platform:
-  a Maven repository holding one AAR for Android, the `ZingoBindings` Swift
-  package holding one XCFramework for iOS. *Avoid*: bundle alone.
-- **Published Commit** — The commit of `dev` a Prebuilt Bundle was built from,
-  and the one identity of that build. *Avoid*: the version, the tag.
-- **Publication Record** — `bindings/published.toml`, one entry per Published
-  Commit with each bundle's digest, oldest first; a required check reconciles
-  it with the registry. `bindings/CHANGELOG.md` is generated from it.
-- **Bundle Pin** — A consumer's `binding-layer.json`: one Published Commit and
-  its digests, moved and fetched by the npm package in [`pin`](pin/README.md).
+The glossary in [`zingolib/CONTEXT.md`](../zingolib/CONTEXT.md#consumers)
+defines these terms:
 
-See `zingo-adrs zingolib/0054`, `0057`, `0059` and `0060` for the rulings.
+- [Binding Layer](../zingolib/CONTEXT.md#consumers)
+- [Prebuilt Bundle](../zingolib/CONTEXT.md#consumers)
+- [Bundle Pin](../zingolib/CONTEXT.md#consumers)
+- [Published Commit](../zingolib/CONTEXT.md#consumers)
+- [Publication Record](../zingolib/CONTEXT.md#consumers)
 
 ## Build
 
