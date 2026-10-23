@@ -11,18 +11,25 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 
 use super::parts::{PartId, PartRecord, PartState};
+use super::schedule::BucketGrid;
 use super::{MigrationPhase, MigrationState};
 
-/// About two hours at the 75-second target spacing: the slip a best-effort
-/// background scheduler is allowed before reconciliation surfaces a part as
-/// overdue (ZIP 318 treats such slips as normal operation).
-const SLIP_TOLERANCE_BLOCKS: u32 = 96;
+/// About two hours, in reference blocks (75 seconds each; the chain's block
+/// spacing converts it, so it stays two hours from NU7): the slip a
+/// best-effort background scheduler is allowed before reconciliation
+/// surfaces a part as overdue (ZIP 318 treats such slips as normal
+/// operation).
+const SLIP_TOLERANCE_REFERENCE_BLOCKS: u32 = 96;
 
 /// Read-only chain facts, implemented by the wallet and by test mocks.
 /// Everything reconciliation knows about the chain flows through here.
 pub trait ChainView {
     /// The highest block height the wallet knows of.
     fn chain_tip(&self) -> Option<BlockHeight>;
+
+    /// The chain's ZIP 318 anchor grid under `params`' bucket modulus: the
+    /// windows this view's heights fall in.
+    fn bucket_grid(&self, params: &super::params::MigrationParams) -> BucketGrid;
 
     /// The Spend-Evidence Height: the height through which the wallet's
     /// evidence of spends and transaction inclusion is complete, with every
@@ -279,9 +286,9 @@ pub fn due_now_parts(
     parts: &[PartRecord],
     report: &ReconcileReport,
     now_height: BlockHeight,
-    params: &super::params::MigrationParams,
+    grid: &BucketGrid,
 ) -> Vec<PartId> {
-    let current_bucket = super::schedule::bucket_index(now_height, params.bucket_modulus);
+    let current_bucket = super::schedule::bucket_index(now_height, grid);
     let overdue: std::collections::HashSet<PartId> = report
         .actions
         .iter()
@@ -388,10 +395,14 @@ fn classify(
     if matches!(part.state, PartState::Assigned | PartState::Signed)
         && let Some(bucket) = part.bucket_index
     {
-        let window_end = super::schedule::boundary_of(bucket + 1, state.params.bucket_modulus);
+        let grid = chain.bucket_grid(&state.params);
+        let window_end = super::schedule::boundary_of(bucket + 1, &grid);
         if tip >= window_end {
-            let blocks_past = u32::from(tip) - u32::from(window_end);
-            return if blocks_past <= SLIP_TOLERANCE_BLOCKS {
+            let slipped_within_tolerance =
+                !grid
+                    .spacing()
+                    .exceeds(window_end, tip, SLIP_TOLERANCE_REFERENCE_BLOCKS);
+            return if slipped_within_tolerance {
                 PartClass::SlippedWithinTolerance
             } else if part.state == PartState::Signed {
                 // An overdue signed part is not catch-up material: its
@@ -414,6 +425,10 @@ fn classify(
 impl ChainView for crate::wallet::LightWallet {
     fn chain_tip(&self) -> Option<BlockHeight> {
         self.sync_state.last_known_chain_height()
+    }
+
+    fn bucket_grid(&self, params: &super::params::MigrationParams) -> BucketGrid {
+        params.grid(self.chain_type)
     }
 
     fn spend_evidence_height(&self) -> Option<BlockHeight> {
@@ -512,6 +527,10 @@ mod tests {
     impl ChainView for MockChainView {
         fn chain_tip(&self) -> Option<BlockHeight> {
             self.tip
+        }
+        /// Mainnet's grid, uniform at every height these tests reach.
+        fn bucket_grid(&self, params: &MigrationParams) -> BucketGrid {
+            params.grid(ChainType::Mainnet)
         }
         fn spend_evidence_height(&self) -> Option<BlockHeight> {
             self.spend_evidence
@@ -630,7 +649,7 @@ mod tests {
         let state = scheduled_state(vec![assigned_part(0, TIP_BUCKET - 1)]);
         let mut chain = MockChainView {
             tip: Some(BlockHeight::from_u32(
-                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS,
+                (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_REFERENCE_BLOCKS,
             )),
             ..Default::default()
         };
@@ -642,7 +661,7 @@ mod tests {
         assert!(report.actions.is_empty(), "slips are not surfaced");
 
         chain.tip = Some(BlockHeight::from_u32(
-            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_BLOCKS + 1,
+            (TIP_BUCKET as u32) * M + SLIP_TOLERANCE_REFERENCE_BLOCKS + 1,
         ));
         let report = reconcile(&state, &chain);
         assert_eq!(report.assessments[0].class, PartClass::Overdue);
@@ -672,7 +691,7 @@ mod tests {
                 &state.parts,
                 &report,
                 chain.chain_tip().unwrap(),
-                &state.params,
+                &chain.bucket_grid(&state.params),
             ),
             vec![PartId(0)],
             "a current-window part is due even with its target ahead",
@@ -689,7 +708,7 @@ mod tests {
                 &state.parts,
                 &report,
                 BlockHeight::from_u32(10_060),
-                &state.params,
+                &chain.bucket_grid(&state.params),
             ),
             vec![PartId(0)],
         );
@@ -738,7 +757,7 @@ mod tests {
                 &state.parts,
                 &report,
                 chain.chain_tip().unwrap(),
-                &state.params,
+                &chain.bucket_grid(&state.params),
             ),
             vec![PartId(0)],
             "only the Assigned overdue part is sendable this instant",
@@ -756,7 +775,7 @@ mod tests {
                 &state.parts,
                 &report,
                 chain.chain_tip().unwrap(),
-                &state.params,
+                &chain.bucket_grid(&state.params),
             )
             .is_empty(),
             "a part whose window has not opened is a future window, not a due batch",
@@ -788,7 +807,7 @@ mod tests {
                 &state.parts,
                 &report,
                 chain.chain_tip().unwrap(),
-                &state.params,
+                &chain.bucket_grid(&state.params),
             )
             .is_empty(),
             "an externally-spent part is not sendable and must not be advertised",

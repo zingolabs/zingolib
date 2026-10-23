@@ -275,9 +275,11 @@ mod proposal_expiry {
     use crate::wallet::output::OutputRef;
     use pepper_sync::wallet::OutputId;
 
-    const TARGET: u32 = 147;
-    /// A ZIP 318 bucket boundary: a multiple of the 144-block grid.
-    const BUCKET_BOUNDARY: u32 = 144;
+    const TARGET: u32 = 435;
+    /// A ZIP 318 bucket boundary of the synthetic wallet's chain, which
+    /// activates NU7 at its second block: the grid's boundaries are 0 and the
+    /// multiples of 3 × 144 from there.
+    const BUCKET_BOUNDARY: u32 = 432;
 
     /// An ordinary proposal takes the wallet's delta for its target height.
     #[test]

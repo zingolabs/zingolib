@@ -74,13 +74,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::transaction_request_from_receivers` returns
   `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
   forbids and `zip321` 0.10.0 refuses.
-- The pool migration stays on uniform block spacing: the schedule asks
-  `zcash_pool_migration` 0.2.0 for its canonical expiry and anchor draws on
-  that grid, and `LightWallet` answers `WalletRead::pool_migration_params`
-  with it, so the backend judges a canonical crossing by the grid the anchor
-  was bucketed on. Upstream's grid and expiry span three times as many blocks
-  from NU7 activation; carrying that into bucket space, and into pepper-sync's
-  anchor retention with it, is pending.
+- **Breaking:** the pool migration schedule follows ZIP 318's NU7 scaling
+  (zingo-adrs zingolib/0056, amended). Bucket boundaries are the chain's
+  ZIP 318 grid, the multiples of `M` below the NU7 activation and of `3·M`
+  from it, the transfer delays are drawn in reference blocks, and the
+  canonical expiry grid spans three times as many blocks from activation,
+  so every duration keeps its length in time at 25-second blocks. A bucket
+  index is now the ordinal of a grid boundary, which equals `height / M`
+  below the activation and departs from it above: `migration::bucket_index`
+  takes the new `migration::BucketGrid`, built by `MigrationParams::grid`
+  from the chain, in place of a modulus, and `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with that meaning. The window
+  times they estimate count 25 seconds a block from activation.
+  `MigrationParams` moves to version 3. A migration section written before
+  this release is renumbered at read: an index below the activation is
+  unchanged, a window above it that the grid does not open moves to the
+  next boundary, and such an anchor is redrawn.
+- A part that slipped past its window counts as within tolerance for two
+  hours of chain time, 96 reference blocks, rather than 96 blocks.
 - **Breaking:** `LightClient::attach_mixnet` and
   `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
   readiness round trip reaches the Session Indexer instead of the census

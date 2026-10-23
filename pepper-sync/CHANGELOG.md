@@ -13,12 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
   `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
   activation height, 3,543,405.
-- The anchor-checkpoint retention policy names its block spacing, which
-  `zcash_client_backend` 0.25.0's `AnchorRetention` takes, and keeps the
-  uniform spacing: one block per reference block at every height, the grid the
-  wallet's migration schedule draws its anchors on. Upstream's grid spans
-  three times as many blocks from NU7 activation; retention adopts that with
-  the schedule, not ahead of it.
+- The anchor-checkpoint retention policy runs on the chain's block spacing
+  (`zcash_protocol::zip318::BlockSpacing`): from NU7 activation the ZIP 318
+  anchor grid's boundaries sit three times as many blocks apart, and the
+  retained checkpoints and the retention window, measured in reference
+  blocks, follow them.
 - `OutputInterface::encoded_recipient_full_unified_address` still carries
   every receiver; `zcash_keys` 0.17.0 made that `UnifiedAddress::encode`'s
   own form, so the receiver-preserving variant it replaces is gone.

@@ -2708,24 +2708,48 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
             .all(|height| checkpoint_exists(store, height))
     }
 
-    /// The retained set is the pinned grid as of `chain_height`: the boundaries within
-    /// `PINNED_BOUNDARIES` intervals below it.
-    fn pinned_boundaries_retained<S>(store: &S, chain_height: u32) -> bool
+    /// The retained set is the pinned grid as of `chain_height`: the boundaries of the chain's
+    /// ZIP 318 grid within `PINNED_BOUNDARIES` intervals below it, the interval measured in
+    /// reference blocks (three blocks each on this chain, which activates NU7 at its second
+    /// block).
+    fn pinned_boundaries_retained<S>(
+        store: &S,
+        chain_height: u32,
+        retention: &zcash_client_backend::data_api::anchor_retention::AnchorRetention,
+    ) -> bool
     where
         S: ShardStore<CheckpointId = BlockHeight>,
     {
-        let oldest = chain_height - PINNED_BOUNDARIES * ANCHOR_RETENTION_INTERVAL;
-        let expected: std::collections::BTreeSet<BlockHeight> = (oldest..=chain_height)
-            .filter(|height| height % ANCHOR_RETENTION_INTERVAL == 0)
+        let as_of = BlockHeight::from_u32(chain_height);
+        let reference_blocks = PINNED_BOUNDARIES * ANCHOR_RETENTION_INTERVAL;
+        let oldest = (0..=chain_height)
+            .rev()
             .map(BlockHeight::from_u32)
+            .find(|start| retention.spacing().advance(*start, reference_blocks) <= as_of)
+            .unwrap_or(BlockHeight::from_u32(0));
+        let expected: std::collections::BTreeSet<BlockHeight> = retention
+            .retained_in_range(oldest..=as_of)
+            .into_iter()
             .collect();
         store.retained_checkpoints().unwrap() == expected
     }
 
-    let mut chain_height = BOUNDARIES_BELOW_THE_WINDOW * ANCHOR_RETENTION_INTERVAL
-        + SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE
-        + 1;
     let mut net = MockNet::launch().await;
+    let spacing = zcash_protocol::zip318::BlockSpacing::for_network(&net.chain_type());
+    let retention = zcash_client_backend::data_api::anchor_retention::AnchorRetention::new(
+        ironwood_activation(&net).height(),
+        spacing,
+        zcash_client_backend::data_api::anchor_retention::AnchorRetentionInterval::default(),
+    );
+    let grid = zcash_protocol::zip318::AnchorGrid::new(
+        zcash_pool_migration::scheduling::AnchorBucketInterval::ZIP_318,
+        spacing,
+    );
+    let third_boundary = (0..BOUNDARIES_BELOW_THE_WINDOW)
+        .fold(BlockHeight::from_u32(0), |boundary, _| {
+            grid.boundary_after(boundary)
+        });
+    let mut chain_height = u32::from(third_boundary) + SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
 
     net.chain.write().await.mine_empty_blocks(chain_height - 2);
@@ -2753,15 +2777,18 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.sapling.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.orchard.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.ironwood.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
     }
 
@@ -2791,15 +2818,18 @@ async fn shardtree_roundtrip_restores_retained_checkpoints() {
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.sapling.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.orchard.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
         assert!(pinned_boundaries_retained(
             shard_trees.ironwood.store(),
-            chain_height
+            chain_height,
+            &retention
         ));
     }
 }
@@ -4551,7 +4581,7 @@ mod boundary_pruning {
         .await;
         let retention = AnchorRetention::new(
             BlockHeight::from_u32(DEFERRED_NU6_3),
-            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            zcash_protocol::zip318::BlockSpacing::for_network(&net.chain_type()),
             AnchorRetentionInterval::default(),
         );
         assert!(
@@ -4595,7 +4625,7 @@ mod boundary_pruning {
             .last_known_chain_height()
             .expect("the recipient has synced");
         assert_eq!(
-            bucket_index(known_height, PRUNED_BUCKET_MODULUS),
+            bucket_index(known_height, &params.grid(net.chain_type())),
             WINDOW_BUCKET,
             "the chain must sit inside the transmission window"
         );

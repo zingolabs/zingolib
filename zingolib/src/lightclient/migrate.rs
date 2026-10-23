@@ -710,6 +710,7 @@ impl LightClient {
                 activation,
                 |part| wallet.bound_note_confirmed_at(part),
                 &state.params,
+                &state.params.grid(wallet.chain_type()),
                 &mut crate::utils::system_rng(),
             )?;
             state.phase = MigrationPhase::PartsScheduled;
@@ -826,6 +827,7 @@ impl LightClient {
                         activation,
                         |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
+                        &state.params.grid(wallet.chain_type()),
                         &mut crate::utils::system_rng(),
                     )?;
                     state.phase = MigrationPhase::PartsScheduled;
@@ -938,6 +940,7 @@ impl LightClient {
                         activation,
                         |part| wallet.bound_note_confirmed_at(part),
                         &state.params,
+                        &state.params.grid(wallet.chain_type()),
                         &mut crate::utils::system_rng(),
                     )?;
                 }
@@ -1024,7 +1027,7 @@ impl LightClient {
                         .last_known_chain_height()
                         .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                     let current_bucket =
-                        schedule::bucket_index(now_height, state.params.bucket_modulus);
+                        schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
 
                     let mut prove_handles: Vec<ProveHandle> = Vec::new();
                     let mut pre_proven: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
@@ -1111,9 +1114,13 @@ impl LightClient {
                     let bucket = state.parts[index]
                         .bucket_index
                         .expect("assigned parts carry a bucket");
-                    let boundary = schedule::boundary_of(bucket, state.params.bucket_modulus);
+                    let boundary =
+                        schedule::boundary_of(bucket, &state.params.grid(wallet.chain_type()));
                     let target_height = boundary + 1;
-                    let expiry_height = schedule::canonical_expiry_height(target_height);
+                    let expiry_height = schedule::canonical_expiry_height(
+                        &state.params.grid(wallet.chain_type()),
+                        target_height,
+                    );
                     wallet.record_part_result(
                         &mut state.parts[index],
                         txid,
@@ -1225,10 +1232,14 @@ impl LightClient {
                             );
                             schedule::place(
                                 part,
-                                schedule::first_permitted_bucket(now_height, &floor, &state.params),
+                                schedule::first_permitted_bucket(
+                                    now_height,
+                                    &floor,
+                                    &state.params.grid(wallet.chain_type()),
+                                ),
                                 &floor,
                                 &mut crate::utils::system_rng(),
-                                &state.params,
+                                &state.params.grid(wallet.chain_type()),
                             )?;
                         }
                         RecommendedAction::MarkComplete { residual } => {
@@ -1312,7 +1323,7 @@ impl LightClient {
                     .last_known_chain_height()
                     .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                 let current_bucket =
-                    schedule::bucket_index(now_height, state.params.bucket_modulus);
+                    schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
                 let activation = wallet.ironwood_activation()?;
                 for part_id in &overdue {
                     let part = &mut state.parts[part_id.0 as usize];
@@ -1336,7 +1347,7 @@ impl LightClient {
                             current_bucket,
                             &floor,
                             &mut crate::utils::system_rng(),
-                            &state.params,
+                            &state.params.grid(wallet.chain_type()),
                         )?;
                     }
                 }
@@ -1396,7 +1407,8 @@ impl LightClient {
                 .sync_state
                 .last_known_chain_height()
                 .ok_or(WalletError::NoSyncData)?;
-            let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
             state
                 .parts
                 .iter()
@@ -1539,7 +1551,7 @@ impl LightClient {
                         height,
                         u64::from(crate::utils::now()),
                         WAKE_HORIZON_BUCKETS,
-                        &state.params,
+                        &state.params.grid(wallet.chain_type()),
                     )
                 });
                 // The batch a tap would transmit now. `execute_due_parts`
@@ -1549,10 +1561,17 @@ impl LightClient {
                 let due_now = match (now_height, &state.phase) {
                     (Some(height), MigrationPhase::PartsScheduled) => {
                         let report = reconcile(state, &*wallet);
-                        let due_ids = due_now_parts(&state.parts, &report, height, &state.params);
+                        let due_ids = due_now_parts(
+                            &state.parts,
+                            &report,
+                            height,
+                            &state.params.grid(wallet.chain_type()),
+                        );
                         (!due_ids.is_empty()).then(|| {
-                            let current_bucket =
-                                schedule::bucket_index(height, state.params.bucket_modulus);
+                            let current_bucket = schedule::bucket_index(
+                                height,
+                                &state.params.grid(wallet.chain_type()),
+                            );
                             let due: Vec<_> = state
                                 .parts
                                 .iter()
@@ -1561,7 +1580,7 @@ impl LightClient {
                             DueBatch {
                                 boundary: schedule::boundary_of(
                                     current_bucket,
-                                    state.params.bucket_modulus,
+                                    &state.params.grid(wallet.chain_type()),
                                 ),
                                 part_ids: due.iter().map(|part| part.id).collect(),
                                 denominations: due.iter().map(|part| part.denomination).collect(),
@@ -1632,13 +1651,15 @@ impl LightClient {
             return Ok(None);
         };
         Ok(Some(match &wallet.migration {
-            Some(state) => {
-                crate::wallet::migration::window_timeline(&state.parts, now_height, &state.params)
-            }
+            Some(state) => crate::wallet::migration::window_timeline(
+                &state.parts,
+                now_height,
+                &state.params.grid(wallet.chain_type()),
+            ),
             None => crate::wallet::migration::window_timeline(
                 &[],
                 now_height,
-                &MigrationParams::provisional(wallet.chain_type()),
+                &MigrationParams::provisional(wallet.chain_type()).grid(wallet.chain_type()),
             ),
         }))
     }
@@ -2078,17 +2099,21 @@ impl LightClient {
                     // exists and every transmission pass would skip every part,
                     // previously a MAX_ROUNDS spin ending in a misleading
                     // SplitDidNotConverge.
-                    let bucket_modulus = wallet.migration.as_ref().map_or_else(
-                        || MigrationParams::provisional(wallet.chain_type()).bucket_modulus,
-                        |state| state.params.bucket_modulus,
-                    );
+                    let grid = wallet
+                        .migration
+                        .as_ref()
+                        .map_or_else(
+                            || MigrationParams::provisional(wallet.chain_type()),
+                            |state| state.params.clone(),
+                        )
+                        .grid(wallet.chain_type());
                     let activation = wallet.ironwood_activation()?;
                     let now_height = wallet
                         .sync_state
                         .last_known_chain_height()
                         .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                     let first_window =
-                        schedule::first_ironwood_era_window_boundary(activation, bucket_modulus);
+                        schedule::first_ironwood_era_window_boundary(activation, &grid);
                     if now_height < first_window {
                         return Err(MigrationError::IronwoodEraTooYoung {
                             retry_after: first_window,
@@ -2126,8 +2151,10 @@ impl LightClient {
                             .sync_state
                             .last_known_chain_height()
                             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                        let current_bucket =
-                            schedule::bucket_index(now_height, state.params.bucket_modulus);
+                        let current_bucket = schedule::bucket_index(
+                            now_height,
+                            &state.params.grid(wallet.chain_type()),
+                        );
                         // Immediate mode: everything sends now, in the
                         // current bucket, explicitly immediate. The anchor is
                         // still drawn at age one or more; immediacy is about
@@ -2144,7 +2171,7 @@ impl LightClient {
                                         current_bucket,
                                         &floor,
                                         &mut crate::utils::system_rng(),
-                                        &state.params,
+                                        &state.params.grid(wallet.chain_type()),
                                     )?;
                                 }
                                 _ => (),
@@ -2536,8 +2563,16 @@ mod tests {
     /// A synthetic wallet fully scanned through `tip`, holding one
     /// [`NOTE_VALUE`] legacy-Orchard note, plus that note's binding for a
     /// migration part.
+    /// A synced wallet holding one migration-sized note, on a chain where NU7
+    /// never activates: the bucket grid is uniform at `tip`'s scale, one
+    /// window per 144 blocks, which is what these tests' bucket arithmetic
+    /// assumes. The grid's NU7 scaling has its own tests in
+    /// `wallet::migration::schedule` and on the mock chain.
     fn wallet_with_migration_note(tip: u32) -> (LightWallet, BoundNote) {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .activation_heights(crate::testutils::mock_activation_heights_with(|era| {
+                era.set_nu7(None)
+            }))
             .orchard_note(NOTE_VALUE)
             .tip(tip)
             .build();
@@ -2688,7 +2723,8 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket = schedule::bucket_index(known_height, params.bucket_modulus);
+        let current_bucket =
+            schedule::bucket_index(known_height, &params.grid(wallet.chain_type()));
         assert!(
             current_bucket >= 1,
             "the tip must sit past a bucket boundary"
@@ -2743,9 +2779,9 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+        let current_bucket = schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
         let anchor_bucket = current_bucket - 1;
-        let boundary = schedule::boundary_of(anchor_bucket, params.bucket_modulus);
+        let boundary = schedule::boundary_of(anchor_bucket, &params.grid(wallet.chain_type()));
 
         // The one checkpoint the boundary can reach, well below it, holding
         // the note the part is bound to. The builder checkpoints at the tip
@@ -2915,7 +2951,7 @@ mod tests {
             let params = MigrationParams::provisional(wallet.chain_type());
             let bucket = schedule::bucket_index(
                 wallet.sync_state.last_known_chain_height().unwrap(),
-                params.bucket_modulus,
+                &params.grid(wallet.chain_type()),
             );
             // The user insistently spends the reserved note.
             wallet
@@ -2947,7 +2983,7 @@ mod tests {
             let params = MigrationParams::provisional(wallet.chain_type());
             let bucket = schedule::bucket_index(
                 wallet.sync_state.last_known_chain_height().unwrap(),
-                params.bucket_modulus,
+                &params.grid(wallet.chain_type()),
             );
             let diverged = BoundNote {
                 nullifier: [0xAA; 32],
@@ -2994,7 +3030,7 @@ mod tests {
             let params = MigrationParams::provisional(wallet.chain_type());
             let bucket = schedule::bucket_index(
                 wallet.sync_state.last_known_chain_height().unwrap(),
-                params.bucket_modulus,
+                &params.grid(wallet.chain_type()),
             );
 
             let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
@@ -3370,9 +3406,10 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-        let window_start = schedule::boundary_of(current_bucket, params.bucket_modulus);
-        let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+        let current_bucket = schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+        let window_start = schedule::boundary_of(current_bucket, &params.grid(wallet.chain_type()));
+        let window_end =
+            schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
         assert!(
             window_start < now_height && now_height < window_end,
             "the part's window must be open at relaunch"
@@ -3394,7 +3431,14 @@ mod tests {
         {
             let state = wallet.migration.as_ref().expect("just set");
             assert!(
-                upcoming_windows(&state.parts, now_height, 0, u64::MAX, &params).is_empty(),
+                upcoming_windows(
+                    &state.parts,
+                    now_height,
+                    0,
+                    u64::MAX,
+                    &params.grid(wallet.chain_type())
+                )
+                .is_empty(),
                 "upcoming_windows lists future buckets only"
             );
             let report = reconcile(state, &wallet);
@@ -3505,7 +3549,8 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
@@ -3546,8 +3591,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -3595,8 +3642,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -3679,8 +3728,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let first_txid = TxId::from_bytes([1; 32]);
             let second_txid = TxId::from_bytes([2; 32]);
             let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -3755,8 +3806,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let txids = [
                 TxId::from_bytes([1; 32]),
                 TxId::from_bytes([2; 32]),
@@ -3850,7 +3903,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            let current_bucket = schedule::bucket_index(tip, &params.grid(wallet.chain_type()));
             assert!(current_bucket > 0, "bucket 0 must be in the past");
             let expiry = BlockHeight::from_u32(1_000);
             assert!(expiry > tip, "the refused transaction is still valid");
@@ -3967,7 +4020,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(tip, params.bucket_modulus);
+            let current_bucket = schedule::bucket_index(tip, &params.grid(wallet.chain_type()));
             let expiry = BlockHeight::from_u32(300);
             assert!(expiry <= tip, "the refused transaction has expired");
 
@@ -4016,8 +4069,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -4068,7 +4123,8 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             wallet.migration = Some(scheduled_state(params, vec![part]));
@@ -4127,7 +4183,8 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, state.params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
             assert_eq!(
                 state.parts[0].bucket_index,
                 Some(current_bucket),
@@ -4708,8 +4765,9 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let boundary = schedule::boundary_of(current_bucket, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let boundary = schedule::boundary_of(current_bucket, &params.grid(wallet.chain_type()));
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
@@ -4742,7 +4800,8 @@ mod tests {
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
             let activation = wallet.ironwood_activation().expect("ironwood activates");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
 
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             schedule::plan_schedule(
@@ -4751,6 +4810,7 @@ mod tests {
                 activation,
                 |part| wallet.bound_note_confirmed_at(part),
                 &params,
+                &params.grid(wallet.chain_type()),
                 &mut crate::utils::system_rng(),
             )
             .expect("a bound part schedules");
@@ -4781,12 +4841,15 @@ mod tests {
             const TIP: u32 = 300;
             let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
             let params = MigrationParams::provisional(wallet.chain_type());
+            let grid = params.grid(wallet.chain_type());
             let now_height = wallet
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -4803,10 +4866,7 @@ mod tests {
                 .expect("the open-window part is due now");
             assert_eq!(batch.part_ids, vec![PartId(0)]);
             assert_eq!(batch.denominations, vec![NOTE_VALUE]);
-            assert_eq!(
-                batch.boundary,
-                schedule::boundary_of(current_bucket, params.bucket_modulus),
-            );
+            assert_eq!(batch.boundary, schedule::boundary_of(current_bucket, &grid),);
 
             let transmission_client = MockTransmissionClient::default();
             let report = client
@@ -4836,8 +4896,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
 
             // Part 0: signed, no random target → due (sends from its blob).
             let mut signed = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -4905,8 +4967,10 @@ mod tests {
 
             // Every part confirmed in the scheduled phase: nothing left.
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
-            let current_bucket =
-                schedule::bucket_index(BlockHeight::from_u32(360), params.bucket_modulus);
+            let current_bucket = schedule::bucket_index(
+                BlockHeight::from_u32(360),
+                &params.grid(wallet.chain_type()),
+            );
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.mark_confirmed(BlockHeight::from_u32(300)).unwrap();
@@ -4992,8 +5056,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("the synthetic wallet is fully synced");
-            let current_bucket = schedule::bucket_index(now_height, params.bucket_modulus);
-            let window_end = schedule::boundary_of(current_bucket + 1, params.bucket_modulus);
+            let current_bucket =
+                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let window_end =
+                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
 
             // A part signed in an earlier session, its window open now: the
             // shape a scheduled migration presents to the transmission path.

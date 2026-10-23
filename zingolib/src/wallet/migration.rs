@@ -64,7 +64,7 @@ pub(crate) use reconcile::due_now_parts;
 pub use reconcile::{
     ChainView, PartAssessment, PartClass, RecommendedAction, ReconcileReport, reconcile,
 };
-pub use schedule::{TransmissionWindow, WindowReport, bucket_index};
+pub use schedule::{BucketGrid, TransmissionWindow, WindowReport, bucket_index};
 pub(crate) use schedule::{plan_schedule, upcoming_windows, window_timeline};
 pub use split::{MigrationPlan, NoteSplitTx, plan_hash, plan_migration};
 pub use transmission::{

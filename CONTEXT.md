@@ -157,8 +157,10 @@ worth at most this is never created.
 A time window of M consecutive blocks (ZIP 318 sense). Never an amount.
 
 **Boundary**:
-The block height that opens a bucket (height ≡ 0 mod M), also the anchor
-height of the bucket's parts.
+The block height that opens a bucket, also the anchor height of the
+bucket's parts. The multiples of M below the NU7 activation and of 3·M from
+it, so a bucket keeps its length in time (ZIP 318 scales its block counts
+by ZIP 218's spacing ratio).
 
 **Window timeline**:
 The chain's windows around the tip, each carrying the schedule's

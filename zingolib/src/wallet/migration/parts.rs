@@ -119,9 +119,10 @@ pub struct PartRecord {
     /// every rebuild (the note does not change on expiry, only the anchor).
     pub note: Option<BoundNote>,
     /// The bucket this part transmits in: it is due while the chain tip is
-    /// inside the window `[bucket_index · M, (bucket_index + 1) · M)`. The
-    /// builder's target height comes from here. Distinct from
-    /// `Self::anchor_bucket`, which is where the part *proves*.
+    /// inside the window from the bucket's boundary on the chain's ZIP 318
+    /// grid to the next (`super::schedule::BucketGrid`). The builder's target
+    /// height comes from here. Distinct from `Self::anchor_bucket`, which is
+    /// where the part *proves*.
     pub bucket_index: Option<u64>,
     /// The bucket whose opening boundary this part anchors its Orchard spend
     /// to, always at least one bucket below [`Self::bucket_index`] (see
@@ -616,7 +617,7 @@ impl crate::wallet::LightWallet {
                         bucket,
                         &floor,
                         &mut crate::utils::system_rng(),
-                        state.params.bucket_modulus,
+                        &state.params.grid(wallet.chain_type()),
                     ) {
                         part.anchor_bucket = Some(anchor);
                         wallet.save_required = true;
@@ -627,8 +628,10 @@ impl crate::wallet::LightWallet {
                 let anchor_bucket = part
                     .anchor_bucket
                     .expect("just drawn or already present above");
-                let boundary =
-                    super::schedule::boundary_of(anchor_bucket, state.params.bucket_modulus);
+                let boundary = super::schedule::boundary_of(
+                    anchor_bucket,
+                    &state.params.grid(wallet.chain_type()),
+                );
                 if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
                     part.anchor_witness = Some(witness);
                     wallet.save_required = true;
@@ -674,7 +677,8 @@ impl crate::wallet::LightWallet {
         let Some(anchor_bucket) = part.anchor_bucket else {
             return Ok(PrepareResult::Skip(SkipReason::AnchorNotDrawn));
         };
-        let boundary = super::schedule::boundary_of(anchor_bucket, params.bucket_modulus);
+        let grid = params.grid(self.chain_type);
+        let boundary = super::schedule::boundary_of(anchor_bucket, &grid);
 
         let activation = pepper_sync::wallet::PoolActivation::of(
             &self.chain_type,
@@ -780,8 +784,8 @@ impl crate::wallet::LightWallet {
         // and is legal at any retained boundary above the part's own note.
         // Deriving the target from the anchor was what made a pre-activation
         // anchor look like a consensus problem (ADR 0014, ADR 0018).
-        let target_height = super::schedule::boundary_of(window, params.bucket_modulus) + 1;
-        let expiry_height = super::schedule::canonical_expiry_height(target_height);
+        let target_height = super::schedule::boundary_of(window, &grid) + 1;
+        let expiry_height = super::schedule::canonical_expiry_height(&grid, target_height);
         let params_clone = params.clone();
 
         let prove = Box::new(ProveOnce {

@@ -167,21 +167,6 @@ impl WalletRead for LightWallet {
         Ok(None)
     }
 
-    /// The ZIP 318 parameters the backend judges a canonical crossing by, on
-    /// the uniform block spacing the wallet's migration schedule draws its
-    /// anchors on (`wallet::migration::schedule`), so bucketing an anchor and
-    /// judging the crossing ask the same grid. The NU7 spacing change is
-    /// adopted with the schedule, not ahead of it.
-    fn pool_migration_params<P: consensus::Parameters>(
-        &self,
-        _params: &P,
-    ) -> zcash_client_backend::data_api::anchor_retention::PoolMigrationParams {
-        zcash_client_backend::data_api::anchor_retention::PoolMigrationParams::new(
-            zcash_protocol::zip318::BlockSpacing::UNIFORM,
-            self.anchor_retention_interval(),
-        )
-    }
-
     fn get_block_hash(&self, _block_height: BlockHeight) -> Result<Option<BlockHash>, Self::Error> {
         unimplemented!()
     }
