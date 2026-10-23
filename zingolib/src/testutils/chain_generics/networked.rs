@@ -3,7 +3,7 @@
 //! - Creates temporary wallet directories that live as long as the environment.
 //! - Logs every phase, every sync's scan state, and every awaited block through `tracing`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use http::Uri;
@@ -36,6 +36,27 @@ pub struct NetworkedTestEnvironment {
     indexer_uri: Uri,
     latest_known_server_height: Option<BlockHeight>,
     wallet_dirs: Vec<tempfile::TempDir>,
+}
+
+/// - Creates the cache directory and copies the committed snapshot over the cached wallet file.
+fn seed_faucet_cache(cache_dir: &Path, cached: &Path, source: &Path) {
+    std::fs::create_dir_all(cache_dir)
+        .unwrap_or_else(|error| panic!("cannot create {}: {error}", cache_dir.display()));
+    std::fs::copy(source, cached).unwrap_or_else(|error| {
+        panic!(
+            "cannot seed {} from {}: {error}",
+            cached.display(),
+            source.display()
+        )
+    });
+    timestamped_test_log(
+        format!(
+            "create_faucet: seeded {} from the committed snapshot {}",
+            cached.display(),
+            source.display()
+        )
+        .as_str(),
+    );
 }
 
 fn height(value: Option<BlockHeight>) -> String {
@@ -228,6 +249,7 @@ impl ConductChain for NetworkedTestEnvironment {
 
     /// - On first use, seeds `target/testnet/faucet` under the repository root with a copy of the committed
     ///   GloryGoddess wallet file, so the committed file is never written.
+    /// - Seeds that copy again when the cached file does not open, so a wallet a killed run left torn heals.
     /// - Opens the cached copy, syncs it to the testnet tip with progress logging, logs its balance, and writes
     ///   the synced wallet back to the cache, so later tests and runs start from the tip instead of the snapshot.
     async fn create_faucet(&mut self) -> LightClient {
@@ -251,33 +273,40 @@ impl ConductChain for NetworkedTestEnvironment {
                 .as_str(),
             );
         } else {
-            std::fs::create_dir_all(&cache_dir)
-                .unwrap_or_else(|error| panic!("cannot create {}: {error}", cache_dir.display()));
-            std::fs::copy(&source, &cached).unwrap_or_else(|error| {
-                panic!(
-                    "cannot seed {} from {}: {error}",
-                    cached.display(),
-                    source.display()
-                )
-            });
-            timestamped_test_log(
-                format!(
-                    "create_faucet: seeded {} from the committed snapshot {}",
-                    cached.display(),
-                    source.display()
-                )
-                .as_str(),
-            );
+            seed_faucet_cache(&cache_dir, &cached, &source);
         }
         let config = self
-            .config_for(cache_dir)
+            .config_for(cache_dir.clone())
             .set_wallet_name(file_name)
             .set_wallet_config(WalletConfig::Read)
             .build()
             .expect("every required field of the faucet config is set above");
-        let mut faucet = timed("create_faucet::open", LightClient::new(config, false))
-            .await
-            .unwrap_or_else(|error| panic!("the cached faucet wallet does not open: {error}"));
+        let mut faucet = match timed(
+            "create_faucet::open",
+            LightClient::new(config.clone(), false),
+        )
+        .await
+        {
+            Ok(faucet) => faucet,
+            Err(error) => {
+                timestamped_test_log(
+                    format!(
+                        "create_faucet: the cached wallet at {} does not open ({error}); seeding it again",
+                        cached.display()
+                    )
+                    .as_str(),
+                );
+                seed_faucet_cache(&cache_dir, &cached, &source);
+                timed("create_faucet::reopen", LightClient::new(config, false))
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "the faucet wallet seeded from {} does not open: {error}",
+                            source.display()
+                        )
+                    })
+            }
+        };
         sync_with_progress("create_faucet", &mut faucet).await;
         timed("create_faucet::flush", faucet.flush())
             .await

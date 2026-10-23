@@ -320,6 +320,7 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 mod tests {
     use super::*;
 
+    use zingo_netutils::default_indexer;
     use zingo_netutils::time::test::FAST_STAGE_BOUND;
 
     fn uri(text: &str) -> Uri {
@@ -387,7 +388,8 @@ mod tests {
     #[ignore = "contacts the live Default Indexer over nakednet; the nightly runs it"]
     async fn live_staged_probe_smoke() {
         let probe = probe_sync_server(
-            &uri(zingo_netutils::default_indexer::MAINNET_DEFAULT_INDEXER),
+            &default_indexer::default_indexer(default_indexer::IndexerChain::Main)
+                .expect("mainnet has a Default Indexer"),
             zingo_netutils::time::test::LIVE_STAGE_BOUND,
         )
         .await;

@@ -6,12 +6,6 @@ on:
   schedule:
     - cron: '30 3 * * *'
 
-# The testnet cells spend from one shared wallet, so two nightlies never
-# run at once: a dispatch queues behind the schedule instead of sharing it.
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-
 jobs:
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
@@ -70,37 +64,46 @@ jobs:
         with:
           name: sync-ab-${{ github.sha }}
           path: sync-ab.log
+          overwrite: true
 
   # The testnet cells and the live staged probe, which no pull request
   # runs: the one end-to-end mixnet send in the repository, the ten cells
   # beside it that spend from the shared GloryGoddess wallet against the
   # testnet indexer the suite names, and the nakednet probe of the
   # mainnet Default Indexer. They reach networks the repository does not
-  # operate, so the run may fail without failing the nightly (ruled
-  # 2026-10-22); the step summary names each cell's outcome and the log
-  # is the artifact. The cells run one at a time through the nextest
-  # testnet group. The wallet one night syncs is the cache the next night
-  # restores, so each night syncs a day of blocks instead of the months
-  # since the committed snapshot; on a miss the environment seeds the
-  # wallet from that snapshot.
+  # operate, so the run step may fail, or run out its ninety minutes,
+  # without failing the nightly (ruled 2026-10-22); the step summary
+  # names each cell's outcome and the log is the artifact. The cells run
+  # one at a time through the nextest testnet group. The wallet one night
+  # syncs is the cache the next night restores, so each night syncs a day
+  # of blocks instead of the months since the committed snapshot; on a
+  # miss, or when the restored wallet does not open, the environment
+  # seeds the wallet from that snapshot.
   testnet-cells:
     name: Testnet cells and the live probe
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
-    timeout-minutes: 90
+    timeout-minutes: 150
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-    env:
-      NEXTEST_VERSION: "0.9.132"
+    # The cells spend from one shared wallet, so two of these jobs never
+    # run at once: a dispatch queues behind the schedule instead of
+    # sharing the wallet. Only this job holds the group, so Sync A/B and
+    # the Binding Layer builds of a second run start at once.
+    concurrency:
+      group: testnet-faucet
+      cancel-in-progress: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
+        with:
+          workspaces: |
+            .
+            tools/workbench
 
       - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@${{ env.NEXTEST_VERSION }}
+        uses: ./.github/actions/install-nextest
 
       - name: Restore the faucet wallet
         uses: actions/cache@v4
@@ -111,14 +114,24 @@ jobs:
 
       # The mixnet cell spawns the proxy that the provisioning precedence
       # resolves (ADR 0024): the environment names the binary, and nothing
-      # is copied onto PATH.
+      # is copied onto PATH. The workbench tool builds the proxy and prints
+      # the path cargo reports, so no step guesses the target directory.
       - name: Build the proxy
-        run: cargo build --release --package zingo-netutils --features nym --bin nym-proxy
+        id: proxy
+        run: |
+          proxy=$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml \
+            --bin bundle-nym-proxy -- --release)
+          echo "path=${proxy}" >> "$GITHUB_OUTPUT"
 
+      # `shell: bash` runs the script with pipefail, so the step carries
+      # nextest's exit status through the tee instead of tee's.
       - name: Run the cells and the probe
+        id: cells
         continue-on-error: true
+        timeout-minutes: 90
+        shell: bash
         env:
-          ZINGO_NYM_PROXY: ${{ github.workspace }}/target/release/nym-proxy
+          ZINGO_NYM_PROXY: ${{ steps.proxy.outputs.path }}
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
             --package libtonode-tests --package zingolib \
@@ -127,24 +140,29 @@ jobs:
             -E 'binary(testnet) | test(live_staged_probe_smoke)' \
             2>&1 | tee testnet-cells.log
 
+      # The ci profile prints each failure twice, once as it happens and
+      # once after the Summary line, so the summary reads the log only up
+      # to that line: one row per cell, one panic per failure.
       - name: Summarize each cell
-        if: ${{ always() }}
+        if: ${{ always() && steps.cells.outcome != 'skipped' }}
         run: |
+          run_section=$(sed '/^\s*Summary /q' testnet-cells.log)
           {
             echo '## Testnet cells and the live probe'
             echo
             echo '```'
-            grep -E '^\s+(PASS|FAIL|TIMEOUT|SIGSEGV|SIGABRT|ABORT|LEAK) ' testnet-cells.log || echo 'no cell ran'
-            grep -E "panicked at|^\s+Summary " testnet-cells.log || true
+            grep -E '^\s+(PASS|FAIL|TIMEOUT|SIGSEGV|SIGABRT|ABORT|LEAK) ' <<<"${run_section}" || echo 'no cell ran'
+            grep -E "panicked at|^\s+Summary " <<<"${run_section}" || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the log
-        if: ${{ always() }}
+        if: ${{ always() && steps.cells.outcome != 'skipped' }}
         uses: actions/upload-artifact@v7
         with:
           name: testnet-cells-${{ github.sha }}
           path: testnet-cells.log
+          overwrite: true
 
   # The builder is the one source of every Binding Layer artifact name and
   # of the ABI list. One run of it here feeds the build workflows below, so

@@ -41,7 +41,6 @@ on:
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
-  NEXTEST_VERSION: "0.9.132"
   ARCHIVE: nextest-archive-${{ inputs.suite }}
 
 jobs:
@@ -77,9 +76,7 @@ jobs:
           key: ${{ inputs.suite != 'normal' && inputs.suite || '' }}
 
       - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@${{ env.NEXTEST_VERSION }}
+        uses: ./.github/actions/install-nextest
 
       - name: Install system deps
         run: |
@@ -129,9 +126,7 @@ jobs:
 
 
       - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@${{ env.NEXTEST_VERSION }}
+        uses: ./.github/actions/install-nextest
 
       - name: Download the ${{ inputs.suite }} archive
         uses: actions/download-artifact@v8

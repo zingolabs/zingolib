@@ -41,9 +41,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Install nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.78
+        uses: ./.github/actions/install-nextest
 
       - name: Install system deps
         run: |

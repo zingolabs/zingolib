@@ -1,0 +1,12 @@
+name: Install nextest
+description: >-
+  Installs the one nextest version every workflow runs: the PR shards,
+  the coverage job and the nightly's testnet cells. The version lives
+  here alone, so a bump reaches every runner together and a filterset
+  parses the same way on each tier.
+runs:
+  using: composite
+  steps:
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: nextest@0.9.132

@@ -7,9 +7,9 @@ pub const SAVING_REF: &str = "refs/heads/dev";
 const LIST_LIMIT: &str = "500";
 const LISTING: &str = r#".[] | "\(.id)\t\(.key)\t\(.createdAt)""#;
 const RUST_CACHE_PREFIX: &str = "v0-rust-";
-// The nightly saves the synced testnet faucet wallet under this prefix and
-// the run id, one entry per night, restored by the prefix alone.
-const FAUCET_CACHE_PREFIX: &str = "testnet-faucet-";
+// The nightly saves the synced testnet faucet wallet as `testnet-faucet-<run
+// id>`, one entry per night, restored by the family name alone.
+const FAUCET_FAMILY: &str = "testnet-faucet";
 const LOCKFILE_HASH_LEN: usize = 8;
 pub const KEPT_PER_FAMILY: usize = 2;
 
@@ -42,23 +42,21 @@ pub struct Entry {
     pub created_at: String,
 }
 
+// A family key is `<family>-<suffix>`: a run id after the faucet family, or
+// a lockfile hash after a rust-cache family. Every other key is its own family.
 pub fn family(key: &str) -> &str {
-    if let Some(run_id) = key.strip_prefix(FAUCET_CACHE_PREFIX) {
-        if !run_id.is_empty() && run_id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return FAUCET_CACHE_PREFIX.trim_end_matches('-');
-        }
-        return key;
-    }
-    if !key.starts_with(RUST_CACHE_PREFIX) {
-        return key;
-    }
-    let Some((prefix, suffix)) = key.rsplit_once('-') else {
+    let Some((stem, suffix)) = key.rsplit_once('-') else {
         return key;
     };
-    let is_hash =
-        suffix.len() == LOCKFILE_HASH_LEN && suffix.bytes().all(|byte| byte.is_ascii_hexdigit());
-    if is_hash {
-        prefix
+    let is_member = if stem == FAUCET_FAMILY {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    } else if key.starts_with(RUST_CACHE_PREFIX) {
+        suffix.len() == LOCKFILE_HASH_LEN && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+    } else {
+        false
+    };
+    if is_member {
+        stem
     } else {
         key
     }
