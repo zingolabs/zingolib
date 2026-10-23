@@ -4496,7 +4496,7 @@ mod boundary_pruning {
     use crate::testutils::mock_indexer::{Fault, MockChain, MockNet, Rpc};
     use crate::wallet::LightWallet;
     use crate::wallet::migration::parts::SkipReason;
-    use crate::wallet::migration::{MigrationParams, PartState, PrepareResult, bucket_index};
+    use crate::wallet::migration::{MigrationParams, PartState, PrepareResult};
 
     use super::{HOSPITAL_MUSEUM, fund};
 
@@ -4625,7 +4625,7 @@ mod boundary_pruning {
             .last_known_chain_height()
             .expect("the recipient has synced");
         assert_eq!(
-            bucket_index(known_height, &params.grid(net.chain_type())),
+            params.grid(net.chain_type()).index_of(known_height),
             WINDOW_BUCKET,
             "the chain must sit inside the transmission window"
         );

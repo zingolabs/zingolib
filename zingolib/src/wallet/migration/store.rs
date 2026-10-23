@@ -757,6 +757,48 @@ mod tests {
     /// Every bucket computation divides or multiplies by the modulus, so a
     /// zero arriving from a corrupt wallet file must fail the read typed
     /// rather than panic downstream bucket arithmetic.
+    #[test]
+    fn zero_bucket_modulus_is_rejected_at_read() {
+        let mut state = planned_state();
+        state.params.bucket_modulus = 0;
+
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+
+        let error =
+            read(bytes.as_slice(), ChainType::Mainnet).expect_err("a zero modulus must not read");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn max_actions_read_never_silently_truncates() {
+        const SENTINEL: u64 = 0x1122_3344;
+        const PATCHED: u64 = 0x1_1122_3344; // does not fit in u32
+
+        let mut state = planned_state();
+        state.params.max_actions_per_split_tx = SENTINEL as usize;
+
+        let mut bytes = Vec::new();
+        write(&mut bytes, &state).expect("writes");
+
+        // Locate the sentinel's unique little-endian encoding and set a high
+        // byte, producing the stream a 64-bit writer (or corruption) would
+        // carry.
+        let needle = SENTINEL.to_le_bytes();
+        let position = bytes
+            .windows(8)
+            .position(|window| window == needle)
+            .expect("sentinel is unique in the fixture");
+        bytes[position..position + 8].copy_from_slice(&PATCHED.to_le_bytes());
+
+        match read(bytes.as_slice(), ChainType::Mainnet) {
+            Err(error) => assert_eq!(error.kind(), ErrorKind::InvalidData),
+            Ok(read_state) => assert_eq!(
+                read_state.params.max_actions_per_split_tx as u64, PATCHED,
+                "read silently truncated the persisted value"
+            ),
+        }
+    }
     /// A section written before version 5 numbers its buckets on a uniform
     /// grid, `height / M`. On a chain where NU7 is active those indices are
     /// renumbered onto the chain's grid: a boundary that still opens a bucket
@@ -859,48 +901,5 @@ mod tests {
             "a version 5 index is already the grid's"
         );
         assert_eq!(current[0].anchor_bucket, Some(4));
-    }
-
-    #[test]
-    fn zero_bucket_modulus_is_rejected_at_read() {
-        let mut state = planned_state();
-        state.params.bucket_modulus = 0;
-
-        let mut bytes = Vec::new();
-        write(&mut bytes, &state).expect("writes");
-
-        let error =
-            read(bytes.as_slice(), ChainType::Mainnet).expect_err("a zero modulus must not read");
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn max_actions_read_never_silently_truncates() {
-        const SENTINEL: u64 = 0x1122_3344;
-        const PATCHED: u64 = 0x1_1122_3344; // does not fit in u32
-
-        let mut state = planned_state();
-        state.params.max_actions_per_split_tx = SENTINEL as usize;
-
-        let mut bytes = Vec::new();
-        write(&mut bytes, &state).expect("writes");
-
-        // Locate the sentinel's unique little-endian encoding and set a high
-        // byte, producing the stream a 64-bit writer (or corruption) would
-        // carry.
-        let needle = SENTINEL.to_le_bytes();
-        let position = bytes
-            .windows(8)
-            .position(|window| window == needle)
-            .expect("sentinel is unique in the fixture");
-        bytes[position..position + 8].copy_from_slice(&PATCHED.to_le_bytes());
-
-        match read(bytes.as_slice(), ChainType::Mainnet) {
-            Err(error) => assert_eq!(error.kind(), ErrorKind::InvalidData),
-            Ok(read_state) => assert_eq!(
-                read_state.params.max_actions_per_split_tx as u64, PATCHED,
-                "read silently truncated the persisted value"
-            ),
-        }
     }
 }

@@ -288,7 +288,7 @@ pub fn due_now_parts(
     now_height: BlockHeight,
     grid: &BucketGrid,
 ) -> Vec<PartId> {
-    let current_bucket = super::schedule::bucket_index(now_height, grid);
+    let current_bucket = grid.index_of(now_height);
     let overdue: std::collections::HashSet<PartId> = report
         .actions
         .iter()
@@ -396,7 +396,7 @@ fn classify(
         && let Some(bucket) = part.bucket_index
     {
         let grid = chain.bucket_grid(&state.params);
-        let window_end = super::schedule::boundary_of(bucket + 1, &grid);
+        let window_end = grid.boundary_of(bucket + 1);
         if tip >= window_end {
             let slipped_within_tolerance =
                 !grid

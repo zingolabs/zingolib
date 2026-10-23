@@ -55,7 +55,7 @@ use crate::wallet::LightWallet;
 use crate::wallet::error::WalletError;
 use crate::wallet::migration::{
     ChainView, ConsentBinding, ImmediateMigrationPlan, MigrationMode, MigrationParams,
-    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult,
+    MigrationPhase, MigrationPlan, MigrationState, PartId, PartState, PrepareResult, ProvedPart,
     RecommendedAction, ReconcileReport, SigningStrategy, TransmissionClient, TransmissionWindow,
     WindowReport, due_now_parts, plan_hash, plan_migration, plan_schedule, reconcile, schedule,
 };
@@ -1011,9 +1011,8 @@ impl LightClient {
         client: &impl TransmissionClient,
         only: Option<PartId>,
     ) -> Result<Transmission, LightClientError> {
-        type ProveHandle = tokio::task::JoinHandle<
-            Result<(usize, TxId, Vec<u8>), crate::wallet::error::WalletError>,
-        >;
+        type ProveHandle =
+            tokio::task::JoinHandle<Result<(usize, ProvedPart), crate::wallet::error::WalletError>>;
 
         // ── Phase A: prepare inputs under the wallet write lock ──────────
         // Each Assigned part produces an owned proving closure; already-Signed
@@ -1027,7 +1026,7 @@ impl LightClient {
                         .last_known_chain_height()
                         .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
                     let current_bucket =
-                        schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
+                        state.params.grid(wallet.chain_type()).index_of(now_height);
 
                     let mut prove_handles: Vec<ProveHandle> = Vec::new();
                     let mut pre_proven: Vec<(usize, TxId, Vec<u8>, BlockHeight)> = Vec::new();
@@ -1048,7 +1047,7 @@ impl LightClient {
                             match wallet.prepare_part(account, &mut state.parts[index], &params)? {
                                 PrepareResult::Ready { prove, .. } => {
                                     prove_handles.push(tokio::task::spawn_blocking(move || {
-                                        prove.prove().map(|(txid, raw_tx)| (index, txid, raw_tx))
+                                        prove.prove().map(|proved| (index, proved))
                                     }));
                                 }
                                 PrepareResult::Skip(reason) => {
@@ -1091,7 +1090,7 @@ impl LightClient {
         // ── Phase B: parallel proving (no wallet lock held) ───────────────
         // All Halo2 + Groth16 work runs concurrently on the blocking thread
         // pool. Wall-clock cost = slowest single proof, not the sum.
-        let mut newly_proven: Vec<(usize, TxId, Vec<u8>)> = Vec::new();
+        let mut newly_proven: Vec<(usize, ProvedPart)> = Vec::new();
         for handle in prove_handles {
             let result = handle
                 .await
@@ -1110,17 +1109,16 @@ impl LightClient {
             .with_migration_state(|wallet, state| {
                 let mut newly_proven_with_expiry: Vec<(usize, TxId, Vec<u8>, BlockHeight)> =
                     Vec::new();
-                for (index, txid, raw_tx) in newly_proven {
-                    let bucket = state.parts[index]
-                        .bucket_index
-                        .expect("assigned parts carry a bucket");
-                    let boundary =
-                        schedule::boundary_of(bucket, &state.params.grid(wallet.chain_type()));
-                    let target_height = boundary + 1;
-                    let expiry_height = schedule::canonical_expiry_height(
-                        &state.params.grid(wallet.chain_type()),
+                for (index, proved) in newly_proven {
+                    // The heights the transaction was built against, not a
+                    // recomputation: the chain may have crossed the NU7
+                    // activation since the build.
+                    let ProvedPart {
+                        txid,
+                        raw_tx,
                         target_height,
-                    );
+                        expiry_height,
+                    } = proved;
                     wallet.record_part_result(
                         &mut state.parts[index],
                         txid,
@@ -1322,8 +1320,7 @@ impl LightClient {
                     .sync_state
                     .last_known_chain_height()
                     .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                let current_bucket =
-                    schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
+                let current_bucket = state.params.grid(wallet.chain_type()).index_of(now_height);
                 let activation = wallet.ironwood_activation()?;
                 for part_id in &overdue {
                     let part = &mut state.parts[part_id.0 as usize];
@@ -1407,8 +1404,7 @@ impl LightClient {
                 .sync_state
                 .last_known_chain_height()
                 .ok_or(WalletError::NoSyncData)?;
-            let current_bucket =
-                schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
+            let current_bucket = state.params.grid(wallet.chain_type()).index_of(now_height);
             state
                 .parts
                 .iter()
@@ -1568,20 +1564,18 @@ impl LightClient {
                             &state.params.grid(wallet.chain_type()),
                         );
                         (!due_ids.is_empty()).then(|| {
-                            let current_bucket = schedule::bucket_index(
-                                height,
-                                &state.params.grid(wallet.chain_type()),
-                            );
+                            let current_bucket =
+                                state.params.grid(wallet.chain_type()).index_of(height);
                             let due: Vec<_> = state
                                 .parts
                                 .iter()
                                 .filter(|part| due_ids.contains(&part.id))
                                 .collect();
                             DueBatch {
-                                boundary: schedule::boundary_of(
-                                    current_bucket,
-                                    &state.params.grid(wallet.chain_type()),
-                                ),
+                                boundary: state
+                                    .params
+                                    .grid(wallet.chain_type())
+                                    .boundary_of(current_bucket),
                                 part_ids: due.iter().map(|part| part.id).collect(),
                                 denominations: due.iter().map(|part| part.denomination).collect(),
                             }
@@ -2151,10 +2145,8 @@ impl LightClient {
                             .sync_state
                             .last_known_chain_height()
                             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-                        let current_bucket = schedule::bucket_index(
-                            now_height,
-                            &state.params.grid(wallet.chain_type()),
-                        );
+                        let current_bucket =
+                            state.params.grid(wallet.chain_type()).index_of(now_height);
                         // Immediate mode: everything sends now, in the
                         // current bucket, explicitly immediate. The anchor is
                         // still drawn at age one or more; immediacy is about
@@ -2562,17 +2554,25 @@ mod tests {
 
     /// A synthetic wallet fully scanned through `tip`, holding one
     /// [`NOTE_VALUE`] legacy-Orchard note, plus that note's binding for a
-    /// migration part.
-    /// A synced wallet holding one migration-sized note, on a chain where NU7
-    /// never activates: the bucket grid is uniform at `tip`'s scale, one
-    /// window per 144 blocks, which is what these tests' bucket arithmetic
-    /// assumes. The grid's NU7 scaling has its own tests in
-    /// `wallet::migration::schedule` and on the mock chain.
+    /// migration part, on a chain where NU7 never activates: the bucket grid
+    /// is uniform at `tip`'s scale, one window per 144 blocks, which these
+    /// tests' bucket arithmetic assumes. The grid's NU7 scaling has its own
+    /// tests in `wallet::migration::schedule` and on the mock chain.
     fn wallet_with_migration_note(tip: u32) -> (LightWallet, BoundNote) {
+        wallet_with_migration_note_on(
+            tip,
+            crate::testutils::mock_activation_heights_with(|era| era.set_nu7(None)),
+        )
+    }
+
+    /// [`wallet_with_migration_note`] on a chain with the given activation
+    /// schedule.
+    fn wallet_with_migration_note_on(
+        tip: u32,
+        heights: zingo_common_components::protocol::ActivationHeights,
+    ) -> (LightWallet, BoundNote) {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
-            .activation_heights(crate::testutils::mock_activation_heights_with(|era| {
-                era.set_nu7(None)
-            }))
+            .activation_heights(heights)
             .orchard_note(NOTE_VALUE)
             .tip(tip)
             .build();
@@ -2723,8 +2723,7 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket =
-            schedule::bucket_index(known_height, &params.grid(wallet.chain_type()));
+        let current_bucket = params.grid(wallet.chain_type()).index_of(known_height);
         assert!(
             current_bucket >= 1,
             "the tip must sit past a bucket boundary"
@@ -2779,9 +2778,9 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket = schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+        let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
         let anchor_bucket = current_bucket - 1;
-        let boundary = schedule::boundary_of(anchor_bucket, &params.grid(wallet.chain_type()));
+        let boundary = params.grid(wallet.chain_type()).boundary_of(anchor_bucket);
 
         // The one checkpoint the boundary can reach, well below it, holding
         // the note the part is bound to. The builder checkpoints at the tip
@@ -2945,14 +2944,75 @@ mod tests {
             part
         }
 
+        /// A part whose window straddles the NU7 activation is built against
+        /// the activation once the chain has crossed it, so its transaction
+        /// commits to the branch the network validates; built below the
+        /// activation it targets the window's boundary.
+        #[test]
+        fn a_straddling_window_builds_against_the_activation_once_crossed() {
+            use shardtree::store::ShardStore as _;
+            use zcash_protocol::consensus::BlockHeight;
+            const ACTIVATION: u32 = 1_000;
+            // Boundary 864 opens the last bucket below the activation, and the
+            // grid's next boundary is 1_296.
+            let heights = || {
+                crate::testutils::mock_activation_heights_with(|era| era.set_nu7(Some(ACTIVATION)))
+            };
+            for (tip, expected_target) in
+                [(999u32, 865u32), (1_000, ACTIVATION), (1_200, ACTIVATION)]
+            {
+                let (mut wallet, bound_note) = wallet_with_migration_note_on(tip, heights());
+                let params = MigrationParams::provisional(wallet.chain_type());
+                let grid = params.grid(wallet.chain_type());
+                let window = grid.index_of(BlockHeight::from_u32(tip));
+                assert_eq!(grid.boundary_of(window), BlockHeight::from_u32(864));
+                // A checkpoint the anchor boundary can reach, holding the
+                // bound note, so the build captures a real witness; the
+                // builder checkpoints at the tip alone.
+                let position = wallet
+                    .wallet_transactions
+                    .values()
+                    .flat_map(OrchardNote::transaction_outputs)
+                    .find(|note| note.value() == NOTE_VALUE)
+                    .and_then(|note| note.position())
+                    .expect("the fabricated note is scanned into the tree");
+                wallet
+                    .shard_trees
+                    .orchard
+                    .store_mut()
+                    .add_checkpoint(
+                        grid.boundary_of(window - 1),
+                        shardtree::store::Checkpoint::at_position(position),
+                    )
+                    .expect("infallible on the memory store");
+                let mut part = assigned_part_with_witness(bound_note, window, window - 1);
+                part.anchor_witness = None;
+                // The bound note is sized denomination plus fee, as a split
+                // note is, so the canonical-shape check passes.
+                part.denomination = NOTE_VALUE - params.part_fee;
+                match wallet
+                    .prepare_part(AccountId::ZERO, &mut part, &params)
+                    .expect("the part prepares")
+                {
+                    PrepareResult::Ready { prove, .. } => assert_eq!(
+                        prove.target_height(),
+                        BlockHeight::from_u32(expected_target),
+                        "tip {tip}"
+                    ),
+                    PrepareResult::Skip(reason) => {
+                        panic!("tip {tip}: expected a ready part, got a skip: {reason:?}")
+                    }
+                }
+            }
+        }
+
         #[test]
         fn spent_bound_note_skips() {
             let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
             let params = MigrationParams::provisional(wallet.chain_type());
-            let bucket = schedule::bucket_index(
-                wallet.sync_state.last_known_chain_height().unwrap(),
-                &params.grid(wallet.chain_type()),
-            );
+            let bucket = params
+                .grid(wallet.chain_type())
+                .index_of(wallet.sync_state.last_known_chain_height().unwrap());
             // The user insistently spends the reserved note.
             wallet
                 .wallet_transactions
@@ -2981,10 +3041,9 @@ mod tests {
         fn mismatched_nullifier_skips() {
             let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
             let params = MigrationParams::provisional(wallet.chain_type());
-            let bucket = schedule::bucket_index(
-                wallet.sync_state.last_known_chain_height().unwrap(),
-                &params.grid(wallet.chain_type()),
-            );
+            let bucket = params
+                .grid(wallet.chain_type())
+                .index_of(wallet.sync_state.last_known_chain_height().unwrap());
             let diverged = BoundNote {
                 nullifier: [0xAA; 32],
                 ..bound_note
@@ -3028,10 +3087,9 @@ mod tests {
         fn an_undrawn_anchor_skips() {
             let (mut wallet, bound_note) = wallet_with_migration_note(TIP);
             let params = MigrationParams::provisional(wallet.chain_type());
-            let bucket = schedule::bucket_index(
-                wallet.sync_state.last_known_chain_height().unwrap(),
-                &params.grid(wallet.chain_type()),
-            );
+            let bucket = params
+                .grid(wallet.chain_type())
+                .index_of(wallet.sync_state.last_known_chain_height().unwrap());
 
             let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
             part.anchor_bucket = None;
@@ -3406,10 +3464,11 @@ mod tests {
             .sync_state
             .last_known_chain_height()
             .expect("the synthetic wallet is fully synced");
-        let current_bucket = schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-        let window_start = schedule::boundary_of(current_bucket, &params.grid(wallet.chain_type()));
-        let window_end =
-            schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+        let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+        let window_start = params.grid(wallet.chain_type()).boundary_of(current_bucket);
+        let window_end = params
+            .grid(wallet.chain_type())
+            .boundary_of(current_bucket + 1);
         assert!(
             window_start < now_height && now_height < window_end,
             "the part's window must be open at relaunch"
@@ -3549,8 +3608,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
@@ -3591,10 +3649,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -3642,10 +3700,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -3728,10 +3786,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let first_txid = TxId::from_bytes([1; 32]);
             let second_txid = TxId::from_bytes([2; 32]);
             let mut first = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -3806,10 +3864,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let txids = [
                 TxId::from_bytes([1; 32]),
                 TxId::from_bytes([2; 32]),
@@ -3903,7 +3961,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(tip, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(tip);
             assert!(current_bucket > 0, "bucket 0 must be in the past");
             let expiry = BlockHeight::from_u32(1_000);
             assert!(expiry > tip, "the refused transaction is still valid");
@@ -4020,7 +4078,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket = schedule::bucket_index(tip, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(tip);
             let expiry = BlockHeight::from_u32(300);
             assert!(expiry <= tip, "the refused transaction has expired");
 
@@ -4069,10 +4127,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -4123,8 +4181,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             wallet.migration = Some(scheduled_state(params, vec![part]));
@@ -4183,8 +4240,7 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &state.params.grid(wallet.chain_type()));
+            let current_bucket = state.params.grid(wallet.chain_type()).index_of(now_height);
             assert_eq!(
                 state.parts[0].bucket_index,
                 Some(current_bucket),
@@ -4765,9 +4821,8 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let boundary = schedule::boundary_of(current_bucket, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let boundary = params.grid(wallet.chain_type()).boundary_of(current_bucket);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.target_height = Some(BlockHeight::from_u32(500)); // ahead of tip 360, advisory
@@ -4800,8 +4855,7 @@ mod tests {
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
             let activation = wallet.ironwood_activation().expect("ironwood activates");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
 
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             schedule::plan_schedule(
@@ -4846,10 +4900,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
             let own_txid = TxId::from_bytes([7; 32]);
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
@@ -4866,7 +4920,7 @@ mod tests {
                 .expect("the open-window part is due now");
             assert_eq!(batch.part_ids, vec![PartId(0)]);
             assert_eq!(batch.denominations, vec![NOTE_VALUE]);
-            assert_eq!(batch.boundary, schedule::boundary_of(current_bucket, &grid),);
+            assert_eq!(batch.boundary, grid.boundary_of(current_bucket),);
 
             let transmission_client = MockTransmissionClient::default();
             let report = client
@@ -4896,10 +4950,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("synced synthetic wallet");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
 
             // Part 0: signed, no random target → due (sends from its blob).
             let mut signed = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
@@ -4967,10 +5021,9 @@ mod tests {
 
             // Every part confirmed in the scheduled phase: nothing left.
             let (mut wallet, bound_note) = wallet_with_migration_note(360);
-            let current_bucket = schedule::bucket_index(
-                BlockHeight::from_u32(360),
-                &params.grid(wallet.chain_type()),
-            );
+            let current_bucket = params
+                .grid(wallet.chain_type())
+                .index_of(BlockHeight::from_u32(360));
             let mut part = PartRecord::new(PartId(0), NOTE_VALUE, bound_note);
             part.assign(current_bucket).expect("fresh parts are bound");
             part.mark_confirmed(BlockHeight::from_u32(300)).unwrap();
@@ -5056,10 +5109,10 @@ mod tests {
                 .sync_state
                 .last_known_chain_height()
                 .expect("the synthetic wallet is fully synced");
-            let current_bucket =
-                schedule::bucket_index(now_height, &params.grid(wallet.chain_type()));
-            let window_end =
-                schedule::boundary_of(current_bucket + 1, &params.grid(wallet.chain_type()));
+            let current_bucket = params.grid(wallet.chain_type()).index_of(now_height);
+            let window_end = params
+                .grid(wallet.chain_type())
+                .boundary_of(current_bucket + 1);
 
             // A part signed in an earlier session, its window open now: the
             // shape a scheduled migration presents to the transmission path.

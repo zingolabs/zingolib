@@ -341,6 +341,27 @@ pub struct ProveOnce {
     params: super::MigrationParams,
 }
 
+/// A proved part: the transaction and the heights it was built against,
+/// which the record of the part carries unchanged.
+pub struct ProvedPart {
+    /// The transaction's id.
+    pub txid: TxId,
+    /// The transaction's raw bytes.
+    pub raw_tx: Vec<u8>,
+    /// The height whose consensus branch the transaction commits to.
+    pub target_height: BlockHeight,
+    /// The height past which the transaction is no longer valid.
+    pub expiry_height: BlockHeight,
+}
+
+impl ProveOnce {
+    /// The height whose consensus branch the transaction will commit to.
+    #[must_use]
+    pub fn target_height(&self) -> BlockHeight {
+        self.target_height
+    }
+}
+
 /// Outcome of `crate::wallet::LightWallet::prepare_part`: either a ready
 /// proving closure or the reason the part must be skipped.
 pub enum PrepareResult {
@@ -628,10 +649,10 @@ impl crate::wallet::LightWallet {
                 let anchor_bucket = part
                     .anchor_bucket
                     .expect("just drawn or already present above");
-                let boundary = super::schedule::boundary_of(
-                    anchor_bucket,
-                    &state.params.grid(wallet.chain_type()),
-                );
+                let boundary = state
+                    .params
+                    .grid(wallet.chain_type())
+                    .boundary_of(anchor_bucket);
                 if let Some(witness) = wallet.capture_boundary_witness(part, boundary)? {
                     part.anchor_witness = Some(witness);
                     wallet.save_required = true;
@@ -678,7 +699,7 @@ impl crate::wallet::LightWallet {
             return Ok(PrepareResult::Skip(SkipReason::AnchorNotDrawn));
         };
         let grid = params.grid(self.chain_type);
-        let boundary = super::schedule::boundary_of(anchor_bucket, &grid);
+        let boundary = grid.boundary_of(anchor_bucket);
 
         let activation = pepper_sync::wallet::PoolActivation::of(
             &self.chain_type,
@@ -783,8 +804,14 @@ impl crate::wallet::LightWallet {
         // sit in the Ironwood era; the anchor is a historical Orchard root
         // and is legal at any retained boundary above the part's own note.
         // Deriving the target from the anchor was what made a pre-activation
-        // anchor look like a consensus problem (ADR 0014, ADR 0018).
-        let target_height = super::schedule::boundary_of(window, &grid) + 1;
+        // anchor look like a consensus problem (ADR 0014, ADR 0018). A window
+        // that straddles the NU7 activation targets the activation once the
+        // chain has crossed it (`transmission_target`).
+        let now_height = self
+            .sync_state
+            .last_known_chain_height()
+            .unwrap_or_else(|| grid.boundary_of(window));
+        let target_height = super::schedule::transmission_target(window, now_height, &grid);
         let expiry_height = super::schedule::canonical_expiry_height(&grid, target_height);
         let params_clone = params.clone();
 
@@ -864,7 +891,7 @@ impl crate::wallet::LightWallet {
                 target_height,
                 expiry_height,
             } => {
-                let (txid, raw_tx) = prove.prove()?;
+                let ProvedPart { txid, raw_tx, .. } = prove.prove()?;
                 self.record_part_result(
                     part,
                     txid,
@@ -883,7 +910,7 @@ impl ProveOnce {
     /// Builds, proves, and signs the part's transaction, yielding its txid
     /// and raw bytes.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn prove(self) -> Result<(TxId, Vec<u8>), WalletError> {
+    pub(crate) fn prove(self) -> Result<ProvedPart, WalletError> {
         let ProveOnce {
             usk,
             anchor,
@@ -954,7 +981,12 @@ impl ProveOnce {
             .transaction()
             .write(&mut raw_tx)
             .map_err(WalletError::TransactionWrite)?;
-        Ok((txid, raw_tx))
+        Ok(ProvedPart {
+            txid,
+            raw_tx,
+            target_height,
+            expiry_height,
+        })
     }
 }
 

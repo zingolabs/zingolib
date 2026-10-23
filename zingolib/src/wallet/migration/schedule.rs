@@ -40,7 +40,7 @@ fn random_target_in_bucket(
     rng: &mut impl CryptoRng,
     grid: &BucketGrid,
 ) -> BlockHeight {
-    let boundary = boundary_of(bucket, grid);
+    let boundary = grid.boundary_of(bucket);
     // The delay is drawn in reference blocks; the chain's spacing converts
     // it to blocks at the boundary, three per reference block from NU7.
     let offset = SchedulingParams::ZIP_318.transfer_delay().draw(rng);
@@ -242,6 +242,28 @@ impl BucketGrid {
     }
 }
 
+/// The target height of a part transmitting in `window`, as of `now_height`:
+/// the block after the window's boundary, which selects the consensus branch
+/// the transaction commits to.
+///
+/// The last bucket below the NU7 activation runs past it, since the grid's
+/// next boundary is the first multiple of `3·M` at or above the activation,
+/// so a part transmitting in that window after the chain has crossed the
+/// activation would commit to the branch the network no longer validates.
+/// Once `now_height` is at or above the activation the target is the
+/// activation itself, the lowest height on the branch that validates the
+/// transaction; below it the window's boundary stands, and a part signed
+/// before the activation and still untransmitted when it passes is rebuilt
+/// by reconciliation, as any part whose transaction the network refuses.
+#[must_use]
+pub fn transmission_target(window: u64, now_height: BlockHeight, grid: &BucketGrid) -> BlockHeight {
+    let target = grid.boundary_of(window) + 1;
+    match grid.spacing().nu7_activation() {
+        Some(activation) if now_height >= activation && target < activation => activation,
+        _ => target,
+    }
+}
+
 /// The canonical ZIP 318 expiry for a transfer scheduled to transmit at
 /// `transmission_height`: the most recent multiple of `EXPIRY_MODULUS` at or
 /// below it, plus `EXPIRY_WINDOW`, both in reference blocks and so three
@@ -253,22 +275,10 @@ pub fn canonical_expiry_height(grid: &BucketGrid, transmission_height: BlockHeig
     zcash_pool_migration::scheduling::expiry_height(&grid.spacing(), transmission_height)
 }
 
-/// The bucket containing `height`.
-pub fn bucket_index(height: BlockHeight, grid: &BucketGrid) -> u64 {
-    grid.index_of(height)
-}
-
-/// The boundary that opens `bucket_index`. It is the anchor height of every
-/// part whose *anchor bucket* this is, which is never the same bucket the
-/// part transmits in.
-pub fn boundary_of(bucket_index: u64, grid: &BucketGrid) -> BlockHeight {
-    grid.boundary_of(bucket_index)
-}
-
 /// The most recent boundary at or below `height`.
 #[cfg(test)]
 fn previous_boundary(height: BlockHeight, grid: &BucketGrid) -> BlockHeight {
-    boundary_of(bucket_index(height, grid), grid)
+    grid.boundary_of(grid.index_of(height))
 }
 
 /// The two floors a part's candidate anchor bucket must clear, resolved for
@@ -303,7 +313,7 @@ impl AnchorFloor {
     /// floors.
     #[must_use]
     pub fn lowest_anchor_bucket(&self, grid: &BucketGrid) -> u64 {
-        let era = bucket_index(self.activation.height(), grid) + 1;
+        let era = grid.index_of(self.activation.height()) + 1;
         let anchorability = self
             .note_confirmed_at
             .map_or(0, |height| grid.index_at_or_after(height));
@@ -350,10 +360,10 @@ pub fn draw_anchor_bucket(
         floor
             .note_confirmed_at
             .unwrap_or_else(|| BlockHeight::from_u32(0)),
-        boundary_of(window, grid),
+        grid.boundary_of(window),
         rng,
     )?;
-    Some(bucket_index(anchor, grid))
+    Some(grid.index_of(anchor))
 }
 
 /// The first bucket a part may be scheduled into: strictly after
@@ -368,7 +378,7 @@ pub fn first_permitted_bucket(
     floor: &AnchorFloor,
     grid: &BucketGrid,
 ) -> u64 {
-    (bucket_index(now_height, grid) + 1).max(floor.earliest_window(grid))
+    (grid.index_of(now_height) + 1).max(floor.earliest_window(grid))
 }
 
 /// The first transmission window boundary that can hold an Ironwood part at
@@ -385,7 +395,7 @@ pub fn first_ironwood_era_window_boundary(
     activation: PoolActivation,
     grid: &BucketGrid,
 ) -> BlockHeight {
-    boundary_of(bucket_index(activation.height(), grid) + 2, grid)
+    grid.boundary_of(grid.index_of(activation.height()) + 2)
 }
 
 /// Places a part in `bucket` with a fresh random target inside the
@@ -533,7 +543,7 @@ pub fn plan_schedule(
     // future window.
     let first_bucket = ranked
         .iter()
-        .fold(bucket_index(now_height, grid), |earliest, &index| {
+        .fold(grid.index_of(now_height), |earliest, &index| {
             let floor = AnchorFloor::new(activation, note_confirmed_at(&parts[index]));
             earliest.max(floor.earliest_window(grid))
         });
@@ -594,7 +604,7 @@ pub fn upcoming_windows(
     horizon: u64,
     grid: &BucketGrid,
 ) -> Vec<TransmissionWindow> {
-    let current_bucket = bucket_index(now_height, grid);
+    let current_bucket = grid.index_of(now_height);
     let mut buckets: std::collections::BTreeMap<u64, (Vec<PartId>, Option<BlockHeight>)> =
         std::collections::BTreeMap::new();
     for part in parts {
@@ -614,7 +624,7 @@ pub fn upcoming_windows(
     buckets
         .into_iter()
         .map(|(bucket, (part_ids, latest_target))| {
-            let boundary = boundary_of(bucket, grid);
+            let boundary = grid.boundary_of(bucket);
             // A part without a target (a catch-up shift) is due at the
             // window opening, which every in-window target is at or past.
             let latest_target = latest_target.unwrap_or(boundary + 1);
@@ -676,7 +686,7 @@ pub fn window_timeline(
         value_migrated: u64,
     }
 
-    let current_bucket = bucket_index(now_height, grid);
+    let current_bucket = grid.index_of(now_height);
     let mut buckets: std::collections::BTreeMap<u64, Tally> = std::collections::BTreeMap::new();
     buckets.entry(current_bucket).or_default();
     for part in parts {
@@ -696,8 +706,8 @@ pub fn window_timeline(
         .into_iter()
         .map(|(bucket, tally)| WindowReport {
             bucket_index: bucket,
-            boundary: boundary_of(bucket, grid),
-            close: boundary_of(bucket + 1, grid),
+            boundary: grid.boundary_of(bucket),
+            close: grid.boundary_of(bucket + 1),
             is_current: bucket == current_bucket,
             parts_total: tally.parts_total,
             parts_confirmed: tally.parts_confirmed,
@@ -805,7 +815,7 @@ mod tests {
         .unwrap();
 
         for part in &parts {
-            let anchor = boundary_of(part.anchor_bucket.unwrap(), &grid());
+            let anchor = grid().boundary_of(part.anchor_bucket.unwrap());
             assert!(
                 anchor > activation,
                 "part {:?} anchors at {anchor:?}, not strictly above the \
@@ -849,7 +859,7 @@ mod tests {
                 "the age {} exceeds the cap",
                 window - anchor
             );
-            let boundary = boundary_of(anchor, &grid());
+            let boundary = grid().boundary_of(anchor);
             assert!(boundary > activation.height(), "anchor above activation");
             assert!(boundary >= note, "anchor at or above its own note");
         }
@@ -902,7 +912,7 @@ mod tests {
         let mut part = bound_part(0, 1_000_000);
         part.assign(1).unwrap();
         // The schedule's randomized target inside bucket 1's window.
-        let old_target = boundary_of(1, &grid()) + 17;
+        let old_target = grid().boundary_of(1) + 17;
         part.target_height = Some(old_target);
         part.mark_signed(TxId::from_bytes([9; 32]), old_target + 40, None)
             .unwrap();
@@ -918,7 +928,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(part.state, PartState::Assigned);
-        let boundary = u32::from(boundary_of(5, &grid()));
+        let boundary = u32::from(grid().boundary_of(5));
         let target = u32::from(
             part.target_height
                 .expect("jittered placement draws a fresh target"),
@@ -951,7 +961,7 @@ mod tests {
         .unwrap();
 
         // The first batch opens in the current bucket, not the next.
-        let first_bucket = bucket_index(now, &grid());
+        let first_bucket = grid().index_of(now);
         for part in &parts {
             assert_eq!(part.state, PartState::Assigned);
             let bucket = part.bucket_index.unwrap();
@@ -959,7 +969,7 @@ mod tests {
             // Target is drawn from the part's boundary under the canonical
             // delay law (mean 66, capped at 576; it may pass the window,
             // and the target is advisory per ADR 0017).
-            let boundary = u32::from(boundary_of(bucket, &grid()));
+            let boundary = u32::from(grid().boundary_of(bucket));
             let target = u32::from(part.target_height.unwrap());
             let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
             assert!(target >= boundary && target <= boundary + cap);
@@ -993,7 +1003,7 @@ mod tests {
         ahead.assign(5).unwrap();
         let unassigned = bound_part(3, 1_000_000);
 
-        let now = boundary_of(3, &grid()) + 10;
+        let now = grid().boundary_of(3) + 10;
         let timeline = window_timeline(&[done, pending, ahead, unassigned], now, &grid());
 
         assert_eq!(
@@ -1003,8 +1013,8 @@ mod tests {
         );
         let current = &timeline[0];
         assert_eq!(current.bucket_index, 3);
-        assert_eq!(current.boundary, boundary_of(3, &grid()));
-        assert_eq!(current.close, boundary_of(4, &grid()));
+        assert_eq!(current.boundary, grid().boundary_of(3));
+        assert_eq!(current.close, grid().boundary_of(4));
         assert!(current.is_current);
         assert_eq!((current.parts_confirmed, current.parts_total), (1, 2));
         assert_eq!(current.value_migrated, 2_000_000);
@@ -1022,14 +1032,14 @@ mod tests {
     /// With parts elsewhere, the empty current window is still listed.
     #[test]
     fn window_timeline_always_reports_the_current_window() {
-        let now = boundary_of(7, &grid()) + 100;
+        let now = grid().boundary_of(7) + 100;
 
         let bare = window_timeline(&[], now, &grid());
         assert_eq!(bare.len(), 1);
         assert!(bare[0].is_current);
         assert_eq!(bare[0].bucket_index, 7);
-        assert_eq!(bare[0].boundary, boundary_of(7, &grid()));
-        assert_eq!(bare[0].close, boundary_of(8, &grid()));
+        assert_eq!(bare[0].boundary, grid().boundary_of(7));
+        assert_eq!(bare[0].close, grid().boundary_of(8));
         assert_eq!((bare[0].parts_total, bare[0].value_total), (0, 0));
 
         let mut ahead = bound_part(0, 1_000_000);
@@ -1051,7 +1061,7 @@ mod tests {
         let mut part = bound_part(0, 1_000_000);
         part.assign(current_bucket).unwrap();
         // A target high in the window, above where an early-window tip sits.
-        part.target_height = Some(boundary_of(current_bucket, &grid()) + 100);
+        part.target_height = Some(grid().boundary_of(current_bucket) + 100);
 
         assert!(
             part_in_current_bucket(&part, current_bucket),
@@ -1088,7 +1098,7 @@ mod tests {
         )
         .unwrap();
 
-        let current_bucket = bucket_index(now, &grid());
+        let current_bucket = grid().index_of(now);
         let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
         assert_eq!(
             earliest, current_bucket,
@@ -1130,11 +1140,11 @@ mod tests {
         let earliest = parts.iter().filter_map(|p| p.bucket_index).min().unwrap();
         assert_eq!(
             earliest,
-            bucket_index(now, &grid()) + 2,
+            grid().index_of(now) + 2,
             "the anchor clears the fresh notes and the window clears the anchor"
         );
         for part in &parts {
-            let anchor = boundary_of(part.anchor_bucket.unwrap(), &grid());
+            let anchor = grid().boundary_of(part.anchor_bucket.unwrap());
             assert!(
                 anchor >= split_confirmed,
                 "every part must anchor at or above its own notes"
@@ -1173,14 +1183,14 @@ mod tests {
                 .div_ceil(u64::from(target_sessions))
                 .clamp(1, u64::from(k_max));
             let mut cohort_sizes: std::collections::BTreeMap<u64, u64> = Default::default();
-            let current_bucket = bucket_index(now, &grid());
+            let current_bucket = grid().index_of(now);
             for part in &parts {
                 prop_assert_eq!(part.state, PartState::Assigned, "total");
                 let bucket = part.bucket_index.unwrap();
                 prop_assert!(bucket >= current_bucket, "current or future buckets");
                 *cohort_sizes.entry(bucket).or_default() += 1;
                 // Target is within the bucket's window.
-                let boundary = u32::from(boundary_of(bucket, &grid()));
+                let boundary = u32::from(grid().boundary_of(bucket));
                 let target = u32::from(part.target_height.unwrap());
                 let cap = SchedulingParams::ZIP_318.transfer_delay().cap().get();
                 prop_assert!(
@@ -1207,8 +1217,8 @@ mod tests {
             prop_assert_eq!(u32::from(boundary) % modulus, 0);
             prop_assert!(u32::from(height) - u32::from(boundary) < modulus);
             prop_assert_eq!(
-                bucket_index(boundary, &grid),
-                bucket_index(height, &grid)
+                grid.index_of(boundary),
+                grid.index_of(height)
             );
         }
     }
@@ -1236,7 +1246,7 @@ mod tests {
         // upcoming_windows lists strictly future windows. The first batch opens
         // in the current bucket and is surfaced through `due_now`, not here, so
         // every future-bucket part appears and no current-bucket one does.
-        let current_bucket = bucket_index(now, &grid());
+        let current_bucket = grid().index_of(now);
         let future_parts = parts
             .iter()
             .filter(|part| {
@@ -1259,7 +1269,7 @@ mod tests {
             assert!(pair[0].bucket_index < pair[1].bucket_index, "soonest first");
         }
         for window in &windows {
-            assert_eq!(window.boundary, boundary_of(window.bucket_index, &grid()));
+            assert_eq!(window.boundary, grid().boundary_of(window.bucket_index));
             assert!(window.window_opens_unix_time > now_unix);
 
             // The user-facing wake time is the window's latest per-part
@@ -1292,11 +1302,6 @@ mod tests {
         assert!(upcoming_windows(&parts, now, now_unix, 0, &grid()).is_empty());
     }
 
-    /// Pins the ZIP 318 values imported from `zcash_pool_migration`, the
-    /// reference implementation, to the ZIP's literal numbers. The values
-    /// feed the consent hash, so they must move only by an explicit commit:
-    /// a dependency bump that changes one turns this suite red, and red
-    /// means adopt deliberately, with a params version bump.
     /// The grid numbers the canonical `AnchorGrid`'s boundaries, across the
     /// NU7 activation and on chains without one.
     mod the_grid_follows_the_chain {
@@ -1387,6 +1392,47 @@ mod tests {
             );
         }
 
+        /// The last bucket below the activation runs past it. A part
+        /// transmitting there targets the window's boundary while the chain
+        /// is below the activation, and the activation itself once the chain
+        /// has crossed it; every other window targets its boundary.
+        #[test]
+        fn a_window_straddling_the_activation_targets_it_once_crossed() {
+            let grid = BucketGrid::new(144, chain_activating_nu7_at(Some(1_000)));
+            // Bucket 6 opens at 864 and closes at 1_296, across the activation.
+            let h = BlockHeight::from_u32;
+            assert_eq!(transmission_target(6, h(999), &grid), h(865));
+            assert_eq!(transmission_target(6, h(1_000), &grid), h(1_000));
+            assert_eq!(transmission_target(6, h(1_295), &grid), h(1_000));
+            assert_eq!(transmission_target(5, h(1_000), &grid), h(1_000));
+            assert_eq!(transmission_target(7, h(1_000), &grid), h(1_297));
+            assert_eq!(transmission_target(7, h(2_000), &grid), h(1_297));
+            let uniform = BucketGrid::new(144, chain_activating_nu7_at(None));
+            assert_eq!(transmission_target(6, h(5_000), &uniform), h(865));
+        }
+
+        /// A uniform index between the activation and the first scaled
+        /// boundary opens no bucket on the grid: it comes back as its
+        /// boundary height, which the window reading moves to the next bucket.
+        #[test]
+        fn a_uniform_index_between_the_activation_and_the_first_scaled_boundary_is_off_grid() {
+            // Activation at 145: boundaries 0 and 144 lie below it, then 432.
+            let grid = BucketGrid::new(144, chain_activating_nu7_at(Some(145)));
+            assert_eq!(grid.renumber_uniform_index(0), Ok(0));
+            assert_eq!(grid.renumber_uniform_index(1), Ok(1));
+            assert_eq!(
+                grid.renumber_uniform_index(2),
+                Err(BlockHeight::from_u32(288))
+            );
+            assert_eq!(grid.index_at_or_after(BlockHeight::from_u32(288)), 2);
+            assert_eq!(grid.renumber_uniform_index(3), Ok(2));
+            assert_eq!(
+                grid.renumber_uniform_index(4),
+                Err(BlockHeight::from_u32(576))
+            );
+            assert_eq!(grid.renumber_uniform_index(6), Ok(3));
+        }
+
         /// A transfer delay is drawn in reference blocks, so from activation
         /// the same draw lands three times as many blocks past the boundary,
         /// and a window's wall-clock estimate counts 25 seconds a block.
@@ -1413,6 +1459,11 @@ mod tests {
         }
     }
 
+    /// Pins the ZIP 318 values imported from `zcash_pool_migration`, the
+    /// reference implementation, to the ZIP's literal numbers. The values
+    /// feed the consent hash, so they must move only by an explicit commit:
+    /// a dependency bump that changes one turns this suite red, and red
+    /// means adopt deliberately, with a params version bump.
     mod zip318_conformance_tripwires {
         use super::*;
         use zcash_protocol::value::COIN;

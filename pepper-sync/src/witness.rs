@@ -794,4 +794,35 @@ mod tests {
         assert!(checkpoint_exists(tree.store(), 432));
         assert!(checkpoint_exists(tree.store(), 576));
     }
+
+    /// The window retreats by reference blocks: across the NU7 activation a
+    /// reference block is three blocks, so the same window reaches less far
+    /// below the tip, and the start is exactly the height that advances to
+    /// the tip.
+    #[test]
+    fn the_retention_window_retreats_by_reference_blocks_across_the_activation() {
+        use zcash_protocol::zip318::BlockSpacing;
+        let spacing = BlockSpacing::with_nu7_activation(BlockHeight::from_u32(1_000));
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            spacing,
+            AnchorRetentionInterval::default(),
+        );
+        let reference_blocks = 144 * ANCHOR_RETENTION_INTERVALS;
+        for tip in [999u32, 1_000, 1_001, 1_300, 2_000, 5_000] {
+            let tip = BlockHeight::from_u32(tip);
+            let start = *anchor_retention_window(&policy, tip).start();
+            assert!(spacing.advance(start, reference_blocks) <= tip, "{tip:?}");
+            assert!(
+                spacing.advance(start + 1, reference_blocks) > tip,
+                "{tip:?}: {start:?} is not the greatest start"
+            );
+        }
+        // Entirely above the activation the window is three times as long in blocks.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(5_000)).start();
+        assert_eq!(start, BlockHeight::from_u32(5_000 - 3 * reference_blocks));
+        // Entirely below it the window is the uniform one.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(999)).start();
+        assert_eq!(start, BlockHeight::from_u32(999 - reference_blocks));
+    }
 }

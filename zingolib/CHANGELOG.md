@@ -81,15 +81,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical expiry grid spans three times as many blocks from activation,
   so every duration keeps its length in time at 25-second blocks. A bucket
   index is now the ordinal of a grid boundary, which equals `height / M`
-  below the activation and departs from it above: `migration::bucket_index`
-  takes the new `migration::BucketGrid`, built by `MigrationParams::grid`
-  from the chain, in place of a modulus, and `TransmissionWindow` and
-  `WindowReport` keep their `bucket_index` with that meaning. The window
-  times they estimate count 25 seconds a block from activation.
-  `MigrationParams` moves to version 3. A migration section written before
-  this release is renumbered at read: an index below the activation is
-  unchanged, a window above it that the grid does not open moves to the
-  next boundary, and such an anchor is redrawn.
+  below the activation and departs from it above: the new
+  `migration::BucketGrid`, built by `MigrationParams::grid` from the chain,
+  answers `index_of` and `boundary_of` where `migration::bucket_index` took
+  a modulus, and that function is gone; `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with the new meaning. The window
+  times they estimate count 25 seconds a block from activation. A part
+  whose window straddles the activation, the last bucket below it, is built
+  against the activation height once the chain has crossed it, so its
+  transaction commits to the branch the network validates; the heights a
+  part was built against travel with the proof as `migration::ProvedPart`
+  and are recorded unchanged. `MigrationParams` moves to version 3. A
+  migration section written before this release is renumbered at read: an
+  index below the activation is unchanged, a window above it that the grid
+  does not open moves to the next boundary, and such an anchor is redrawn.
 - A part that slipped past its window counts as within tolerance for two
   hours of chain time, 96 reference blocks, rather than 96 blocks.
 - **Breaking:** `LightClient::attach_mixnet` and
