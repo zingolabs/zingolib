@@ -1,16 +1,3 @@
-//! Ports of chain-bound libtonode tests onto the stateful mock indexer
-//! ([`crate::testutils::mock_indexer`]): the real wallet pipeline
-//! (`GrpcIndexer`, pepper-sync scanning, record building, spend
-//! bookkeeping) driven against a fabricated in-process chain, with no
-//! zebrad or zainod.
-//!
-//! Every port here is an OFFLINE TWIN of a libtonode test. Under the
-//! regtest removal directive (2026-10-09, docs/testing/regtest-removal-ledger.md)
-//! a port replaces its live original: one commit deletes the live test
-//! and adds the twin, so a reviewer reads both sides together. The eight
-//! twins of 2026-07-08 predate that rule; their originals were removed
-//! by their own replacement commits.
-
 use pepper_sync::sync::{MAX_SHARDTREE_CHECKPOINTS, SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE};
 use pepper_sync::wallet::{IronwoodNote, PoolActivation};
 use shardtree::store::ShardStore;

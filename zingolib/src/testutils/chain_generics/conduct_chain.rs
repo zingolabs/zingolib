@@ -1,8 +1,3 @@
-//! A Lightclient test may involve hosting a server to send data to the LightClient. This trait can be asked to set simple scenarios where a mock LightServer sends data showing a note to a LightClient, the LightClient updates and responds by sending the note, and the Lightserver accepts the transaction and rebroadcasts it...
-//! The initial two implementors are
-//! lib-to-node, which links a lightserver to a Validator in regtest mode. see `impl ConductChain for LibtoNode
-//! darkside, a mode for the lightserver which mocks the Validator. search 'impl ConductChain for DarksideScenario
-
 use zcash_primitives::transaction::TxId;
 
 use crate::config::{ClientConfig, WalletConfig};
