@@ -12,6 +12,189 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 625f617b63070855d1a4b2a2f61d071cb27c6f82
+
+Since c060a45041adeeb3f36571bbbdc645a582701bcc.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `stop_sync()` asks the running session to stop after its next batch, without
+  waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
+  runs answers "Sync already stopped." rather than failing.
+- `sync_caught_up()` answers `{ caught_up, percent }` from the engine's
+  published status alone: false with a null percent until the session has
+  published one. Unlike `status_sync`, it never reads a stale wallet as
+  complete.
+- `default_indexer(chain_hint)` answers the chain's Default Indexer as the URI
+  text a consumer passes back as `IndexerChoice::Named`, or nothing for a chain
+  without one (testnet, regtest). The hint takes the spellings
+  `IndexerConnection.chain_hint` takes, and an unknown hint is an `Init` error.
+  The value is zingolib's `MAINNET_DEFAULT_INDEXER`, so a consumer no longer
+  restates it.
+
+##### Changed
+- Sync is continuous: wallets are created and loaded with
+  `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
+  the chain tip and never ends on its own. `poll_sync` answers "Sync task is
+  not complete." for as long as it runs; relaunching on that answer is no
+  longer needed. Loading overrides the stored settings, so wallets saved by
+  earlier releases sync continuously too.
+- Wallets are created and loaded with `TransparentAddressDiscovery::default()`
+  (gap limit 10) in place of `minimal()` (gap limit 1), wallets saved by
+  earlier releases included.
+- Every `init_*` stops the replaced client's sync session. Dropping a client
+  never ended its engine, which kept scanning against the old server.
+- `change_server` stops the running session, which keeps the indexer it was
+  launched with; the next `run_sync` uses the new one.
+- `status_sync` answers with the status the engine last published, and
+  computes it from the wallet only when none has been published.
+- The `bucket_index` of a migration window (`migration_status`'s
+  `upcoming_windows`, `window_timeline`) numbers the chain's ZIP 318 grid,
+  whose boundaries sit three times as many blocks apart from NU7 activation,
+  and the window times count 25 seconds a block from there (zingo-adrs
+  zingolib/0056, amended). Below the activation nothing changes.
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins
+  (`zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives`
+  0.31.0, `zcash_protocol` 0.11.0 and their siblings), which sets the NU7
+  mainnet activation height, 3,543,405. The viewing key parser lists a P2SH
+  viewing key item as `transparent` beside a P2PKH one, and a shielded
+  unified address with a transparent receiver is rendered with that
+  receiver.
+- BREAKING: `change_server(choice: IndexerChoice)` takes the uniffi enum
+  `IndexerChoice` of `Offline`, `Default`, and `Named { uri }` in place of a
+  `serveruri: String`. `Offline` disconnects the session through
+  `go_offline` instead of binding a never-dialed placeholder URI, `Default`
+  attaches to the chain's Default Indexer (mainnet's is
+  `InvalidInput`), and `Named` carries the URI the string carried before
+  (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
+  label `serveruri`, so the Swift label stays `serveruri:`.
+  `init_from_bytes` take one `IndexerConnection` record (`indexer`, an
+  `IndexerChoice` where `Offline` replaces the empty server string and
+  `Default` attaches to the chain's Default Indexer, failing `Init` on a
+  chain without one; `chain_hint`; and `sync`) in place of the four loose
+  arguments, and `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`).
+
+##### Fixed
+  the strategy the proxy library already used in its former workspace. The
+  iOS app links both static archives into one binary, and
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Changed
+- BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
+  `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
+  activation height, 3,543,405.
+- The anchor-checkpoint retention policy runs on the chain's block spacing
+  (`zcash_protocol::zip318::BlockSpacing`): from NU7 activation the ZIP 318
+  anchor grid's boundaries sit three times as many blocks apart, and the
+  retained checkpoints and the retention window, measured in reference
+  blocks, follow them.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `wallet::keys::transparent_address_from_encoded` decodes a transparent
+  address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
+  dropped the `TryFromAddress` conversion that did this inline.
+
+##### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
+  pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
+  pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
+  so a mainnet session crosses NU7 on the network's schedule and commits to
+  the NU7 branch id `0x77190AD9` above it. Every type these crates export
+  through zingolib's public API moves with them, so a consumer pins the same
+  cohort.
+- A unified address encodes with every receiver it carries, so a shielded
+  address with a transparent receiver renders with it again in the address
+  listing's `encoded_address` and wherever a wallet address is shown.
+  `zcash_keys` 0.17.0 restored that to `UnifiedAddress::encode`; 7.0.0 had
+  followed the pre-release, which omitted it.
+- A proposal places change only in a pool the account's viewing key receives
+  in, with transparent change as a P2PKH output: `LightWallet` answers the new
+  `InputSource::get_change_receivers` from the account's unified viewing key,
+  and the change strategies consult it. The greedy input selector also
+  spends from a later shielded pool when the preferred pool's change alone
+  would be dust, where it reported insufficient funds.
+- `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
+  `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
+  `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
+  unchanged, and the builder's own default now agrees with the wallet's.
+- `data::transaction_request_from_receivers` returns
+  `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
+  forbids and `zip321` 0.10.0 refuses.
+- **Breaking:** the pool migration schedule follows ZIP 318's NU7 scaling
+  (zingo-adrs zingolib/0056, amended). Bucket boundaries are the chain's
+  ZIP 318 grid, the multiples of `M` below the NU7 activation and of `3·M`
+  from it, the transfer delays are drawn in reference blocks, and the
+  canonical expiry grid spans three times as many blocks from activation,
+  so every duration keeps its length in time at 25-second blocks. A bucket
+  index is now the ordinal of a grid boundary, which equals `height / M`
+  below the activation and departs from it above: the new
+  `migration::BucketGrid`, built by `MigrationParams::grid` from the chain,
+  answers `index_of` and `boundary_of` where `migration::bucket_index` took
+  a modulus, and that function is gone; `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with the new meaning. The window
+  times they estimate count 25 seconds a block from activation. A part
+  whose window straddles the activation, the last bucket below it, is built
+  against the activation height once the chain has crossed it, so its
+  transaction commits to the branch the network validates; the heights a
+  part was built against travel with the proof as `migration::ProvedPart`
+  and are recorded unchanged. `MigrationParams` moves to version 3. A
+  migration section written before this release is renumbered at read: an
+  index below the activation is unchanged, a window above it that the grid
+  does not open moves to the next boundary, and such an anchor is redrawn.
+- A part that slipped past its window counts as within tolerance for two
+  hours of chain time, 96 reference blocks, rather than 96 blocks.
+  (zingo-adrs zingolib/0063), over one transmit target for the whole send:
+  the session's live indexer client on nakednet, or one SOCKS5 client over
+  the mixnet. The Destination draw, the hedged race across Destinations, and
+  the per-Destination Health filter are gone. An Indexerless session refuses
+  a send, and a migration part, with `LightClientError::Offline` on every
+  wire, where a ready mixnet once carried it to drawn Destinations; a
+  bootstrapping or dead mixnet still refuses both with `MixnetNotReady`.
+
+### zingo-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- The Binding Layer builder compiles the Android library and the wallet
+  library into one target directory, `target/binding-layer/android`, where
+  each had its own, so the crates the two share compile once per ABI and sit
+  once in the CI cache. The library now lands at
+  `target/binding-layer/android/<triple>/mobile/libzingo_nym_proxy_ffi.so`,
+  where `android/proxy/` held it. The host plan merges the same way under
+  `target/binding-layer/host`. The two cargo invocations stay separate, so
+  each crate keeps its own feature set. A workbench test pins the Android
+  builds to one directory.
+- The crate joins the root workspace, with zingo-netutils and its verifier
+  shim. Its own lockfile, `[patch]` stanza and nextest configuration are
+  gone; the root lockfile resolves it, and the root CI's nym feature job
+  tests it without `live-mixnet` (zingo-adrs zingolib/0011, amended
+  2026-10-21).
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Changed
+- The crate, its verifier shim and the proxy crate are members of the root
+  workspace, which holds one lockfile for the wallet and nym stacks; the
+  crate's own workspace and lockfile are gone (zingo-adrs zingolib/0011,
+  amended 2026-10-21). Members consume the crate with `nym` off; only the
+  proxy crate turns it on.
+
 ## c060a45041adeeb3f36571bbbdc645a582701bcc
 
 Since 4f04d38c16cb032edffe1823d07bfc75bcf9103b.
