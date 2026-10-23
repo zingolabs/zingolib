@@ -11,21 +11,28 @@ runs.
 
 ## Vocabulary
 
-- **Binding Layer.** The native libraries and the Kotlin and Swift Binding
-  Sets built from one commit of zingolib.
-- **Prebuilt Bundle.** One archive per platform, Android and iOS, that holds
-  the Binding Layer for one commit. The Android bundle is a Maven repository
-  layout that serves one AAR; the iOS bundle is one XCFramework beside the
-  `ZingoBindings` Swift package.
-- **Published Commit.** The commit of `dev` that a bundle was built from. It
-  is the bundle's identity: the registry tag, the Maven version suffix, and
-  the pin all carry it.
-- **Publication Record.** `bindings/published.toml`, oldest entry first, one
-  entry per Published Commit with the digest of each bundle.
-  `bindings/CHANGELOG.md` is generated from it.
-- **Bundle Pin.** The consumer's `binding-layer.json`, which names one
-  Published Commit and its digests. The npm package in
-  [`bindings/pin`](pin/README.md) moves the pin and fetches the bundles.
+Each term below is defined here and nowhere else. The glossary in
+`zingolib/CONTEXT.md` and every other document point at these headings.
+
+### Binding Layer
+
+The foreign-language projection of zingolib's consumer surface: the two UniFFI crates (the wallet crate and the Nym proxy crate), the Swift and Kotlin Binding Sets generated from them, thin idiomatic wrappers over those Binding Sets, and the platform packaging that ships them. It knows no UI framework, so any mobile consumer, zingo-mobile today or a future Edge integration, can link it unchanged. Ruled 2026-09-23, pending review. *Avoid*: FFI (ambiguous between one Rust crate and the whole layer), the mobile Rust. See `zingo-adrs zingolib/0054`.
+
+### Prebuilt Bundle
+
+The compiled and packaged Binding Layer for one platform, which zingolib builds and publishes and a consumer fetches without rebuilding it. The Android Prebuilt Bundle is a Maven repository directory holding one AAR, which carries the four ABIs' native libraries and the compiled Kotlin Binding Sets, and the POM that declares the AAR's dependencies, so a consumer adds the directory as a repository and declares the AAR by its coordinate; the iOS Prebuilt Bundle is the `ZingoBindings` Swift package holding one XCFramework, `Zingolib.xcframework`, whose one archive carries both crates, and the Swift Binding Sets. Ruled 2026-09-23 as a loose `.so` set or XCFramework; restated 2026-10-12 to the packaged form that #2833 publishes; restated 2026-10-15 to the Maven layout, so the POM carries the JNA dependency; restated 2026-10-22 to one XCFramework, so the app links one Rust std. *Avoid*: bundle alone, and never "bundle" for grouping changes into one pull request. See `zingo-adrs zingolib/0054` and `zingolib/0057`.
+
+### Bundle Pin
+
+A consumer's fixed choice of zingolib's Prebuilt Bundles: one zingolib commit, and the digest of that commit's bundle for each platform the consumer uses, kept in one lock file in the consumer's repository. The commit's tag in the registry never moves, and the pin holds the commit to its recorded digests. Ruled 2026-10-12. *Avoid*: the submodule pin (the pin zingo-mobile held before #2930), the lock alone.
+
+### Published Commit
+
+The zingolib commit a Prebuilt Bundle was built from, and the one identity of a published build: every other reference to the build derives from it or is recorded against it, and no record, pin, check or message names a build by anything else. Ruled 2026-10-20. *Avoid*: the version, the build, the tag (the registry's spelling of the commit), the descriptor.
+
+### Publication Record
+
+zingolib's own record of the Prebuilt Bundles it has published, one entry per Published Commit with the digest of each platform's bundle and the crates the build audited, kept in the repository and reconciled against the registry by a required check. A consumer never reads it; the registry is the one source a consumer reads. Ruled 2026-10-20. *Avoid*: the manifest (which names the registry's OCI image manifest, where a bundle's digest and annotations live), the ledger, `published.toml` in prose.
 
 ## Prerequisites
 
