@@ -823,12 +823,12 @@ impl LightWallet {
             let mut tail = Vec::new();
             reader.read_to_end(&mut tail)?;
 
-            let canonical = Self::read_price_and_migration(&tail);
+            let canonical = Self::read_price_and_migration(&tail, chain_type);
             // The extra byte of the pre-release layout is a bool, so only 0
             // or 1 can begin one; any other leading byte rules that layout
             // out without a second parse.
             let pre_release = match tail.first() {
-                Some(0 | 1) => Some(Self::read_price_and_migration(&tail[1..])),
+                Some(0 | 1) => Some(Self::read_price_and_migration(&tail[1..], chain_type)),
                 _ => None,
             };
 
@@ -841,7 +841,9 @@ impl LightWallet {
             };
 
             let migration = if version >= 42 {
-                Optional::read(&mut reader, crate::wallet::migration::store::read)?
+                Optional::read(&mut reader, |r| {
+                    crate::wallet::migration::store::read(r, chain_type)
+                })?
             } else {
                 None
             };
@@ -913,9 +915,11 @@ impl LightWallet {
     /// version 42 be told apart: the pre-release revision carries exactly one
     /// extra leading byte, so the two readings start one byte apart while
     /// both must consume the tail exactly to EOF to be accepted.
-    fn read_price_and_migration(mut tail: &[u8]) -> io::Result<WalletTail> {
+    fn read_price_and_migration(mut tail: &[u8], chain_type: ChainType) -> io::Result<WalletTail> {
         let price_list = PriceList::read(&mut tail)?;
-        let migration = Optional::read(&mut tail, crate::wallet::migration::store::read)?;
+        let migration = Optional::read(&mut tail, |r| {
+            crate::wallet::migration::store::read(r, chain_type)
+        })?;
         if !tail.is_empty() {
             return Err(Error::new(
                 ErrorKind::InvalidData,

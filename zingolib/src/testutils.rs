@@ -9,7 +9,6 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedPool, consensus};
 use zingo_common_components::protocol::{ActivationHeights, ActivationHeightsBuilder};
 
@@ -659,7 +658,7 @@ pub fn interpret_taddr_as_tex_addr(
     p: &impl zcash_protocol::consensus::Parameters,
 ) -> String {
     bech32::encode::<bech32::Bech32m>(
-        bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),
+        bech32::Hrp::parse_unchecked(zcash_address::constants::hrp_tex_address(p.network_type())),
         &taddr_bytes,
     )
     .unwrap()

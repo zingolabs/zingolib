@@ -302,11 +302,10 @@ mod shielding {
             .transparent_addresses()
             .values()
             .map(|address| {
-                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                        network.network_type(),
-                    )
-                    .expect("incorrect network should be checked on wallet load"))
+                crate::wallet::keys::transparent_address_from_encoded(
+                    network.network_type(),
+                    address,
+                )
             })
             .collect::<Result<Vec<_>, zcash_address::ParseError>>()
             .unwrap();

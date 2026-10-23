@@ -51,8 +51,7 @@ use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
 use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
 #[cfg(test)]
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
-use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
-use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::sighash::{PrecomputedSighashData, SignableInput};
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
 use zcash_protocol::consensus::{
     BlockHeight, BranchId, COINBASE_MATURITY_BLOCKS, NetworkUpgrade, Parameters,
@@ -1665,8 +1664,9 @@ fn shielded_sighash(transaction: Transaction, inputs: Vec<TxOut>) -> [u8; 32] {
         transaction
             .into_data()
             .map_authorization(ToSighashInputs(inputs), (), ());
-    let parts = data.digest(TxIdDigester);
-    *signature_hash(&data, &SignableInput::Shielded, &parts).as_ref()
+    *PrecomputedSighashData::new(data)
+        .signature_hash(&SignableInput::Shielded)
+        .as_ref()
 }
 
 /// - Parses the embedded Sapling parameters on the first call and caches the verifying keys for the process.

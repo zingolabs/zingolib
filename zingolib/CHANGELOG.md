@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::keys::transparent_address_from_encoded` decodes a transparent
+  address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
+  dropped the `TryFromAddress` conversion that did this inline.
 - `LightWallet::pending_op_return_deshield` reports the deshield txid of a
   stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
   it.
@@ -46,6 +49,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a hosted enable on a session that holds no Session Indexer.
 
 ### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
+  pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
+  pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
+  so a mainnet session crosses NU7 on the network's schedule and commits to
+  the NU7 branch id `0x77190AD9` above it. Every type these crates export
+  through zingolib's public API moves with them, so a consumer pins the same
+  cohort.
+- A unified address encodes with every receiver it carries, so a shielded
+  address with a transparent receiver renders with it again in the address
+  listing's `encoded_address` and wherever a wallet address is shown.
+  `zcash_keys` 0.17.0 restored that to `UnifiedAddress::encode`; 7.0.0 had
+  followed the pre-release, which omitted it.
+- A proposal places change only in a pool the account's viewing key receives
+  in, with transparent change as a P2PKH output: `LightWallet` answers the new
+  `InputSource::get_change_receivers` from the account's unified viewing key,
+  and the change strategies consult it. The greedy input selector also
+  spends from a later shielded pool when the preferred pool's change alone
+  would be dust, where it reported insufficient funds.
+- `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
+  `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
+  `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
+  unchanged, and the builder's own default now agrees with the wallet's.
+- `data::transaction_request_from_receivers` returns
+  `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
+  forbids and `zip321` 0.10.0 refuses.
+- **Breaking:** the pool migration schedule follows ZIP 318's NU7 scaling
+  (zingo-adrs zingolib/0056, amended). Bucket boundaries are the chain's
+  ZIP 318 grid, the multiples of `M` below the NU7 activation and of `3·M`
+  from it, the transfer delays are drawn in reference blocks, and the
+  canonical expiry grid spans three times as many blocks from activation,
+  so every duration keeps its length in time at 25-second blocks. A bucket
+  index is now the ordinal of a grid boundary, which equals `height / M`
+  below the activation and departs from it above: the new
+  `migration::BucketGrid`, built by `MigrationParams::grid` from the chain,
+  answers `index_of` and `boundary_of` where `migration::bucket_index` took
+  a modulus, and that function is gone; `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with the new meaning. The window
+  times they estimate count 25 seconds a block from activation. A part
+  whose window straddles the activation, the last bucket below it, is built
+  against the activation height once the chain has crossed it, so its
+  transaction commits to the branch the network validates; the heights a
+  part was built against travel with the proof as `migration::ProvedPart`
+  and are recorded unchanged. `MigrationParams` moves to version 3. A
+  migration section written before this release is renumbered at read: an
+  index below the activation is unchanged, a window above it that the grid
+  does not open moves to the next boundary, and such an anchor is redrawn.
+- A part that slipped past its window counts as within tolerance for two
+  hours of chain time, 96 reference blocks, rather than 96 blocks.
 - **Breaking:** `LightClient::attach_mixnet` and
   `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
   readiness round trip reaches the Session Indexer instead of the census

@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- The `bucket_index` of a migration window (`migration_status`'s
+  `upcoming_windows`, `window_timeline`) numbers the chain's ZIP 318 grid,
+  whose boundaries sit three times as many blocks apart from NU7 activation,
+  and the window times count 25 seconds a block from there (zingo-adrs
+  zingolib/0056, amended). Below the activation nothing changes.
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins, which
+  sets the NU7 mainnet activation height, 3,543,405. A shielded unified
+  address with a transparent receiver is rendered with that receiver again,
+  as it was before the pre-release cohort.
 - The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
   carries the proxy crate's UniFFI surface beside the wallet's, built under
   the crate's new `zingo-nym-proxy-ffi` feature, and

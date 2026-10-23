@@ -615,7 +615,9 @@ where
         let encoded_address = match <OutgoingNote<Nz, Pool>>::SHIELDED_PROTOCOL {
             ShieldedPool::Sapling => unified_address.sapling().map(|address| {
                 Ok(zcash_keys::encoding::encode_payment_address(
-                    consensus_parameters.hrp_sapling_payment_address(),
+                    zcash_address::constants::hrp_sapling_payment_address(
+                        consensus_parameters.network_type(),
+                    ),
                     address,
                 ))
             }),

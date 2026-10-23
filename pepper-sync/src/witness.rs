@@ -398,30 +398,60 @@ pub(crate) fn get_ironwood_tree(
 pub(crate) const ANCHOR_RETENTION_INTERVALS: u32 = zcash_protocol::zip318::ANCHOR_AGE_CAP + 2;
 
 /// The anchor-checkpoint retention policy in force for `consensus_parameters` — the ZIP 318
-/// grid from the Ironwood pool's activation — or `None` when that upgrade never activates.
+/// grid from the Ironwood pool's activation, on the chain's block spacing — or `None` when that
+/// upgrade never activates. From NU7 activation the grid's boundaries sit three times as many
+/// blocks apart, and the retained checkpoints follow them.
 pub(crate) fn anchor_retention_policy(
     consensus_parameters: &impl zcash_protocol::consensus::Parameters,
 ) -> Option<AnchorRetention> {
     crate::wallet::PoolActivation::of(consensus_parameters, zcash_protocol::ShieldedPool::Ironwood)
         .map(|activation| {
-            AnchorRetention::new(activation.height(), AnchorRetentionInterval::default())
+            AnchorRetention::new(
+                activation.height(),
+                zcash_protocol::zip318::BlockSpacing::for_network(consensus_parameters),
+                AnchorRetentionInterval::default(),
+            )
         })
 }
 
 /// The height range whose grid-boundary checkpoints must currently be pinned, given `as_of`,
-/// the wallet's newest scanned block.
+/// the wallet's newest scanned block: the last [`ANCHOR_RETENTION_INTERVALS`] grid intervals,
+/// measured in reference blocks and converted to blocks by the policy's spacing, so the window
+/// keeps its length in time across NU7 activation.
 pub(crate) fn anchor_retention_window(
     policy: &AnchorRetention,
     as_of: BlockHeight,
 ) -> std::ops::RangeInclusive<BlockHeight> {
-    let span = policy
+    let reference_blocks = policy
         .intervals()
         .iter()
         .map(|interval| interval.block_count().get())
         .max()
         .unwrap_or(0)
         .saturating_mul(ANCHOR_RETENTION_INTERVALS);
-    as_of.saturating_sub(span)..=as_of
+    retreat(policy.spacing(), as_of, reference_blocks)..=as_of
+}
+
+/// The greatest height from which `reference_blocks` reference blocks advance no further than
+/// `to`: the inverse of [`BlockSpacing::advance`], which is monotone in its start, found by
+/// bisection. Zero when `to` is less than that many reference blocks from genesis.
+///
+/// [`BlockSpacing::advance`]: zcash_protocol::zip318::BlockSpacing::advance
+fn retreat(
+    spacing: zcash_protocol::zip318::BlockSpacing,
+    to: BlockHeight,
+    reference_blocks: u32,
+) -> BlockHeight {
+    let (mut low, mut high) = (0u32, u32::from(to));
+    while low < high {
+        let mid = low + (high - low).div_ceil(2);
+        if spacing.advance(BlockHeight::from_u32(mid), reference_blocks) <= to {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    BlockHeight::from_u32(low)
 }
 
 // checkpoints are held for the top SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE blocks of the chain only, the
@@ -596,6 +626,7 @@ mod tests {
         fn policy() -> AnchorRetention {
             AnchorRetention::new(
                 BlockHeight::from_u32(1),
+                zcash_protocol::zip318::BlockSpacing::UNIFORM,
                 AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
             )
         }
@@ -696,8 +727,11 @@ mod tests {
             - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE / INTERVAL
             - 1;
 
-        let policy =
-            AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            AnchorRetentionInterval::default(),
+        );
         let mut tree = empty_shard_tree::<
             sapling_crypto::Node,
             { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
@@ -759,5 +793,36 @@ mod tests {
         assert!(!checkpoint_exists(tree.store(), 288));
         assert!(checkpoint_exists(tree.store(), 432));
         assert!(checkpoint_exists(tree.store(), 576));
+    }
+
+    /// The window retreats by reference blocks: across the NU7 activation a
+    /// reference block is three blocks, so the same window reaches less far
+    /// below the tip, and the start is exactly the height that advances to
+    /// the tip.
+    #[test]
+    fn the_retention_window_retreats_by_reference_blocks_across_the_activation() {
+        use zcash_protocol::zip318::BlockSpacing;
+        let spacing = BlockSpacing::with_nu7_activation(BlockHeight::from_u32(1_000));
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            spacing,
+            AnchorRetentionInterval::default(),
+        );
+        let reference_blocks = 144 * ANCHOR_RETENTION_INTERVALS;
+        for tip in [999u32, 1_000, 1_001, 1_300, 2_000, 5_000] {
+            let tip = BlockHeight::from_u32(tip);
+            let start = *anchor_retention_window(&policy, tip).start();
+            assert!(spacing.advance(start, reference_blocks) <= tip, "{tip:?}");
+            assert!(
+                spacing.advance(start + 1, reference_blocks) > tip,
+                "{tip:?}: {start:?} is not the greatest start"
+            );
+        }
+        // Entirely above the activation the window is three times as long in blocks.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(5_000)).start();
+        assert_eq!(start, BlockHeight::from_u32(5_000 - 3 * reference_blocks));
+        // Entirely below it the window is the uniform one.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(999)).start();
+        assert_eq!(start, BlockHeight::from_u32(999 - reference_blocks));
     }
 }
