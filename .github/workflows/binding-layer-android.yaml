@@ -100,7 +100,8 @@ jobs:
       # its components; the image holds that toolchain until the pin moves,
       # and the builder adds the ABI's target to it itself. The cache holds
       # the dependencies of the wallet, the proxy, and the bindgen, built
-      # for this ABI, and the workbench's own build. The image already
+      # once for this ABI into the one target directory the wallet and the
+      # proxy share, and the workbench's own build. The image already
       # holds the cargo-installed tools, so the cache leaves CARGO_HOME/bin
       # out. The builder's plan clears only its output directory, never
       # target/binding-layer, so a restored cache stays usable.
