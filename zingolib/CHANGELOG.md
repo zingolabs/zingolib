@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ClientConfig::migrated_from` reports the legacy path a wallet file was
+  copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
 - `LightWallet::pending_op_return_deshield` reports the deshield txid of a
   stored OP_RETURN proposal that waits for `send_stored_proposal` to resume
   it.
@@ -156,6 +158,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed
+- On Linux and other non-macOS, non-Windows desktops, a wallet left in the
+  legacy default directory `~/.zcash` is found again. The default moved to the
+  user's data directory (`~/.local/share/.zcash`) and nothing carried existing
+  wallets over, so a consumer updating past that change failed to open them
+  with `ENOENT`. `ClientConfigBuilder::build`, when it uses the default
+  directory, copies the named wallet file over from `~/.zcash` (with its chain's
+  subdirectory) when it is only there. Only that file is copied, never the
+  directory, which zcashd also uses. The copy is staged and renamed into place,
+  and the original is kept.
 - `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
   longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
   contains a task's panic, the join yields an error, and the old `expect`
