@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `total_outputs`, the session's final output totals. Every other key is
   unchanged; both documents are now rendered by
   `zingolib::perspective::sync_progress`.
-- The committed `src/exported_surface.txt` pins the exported surface: every
+- The committed `src/exported_surface.snapshot.txt` pins the exported surface: every
   uniffi item in the crate's sources, the `uniffi.toml` settings, the locked
   uniffi version and the package name. A test fails when the crate and the
   file differ, and a second test fails when a `macro_rules!` body emits uniffi
