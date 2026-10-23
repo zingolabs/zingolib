@@ -15,7 +15,7 @@ const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 const SOURCE_DIR: &str = "src";
 
-const CONTRACT_FILE: &str = "src/exported_surface.txt";
+const CONTRACT_FILE: &str = "src/exported_surface.snapshot.txt";
 
 const CONTRACT_COMMENT_PREFIX: &str = "//";
 
@@ -670,7 +670,7 @@ const WORKFLOW_PATHS_REQUIRED: [&str; 4] = [
     "**/*.rs",
     "**/Cargo.lock",
     "**/uniffi.toml",
-    "zingo-ffi/lib/src/exported_surface.txt",
+    "zingo-ffi/lib/src/exported_surface.snapshot.txt",
 ];
 
 const RETIRED_SPELLINGS: [&str; 3] = ["chainhint", "minconfirmations", "performancetype"];
