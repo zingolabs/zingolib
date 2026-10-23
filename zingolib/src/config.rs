@@ -375,12 +375,16 @@ pub struct ClientConfig {
     indexer_uri: Option<http::Uri>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
-    /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// Directory where the wallet file will be created. By default, this is the user's data directory:
+    /// `~/.local/share/.zcash` on Linux, `%APPDATA%\Zcash` on Windows, `~/Library/Application Support/Zcash` on macOS.
     wallet_dir: PathBuf,
     /// Wallet file name. This will be created in the `wallet_dir`.
     wallet_name: String,
     /// Wallet config.
     wallet_config: WalletConfig,
+    /// Where the wallet file was copied from, when `build` brought it over from
+    /// the legacy default directory. See [`migrate_legacy_wallet`].
+    migrated_from: Option<PathBuf>,
 }
 
 impl ClientConfig {
@@ -418,6 +422,13 @@ impl ClientConfig {
     #[must_use]
     pub fn wallet_config(&self) -> WalletConfig {
         self.wallet_config.clone()
+    }
+
+    /// The legacy path the wallet file was copied from by this `build`, if it
+    /// was. A consumer can tell its user the wallet moved; the original is kept.
+    #[must_use]
+    pub fn migrated_from(&self) -> Option<&Path> {
+        self.migrated_from.as_deref()
     }
 
     /// Returns full path to wallet file.
@@ -507,8 +518,18 @@ impl ClientConfigBuilder {
     ///
     /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
     pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
+        let uses_default_dir = self.wallet_dir.is_none();
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
+        let migrated_from = if uses_default_dir {
+            legacy_default_wallet_dir(self.chain_type)
+                .map(|legacy_dir| migrate_legacy_wallet(&legacy_dir, &wallet_dir, &wallet_name))
+                .transpose()
+                .map_err(|e| ClientConfigError::FileError(e.to_string()))?
+                .flatten()
+        } else {
+            None
+        };
         let indexer_uri = self.indexer_choice.resolve(&self.chain_type)?;
 
         Ok(ClientConfig {
@@ -517,6 +538,7 @@ impl ClientConfigBuilder {
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
+            migrated_from,
         })
     }
 }
@@ -552,6 +574,76 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     } else {
         wallet_name
     }
+}
+
+/// The default wallet directory zingolib used on Linux and other non-macOS,
+/// non-Windows desktops before `59bfee0b2`: `~/.zcash`, with each chain's
+/// subdirectory. Since then the default is the user's data directory
+/// (`~/.local/share/.zcash`), and a wallet left in the old one went unfound.
+/// macOS, Windows and mobile never used it.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "windows"
+)))]
+fn legacy_default_wallet_dir(chain: ChainType) -> Option<PathBuf> {
+    let mut dir = dirs::home_dir()?;
+    dir.push(".zcash");
+    match chain {
+        ChainType::Mainnet => {}
+        ChainType::Testnet => dir.push("testnet3"),
+        ChainType::Regtest(_) => dir.push("regtest"),
+    }
+    Some(dir)
+}
+
+#[cfg(any(
+    target_os = "ios",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "windows"
+))]
+fn legacy_default_wallet_dir(_chain: ChainType) -> Option<PathBuf> {
+    None
+}
+
+/// Brings `wallet_name` over from `legacy_dir` into `wallet_dir` when it is
+/// only in the legacy one, and answers the path it was copied from.
+///
+/// Only that file is copied, never the directory: `~/.zcash` is also zcashd's data
+/// directory. It is copied to a temporary file beside its destination, synced,
+/// and renamed into place, so an interrupted copy never leaves a partial wallet
+/// where one is read. The original stays where it was, untouched, so a
+/// consumer that still reads the legacy directory finds it, and no wallet data
+/// is ever deleted. Once the copy is in place, the legacy file is not looked at
+/// again.
+pub(crate) fn migrate_legacy_wallet(
+    legacy_dir: &Path,
+    wallet_dir: &Path,
+    wallet_name: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let destination = wallet_dir.join(wallet_name);
+    let source = legacy_dir.join(wallet_name);
+    if wallet_name.is_empty() || destination.exists() || !source.is_file() || source == destination
+    {
+        return Ok(None);
+    }
+    let staging = wallet_dir.join(format!("{wallet_name}.migrating"));
+    std::fs::copy(&source, &staging)?;
+    // Opened for writing: syncing needs write access on Windows.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&staging)?
+        .sync_all()?;
+    std::fs::rename(&staging, &destination)?;
+    tracing::info!(
+        "copied wallet {} from the legacy directory {} to {}",
+        wallet_name,
+        legacy_dir.display(),
+        wallet_dir.display()
+    );
+    Ok(Some(source))
 }
 
 fn wallet_dir_or_default(
@@ -688,5 +780,90 @@ mod tests {
                 "lib_birthday({chain}) must exceed sapling activation"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod migrate_legacy_wallet_tests {
+    use super::migrate_legacy_wallet;
+
+    struct Dirs {
+        _root: tempfile::TempDir,
+        legacy: std::path::PathBuf,
+        current: std::path::PathBuf,
+    }
+
+    fn dirs() -> Dirs {
+        let root = tempfile::tempdir().expect("a temp dir");
+        let legacy = root.path().join("home/.zcash");
+        let current = root.path().join("share/.zcash");
+        std::fs::create_dir_all(&legacy).expect("legacy dir");
+        std::fs::create_dir_all(&current).expect("current dir");
+        Dirs {
+            _root: root,
+            legacy,
+            current,
+        }
+    }
+
+    /// Tests that a wallet only in the legacy directory is copied over, byte for byte, when built.
+    #[test]
+    fn copies_a_wallet_left_in_the_legacy_directory() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("zingo-wallet.dat"), b"the wallet").unwrap();
+
+        let from = migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap();
+
+        assert_eq!(from, Some(d.legacy.join("zingo-wallet.dat")));
+        assert_eq!(
+            std::fs::read(d.current.join("zingo-wallet.dat")).unwrap(),
+            b"the wallet"
+        );
+        // The original stays, and no staging file is left behind.
+        assert!(d.legacy.join("zingo-wallet.dat").exists());
+        assert!(!d.current.join("zingo-wallet.dat.migrating").exists());
+    }
+
+    /// Tests that a wallet already in the current directory is left as it is when the legacy one also holds it.
+    #[test]
+    fn leaves_a_wallet_already_in_the_current_directory() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("zingo-wallet.dat"), b"old").unwrap();
+        std::fs::write(d.current.join("zingo-wallet.dat"), b"current").unwrap();
+
+        assert_eq!(
+            migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
+        assert_eq!(
+            std::fs::read(d.current.join("zingo-wallet.dat")).unwrap(),
+            b"current"
+        );
+    }
+
+    /// Tests that nothing is copied when the legacy directory does not hold the wallet.
+    #[test]
+    fn copies_nothing_for_a_wallet_the_legacy_directory_does_not_hold() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("wallet.dat"), b"zcashd").unwrap();
+
+        assert_eq!(
+            migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
+        assert!(!d.current.join("wallet.dat").exists());
+        assert!(!d.current.join("zingo-wallet.dat").exists());
+    }
+
+    /// Tests that a missing legacy directory is not an error.
+    #[test]
+    fn copies_nothing_when_there_is_no_legacy_directory() {
+        let d = dirs();
+        let missing = d.legacy.join("nowhere");
+
+        assert_eq!(
+            migrate_legacy_wallet(&missing, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
     }
 }
