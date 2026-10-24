@@ -1,7 +1,8 @@
-use pepper_sync::wallet::{IronwoodNote, NoteInterface, OrchardNote, OutputInterface, SaplingNote};
+use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputInterface, SaplingNote};
 use zcash_client_backend::data_api::{MaxSpendMode, TargetValue};
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::ShieldedPool;
+use zcash_protocol::value::MAX_MONEY;
 
 pub(crate) struct Candidate<N> {
     pub(crate) note: N,
@@ -14,27 +15,6 @@ pub(crate) struct Candidates {
     pub(crate) sapling: Vec<Candidate<SaplingNote>>,
     pub(crate) orchard: Vec<Candidate<OrchardNote>>,
     pub(crate) ironwood: Vec<Candidate<IronwoodNote>>,
-}
-
-impl Candidates {
-    fn requested(self, sources: &[ShieldedPool]) -> Self {
-        Candidates {
-            sapling: requested(self.sapling, sources),
-            orchard: requested(self.orchard, sources),
-            ironwood: requested(self.ironwood, sources),
-        }
-    }
-}
-
-fn requested<N: NoteInterface>(
-    candidates: Vec<Candidate<N>>,
-    sources: &[ShieldedPool],
-) -> Vec<Candidate<N>> {
-    if sources.contains(&N::SHIELDED_PROTOCOL) {
-        candidates
-    } else {
-        Vec::new()
-    }
 }
 
 #[derive(Default)]
@@ -67,33 +47,6 @@ impl Remaining {
     }
 }
 
-pub(crate) fn select(
-    target_value: TargetValue,
-    sources: &[ShieldedPool],
-    candidates: Candidates,
-) -> Selection {
-    let candidates = candidates.requested(sources);
-    match target_value {
-        TargetValue::AtLeast(at_least) => budgeted(at_least.into_u64(), sources, candidates),
-        TargetValue::AllFunds(MaxSpendMode::MaxSpendable) => Selection::AllSpendable {
-            notes: PoolNotes {
-                sapling: spend_worthy(candidates.sapling),
-                orchard: spend_worthy(candidates.orchard),
-                ironwood: spend_worthy(candidates.ironwood),
-            },
-        },
-        TargetValue::AllFunds(MaxSpendMode::Everything) => Selection::EverythingUnsupported,
-    }
-}
-
-fn spend_worthy<N: OutputInterface>(candidates: Vec<Candidate<N>>) -> Vec<N> {
-    candidates
-        .into_iter()
-        .filter(|candidate| candidate.certain && candidate.note.value() > MARGINAL_FEE.into_u64())
-        .map(|candidate| candidate.note)
-        .collect()
-}
-
 #[derive(Clone, Copy)]
 enum Stage {
     CertainUnreserved,
@@ -102,12 +55,14 @@ enum Stage {
     AnyReserved,
 }
 
-const STAGES: [Stage; 4] = [
+const BUDGETED_STAGES: [Stage; 4] = [
     Stage::CertainUnreserved,
     Stage::AnyUnreserved,
     Stage::CertainReserved,
     Stage::AnyReserved,
 ];
+
+const ALL_FUNDS_STAGES: [Stage; 1] = [Stage::CertainReserved];
 
 impl Stage {
     fn admits<N>(self, candidate: &Candidate<N>) -> bool {
@@ -120,40 +75,69 @@ impl Stage {
     }
 }
 
-fn passes(sources: &[ShieldedPool]) -> impl Iterator<Item = (Stage, &ShieldedPool)> {
-    STAGES
-        .into_iter()
-        .flat_map(move |stage| sources.iter().map(move |pool| (stage, pool)))
+pub(crate) fn select(
+    target_value: TargetValue,
+    sources: &[ShieldedPool],
+    mut candidates: Candidates,
+) -> Selection {
+    let mut notes = PoolNotes::default();
+    match target_value {
+        TargetValue::AtLeast(at_least) => {
+            let mut remaining = Remaining::of(at_least.into_u64(), 0);
+            for (stage, pool) in passes(&BUDGETED_STAGES, sources) {
+                pick_pool(pool, stage, &mut candidates, &mut notes, &mut remaining);
+            }
+            match remaining {
+                Remaining::Positive(_) => Selection::Insufficient { notes },
+                Remaining::Covered => Selection::Sufficient { notes },
+            }
+        }
+        TargetValue::AllFunds(MaxSpendMode::MaxSpendable) => {
+            let mut remaining = Remaining::Positive(MAX_MONEY);
+            for (stage, pool) in passes(&ALL_FUNDS_STAGES, sources) {
+                pick_pool(pool, stage, &mut candidates, &mut notes, &mut remaining);
+            }
+            Selection::AllSpendable { notes }
+        }
+        TargetValue::AllFunds(MaxSpendMode::Everything) => Selection::EverythingUnsupported,
+    }
 }
 
-fn budgeted(target: u64, sources: &[ShieldedPool], mut candidates: Candidates) -> Selection {
-    let mut notes = PoolNotes::default();
-    let mut remaining = Remaining::of(target, 0);
-    for (stage, pool) in passes(sources) {
-        match pool {
-            ShieldedPool::Sapling => pick(
-                &mut candidates.sapling,
-                &mut notes.sapling,
-                &mut remaining,
-                stage,
-            ),
-            ShieldedPool::Orchard => pick(
-                &mut candidates.orchard,
-                &mut notes.orchard,
-                &mut remaining,
-                stage,
-            ),
-            ShieldedPool::Ironwood => pick(
-                &mut candidates.ironwood,
-                &mut notes.ironwood,
-                &mut remaining,
-                stage,
-            ),
-        }
-    }
-    match remaining {
-        Remaining::Positive(_) => Selection::Insufficient { notes },
-        Remaining::Covered => Selection::Sufficient { notes },
+fn passes<'a>(
+    stages: &'a [Stage],
+    sources: &'a [ShieldedPool],
+) -> impl Iterator<Item = (Stage, ShieldedPool)> + 'a {
+    stages
+        .iter()
+        .flat_map(move |&stage| sources.iter().map(move |&pool| (stage, pool)))
+}
+
+fn pick_pool(
+    pool: ShieldedPool,
+    stage: Stage,
+    candidates: &mut Candidates,
+    notes: &mut PoolNotes,
+    remaining: &mut Remaining,
+) {
+    match pool {
+        ShieldedPool::Sapling => pick(
+            &mut candidates.sapling,
+            &mut notes.sapling,
+            remaining,
+            stage,
+        ),
+        ShieldedPool::Orchard => pick(
+            &mut candidates.orchard,
+            &mut notes.orchard,
+            remaining,
+            stage,
+        ),
+        ShieldedPool::Ironwood => pick(
+            &mut candidates.ironwood,
+            &mut notes.ironwood,
+            remaining,
+            stage,
+        ),
     }
 }
 
