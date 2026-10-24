@@ -6,7 +6,7 @@ use zcash_client_backend::{
         MaxSpendMode,
         wallet::{
             ConfirmationsPolicy,
-            input_selection::{GreedyInputSelector, LockedInputPolicy, SpendPolicy},
+            input_selection::{GreedyInputSelector, SpendPolicy},
             propose_send_max_transfer,
         },
     },
@@ -23,6 +23,7 @@ use zcash_protocol::{
 use super::{
     LightWallet,
     error::{ProposeSendError, ProposeShieldError, WalletError},
+    migration,
 };
 use crate::{
     config::ChainType,
@@ -107,7 +108,7 @@ impl LightWallet {
             request,
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
-            &SpendPolicy::default(),
+            &SpendPolicy::default().with_locked_input_policy(migration::reservation_policy()),
             None,
             None,
         )
@@ -195,7 +196,7 @@ impl LightWallet {
             memo,
             MaxSpendMode::MaxSpendable,
             confirmations_policy,
-            &LockedInputPolicy::Exclude,
+            &migration::reservation_policy(),
             None,
         )
         .map_err(ProposeSendError::Proposal)

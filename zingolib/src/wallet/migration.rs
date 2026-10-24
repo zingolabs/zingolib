@@ -72,6 +72,10 @@ pub use transmission::{
     PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
 };
 
+use zcash_client_backend::data_api::locking::LockOwner;
+use zcash_client_backend::data_api::wallet::input_selection::{
+    LockedInputPolicy, NonEmptyBTreeSet,
+};
 use zcash_primitives::transaction::TxId;
 
 /// The consent captured when the user confirmed the migration schedule
@@ -149,12 +153,19 @@ pub struct MigrationState {
     pub parts: Vec<PartRecord>,
 }
 
+pub(crate) const RESERVATION_OWNER: LockOwner =
+    LockOwner::new(*b"zingolib-migration-part-binding\0");
+
+pub(crate) fn reservation_policy() -> LockedInputPolicy {
+    LockedInputPolicy::PreferUnlocked(NonEmptyBTreeSet::singleton(RESERVATION_OWNER))
+}
+
 impl MigrationState {
     /// The notes soft-reserved for pending parts: excluded from default input
     /// selection for ordinary sends, without ever blocking a spend the user
     /// insists on (an insistent spend consumes them and the affected parts
     /// are invalidated on the next reconciliation).
-    pub fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
+    pub fn reserved_outputs(&self) -> Vec<zcash_client_backend::wallet::OutputRef> {
         self.parts
             .iter()
             .filter(|part| {
@@ -166,7 +177,14 @@ impl MigrationState {
                         | PartState::Broadcast
                 )
             })
-            .filter_map(|part| part.note.map(|note| note.output_id))
+            .filter_map(|part| part.note)
+            .map(|note| {
+                zcash_client_backend::wallet::OutputRef::new(
+                    note.output_id.txid(),
+                    zcash_protocol::PoolType::ORCHARD,
+                    note.output_id.output_index(),
+                )
+            })
             .collect()
     }
 }
