@@ -78,51 +78,64 @@ fn spend_worthy<N: OutputInterface>(candidates: Vec<Candidate<N>>) -> Vec<N> {
         .collect()
 }
 
+#[derive(Clone, Copy)]
+enum Stage {
+    CertainUnreserved,
+    AnyUnreserved,
+    CertainReserved,
+    AnyReserved,
+}
+
+const STAGES: [Stage; 4] = [
+    Stage::CertainUnreserved,
+    Stage::AnyUnreserved,
+    Stage::CertainReserved,
+    Stage::AnyReserved,
+];
+
+impl Stage {
+    fn admits<N>(self, candidate: &Candidate<N>) -> bool {
+        match self {
+            Stage::CertainUnreserved => candidate.certain && !candidate.reserved,
+            Stage::AnyUnreserved => !candidate.reserved,
+            Stage::CertainReserved => candidate.certain,
+            Stage::AnyReserved => true,
+        }
+    }
+}
+
+fn passes(sources: &[ShieldedPool]) -> impl Iterator<Item = (Stage, &ShieldedPool)> {
+    STAGES.into_iter().flat_map(move |stage| {
+        sources
+            .iter()
+            .chain(&FALLBACK)
+            .map(move |pool| (stage, pool))
+    })
+}
+
 fn budgeted(target: u64, sources: &[ShieldedPool], mut candidates: Candidates) -> Selection {
     let mut notes = PoolNotes::default();
     let mut remaining = Remaining::of(target, 0);
-    let any_reserved = candidates
-        .sapling
-        .iter()
-        .any(|candidate| candidate.reserved)
-        || candidates
-            .orchard
-            .iter()
-            .any(|candidate| candidate.reserved)
-        || candidates
-            .ironwood
-            .iter()
-            .any(|candidate| candidate.reserved);
-    for release_reserved in [false, true] {
-        if release_reserved && !(any_reserved && matches!(remaining, Remaining::Positive(_))) {
-            break;
-        }
-        for include_uncertain in [false, true] {
-            for source in sources.iter().chain(&FALLBACK) {
-                match source {
-                    ShieldedPool::Sapling => pick(
-                        &mut candidates.sapling,
-                        &mut notes.sapling,
-                        &mut remaining,
-                        include_uncertain,
-                        release_reserved,
-                    ),
-                    ShieldedPool::Orchard => pick(
-                        &mut candidates.orchard,
-                        &mut notes.orchard,
-                        &mut remaining,
-                        include_uncertain,
-                        release_reserved,
-                    ),
-                    ShieldedPool::Ironwood => pick(
-                        &mut candidates.ironwood,
-                        &mut notes.ironwood,
-                        &mut remaining,
-                        include_uncertain,
-                        release_reserved,
-                    ),
-                }
-            }
+    for (stage, pool) in passes(sources) {
+        match pool {
+            ShieldedPool::Sapling => pick(
+                &mut candidates.sapling,
+                &mut notes.sapling,
+                &mut remaining,
+                stage,
+            ),
+            ShieldedPool::Orchard => pick(
+                &mut candidates.orchard,
+                &mut notes.orchard,
+                &mut remaining,
+                stage,
+            ),
+            ShieldedPool::Ironwood => pick(
+                &mut candidates.ironwood,
+                &mut notes.ironwood,
+                &mut remaining,
+                stage,
+            ),
         }
     }
     match remaining {
@@ -135,8 +148,7 @@ fn pick<N: OutputInterface>(
     candidates: &mut Vec<Candidate<N>>,
     selected: &mut Vec<N>,
     remaining: &mut Remaining,
-    include_uncertain: bool,
-    release_reserved: bool,
+    stage: Stage,
 ) {
     let Remaining::Positive(target) = *remaining else {
         return;
@@ -145,11 +157,7 @@ fn pick<N: OutputInterface>(
     let mut eligible = candidates
         .iter()
         .enumerate()
-        .filter(|(_, candidate)| {
-            (include_uncertain || candidate.certain)
-                && (release_reserved || !candidate.reserved)
-                && candidate.note.value() > fee
-        })
+        .filter(|(_, candidate)| stage.admits(candidate) && candidate.note.value() > fee)
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let value_at = |index: &usize| candidates[*index].note.value();
