@@ -206,7 +206,6 @@ fn pick<N: OutputInterface>(
         .enumerate()
         .filter(|(_, candidate)| {
             stage.admits(candidate.certain, standing(lock_filter, candidate.lock))
-                && candidate.note.value() > fee
         })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
@@ -271,6 +270,15 @@ mod tests {
             .build()
     }
 
+    fn wallet_without_dust() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .sapling_note(50_000)
+            .orchard_note(100_000)
+            .ironwood_note(70_000)
+            .build()
+    }
+
     fn candidates_of(wallet: &LightWallet) -> Candidates {
         let anchor_height = BlockHeight::from_u32(20);
         let account = zip32::AccountId::ZERO;
@@ -326,25 +334,25 @@ mod tests {
             &[ShieldedPool::Ironwood, ShieldedPool::Orchard],
             candidates_of(&funded_wallet()),
         ) else {
-            panic!("ironwood and orchard hold 170_000 above the dust line");
+            panic!("ironwood and orchard hold 175_000");
         };
         assert!(notes.sapling.is_empty());
-        assert_eq!(values(&notes.orchard), [100_000]);
+        assert_eq!(values(&notes.orchard), [100_000, 5_000]);
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
 
-    // Tests that an uncovered target returns every note above the dust line when the wallet falls short.
+    // Tests that an uncovered target returns every note when the wallet falls short. Dust goes to upstream, which prunes it.
     #[test]
-    fn uncovered_target_returns_every_spend_worthy_note() {
+    fn uncovered_target_returns_every_note() {
         let Selection::Insufficient { notes } = select_unfiltered(
             at_least(300_000),
             &ALL_POOLS,
             candidates_of(&funded_wallet()),
         ) else {
-            panic!("the funded wallet holds 220_000 above the dust line");
+            panic!("the funded wallet holds 225_000");
         };
         assert_eq!(values(&notes.sapling), [50_000]);
-        assert_eq!(values(&notes.orchard), [100_000]);
+        assert_eq!(values(&notes.orchard), [100_000, 5_000]);
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
 
@@ -363,7 +371,7 @@ mod tests {
     #[test]
     fn deferred_notes_are_spent_only_when_preferred_notes_fall_short() {
         let policy = LockedInputPolicy::PreferUnlocked(NonEmptyBTreeSet::singleton(OWNER));
-        let mut candidates = candidates_of(&funded_wallet());
+        let mut candidates = candidates_of(&wallet_without_dust());
         lock_orchard_note(&mut candidates, 100_000, OWNER);
         let Selection::Sufficient { notes } = select(
             at_least(60_000),
@@ -376,7 +384,7 @@ mod tests {
         assert!(notes.orchard.is_empty());
         assert_eq!(values(&notes.ironwood), [70_000]);
 
-        let mut candidates = candidates_of(&funded_wallet());
+        let mut candidates = candidates_of(&wallet_without_dust());
         lock_orchard_note(&mut candidates, 100_000, OWNER);
         let Selection::Sufficient { notes } = select(
             at_least(150_000),
@@ -394,7 +402,7 @@ mod tests {
     #[test]
     fn barred_notes_are_never_spent() {
         let policy = LockedInputPolicy::PreferUnlocked(NonEmptyBTreeSet::singleton(OWNER));
-        let mut candidates = candidates_of(&funded_wallet());
+        let mut candidates = candidates_of(&wallet_without_dust());
         lock_orchard_note(&mut candidates, 100_000, OTHER);
         let Selection::Insufficient { notes } = select(
             at_least(150_000),
@@ -448,9 +456,9 @@ mod tests {
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
 
-    // Tests that all-funds selection keeps the certain notes above the dust line of the requested pools only.
+    // Tests that all-funds selection hands every certain note of the requested pools to upstream, dust included.
     #[test]
-    fn all_spendable_keeps_the_requested_pools_only() {
+    fn all_spendable_hands_every_certain_note_of_the_requested_pools() {
         let Selection::AllSpendable { notes } = select_unfiltered(
             TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
             &[ShieldedPool::Orchard],
@@ -459,7 +467,7 @@ mod tests {
             panic!("all funds in MaxSpendable mode is supported");
         };
         assert!(notes.sapling.is_empty());
-        assert_eq!(values(&notes.orchard), [100_000]);
+        assert_eq!(values(&notes.orchard), [100_000, 5_000]);
         assert!(notes.ironwood.is_empty());
     }
 

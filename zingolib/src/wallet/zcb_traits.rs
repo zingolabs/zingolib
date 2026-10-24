@@ -1155,8 +1155,7 @@ mod tests {
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
     /// One spendable note per shielded pool, plus an orchard note at the
-    /// dust line (`MARGINAL_FEE`) that budgeted selection would also
-    /// refuse to spend.
+    /// dust line (`MARGINAL_FEE`) that upstream prunes as a dust input.
     fn funded_wallet() -> LightWallet {
         SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .tip(20)
@@ -1244,14 +1243,14 @@ mod tests {
     }
 
     #[test]
-    fn all_funds_max_spendable_selects_every_spend_worthy_note() {
+    fn all_funds_max_spendable_hands_every_certain_note_to_upstream() {
         let notes = select_all_funds(&funded_wallet(), MaxSpendMode::MaxSpendable)
             .expect("all-funds selection must succeed on a funded, synced wallet");
         assert_eq!(notes.sapling().len(), 1);
         assert_eq!(
             notes.orchard().len(),
-            1,
-            "the dust orchard note must be left behind"
+            2,
+            "the dust orchard note goes to upstream, which prunes it"
         );
         assert_eq!(notes.ironwood().len(), 1);
         let total: u64 = notes
@@ -1271,7 +1270,7 @@ mod tests {
                     .map(|note| note.note().value().inner()),
             )
             .sum();
-        assert_eq!(total, 220_000);
+        assert_eq!(total, 225_000);
     }
 
     #[test]
@@ -1305,7 +1304,7 @@ mod tests {
             .expect("selection over synthetic funds succeeds");
         assert!(notes.sapling().is_empty());
         assert_eq!(notes.ironwood().len(), 1);
-        assert_eq!(notes.orchard().len(), 1);
+        assert_eq!(notes.orchard().len(), 2);
     }
 
     // Tests that all-funds selection gathers the requested pools alone.
@@ -1327,7 +1326,7 @@ mod tests {
             .expect("all-funds selection succeeds on a funded, synced wallet");
         assert!(notes.sapling().is_empty());
         assert!(notes.ironwood().is_empty());
-        assert_eq!(notes.orchard().len(), 1);
+        assert_eq!(notes.orchard().len(), 2);
     }
 
     /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
