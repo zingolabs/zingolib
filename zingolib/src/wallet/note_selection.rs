@@ -152,20 +152,18 @@ fn pick<N: OutputInterface>(
         })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    eligible.sort_by_key(|&index| candidates[index].note.value());
+    let value_at = |index: &usize| candidates[*index].note.value();
+    eligible.sort_by_key(value_at);
     let mut picked = Vec::new();
     let mut cursor = 0;
     loop {
-        let total = picked
-            .iter()
-            .map(|&index: &usize| candidates[index].note.value())
-            .sum::<u64>();
+        let total = picked.iter().map(value_at).sum::<u64>();
         *remaining = Remaining::of(target, total);
         let Remaining::Positive(still) = *remaining else {
             break;
         };
         match eligible.get(cursor) {
-            Some(&index) if candidates[index].note.value() > still + fee => {
+            Some(&index) if value_at(&index) > still + fee => {
                 picked.push(index);
                 eligible.remove(cursor);
             }
