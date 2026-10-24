@@ -30,7 +30,7 @@ const USAGE: &str = "usage: binding-publish --plan --commit <commit> --run-at <c
     | binding-publish --push --commit <commit> --bundles <directory holding each downloaded bundle artifact of the commit> \
     | binding-publish --record --commit <commit>";
 const HEADS_NAMESPACE: &str = "refs/heads/";
-pub const PUBLISH_WORKFLOW: &str = ".github/workflows/binding-layer-publish.yaml";
+pub const PUBLISH_WORKFLOW: &str = ".github/workflows/publish-bindings.yaml";
 const DISPATCH_TRIGGER: &str = "workflow_dispatch:";
 pub const TAG_PREFIX: &str = "publish/";
 pub const RECORD_BRANCH_PREFIX: &str = "record/";
