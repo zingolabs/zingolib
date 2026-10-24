@@ -189,7 +189,7 @@
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
 
-**Dust** — Outputs whose value is strictly below the ZIP-317 marginal fee. Excluded from balances and not eligible as inputs. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration.
+**Dust** — An output whose value is at or below the ZIP-317 marginal fee, the boundary `zcash_client_backend` applies when it prunes dust inputs from a proposal. Excluded from balances. Input selection offers dust like any other note, and the proposal keeps a dust input only within ZIP-317's grace actions. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration. _Avoid_: "strictly below" for the boundary.
 
 ---
 
