@@ -57,9 +57,8 @@ gh workflow run binding-layer-publish.yaml --ref dev --field commit=<sha>
 
 An older commit is tagged `publish/<commit>` and built by a relayed run. The
 plan refuses a commit older than the last entry, a pending record, and a
-commit the record names. The record's pull request comes from the GitHub
-App `zingolib-binding-layer-publisher`; while it lacks pull-request write,
-open it from `record/<commit>` by hand. A consumer pins and fetches with
+commit the record names. The record's push and pull request use the GitHub
+App `zingolib-binding-layer-publisher`. A consumer pins and fetches with
 the package in [`pin/README.md`](pin/README.md):
 
 ```sh
