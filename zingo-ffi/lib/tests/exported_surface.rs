@@ -15,7 +15,9 @@ const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 const SOURCE_DIR: &str = "src";
 
-const CONTRACT_FILE: &str = "src/exported_surface.txt";
+const CONTRACT_FILE: &str = "src/exported_surface.snapshot.txt";
+
+const CONTRACT_COMMENT_PREFIX: &str = "//";
 
 const BINDGEN_CONFIG_FILE: &str = "uniffi.toml";
 
@@ -498,7 +500,10 @@ fn the_library_exports_the_committed_surface() {
     let exported = surface().lines;
     let exported: BTreeSet<&str> = exported.iter().map(String::as_str).collect();
     let contract = read(CONTRACT_FILE);
-    let committed: BTreeSet<&str> = contract.lines().collect();
+    let committed: BTreeSet<&str> = contract
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with(CONTRACT_COMMENT_PREFIX))
+        .collect();
     let missing: Vec<_> = committed.difference(&exported).collect();
     let unlisted: Vec<_> = exported.difference(&committed).collect();
     assert!(
@@ -665,7 +670,7 @@ const WORKFLOW_PATHS_REQUIRED: [&str; 4] = [
     "**/*.rs",
     "**/Cargo.lock",
     "**/uniffi.toml",
-    "zingo-ffi/lib/src/exported_surface.txt",
+    "zingo-ffi/lib/src/exported_surface.snapshot.txt",
 ];
 
 const RETIRED_SPELLINGS: [&str; 3] = ["chainhint", "minconfirmations", "performancetype"];

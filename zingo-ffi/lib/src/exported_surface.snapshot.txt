@@ -1,3 +1,20 @@
+// SNAPSHOT of the uniffi surface this crate exports. It is not a second
+// definition: the Rust sources are the only truth, and this file is the
+// baseline a change is diffed against, so that a change to the contract the
+// Kotlin and Swift consumers meet fails on the pull request that makes it
+// instead of in a consumer's build weeks later.
+//
+// The test `the_library_exports_the_committed_surface` in
+// tests/exported_surface.rs parses every src/*.rs, expands wallet_report!,
+// and fails when the exported lines and the lines below differ. Its message
+// prints the lines to add or remove. The `test` job of
+// .github/workflows/ci-pr.yaml runs it on every pull request, and a sibling
+// test asserts that this path stays in that workflow's path filter.
+//
+// A difference means the consumer contract changed. Paste the printed lines
+// here and record the change in CHANGELOG.md. Lines beginning with // and
+// blank lines are not part of the snapshot.
+
 #[derive(uniffi::Enum)] IndexerChoice = Offline | Default | Named { uri: String }
 #[derive(uniffi::Record)] IndexerConnection { indexer: IndexerChoice, chain_hint: String, sync: SyncSettings }
 #[derive(uniffi::Record)] SyncSettings { performance_level: String, min_confirmations: u32 }
