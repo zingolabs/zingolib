@@ -1058,48 +1058,6 @@ impl InputSource for LightWallet {
                                     }
                                 }
                             }
-
-                            let notes = self
-                                .select_spendable_notes_by_pool::<SaplingNote>(
-                                    &mut remaining_value_needed,
-                                    anchor_height,
-                                    &exclude_sapling,
-                                    account,
-                                    include_potentially_spent_notes,
-                                )?
-                                .into_iter()
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            exclude_sapling.extend(notes.iter().map(OutputInterface::output_id));
-                            selected_sapling_notes.extend(notes);
-
-                            let notes = self
-                                .select_spendable_notes_by_pool::<OrchardNote>(
-                                    &mut remaining_value_needed,
-                                    anchor_height,
-                                    &exclude_orchard,
-                                    account,
-                                    include_potentially_spent_notes,
-                                )?
-                                .into_iter()
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            exclude_orchard.extend(notes.iter().map(OutputInterface::output_id));
-                            selected_orchard_notes.extend(notes);
-
-                            let notes = self
-                                .select_spendable_notes_by_pool::<IronwoodNote>(
-                                    &mut remaining_value_needed,
-                                    anchor_height,
-                                    &exclude_ironwood,
-                                    account,
-                                    include_potentially_spent_notes,
-                                )?
-                                .into_iter()
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            exclude_ironwood.extend(notes.iter().map(OutputInterface::output_id));
-                            selected_ironwood_notes.extend(notes);
                         }
                     }
                     (
@@ -1110,15 +1068,13 @@ impl InputSource for LightWallet {
                 }
                 TargetValue::AllFunds(max_spend_mode) => {
                     // Effects at the edge: gather the spendable candidates
-                    // per pool (strict, guaranteed-unspent view), then let
-                    // the pure selection decide. All pools participate
-                    // regardless of `sources` order, matching budgeted
-                    // selection's unconditional fallback, and
-                    // migration-reserved notes are included: all funds
+                    // of each requested pool (strict, guaranteed-unspent
+                    // view), then let the pure selection decide.
+                    // Migration-reserved notes are included: all funds
                     // means all (the reservation biases selection, never
                     // blocks a spend).
-                    let sapling_candidates = self
-                        .spendable_notes::<SaplingNote>(
+                    let sapling_candidates = if sources.contains(&ShieldedPool::Sapling) {
+                        self.spendable_notes::<SaplingNote>(
                             anchor_height,
                             &exclude_sapling,
                             account,
@@ -1126,9 +1082,12 @@ impl InputSource for LightWallet {
                         )?
                         .into_iter()
                         .cloned()
-                        .collect::<Vec<_>>();
-                    let orchard_candidates = self
-                        .spendable_notes::<OrchardNote>(
+                        .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let orchard_candidates = if sources.contains(&ShieldedPool::Orchard) {
+                        self.spendable_notes::<OrchardNote>(
                             anchor_height,
                             &exclude_orchard,
                             account,
@@ -1136,9 +1095,12 @@ impl InputSource for LightWallet {
                         )?
                         .into_iter()
                         .cloned()
-                        .collect::<Vec<_>>();
-                    let ironwood_candidates = self
-                        .spendable_notes::<IronwoodNote>(
+                        .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let ironwood_candidates = if sources.contains(&ShieldedPool::Ironwood) {
+                        self.spendable_notes::<IronwoodNote>(
                             anchor_height,
                             &exclude_ironwood,
                             account,
@@ -1146,7 +1108,10 @@ impl InputSource for LightWallet {
                         )?
                         .into_iter()
                         .cloned()
-                        .collect::<Vec<_>>();
+                        .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
                     all_funds_selection(
                         max_spend_mode,
                         sapling_candidates,
@@ -1572,6 +1537,50 @@ mod tests {
             matches!(error, WalletError::AllFundsEverythingUnsupported),
             "the refusal must be the dedicated typed error, observed: {error}"
         );
+    }
+
+    /// Upstream input selection rejects a note from a pool it did not ask for
+    /// (`GreedyInputSelectorError::UnrequestedPoolSelected`), and its spend
+    /// policy never crosses into a pool it did not name. When the requested
+    /// pools fall short, selection returns what they hold and lets upstream
+    /// report the shortfall, instead of topping up from another pool.
+    #[test]
+    fn at_least_selection_stays_in_the_requested_pools_when_they_fall_short() {
+        let notes = funded_wallet()
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(200_000)),
+                &[ShieldedPool::Ironwood, ShieldedPool::Orchard],
+                TargetHeight::from(21),
+                ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
+                &[],
+                LockFilter::Unfiltered,
+            )
+            .expect("selection over synthetic funds succeeds");
+        assert!(
+            notes.sapling().is_empty(),
+            "sapling was not requested, so no sapling note may be selected"
+        );
+        assert_eq!(notes.ironwood().len(), 1);
+        assert_eq!(notes.orchard().len(), 1);
+    }
+
+    #[test]
+    fn all_funds_selection_gathers_only_the_requested_pools() {
+        let notes = funded_wallet()
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+                &[ShieldedPool::Orchard],
+                TargetHeight::from(21),
+                ConfirmationsPolicy::new_symmetrical(NonZeroU32::new(1).expect("nonzero"), false),
+                &[],
+                LockFilter::Unfiltered,
+            )
+            .expect("all-funds selection must succeed on a funded, synced wallet");
+        assert!(notes.sapling().is_empty());
+        assert!(notes.ironwood().is_empty());
+        assert_eq!(notes.orchard().len(), 1);
     }
 
     /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
