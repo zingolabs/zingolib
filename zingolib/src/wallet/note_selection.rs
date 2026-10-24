@@ -1,13 +1,7 @@
-use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputInterface, SaplingNote};
+use pepper_sync::wallet::{IronwoodNote, NoteInterface, OrchardNote, OutputInterface, SaplingNote};
 use zcash_client_backend::data_api::{MaxSpendMode, TargetValue};
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::ShieldedPool;
-
-const FALLBACK: [ShieldedPool; 3] = [
-    ShieldedPool::Sapling,
-    ShieldedPool::Orchard,
-    ShieldedPool::Ironwood,
-];
 
 pub(crate) struct Candidate<N> {
     pub(crate) note: N,
@@ -20,6 +14,27 @@ pub(crate) struct Candidates {
     pub(crate) sapling: Vec<Candidate<SaplingNote>>,
     pub(crate) orchard: Vec<Candidate<OrchardNote>>,
     pub(crate) ironwood: Vec<Candidate<IronwoodNote>>,
+}
+
+impl Candidates {
+    fn requested(self, sources: &[ShieldedPool]) -> Self {
+        Candidates {
+            sapling: requested(self.sapling, sources),
+            orchard: requested(self.orchard, sources),
+            ironwood: requested(self.ironwood, sources),
+        }
+    }
+}
+
+fn requested<N: NoteInterface>(
+    candidates: Vec<Candidate<N>>,
+    sources: &[ShieldedPool],
+) -> Vec<Candidate<N>> {
+    if sources.contains(&N::SHIELDED_PROTOCOL) {
+        candidates
+    } else {
+        Vec::new()
+    }
 }
 
 #[derive(Default)]
@@ -57,6 +72,7 @@ pub(crate) fn select(
     sources: &[ShieldedPool],
     candidates: Candidates,
 ) -> Selection {
+    let candidates = candidates.requested(sources);
     match target_value {
         TargetValue::AtLeast(at_least) => budgeted(at_least.into_u64(), sources, candidates),
         TargetValue::AllFunds(MaxSpendMode::MaxSpendable) => Selection::AllSpendable {
@@ -105,12 +121,9 @@ impl Stage {
 }
 
 fn passes(sources: &[ShieldedPool]) -> impl Iterator<Item = (Stage, &ShieldedPool)> {
-    STAGES.into_iter().flat_map(move |stage| {
-        sources
-            .iter()
-            .chain(&FALLBACK)
-            .map(move |pool| (stage, pool))
-    })
+    STAGES
+        .into_iter()
+        .flat_map(move |stage| sources.iter().map(move |pool| (stage, pool)))
 }
 
 fn budgeted(target: u64, sources: &[ShieldedPool], mut candidates: Candidates) -> Selection {
@@ -259,17 +272,17 @@ mod tests {
         assert!(notes.ironwood.is_empty());
     }
 
-    // Tests that the fallback tops up from a pool outside the request when the requested pools fall short.
+    // Tests that selection stays in the requested pools when they fall short.
     #[test]
-    fn fallback_tops_up_from_the_other_pools() {
-        let Selection::Sufficient { notes } = select(
+    fn uncovered_request_stays_in_the_requested_pools() {
+        let Selection::Insufficient { notes } = select(
             at_least(200_000),
             &[ShieldedPool::Ironwood, ShieldedPool::Orchard],
             candidates_of(&funded_wallet()),
         ) else {
-            panic!("the three pools hold 220_000 above the dust line");
+            panic!("ironwood and orchard hold 170_000 above the dust line");
         };
-        assert_eq!(values(&notes.sapling), [50_000]);
+        assert!(notes.sapling.is_empty());
         assert_eq!(values(&notes.orchard), [100_000]);
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
@@ -317,7 +330,7 @@ mod tests {
         ) else {
             panic!("the reserved note is released once the others fall short");
         };
-        assert_eq!(values(&notes.sapling), [50_000]);
+        assert!(notes.sapling.is_empty());
         assert_eq!(values(&notes.orchard), [100_000]);
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
@@ -362,9 +375,9 @@ mod tests {
         assert_eq!(values(&notes.ironwood), [70_000]);
     }
 
-    // Tests that all-funds selection keeps every certain note above the dust line in every pool.
+    // Tests that all-funds selection keeps the certain notes above the dust line of the requested pools only.
     #[test]
-    fn all_spendable_keeps_every_spend_worthy_note() {
+    fn all_spendable_keeps_the_requested_pools_only() {
         let Selection::AllSpendable { notes } = select(
             TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
             &[ShieldedPool::Orchard],
@@ -372,9 +385,9 @@ mod tests {
         ) else {
             panic!("all funds in MaxSpendable mode is supported");
         };
-        assert_eq!(values(&notes.sapling), [50_000]);
+        assert!(notes.sapling.is_empty());
         assert_eq!(values(&notes.orchard), [100_000]);
-        assert_eq!(values(&notes.ironwood), [70_000]);
+        assert!(notes.ironwood.is_empty());
     }
 
     // Tests that all-funds selection in Everything mode is refused.
