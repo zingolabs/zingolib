@@ -3,14 +3,13 @@
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::value::Zatoshis;
 
 use super::LightWallet;
 use super::error::WalletError;
+use super::note_selection;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
@@ -389,115 +388,33 @@ impl LightWallet {
             .collect()
     }
 
-    /// Selects spendable notes for a given pool and `account` confirmed at or below `anchor_height` up to the total
-    /// value of `remaining_value_needed`.
-    ///
-    /// Selects notes with smallest value that satisfies the target value, without creating dust as change. Otherwise,
-    /// selects the note with the largest value and repeats.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn select_spendable_notes_by_pool<'a, N: NoteInterface>(
-        &'a self,
-        remaining_value_needed: &mut RemainingNeeded,
+    pub(crate) fn note_candidates<N: NoteInterface + Clone>(
+        &self,
         anchor_height: BlockHeight,
-        exclude: &'a [OutputId],
         account: zip32::AccountId,
-        include_potentially_spent_notes: bool,
-    ) -> Result<Vec<&'a N>, WalletError> {
-        let target_value = match remaining_value_needed {
-            RemainingNeeded::Positive(value) => *value,
-            RemainingNeeded::GracelessChangeAmount(_) => return Ok(Vec::new()),
-        };
-
-        let mut selected_notes: Vec<&'a N> = Vec::new();
-        let mut unselected_notes = self.spendable_notes::<N>(
-            anchor_height,
-            exclude,
-            account,
-            include_potentially_spent_notes,
-        )?;
-        unselected_notes.sort_by_key(|&output| output.value());
-        let dust_index =
-            unselected_notes.partition_point(|output| output.value() <= MARGINAL_FEE.into_u64());
-        let _dust_notes = unselected_notes.drain(..dust_index).collect::<Vec<_>>();
-        let mut unselected_note_index = 0;
-        let mut total_selected_note_value: Zatoshis;
-
-        loop {
-            // The remaining need must be recomputed before any exit from the
-            // loop: breaking on an emptied note list without updating it
-            // hands the caller a stale positive remainder even when the last
-            // selected note covered the target, and the caller then selects
-            // further notes (from other pools, or from the withheld
-            // migration reserve) against a target already met.
-            total_selected_note_value = Zatoshis::from_u64(
-                selected_notes
-                    .iter()
-                    .fold(0, |acc, output: &&N| acc + output.value()),
-            )?;
-
-            *remaining_value_needed =
-                calculate_remaining_needed(target_value, total_selected_note_value);
-
-            let updated_target_value = match remaining_value_needed {
-                RemainingNeeded::Positive(updated_target_value) => updated_target_value.into_u64(),
-                RemainingNeeded::GracelessChangeAmount(_change) => {
-                    break;
-                }
-            };
-
-            // if no unselected notes are available, return the currently
-            // selected notes even though the target value has not been reached
-            if unselected_notes.is_empty() {
-                break;
-            }
-
-            if let Some(&smallest_unselected) = unselected_notes.get(unselected_note_index) {
-                // select a note to test if it has enough value to complete the transaction without creating dust as change
-                if smallest_unselected.value() > updated_target_value + MARGINAL_FEE.into_u64() {
-                    selected_notes.push(smallest_unselected);
-                    unselected_notes.remove(unselected_note_index);
-                } else {
-                    // this note is not big enough. try the next
-                    unselected_note_index += 1;
-                }
-            } else {
-                // the iterator went off the end of the vector without finding a note big enough to complete the transaction
-                // add the biggest note and reset the iteration
-                selected_notes.push(unselected_notes.pop().expect("should be nonempty"));
-                unselected_note_index = 0;
-            }
-        }
-
-        Ok(selected_notes)
-    }
-}
-
-pub(crate) enum RemainingNeeded {
-    Positive(Zatoshis),
-    GracelessChangeAmount(Zatoshis),
-}
-
-/// Calculate remaining difference between target and selected.
-/// There are two mutually exclusive cases:
-///    (Change) There's no more needed so we've selected 0 or more change
-///    (Positive) We need > 0 more value.
-/// This function represents the `NonPositive` case as None, which then serves to signal a break in the note selection
-/// for where this helper is uniquely called.
-fn calculate_remaining_needed(target_value: Zatoshis, selected_value: Zatoshis) -> RemainingNeeded {
-    if let Some(amount) = target_value - selected_value {
-        if amount == Zatoshis::ZERO {
-            // Case (Change) target_value == total_selected_value
-            RemainingNeeded::GracelessChangeAmount(Zatoshis::ZERO)
-        } else {
-            // Case (Positive) target_value > total_selected_value
-            RemainingNeeded::Positive(amount)
-        }
-    } else {
-        // Case (Change) target_value < total_selected_value
-        // Return the non-zero change quantity
-        RemainingNeeded::GracelessChangeAmount(
-            (selected_value - target_value).expect("This is guaranteed positive"),
-        )
+        exclude: &[OutputRef],
+        reserved: &[OutputId],
+    ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
+        let exclude = exclude
+            .iter()
+            .filter(|output_ref| output_ref.pool_type() == N::POOL_TYPE)
+            .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
+            .collect::<Vec<_>>();
+        let certain = self
+            .spendable_notes::<N>(anchor_height, &exclude, account, false)?
+            .into_iter()
+            .map(N::output_id)
+            .collect::<Vec<_>>();
+        Ok(self
+            .spendable_notes::<N>(anchor_height, &exclude, account, true)?
+            .into_iter()
+            .map(|note| note_selection::Candidate {
+                certain: certain.contains(&note.output_id()),
+                reserved: reserved.contains(&note.output_id()),
+                note: note.clone(),
+            })
+            .collect())
     }
 }
 
