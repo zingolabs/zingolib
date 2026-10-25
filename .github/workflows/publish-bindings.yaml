@@ -1,4 +1,4 @@
-# `gh workflow run binding-layer-publish.yaml --ref dev` publishes the Binding
+# `gh workflow run publish-bindings.yaml --ref dev` publishes the Binding
 # Layer for the head of dev, and `--field commit=<sha>` names another commit
 # of dev. The run builds the commit through the two build workflows and
 # hands their bundles to the workbench tool binding-publish. The tool pushes
@@ -139,7 +139,7 @@ jobs:
           TAG: ${{ steps.plan.outputs.tag }}
           TAGGED: ${{ steps.plan.outputs.tagged }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RUNS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/binding-layer-publish.yaml
+          RUNS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/publish-bindings.yaml
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
@@ -153,7 +153,7 @@ jobs:
             git push --quiet origin "refs/tags/${TAG}"
           fi
           attempt=1
-          until gh workflow run binding-layer-publish.yaml --ref "refs/tags/${TAG}" --field "commit=${COMMIT}"; do
+          until gh workflow run publish-bindings.yaml --ref "refs/tags/${TAG}" --field "commit=${COMMIT}"; do
             if [ "$attempt" -ge "$DISPATCH_ATTEMPTS" ]; then
               echo "::error::the dispatch at ${TAG} failed ${DISPATCH_ATTEMPTS} times"
               exit 1
