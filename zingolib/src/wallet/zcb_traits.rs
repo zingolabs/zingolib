@@ -938,10 +938,10 @@ impl InputSource for LightWallet {
         account: Self::AccountId,
         target_value: TargetValue,
         sources: &[ShieldedPool],
-        _target_height: TargetHeight,
+        target_height: TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
-        _lock_filter: LockFilter<'_>,
+        lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let (_, anchor_height) = self
             .get_target_and_anchor_heights(confirmations_policy.trusted())
@@ -951,14 +951,33 @@ impl InputSource for LightWallet {
         let reserved = self
             .migration
             .as_ref()
-            .map(migration::MigrationState::reserved_output_ids)
+            .map(migration::MigrationState::reserved_outputs)
             .unwrap_or_default();
+        let target_height = BlockHeight::from(target_height);
         let candidates = note_selection::Candidates {
-            sapling: self.note_candidates(anchor_height, account, exclude, &[])?,
-            orchard: self.note_candidates(anchor_height, account, exclude, &reserved)?,
-            ironwood: self.note_candidates(anchor_height, account, exclude, &[])?,
+            sapling: self.note_candidates(
+                anchor_height,
+                target_height,
+                account,
+                exclude,
+                &reserved,
+            )?,
+            orchard: self.note_candidates(
+                anchor_height,
+                target_height,
+                account,
+                exclude,
+                &reserved,
+            )?,
+            ironwood: self.note_candidates(
+                anchor_height,
+                target_height,
+                account,
+                exclude,
+                &reserved,
+            )?,
         };
-        let notes = match note_selection::select(target_value, sources, candidates) {
+        let notes = match note_selection::select(target_value, sources, lock_filter, candidates) {
             Selection::Sufficient { notes }
             | Selection::Insufficient { notes }
             | Selection::AllSpendable { notes } => notes,
@@ -1136,8 +1155,7 @@ mod tests {
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
     /// One spendable note per shielded pool, plus an orchard note at the
-    /// dust line (`MARGINAL_FEE`) that budgeted selection would also
-    /// refuse to spend.
+    /// dust line (`MARGINAL_FEE`) that upstream prunes as a dust input.
     fn funded_wallet() -> LightWallet {
         SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .tip(20)
@@ -1225,14 +1243,14 @@ mod tests {
     }
 
     #[test]
-    fn all_funds_max_spendable_selects_every_spend_worthy_note() {
+    fn all_funds_max_spendable_hands_every_certain_note_to_upstream() {
         let notes = select_all_funds(&funded_wallet(), MaxSpendMode::MaxSpendable)
             .expect("all-funds selection must succeed on a funded, synced wallet");
         assert_eq!(notes.sapling().len(), 1);
         assert_eq!(
             notes.orchard().len(),
-            1,
-            "the dust orchard note must be left behind"
+            2,
+            "the dust orchard note goes to upstream, which prunes it"
         );
         assert_eq!(notes.ironwood().len(), 1);
         let total: u64 = notes
@@ -1252,7 +1270,7 @@ mod tests {
                     .map(|note| note.note().value().inner()),
             )
             .sum();
-        assert_eq!(total, 220_000);
+        assert_eq!(total, 225_000);
     }
 
     #[test]
@@ -1286,7 +1304,7 @@ mod tests {
             .expect("selection over synthetic funds succeeds");
         assert!(notes.sapling().is_empty());
         assert_eq!(notes.ironwood().len(), 1);
-        assert_eq!(notes.orchard().len(), 1);
+        assert_eq!(notes.orchard().len(), 2);
     }
 
     // Tests that all-funds selection gathers the requested pools alone.
@@ -1308,7 +1326,7 @@ mod tests {
             .expect("all-funds selection succeeds on a funded, synced wallet");
         assert!(notes.sapling().is_empty());
         assert!(notes.ironwood().is_empty());
-        assert_eq!(notes.orchard().len(), 1);
+        assert_eq!(notes.orchard().len(), 2);
     }
 
     /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
@@ -1397,5 +1415,294 @@ mod tests {
             "excluded ironwood refs must not be re-selected; re-selection \
              means the exclude split routed them to the wrong pool bucket"
         );
+    }
+
+    mod lock_policy {
+        use std::num::NonZeroU32;
+
+        use pepper_sync::wallet::OrchardNote;
+        use zcash_client_backend::data_api::wallet::input_selection::{
+            LockedInputPolicy, NonEmptyBTreeSet,
+        };
+
+        use super::*;
+        use crate::wallet::migration::{
+            self, BoundNote, ConsentBinding, MigrationMode, MigrationParams, MigrationPhase,
+            MigrationState, PartId, PartRecord, SigningStrategy,
+        };
+
+        const TIP: u32 = 20;
+
+        fn two_orchard_notes() -> LightWallet {
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+                .tip(TIP)
+                .orchard_note(100_000)
+                .orchard_note(50_000)
+                .build()
+        }
+
+        fn orchard_note_worth(wallet: &LightWallet, value: u64) -> OrchardNote {
+            wallet
+                .wallet_transactions
+                .values()
+                .flat_map(OrchardNote::transaction_outputs)
+                .find(|note| note.value() == value)
+                .cloned()
+                .expect("the wallet holds a note of that value")
+        }
+
+        fn locked_ref(note: &OrchardNote) -> LockedOutputRef {
+            LockedOutputRef::new(
+                note.output_id().txid(),
+                PoolType::ORCHARD,
+                note.output_id().output_index(),
+            )
+        }
+
+        fn bind_to_migration(wallet: &mut LightWallet, note: &OrchardNote) {
+            let params = MigrationParams::provisional(wallet.chain_type());
+            wallet.migration = Some(MigrationState {
+                consent: ConsentBinding {
+                    params_hash: params.params_hash(),
+                    plan_hash: [0; 32],
+                    consented_at: 0,
+                },
+                params,
+                strategy: SigningStrategy::LazyAtBoundary,
+                mode: MigrationMode::Scheduled,
+                account: zip32::AccountId::ZERO,
+                phase: MigrationPhase::PartsScheduled,
+                parts: vec![PartRecord::new(
+                    PartId(0),
+                    note.value(),
+                    BoundNote {
+                        output_id: note.output_id(),
+                        nullifier: note
+                            .nullifier()
+                            .expect("scanned notes carry nullifiers")
+                            .to_bytes(),
+                        commitment: [0; 32],
+                    },
+                )],
+            });
+        }
+
+        fn selected_values(
+            wallet: &LightWallet,
+            target_value: TargetValue,
+            lock_filter: LockFilter<'_>,
+        ) -> Vec<u64> {
+            let mut values = wallet
+                .select_spendable_notes(
+                    zip32::AccountId::ZERO,
+                    target_value,
+                    &[ShieldedPool::Orchard],
+                    TargetHeight::from(TIP + 1),
+                    ConfirmationsPolicy::new_symmetrical(
+                        NonZeroU32::new(1).expect("one is nonzero"),
+                        false,
+                    ),
+                    &[],
+                    lock_filter,
+                )
+                .expect("selection over synthetic funds succeeds")
+                .orchard()
+                .iter()
+                .map(|note| note.note().value().inner())
+                .collect::<Vec<_>>();
+            values.sort_unstable();
+            values
+        }
+
+        fn at_least(value: u64) -> TargetValue {
+            TargetValue::AtLeast(Zatoshis::const_from_u64(value))
+        }
+
+        fn prefer_unlocked(owner: LockOwner) -> LockedInputPolicy {
+            LockedInputPolicy::PreferUnlocked(NonEmptyBTreeSet::singleton(owner))
+        }
+
+        const OWNER: LockOwner = LockOwner::new([7; 32]);
+        const OTHER: LockOwner = LockOwner::new([9; 32]);
+
+        // Tests that a note bound to a migration part is withheld when a free note covers the request.
+        #[test]
+        fn migration_bound_note_is_withheld_while_a_free_note_suffices() {
+            let mut wallet = two_orchard_notes();
+            let bound = orchard_note_worth(&wallet, 100_000);
+            bind_to_migration(&mut wallet, &bound);
+            let policy = migration::reservation_policy();
+            assert_eq!(
+                selected_values(&wallet, at_least(20_000), LockFilter::Policy(&policy)),
+                [50_000]
+            );
+        }
+
+        // Tests that a note bound to a migration part is spent when the free notes fall short.
+        #[test]
+        fn migration_bound_note_is_released_when_free_notes_fall_short() {
+            let mut wallet = two_orchard_notes();
+            let bound = orchard_note_worth(&wallet, 100_000);
+            bind_to_migration(&mut wallet, &bound);
+            let policy = migration::reservation_policy();
+            assert_eq!(
+                selected_values(&wallet, at_least(120_000), LockFilter::Policy(&policy)),
+                [50_000, 100_000]
+            );
+        }
+
+        // Tests that all-funds selection includes a note bound to a migration part.
+        #[test]
+        fn all_funds_includes_a_migration_bound_note() {
+            let mut wallet = two_orchard_notes();
+            let bound = orchard_note_worth(&wallet, 100_000);
+            bind_to_migration(&mut wallet, &bound);
+            let policy = migration::reservation_policy();
+            assert_eq!(
+                selected_values(
+                    &wallet,
+                    TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+                    LockFilter::Policy(&policy),
+                ),
+                [50_000, 100_000]
+            );
+        }
+
+        // Tests that the Exclude policy never selects a locked output, even when the request then falls short.
+        #[test]
+        fn exclude_never_selects_a_locked_output() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 100_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OWNER,
+                    BlockHeight::from_u32(TIP + 10),
+                )
+                .expect("the wallet holds the output");
+            assert_eq!(
+                selected_values(
+                    &wallet,
+                    at_least(120_000),
+                    LockFilter::Policy(&LockedInputPolicy::Exclude)
+                ),
+                [50_000]
+            );
+        }
+
+        // Tests that an output locked by another owner is never selected under a PreferUnlocked policy.
+        #[test]
+        fn another_owners_lock_bars_the_output() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 100_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OTHER,
+                    BlockHeight::from_u32(TIP + 10),
+                )
+                .expect("the wallet holds the output");
+            let policy = prefer_unlocked(OWNER);
+            assert_eq!(
+                selected_values(&wallet, at_least(120_000), LockFilter::Policy(&policy)),
+                [50_000]
+            );
+        }
+
+        // Tests that PreferUnlocked defers the owner's locked output until the free notes fall short.
+        #[test]
+        fn prefer_unlocked_defers_the_owners_lock_until_needed() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 50_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OWNER,
+                    BlockHeight::from_u32(TIP + 10),
+                )
+                .expect("the wallet holds the output");
+            let policy = prefer_unlocked(OWNER);
+            assert_eq!(
+                selected_values(&wallet, at_least(20_000), LockFilter::Policy(&policy)),
+                [100_000]
+            );
+            assert_eq!(
+                selected_values(&wallet, at_least(120_000), LockFilter::Policy(&policy)),
+                [50_000, 100_000]
+            );
+        }
+
+        // Tests that PreferLocked draws the owner's locked output before a free note.
+        #[test]
+        fn prefer_locked_draws_the_owners_lock_first() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 100_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OWNER,
+                    BlockHeight::from_u32(TIP + 10),
+                )
+                .expect("the wallet holds the output");
+            let policy = LockedInputPolicy::PreferLocked(NonEmptyBTreeSet::singleton(OWNER));
+            assert_eq!(
+                selected_values(&wallet, at_least(20_000), LockFilter::Policy(&policy)),
+                [100_000]
+            );
+        }
+
+        // Tests that an Unfiltered selection treats a locked output as free.
+        #[test]
+        fn unfiltered_ignores_locks() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 50_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OWNER,
+                    BlockHeight::from_u32(TIP + 10),
+                )
+                .expect("the wallet holds the output");
+            assert_eq!(
+                selected_values(&wallet, at_least(20_000), LockFilter::Unfiltered),
+                [50_000]
+            );
+        }
+
+        // Tests that a lock binds through its expiry height and not past it.
+        #[test]
+        fn a_lock_binds_through_its_expiry_height() {
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 50_000);
+            wallet
+                .lock_outputs(&[locked_ref(&locked)], OWNER, BlockHeight::from_u32(TIP))
+                .expect("the wallet holds the output");
+            assert_eq!(
+                selected_values(
+                    &wallet,
+                    at_least(20_000),
+                    LockFilter::Policy(&LockedInputPolicy::Exclude)
+                ),
+                [50_000]
+            );
+
+            let mut wallet = two_orchard_notes();
+            let locked = orchard_note_worth(&wallet, 50_000);
+            wallet
+                .lock_outputs(
+                    &[locked_ref(&locked)],
+                    OWNER,
+                    BlockHeight::from_u32(TIP + 1),
+                )
+                .expect("the wallet holds the output");
+            assert_eq!(
+                selected_values(
+                    &wallet,
+                    at_least(20_000),
+                    LockFilter::Policy(&LockedInputPolicy::Exclude)
+                ),
+                [100_000]
+            );
+        }
     }
 }
