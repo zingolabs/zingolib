@@ -1003,8 +1003,10 @@ mod offline_contract {
     //! case would buy another proving run, not another guarantee).
     //! `network probe` refuses offline and is pinned below. `network on`
     //! is deliberately untested here: it is the consent act that switches
-    //! an offline session to Online Mode (ADR 0026), and both its indexer
-    //! selection and the proxy bootstrap emit real traffic. The REPL-owned
+    //! an offline session to Online Mode (ADR 0026), and both its Indexer
+    //! bind and the proxy bootstrap emit real traffic; only its typed
+    //! refusal on a chain without a Default Indexer is pinned, in
+    //! `posture_surface`, because that refusal lands before any traffic. The REPL-owned
     //! `servers` command still probes the network unguarded; that gap
     //! remains open.
 
@@ -1905,6 +1907,45 @@ mod posture_surface {
         assert!(report.contains("`--forget-online` erases it"), "{report}");
         assert!(!report.contains("nakednet"), "{report}");
         assert!(client.indexer_uri().is_none());
+    }
+
+    /// HYPOTHESIS: `network on` binds the Session Indexer before it touches
+    /// the mixnet, so on a chain without a Default Indexer it refuses typed,
+    /// leaves the client Indexerless, and never starts a proxy. The
+    /// synthetic wallet is regtest, the one chain with no Default Indexer,
+    /// so the refusal lands before any traffic.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn network_on_without_a_default_indexer_refuses_before_the_mixnet() {
+        use zingolib::lightclient::LightClient;
+        use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        use super::super::{
+            CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+        };
+
+        let mut client = RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ));
+        let tokens: Vec<String> = ["network", "on"].map(String::from).into();
+        let error = parse_command_tokens(&tokens)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, &mut client)))
+            .expect_err("a regtest client has no Default Indexer to bind");
+        let rendered = render_error_chain(&error);
+        assert!(
+            rendered.contains("no Session Indexer could be bound"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("no Default Indexer exists for"),
+            "{rendered}"
+        );
+        assert!(client.indexer_uri().is_none());
+        assert_eq!(
+            client.read_mixnet_indicator(),
+            zingolib::mixnet::Indicator::Unattached
+        );
     }
 }
 

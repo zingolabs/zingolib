@@ -723,7 +723,8 @@ pub(crate) fn command_loop(
             // and `network off` may have torn the session down to the
             // unconsented posture. A deliberate `--offline` never lifts.
             // Consent shows as a configured Indexer or a non-Unattached
-            // mixnet slot, since a mixnet-only session binds no Indexer.
+            // mixnet slot: `network on` binds the Indexer before the mixnet,
+            // and the slot alone still counts should the Indexer bind fail.
             let live_mode = match communications {
                 Communications::DeliberateOffline => Communications::DeliberateOffline,
                 _ if lightclient.indexer_uri().is_some() => Communications::Online,

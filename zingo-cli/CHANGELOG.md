@@ -43,8 +43,11 @@ contract and the server binding replaced what 0.4.0 shipped.
   the `network` family stays offered there, and `help` reflects the live
   posture in every session.
 - The `network` family. `network status` reports the mixnet state, off,
-  bootstrapping or ready. `network on` consents to go online, starts the
-  `nym-proxy` child and routes transmissions through the mixnet. `network
+  bootstrapping or ready. `network on` consents to go online: it binds the
+  chain's Default Indexer, as `--online` does at launch (zingo-adrs
+  zingolib/0063), then starts the `nym-proxy` child and routes transmissions
+  through the mixnet; a session that already holds an Indexer keeps it, and
+  a bootstrap that fails after a fresh bind drops the Indexer again. `network
   off` is a zero-emission teardown, not a mixnet toggle (ADR 0032): it stops
   the nym proxy, drops the Indexer connection, stops an in-flight sync
   between batches and waits for it, and returns only when teardown
