@@ -457,7 +457,6 @@ mod tests {
         use pepper_sync::wallet::OutgoingSaplingNote;
         use sapling_crypto::value::NoteValue;
         use zcash_keys::encoding::encode_payment_address;
-        use zcash_protocol::consensus::NetworkConstants as _;
         use zcash_protocol::consensus::Parameters as _;
 
         use crate::mocks::SaplingCryptoNoteBuilder;
@@ -526,7 +525,7 @@ mod tests {
         assert_eq!(transactions.get(1).unwrap().txid, spent_txid);
         assert_eq!(transactions.get(1).unwrap().value, spent_value);
         let expected_recipient = encode_payment_address(
-            network.network_type().hrp_sapling_payment_address(),
+            zcash_address::constants::hrp_sapling_payment_address(network.network_type()),
             &destination,
         );
         assert!(

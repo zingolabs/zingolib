@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `stop_sync()` asks the running session to stop after its next batch, without
+  waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
+  runs answers "Sync already stopped." rather than failing.
+- `sync_caught_up()` answers `{ caught_up, percent }` from the engine's
+  published status alone: false with a null percent until the session has
+  published one. Unlike `status_sync`, it never reads a stale wallet as
+  complete.
+- `default_indexer(chain_hint)` answers the chain's Default Indexer as the URI
+  text a consumer passes back as `IndexerChoice::Named`, or nothing for a chain
+  without one (testnet, regtest). The hint takes the spellings
+  `IndexerConnection.chain_hint` takes, and an unknown hint is an `Init` error.
+  The value is zingolib's `MAINNET_DEFAULT_INDEXER`, so a consumer no longer
+  restates it.
 - `send_swap_deposit(vault_address, amount, memo_hex)` pays a swap deposit that
   carries a memo: a deshield to a reserved wallet-owned transparent address,
   then that address paying the vault with the memo in an OP_RETURN. It sends
@@ -52,6 +65,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- Sync is continuous: wallets are created and loaded with
+  `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
+  the chain tip and never ends on its own. `poll_sync` answers "Sync task is
+  not complete." for as long as it runs; relaunching on that answer is no
+  longer needed. Loading overrides the stored settings, so wallets saved by
+  earlier releases sync continuously too.
+- Wallets are created and loaded with `TransparentAddressDiscovery::default()`
+  (gap limit 10) in place of `minimal()` (gap limit 1), wallets saved by
+  earlier releases included.
+- Every `init_*` stops the replaced client's sync session. Dropping a client
+  never ended its engine, which kept scanning against the old server.
+- `change_server` stops the running session, which keeps the indexer it was
+  launched with; the next `run_sync` uses the new one.
+- `status_sync` answers with the status the engine last published, and
+  computes it from the wallet only when none has been published.
+- The `bucket_index` of a migration window (`migration_status`'s
+  `upcoming_windows`, `window_timeline`) numbers the chain's ZIP 318 grid,
+  whose boundaries sit three times as many blocks apart from NU7 activation,
+  and the window times count 25 seconds a block from there (zingo-adrs
+  zingolib/0056, amended). Below the activation nothing changes.
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins
+  (`zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives`
+  0.31.0, `zcash_protocol` 0.11.0 and their siblings), which sets the NU7
+  mainnet activation height, 3,543,405. The viewing key parser lists a P2SH
+  viewing key item as `transparent` beside a P2PKH one, and a shielded
+  unified address with a transparent receiver is rendered with that
+  receiver.
 - The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
   carries the proxy crate's UniFFI surface beside the wallet's, built under
   the crate's new `zingo-nym-proxy-ffi` feature, and
@@ -61,17 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the linker of Xcode 26.3 refused the app's link with "Too many
   personality routines for compact unwind to encode". The `ZingoBindings`
   product, which the app imports, is unchanged.
-- BREAKING: `IndexerConnection.server_uri: String` is now
-  `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
-  `Default`, and `Named { uri }`. `Offline` replaces the empty string,
-  `Default` attaches to the chain's Default Indexer (mainnet's is
+- BREAKING: `change_server(choice: IndexerChoice)` takes the uniffi enum
+  `IndexerChoice` of `Offline`, `Default`, and `Named { uri }` in place of a
+  `serveruri: String`. `Offline` disconnects the session through
+  `go_offline` instead of binding a never-dialed placeholder URI, `Default`
+  attaches to the chain's Default Indexer (mainnet's is
   `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
-  `Init`), and `Named` carries the URI the string carried before.
-- BREAKING: `change_server(serveruri: String)` is now
-  `change_server(choice: IndexerChoice)`. `Offline` disconnects the
-  session through `go_offline` instead of binding a never-dialed
-  placeholder URI, and a `Default` on a chain without a Default Indexer
-  fails `InvalidInput` (zingo-adrs zingolib/0063).
+  `InvalidInput`), and `Named` carries the URI the string carried before
+  (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
+  label `serveruri`, so the Swift label stays `serveruri:`.
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
@@ -80,15 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `uniffi_zingo`, so the Android loader does not change. A consumer regenerates
   its bindings; the old generated files do not load the new library.
 - **Breaking:** `init_new`, `init_from_seed`, `init_from_ufvk` and
-  `init_from_bytes` take one `IndexerConnection` record (`server_uri`,
-  `chain_hint` and `sync`) in place of the four loose arguments, and
-  `set_config_wallet_to_prod` takes one `SyncSettings` record
-  (`performance_level` and `min_confirmations`). `get_latest_block_server` and
-  `change_server` keep their UDL argument label `serveruri`, so the Swift label
-  stays `serveruri:`.
-- BREAKING: moves to the librustzcash NU7 pre-release cohort zingolib
-  pins. The viewing key parser lists a P2SH viewing key item as `transparent`
-  beside a P2PKH one.
+  `init_from_bytes` take one `IndexerConnection` record (`indexer`, an
+  `IndexerChoice` where `Offline` replaces the empty server string and
+  `Default` attaches to the chain's Default Indexer, failing `Init` on a
+  chain without one; `chain_hint`; and `sync`) in place of the four loose
+  arguments, and `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`).
 - **Breaking:** `get_version` returns zingolib's `zl_` descriptor alone. The
   consumer's `zm_` half, the `ZINGO_MOBILE_DESCRIPTOR` variable and the
   `zm_description` build script are gone; a consumer computes its own
@@ -108,8 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-transparent `vault_address`. It answered `Send`, the class a consumer
   retries.
 - The `mobile` profile of the root workspace builds with `panic = "unwind"`,
-  the strategy the standalone zingo-netutils workspace already uses for the
-  proxy library. The iOS app links both static archives into one binary, and
+  the strategy the proxy library already used in its former workspace. The
+  iOS app links both static archives into one binary, and
   the two copies of std resolve to one panic runtime, so the abort runtime of
   `libzingo.a` ended the app on every panic inside a tokio task of the proxy,
   which Nym's SOCKS5 tasks raise on a closed input channel (#2926). tokio

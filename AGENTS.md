@@ -170,6 +170,37 @@ module-level blocks.
 
 - No heredocs (<< EOF, << 'EOF') in bash or other shell scripts. They're hard to read, break on escaping, and bury content that should be its own file. Use a real file, a templating step, or printf with explicit lines instead.
 
+## Changelogs
+
+Each crate's `CHANGELOG.md` keeps a Keep a Changelog `[Unreleased]` section.
+An entry there describes the change a consumer sees between the crate's last
+release and the next one, never a step between two unreleased states. When a
+later change on `dev` supersedes, reverts or reshapes an unreleased entry,
+rewrite that entry to the net result rather than appending a second one; an
+entry whose subject arrived and left again within the same unreleased span is
+removed. The release itself then needs no editing beyond the version
+heading. `bindings/CHANGELOG.md` is generated from the audited crates'
+changelogs per publication and is never edited by hand.
+
+Before adding an entry, do this, and a reviewer checks it:
+
+1. Read the crate's whole `[Unreleased]` section. If the subject of the
+   change already has an entry (the same command, flag, function, type,
+   constant or dependency), edit that entry; a second entry about one
+   subject is the fault this rule exists to prevent.
+2. Name the last release: the heading under `[Unreleased]`, whose tag is
+   `<crate>_v<version>` (`zingolib_v7.0.0`, `pepper-sync_v0.6.0`). State the
+   change against that tag's code and behaviour, which `git grep <pattern>
+   <tag> -- <crate>` answers; "where it used to" and "no longer" refer to
+   the release, never to an earlier commit on `dev`.
+3. A subject that did not exist at the release is an addition, however many
+   times `dev` reshaped it since; describe its final shape under `Added`,
+   not its history under `Changed`. A subject the release had and the
+   change removes goes under `Removed`, once.
+4. A pull request that changes behaviour an unreleased entry records
+   rewrites that entry, in the same pull request, even when the entry
+   belongs to another author's change.
+
 ## Agent skills
 
 ### Issue tracker

@@ -272,7 +272,7 @@ fn unified_container(
     consensus_parameters: &impl Parameters,
     ua: &UnifiedAddress,
 ) -> io::Result<Address> {
-    let encoded = ua.encode_receiver_preserving(consensus_parameters);
+    let encoded = ua.encode(consensus_parameters);
     let (_network, _revision, container) = Address::decode(&encoded).map_err(invalid_data)?;
     Ok(container)
 }

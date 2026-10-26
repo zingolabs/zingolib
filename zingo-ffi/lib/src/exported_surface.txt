@@ -20,12 +20,15 @@ get_value_transfers() -> Result<String, ZingolibError>
 poll_sync() -> Result<String, ZingolibError>
 run_sync() -> Result<String, ZingolibError>
 pause_sync() -> Result<String, ZingolibError>
+stop_sync() -> Result<String, ZingolibError>
+sync_caught_up() -> Result<String, ZingolibError>
 status_sync() -> Result<String, ZingolibError>
 run_rescan() -> Result<String, ZingolibError>
 info_server() -> Result<String, ZingolibError>
 get_seed() -> Result<String, ZingolibError>
 get_ufvk() -> Result<String, ZingolibError>
 change_server(choice: IndexerChoice) -> Result<String, ZingolibError>
+default_indexer(chain_hint: String) -> Result<Option<String>, ZingolibError>
 wallet_kind() -> Result<String, ZingolibError>
 parse_address(address: String) -> Result<String, ZingolibError>
 parse_ufvk(ufvk: String) -> Result<String, ZingolibError>

@@ -104,10 +104,13 @@ impl MigrationParams {
         MigrationParams {
             // Version 2: the preparation bound moved to the ZIP's 16-action
             // shape and the target-draw law moved to the canonical
-            // exponential distribution. The part fee still awaits the
-            // builder capability for the unpadded Ironwood action (the
-            // divergence ledger tracks it), and will carry its own bump.
-            version: 2,
+            // exponential distribution. Version 3: the bucket grid, the
+            // transfer delays and the canonical expiry follow ZIP 318's NU7
+            // scaling, three blocks per reference block from activation. The
+            // part fee still awaits the builder capability for the unpadded
+            // Ironwood action (the divergence ledger tracks it), and will
+            // carry its own bump.
+            version: 3,
             denominations: one_two_five_ladder(denom_cap, max_residual_value),
             denom_cap,
             max_residual_value,
@@ -120,6 +123,13 @@ impl MigrationParams {
             max_actions_per_split_tx: 16,
             part_fee: CANONICAL_PART_FEE,
         }
+    }
+
+    /// The chain's ZIP 318 anchor grid under this parameter set's bucket
+    /// modulus: every bucket computation of the schedule asks it.
+    #[must_use]
+    pub fn grid(&self, chain: ChainType) -> super::schedule::BucketGrid {
+        super::schedule::BucketGrid::new(self.bucket_modulus, chain)
     }
 
     /// A collision-resistant digest of the parameter set, recorded at consent

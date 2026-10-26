@@ -227,11 +227,10 @@ impl LightWallet {
             .transparent_addresses
             .values()
             .map(|address| {
-                Ok(zcash_address::ZcashAddress::try_from_encoded(address)?
-                    .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                        self.chain_type.network_type(),
-                    )
-                    .expect("incorrect network should be checked on wallet load"))
+                crate::wallet::keys::transparent_address_from_encoded(
+                    self.chain_type.network_type(),
+                    address,
+                )
             })
             .collect::<Result<Vec<_>, zcash_address::ParseError>>()?;
 

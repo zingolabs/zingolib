@@ -10,7 +10,7 @@ use pepper_sync::{
     wallet::{KeyIdInterface, TransparentCoin},
 };
 use unified::{ReceiverSelection, UnifiedAddressId, UnifiedKeyStore};
-use zcash_keys::address::UnifiedAddress;
+use zcash_keys::address::{Address, UnifiedAddress};
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::keys::NonHardenedChildIndex;
 use zip32::DiversifierIndex;
@@ -19,6 +19,24 @@ use super::{LightWallet, error::KeyError};
 
 pub mod legacy;
 pub mod unified;
+
+/// The transparent address a wallet stores encoded, decoded for `network`.
+///
+/// The wallet keeps its transparent addresses as strings. Panics when the
+/// string is not a transparent address of `network`, which the wallet load
+/// has already checked.
+pub fn transparent_address_from_encoded(
+    network: zcash_protocol::consensus::NetworkType,
+    encoded: &str,
+) -> Result<TransparentAddress, zcash_address::ParseError> {
+    let address = zcash_address::ZcashAddress::try_from_encoded(encoded)?
+        .convert_if_network::<Address>(network)
+        .expect("incorrect network should be checked on wallet load");
+    match address {
+        Address::Transparent(address) => Ok(address),
+        _ => panic!("a stored transparent address decodes to a transparent address"),
+    }
+}
 
 pub enum WalletAddressRef {
     Unified {

@@ -1733,7 +1733,9 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
         P: consensus::Parameters + consensus::NetworkConstants,
     {
         Ok(encode_payment_address(
-            consensus_parameters.hrp_sapling_payment_address(),
+            zcash_address::constants::hrp_sapling_payment_address(
+                consensus_parameters.network_type(),
+            ),
             &self.note().recipient(),
         ))
     }
@@ -1744,7 +1746,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
+            .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
@@ -1803,7 +1805,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
+            .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
@@ -1862,7 +1864,7 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
     {
         self.recipient_full_unified_address
             .as_ref()
-            .map(|unified_address| unified_address.encode_receiver_preserving(consensus_parameters))
+            .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
     fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {

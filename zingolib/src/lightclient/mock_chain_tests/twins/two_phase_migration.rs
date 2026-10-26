@@ -15,12 +15,11 @@ const BUCKETS_FROM_CONFIRMATION_TO_PART: u32 = 2;
 
 /// - Mines the chain to the first Ironwood-era transmission window boundary, the lowest height
 ///   at which the one-call places a part.
-async fn mine_to_first_ironwood_window(net: &MockNet, bucket_modulus: u32) {
+async fn mine_to_first_ironwood_window(net: &MockNet, grid: &schedule::BucketGrid) {
     let activation = super::ironwood_activation(net);
     let activation_height = u32::from(activation.height());
     let first_window = u32::from(schedule::first_ironwood_era_window_boundary(
-        activation,
-        bucket_modulus,
+        activation, grid,
     ));
     let mut chain = net.chain.write().await;
     let tip = chain.tip();
@@ -45,7 +44,11 @@ async fn two_phase_migration_end_to_end() {
         mock_activation_heights_deferring_nu6_3(DEFERRED_NU6_3),
     ))
     .await;
-    let bucket_modulus = MigrationParams::provisional(net.chain_type()).bucket_modulus;
+    let params = MigrationParams::provisional(net.chain_type());
+    // NU7 never activates on this chain, so a bucket is `bucket_modulus` blocks
+    // at every height.
+    let bucket_modulus = params.bucket_modulus;
+    let grid = params.grid(net.chain_type());
     let mut recipient = net
         .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
         .await;
@@ -59,7 +62,7 @@ async fn two_phase_migration_end_to_end() {
         0,
     )
     .await;
-    mine_to_first_ironwood_window(&net, bucket_modulus).await;
+    mine_to_first_ironwood_window(&net, &grid).await;
     recipient
         .sync_to_tip_and_await()
         .await

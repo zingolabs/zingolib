@@ -176,6 +176,7 @@ pub mod receivers {
                     PaymentError::ZeroValuedTransparentOutput => {
                         Zip321Error::ZeroValuedTransparentOutput(i)
                     }
+                    PaymentError::SproutAddress => Zip321Error::SproutRecipient(i),
                 })
             })
             .collect::<Result<Vec<_>, Zip321Error>>()?;

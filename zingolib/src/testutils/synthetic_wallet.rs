@@ -331,14 +331,13 @@ impl SyntheticWalletBuilder {
                 .next()
                 .map(|(key_id, address)| (*key_id, address.clone()))
                 .expect("a fresh wallet carries one transparent address");
-            let script = zcash_address::ZcashAddress::try_from_encoded(&address)
-                .expect("wallet-generated address encodes validly")
-                .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                    wallet.chain_type().network_type(),
-                )
-                .expect("wallet-generated address matches the wallet network")
-                .script()
-                .into();
+            let script = crate::wallet::keys::transparent_address_from_encoded(
+                wallet.chain_type().network_type(),
+                &address,
+            )
+            .expect("wallet-generated address encodes validly")
+            .script()
+            .into();
             let coin = TransparentCoin::new_for_test(
                 OutputId::new(txid, 0),
                 key_id,

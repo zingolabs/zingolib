@@ -7,6 +7,20 @@ its status and its unblocking dependency where one exists. A divergence
 absent from this ledger is a defect. The `zip318_conformance_tripwires`
 suite enforces the value layer; this ledger records the behavior layer.
 
+## Adopted (conformant as of params version 3)
+
+The schedule follows ZIP 318's block counts across the NU7 block spacing
+change
+(<https://zips.z.cash/zip-0318#blockcountsacrossthenu7blockspacingchange>):
+the bucket grid, the transfer delays, the canonical expiry and the slip
+tolerance are reference blocks, three blocks each from the activation. The
+grid is the canonical `AnchorGrid` on `BlockSpacing::for_network`, numbered
+in buckets by `schedule::BucketGrid`, and a test walks the canonical
+boundaries against the numbering across activations. The anchor draws, the
+retention in pepper-sync and the backend's canonical-crossing judgment all
+ask that one grid. The schedule's wall-clock estimates use
+`zcash_protocol::consensus::target_time_between`.
+
 ## Adopted (conformant as of params version 2)
 
 The preparation bound moved from at most 32 actions to the ZIP's
