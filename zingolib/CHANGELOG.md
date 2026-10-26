@@ -67,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the change strategies consult it. The greedy input selector also
   spends from a later shielded pool when the preferred pool's change alone
   would be dust, where it reported insufficient funds.
+- `InputSource::select_spendable_notes` on `LightWallet` selects from the
+  pools the input selector names alone. In 7.0.0 a request those pools could
+  not cover was topped up from Sapling, Orchard and Ironwood in that order,
+  and all-funds selection drew on every pool whatever the request named. The
+  greedy input selector rejects a note from a pool it did not name, so the
+  shortfall now reaches the consumer as insufficient funds.
 - `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
   `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
   `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are

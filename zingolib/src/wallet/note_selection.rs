@@ -2,7 +2,6 @@ use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputInterface, SaplingNot
 use zcash_client_backend::data_api::{MaxSpendMode, TargetValue};
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::ShieldedPool;
-use zcash_protocol::value::MAX_MONEY;
 
 pub(crate) struct Candidate<N> {
     pub(crate) note: N,
@@ -47,6 +46,11 @@ impl Remaining {
     }
 }
 
+enum Budget<'a> {
+    Bounded(&'a mut Remaining),
+    Unbounded,
+}
+
 #[derive(Clone, Copy)]
 enum Stage {
     CertainUnreserved,
@@ -85,7 +89,13 @@ pub(crate) fn select(
         TargetValue::AtLeast(at_least) => {
             let mut remaining = Remaining::of(at_least.into_u64(), 0);
             for (stage, pool) in passes(&BUDGETED_STAGES, sources) {
-                pick_pool(pool, stage, &mut candidates, &mut notes, &mut remaining);
+                pick_pool(
+                    pool,
+                    stage,
+                    &mut candidates,
+                    &mut notes,
+                    Budget::Bounded(&mut remaining),
+                );
             }
             match remaining {
                 Remaining::Positive(_) => Selection::Insufficient { notes },
@@ -93,9 +103,8 @@ pub(crate) fn select(
             }
         }
         TargetValue::AllFunds(MaxSpendMode::MaxSpendable) => {
-            let mut remaining = Remaining::Positive(MAX_MONEY);
             for (stage, pool) in passes(&ALL_FUNDS_STAGES, sources) {
-                pick_pool(pool, stage, &mut candidates, &mut notes, &mut remaining);
+                pick_pool(pool, stage, &mut candidates, &mut notes, Budget::Unbounded);
             }
             Selection::AllSpendable { notes }
         }
@@ -117,71 +126,71 @@ fn pick_pool(
     stage: Stage,
     candidates: &mut Candidates,
     notes: &mut PoolNotes,
-    remaining: &mut Remaining,
+    budget: Budget<'_>,
 ) {
     match pool {
-        ShieldedPool::Sapling => pick(
-            &mut candidates.sapling,
-            &mut notes.sapling,
-            remaining,
-            stage,
-        ),
-        ShieldedPool::Orchard => pick(
-            &mut candidates.orchard,
-            &mut notes.orchard,
-            remaining,
-            stage,
-        ),
-        ShieldedPool::Ironwood => pick(
-            &mut candidates.ironwood,
-            &mut notes.ironwood,
-            remaining,
-            stage,
-        ),
+        ShieldedPool::Sapling => pick(&mut candidates.sapling, &mut notes.sapling, budget, stage),
+        ShieldedPool::Orchard => pick(&mut candidates.orchard, &mut notes.orchard, budget, stage),
+        ShieldedPool::Ironwood => {
+            pick(&mut candidates.ironwood, &mut notes.ironwood, budget, stage)
+        }
     }
+}
+
+fn admitted<N: OutputInterface>(candidates: &[Candidate<N>], stage: Stage) -> Vec<usize> {
+    let fee = MARGINAL_FEE.into_u64();
+    candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| stage.admits(candidate) && candidate.note.value() > fee)
+        .map(|(index, _)| index)
+        .collect()
 }
 
 fn pick<N: OutputInterface>(
     candidates: &mut Vec<Candidate<N>>,
     selected: &mut Vec<N>,
-    remaining: &mut Remaining,
+    budget: Budget<'_>,
     stage: Stage,
 ) {
-    let Remaining::Positive(target) = *remaining else {
-        return;
-    };
-    let fee = MARGINAL_FEE.into_u64();
-    let mut eligible = candidates
-        .iter()
-        .enumerate()
-        .filter(|(_, candidate)| stage.admits(candidate) && candidate.note.value() > fee)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let value_at = |index: &usize| candidates[*index].note.value();
-    eligible.sort_by_key(value_at);
-    let mut picked = Vec::new();
-    let mut cursor = 0;
-    loop {
-        let total = picked.iter().map(value_at).sum::<u64>();
-        *remaining = Remaining::of(target, total);
-        let Remaining::Positive(still) = *remaining else {
-            break;
-        };
-        match eligible.get(cursor) {
-            Some(&index) if value_at(&index) > still + fee => {
-                picked.push(index);
-                eligible.remove(cursor);
-            }
-            Some(_) => cursor += 1,
-            None => match eligible.pop() {
-                Some(index) => {
-                    picked.push(index);
-                    cursor = 0;
+    let picked = match budget {
+        Budget::Unbounded => admitted(candidates, stage),
+        Budget::Bounded(remaining) => {
+            let Remaining::Positive(target) = *remaining else {
+                return;
+            };
+            let fee = MARGINAL_FEE.into_u64();
+            let value_at = |index: &usize| candidates[*index].note.value();
+            let mut eligible = admitted(candidates, stage);
+            eligible.sort_by_key(value_at);
+            let mut picked = Vec::new();
+            let mut total = 0;
+            let mut cursor = 0;
+            loop {
+                *remaining = Remaining::of(target, total);
+                let Remaining::Positive(still) = *remaining else {
+                    break;
+                };
+                match eligible.get(cursor) {
+                    Some(&index) if value_at(&index) > still + fee => {
+                        total += value_at(&index);
+                        picked.push(index);
+                        eligible.remove(cursor);
+                    }
+                    Some(_) => cursor += 1,
+                    None => match eligible.pop() {
+                        Some(index) => {
+                            total += value_at(&index);
+                            picked.push(index);
+                            cursor = 0;
+                        }
+                        None => break,
+                    },
                 }
-                None => break,
-            },
+            }
+            picked
         }
-    }
+    };
     let mut slots = candidates.drain(..).map(Some).collect::<Vec<_>>();
     selected.extend(
         picked
