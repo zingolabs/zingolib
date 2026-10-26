@@ -26,8 +26,10 @@ reads the milestone lines below).
   (see the addendum below).
 - **Fielded integrations**: LANDED for the price fetch
   (`PriceError::RequestFailed` carries a `NetOpFailure` beside the
-  untouched reqwest source), the fan-out (`EscalationError::AllFailed`
-  carries typed per-destination attempts), the attach validation
+  untouched reqwest source), the Transmission (`send::TransmitError`
+  carries the typed failure beside the Session Indexer's host; the
+  fan-out's `EscalationError::AllFailed` retired 2026-10-13 with the
+  Destination draw, zingo-adrs zingolib/0063), the attach validation
   (`LightClient::mixnet_death_detail`), both probe shapes
   (`ProbeLeg` outcomes are `Result<ProbeSuccess, NetOpFailure>`), and
   the provider connect race in the `zingo-netutils` workspace
@@ -315,9 +317,10 @@ observability did not hold.
 
 - Every new file starts with `#![forbid(unsafe_code)]` at the crate
   root. No exceptions, per the workspace invariant.
-- CI is cargo-checkmate. Run `cargo fmt --check`, `cargo check
-  --workspace`, `cargo clippy --workspace`, and `RUSTDOCFLAGS="-D
-  warnings" cargo doc --workspace --no-deps` before pushing. Two known
+- CI gates the root workspace with rustfmt, clippy and rustdoc. Run
+  `cargo fmt --check`, `cargo clippy --workspace`, and
+  `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` before
+  pushing. Two known
   traps from this branch's history: rustfmt drift in merge resolutions,
   and public doc comments intra-doc-linking private items.
 - Conventional commits, prose bodies, one topic per paragraph.

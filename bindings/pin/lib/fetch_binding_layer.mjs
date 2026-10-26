@@ -1,20 +1,46 @@
 import { writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { checkTag, PLATFORMS, repository } from './bundle_pin.mjs';
 import { exists, replaceDirectory, text } from './disk.mjs';
+import { placeMavenRepository, versionNamesCommit } from './maven_repository.mjs';
 import { readPin } from './pin_file.mjs';
 import { access, download, resolveBundle } from './registry.mjs';
 import { placeSwiftPackage } from './swift_package.mjs';
 
 export const MARKER = 'bundle';
+export const ARCHIVE_SUFFIX = '.tar.gz';
+const EXTRACTED = 'extracted';
+
+function storePath(root, platform, store) {
+  return store ?? join(root, platform, 'build', 'binding-layer');
+}
 
 async function held(home) {
   const file = await text(join(home, MARKER));
-  if (file === undefined) {
+  if (file === undefined || !file.endsWith(ARCHIVE_SUFFIX)) {
     return { kind: 'missing' };
   }
   const path = join(home, file);
   return (await exists(path)) ? { kind: 'held', path } : { kind: 'missing' };
+}
+
+function wrongVersion(commit) {
+  return ({ version }) =>
+    versionNamesCommit(version, commit)
+      ? undefined
+      : { kind: 'wrongVersion', platform: 'android', commit, version };
+}
+
+async function mavenCoordinate(archive, commit) {
+  const placed = await placeMavenRepository(
+    archive,
+    join(dirname(archive), EXTRACTED),
+    wrongVersion(commit),
+  );
+  if (placed.kind !== 'placed') {
+    return placed;
+  }
+  return { kind: 'fetched', path: placed.path, coordinate: placed.coordinate };
 }
 
 export async function fetchBundle(pin, platform, store, always, registry) {
@@ -75,12 +101,26 @@ export async function pinnedBundle(root, values) {
   const fetched = await fetchBundle(
     pin,
     values.platform,
-    values.store ?? join(root, values.platform, 'build', 'binding-layer'),
+    storePath(root, values.platform, values.store),
     values['check-tag'],
     { access, resolveBundle, download },
   );
-  if (fetched.kind !== 'fetched' || values.platform !== 'ios') {
+  if (fetched.kind !== 'fetched') {
     return fetched;
+  }
+  if (values.platform === 'android') {
+    const placed = await mavenCoordinate(fetched.path, pin.commit);
+    const pinned = pin.coordinates.android;
+    if (placed.kind === 'fetched' && placed.coordinate !== pinned) {
+      return {
+        kind: 'wrongCoordinate',
+        platform: 'android',
+        commit: pin.commit,
+        pinned,
+        found: placed.coordinate,
+      };
+    }
+    return placed;
   }
   const placed = await placeSwiftPackage(
     fetched.path,

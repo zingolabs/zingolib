@@ -48,11 +48,8 @@ orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
 prost = { workspace = true }
-hmac = { workspace = true }
 rand = { workspace = true }
 sapling-crypto.workspace = true
-sha2 = { workspace = true }
-secp256k1 = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 shardtree = { workspace = true, features = ["legacy-api"] }
@@ -73,7 +70,7 @@ zcash_primitives = { workspace = true }
 # only: build.rs fetches the sapling params; runtime code never downloads.
 zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
-zcash_transparent = { workspace = true }
+zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
 zingo-memo = { workspace = true }
 zingo-netutils = { workspace = true }
 zingo-price = { workspace = true }
@@ -88,7 +85,7 @@ tokio-stream = { workspace = true, optional = true }
 # Registry-sourced, not git: cargo keys a package by source, so a git
 # zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
 # zcash_transparent that no version bump can unify with the registry stack.
-zcash_pool_migration = { version = "=0.2.0-pre.1", default-features = false }
+zcash_pool_migration = { version = "=0.2.0", default-features = false }
 zingo-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
@@ -96,10 +93,6 @@ zcash_proofs = { workspace = true, features = ["download-params"] }
 
 # The live mixnet harnesses drive nym-gated API, so they build only with
 # the `nym` feature; every other test target stays auto-discovered.
-[[test]]
-name = "sweep_harness"
-required-features = ["nym"]
-
 [[test]]
 name = "price_harness"
 required-features = ["nym"]

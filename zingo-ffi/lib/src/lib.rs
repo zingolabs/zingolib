@@ -3,6 +3,8 @@ uniffi::setup_scaffolding!();
 #[macro_use]
 extern crate lazy_static;
 extern crate android_logger;
+#[cfg(feature = "zingo-nym-proxy-ffi")]
+extern crate zingo_nym_proxy_ffi;
 
 #[cfg(target_os = "android")]
 use android_logger::{Config, FilterBuilder};
@@ -11,10 +13,10 @@ use log::Level;
 
 use std::any::Any;
 use std::backtrace::Backtrace;
+use std::cell::RefCell;
 use std::num::NonZeroU32;
 use std::panic::{self, PanicHookInfo, UnwindSafe};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::Once;
 use std::sync::RwLock;
 use std::time::Duration;
@@ -38,6 +40,8 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
+use zcash_transparent::address::TransparentAddress;
+use zingolib::config;
 use zingolib::config::{
     ChainType, ClientConfig, WalletConfig, construct_indexer_uri, lib_birthday,
 };
@@ -46,6 +50,7 @@ use zingolib::data::PollReport;
 use zingolib::data::proposal::total_fee;
 use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
+use zingolib::lightclient;
 use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
 use zingolib::lightclient::migrate::SplitStep;
@@ -55,7 +60,7 @@ use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
-use zingolib::wallet::error::ProposeSendError;
+use zingolib::wallet::error::{ProposeSendError, WalletError};
 use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
@@ -93,6 +98,8 @@ pub enum ZingolibError {
     Send(String),
     #[error("Error: shield: {0}")]
     Shield(String),
+    #[error("Error: send after deshield: {0}")]
+    SendAfterDeshield(String),
     #[error("Error: invalid input: {0}")]
     InvalidInput(String),
     #[error("Error: wallet: {0}")]
@@ -226,9 +233,14 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         | LightClientError::SyncNotRunning
         | LightClientError::SyncError(_)
         | LightClientError::SyncModeError(_) => ZingolibError::Sync(text),
+        LightClientError::SyncPanicked(panic_message) => ZingolibError::Panic(panic_message),
         LightClientError::SendError(inner) => match inner {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
                 ZingolibError::Shield(text)
+            }
+            SendError::OpReturn(WalletError::ParseError(_))
+            | SendError::OpReturn(WalletError::OpReturnRecipientNotTransparent) => {
+                ZingolibError::InvalidInput(text)
             }
             SendError::ProposeSendError(_)
             | SendError::CalculateSendError(_)
@@ -237,8 +249,10 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             | SendError::TransmissionError(_)
             | SendError::OpReturn(_)
             | SendError::OpReturnNotCalculable
-            | SendError::OpReturnSourceAddressStale
-            | SendError::OpReturnAfterDeshield { .. } => ZingolibError::Send(text),
+            | SendError::OpReturnSourceAddressStale => ZingolibError::Send(text),
+            SendError::OpReturnAfterDeshield { .. } | SendError::OpReturnResumePending { .. } => {
+                ZingolibError::SendAfterDeshield(text)
+            }
         },
         LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
             ZingolibError::Indexer(text)
@@ -248,17 +262,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::Offline => ZingolibError::Offline,
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
-        // A deliberate choice (#1229): exhausting the eligible Destinations
-        // is a server-topology problem, not a mixnet refusal — switching the
-        // synchronization endpoint changes eligibility, so the app's
-        // switch-and-retry routing can genuinely help. Mapping it to Mixnet
-        // would stamp it with the owned refusal marker and turn it
-        // never-retry.
-        LightClientError::NoEligibleDestination(_)
-        | LightClientError::IneligibleProbeTarget(_)
-        | LightClientError::MigrationTransmissionTargetIsSyncEndpoint { .. } => {
-            ZingolibError::Indexer(text)
-        }
+        LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -296,43 +300,51 @@ struct PanicReport {
     backtrace: Option<String>,
 }
 
-static LAST_PANIC: Lazy<Mutex<PanicReport>> = Lazy::new(|| Mutex::new(PanicReport::default()));
+thread_local! {
+    static LAST_PANIC: RefCell<PanicReport> = RefCell::new(PanicReport::default());
+}
 
 fn set_last_panic(report: PanicReport) {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        *r = report;
-    }
+    LAST_PANIC.with(|last| *last.borrow_mut() = report);
 }
 
 fn take_last_panic() -> PanicReport {
-    if let Ok(mut r) = LAST_PANIC.lock() {
-        let out = r.clone();
-        *r = PanicReport::default();
-        out
-    } else {
-        PanicReport::default()
-    }
+    LAST_PANIC.with(|last| std::mem::take(&mut *last.borrow_mut()))
+}
+
+fn location_text(info: &PanicHookInfo<'_>) -> String {
+    info.location().map_or_else(
+        || "an unknown location".to_string(),
+        |location| {
+            format!(
+                "{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            )
+        },
+    )
 }
 
 static PANIC_HOOK_ONCE: Once = Once::new();
 
+/// - Replaces the process-wide panic hook once.
+/// - The hook writes each panic's message, location and backtrace to the `log` sink and to stderr.
+/// - The hook stores the report for the panicking thread alone.
 fn install_panic_hook_once() {
     PANIC_HOOK_ONCE.call_once(|| {
         panic::set_hook(Box::new(|info: &PanicHookInfo<'_>| {
-            let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-                (*s).to_string()
-            } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                s.clone()
-            } else {
-                info.to_string()
-            };
-
+            let payload = data::panic_text(info.payload());
+            let location = location_text(info);
             let (file, line, col) = info
                 .location()
                 .map(|l| (Some(l.file().to_string()), Some(l.line()), Some(l.column())))
                 .unwrap_or((None, None, None));
-
             let bt = Backtrace::force_capture().to_string();
+
+            let report_text = format!("panic at {location}: {payload}\n{}", clean_backtrace(&bt));
+            log::error!("{report_text}");
+            eprintln!("{report_text}");
 
             set_last_panic(PanicReport {
                 msg: payload,
@@ -368,14 +380,7 @@ fn clean_backtrace(bt_raw: &str) -> String {
 
 fn format_panic_text(payload: Box<dyn Any + Send>) -> String {
     let rpt = take_last_panic();
-
-    let fallback = if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown panic payload".to_string()
-    };
+    let fallback = data::panic_text(payload.as_ref());
 
     let mut out = String::new();
 
@@ -430,14 +435,6 @@ lazy_static! {
         RwLock::new(None);
 }
 
-// An optional dedicated migration-transmission endpoint, read at every client
-// construction. The library owns the curated Destination pool and always
-// excludes the synchronization operator (zingolib/0022), so a mixnet migration works
-// without any app input. `Some` names one dedicated endpoint distinct from the
-// sync operator; `None` (the default) lets the library draw its curated pool.
-static MIGRATION_TRANSMISSION_URI: Lazy<RwLock<Option<http::Uri>>> =
-    Lazy::new(|| RwLock::new(None));
-
 static PENDING_INDEXER_URI: Lazy<RwLock<Option<http::Uri>>> = Lazy::new(|| RwLock::new(None));
 
 // Live progress of the in-flight Phase 1 note-splitting round, the split-path
@@ -470,8 +467,24 @@ where
     f(&mut guard)
 }
 
+/// Ends the outgoing client's sync session before the client is dropped.
+///
+/// Dropping a `LightClient` does not end its sync engine: the engine runs as a
+/// detached task on `RT` with its own handles on the wallet. Under continuous
+/// sync it never ends on its own, so every client this slot replaced would keep
+/// scanning, against the server it was opened with. Setting the mode is enough:
+/// the engine reads it on its next batch and winds itself down.
+fn retire_client(slot: &Option<LightClient>) {
+    if let Some(outgoing) = slot {
+        // `SyncNotRunning` is the ordinary case: a client that never synced,
+        // or one whose engine has already ended.
+        let _ = outgoing.stop_sync();
+    }
+}
+
 fn reset_lightclient() {
     with_lightclient_write(|slot| {
+        retire_client(slot);
         *slot = None;
     });
     if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
@@ -481,6 +494,7 @@ fn reset_lightclient() {
 
 fn store_client(lightclient: LightClient) -> Result<(), ZingolibError> {
     with_lightclient_write(|slot| {
+        retire_client(slot);
         *slot = Some(lightclient);
     });
     Ok(())
@@ -584,6 +598,8 @@ wallet_access!(
 
 #[cfg(test)]
 mod lock_discipline_tests;
+#[cfg(test)]
+mod panic_hook_tests;
 
 /// Parses the schedule suffix of a `regtest:<schedule>` chain hint into
 /// activation heights.
@@ -673,9 +689,29 @@ pub struct SyncSettings {
     pub min_confirmations: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum IndexerChoice {
+    Offline,
+    Default,
+    Named { uri: String },
+}
+
+fn indexer_choice(choice: IndexerChoice) -> Result<config::IndexerChoice, ZingolibError> {
+    Ok(match choice {
+        IndexerChoice::Offline => config::IndexerChoice::Offline,
+        IndexerChoice::Default => config::IndexerChoice::Default,
+        IndexerChoice::Named { uri } => {
+            config::IndexerChoice::Named(construct_indexer_uri(uri).map_err(in_context(
+                ZingolibError::InvalidInput,
+                "invalid server uri",
+            ))?)
+        }
+    })
+}
+
 #[derive(Clone, uniffi::Record)]
 pub struct IndexerConnection {
-    pub server_uri: String,
+    pub indexer: IndexerChoice,
     pub chain_hint: String,
     pub sync: SyncSettings,
 }
@@ -686,8 +722,15 @@ pub(crate) fn test_connection(
     chain_hint: &str,
     performance_level: &str,
 ) -> IndexerConnection {
+    let indexer = if server_uri.is_empty() {
+        IndexerChoice::Offline
+    } else {
+        IndexerChoice::Named {
+            uri: server_uri.to_string(),
+        }
+    };
     IndexerConnection {
-        server_uri: server_uri.to_string(),
+        indexer,
         chain_hint: chain_hint.to_string(),
         sync: SyncSettings {
             performance_level: performance_level.to_string(),
@@ -745,10 +788,8 @@ struct ConnectionParams {
     lightwalletd_uri: Option<http::Uri>,
 }
 
-fn build_connection_params(
-    connection: IndexerConnection,
-) -> Result<ConnectionParams, ZingolibError> {
-    let chain_type = match connection.chain_hint.as_str() {
+fn chain_type_from_hint(hint: &str) -> Result<ChainType, ZingolibError> {
+    Ok(match hint {
         "main" => ChainType::Mainnet,
         "test" => ChainType::Testnet,
         "regtest" => ChainType::Regtest(ActivationHeights::default()),
@@ -765,25 +806,36 @@ fn build_connection_params(
             }
             None => return Err(ZingolibError::init("Not a valid chain hint!")),
         },
-    };
+    })
+}
 
-    // Offline Mode = empty uri → no Indexer is ever configured; the client
-    // stays Indexerless (zingolib/0001), and `require_indexer()` gates
-    // sync/send with `Offline`. A real server yields `Some(uri)`.
-    let lightwalletd_uri = if connection.server_uri.is_empty() {
-        None
-    } else {
-        Some(construct_indexer_uri(connection.server_uri).map_err(|e| {
+fn build_connection_params(
+    connection: IndexerConnection,
+) -> Result<ConnectionParams, ZingolibError> {
+    let chain_type = chain_type_from_hint(&connection.chain_hint)?;
+
+    // Offline → no Indexer is ever configured; the client stays Indexerless
+    // (zingolib/0001), and `require_indexer()` gates sync/send with
+    // `Offline`. Default resolves to the chain's Default Indexer, and a chain
+    // without one (testnet today) is a typed Init failure (zingolib/0063).
+    let lightwalletd_uri = match connection.indexer {
+        IndexerChoice::Offline => None,
+        IndexerChoice::Default => {
+            Some(config::default_indexer_for(&chain_type).ok_or_else(|| {
+                ZingolibError::init(config::NoDefaultIndexer { chain: chain_type }.to_string())
+            })?)
+        }
+        IndexerChoice::Named { uri } => Some(construct_indexer_uri(uri).map_err(|e| {
             ZingolibError::init(format!("Invalid lightwalletd uri: {}", chain_text(&e)))
-        })?)
+        })?),
     };
     let level = performance_level(&connection.sync.performance_level)
         .ok_or_else(|| ZingolibError::init("Not a valid performance level!"))?;
     let wallet_settings = WalletSettings {
         sync_config: SyncConfig {
-            transparent_address_discovery: TransparentAddressDiscovery::minimal(),
+            transparent_address_discovery: TransparentAddressDiscovery::default(),
             performance_level: level,
-            shutdown_on_completion: true,
+            shutdown_on_completion: false,
         },
         min_confirmations: NonZeroU32::try_from(connection.sync.min_confirmations)
             .map_err(|_| ZingolibError::init("min_confirmations must be greater than 0"))?,
@@ -810,43 +862,7 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    // Point migration transmission at a dedicated endpoint when the app set
-    // one. Absent it, the library draws its curated Destination pool.
-    let migration_uri = MIGRATION_TRANSMISSION_URI
-        .read()
-        .ok()
-        .and_then(|uri| uri.clone());
-    let builder = match migration_uri {
-        Some(uri) => builder.set_migration_transmission_uri(uri),
-        None => builder,
-    };
     builder.build().map_err(chained(ZingolibError::Init))
-}
-
-/// Set an optional dedicated migration-transmission endpoint for the next
-/// client construction — `{ transmissionUri: "<uri>" }` names one endpoint
-/// distinct from the sync operator, while `null`, `{}`, or the legacy
-/// `{ candidates, allowSyncEndpoint }` shape clears it so the library's
-/// embedded curated Destination pool, which always excludes the
-/// synchronization operator, routes instead.
-#[uniffi::export]
-pub fn set_broadcast_candidates(candidates_json: String) -> Result<String, ZingolibError> {
-    let parsed = json::parse(&candidates_json).map_err(in_context(
-        ZingolibError::InvalidInput,
-        "invalid candidates json",
-    ))?;
-    let transmission_uri = match parsed["transmissionUri"].as_str() {
-        Some(uri) => Some(construct_indexer_uri(uri.to_string()).map_err(in_context(
-            ZingolibError::InvalidInput,
-            format!("invalid transmission uri {uri}"),
-        ))?),
-        None => None,
-    };
-    let is_set = transmission_uri.is_some();
-    *MIGRATION_TRANSMISSION_URI
-        .write()
-        .map_err(|_| ZingolibError::LightclientLockPoisoned)? = transmission_uri;
-    Ok(object! { "transmission_uri_set" => is_set }.pretty(2))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -991,7 +1007,7 @@ pub fn init_from_bytes(
         // mainnet wallet opened while settings still say "test", and vice
         // versa). Online we honor the hint strictly: a chain that disagrees
         // with the selected server is a genuine mismatch and must error.
-        let chain_hints: Vec<String> = if connection.server_uri.is_empty() {
+        let chain_hints: Vec<String> = if connection.indexer == IndexerChoice::Offline {
             vec![
                 "main".to_string(),
                 "test".to_string(),
@@ -1107,9 +1123,7 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
 /// The classification seam contract (#1229): the app routes send failures
 /// by our own error variants' display prefixes, so each zingolib failure
 /// must land in the variant whose routing verdict it deserves. A mixnet
-/// refusal is never-retry; the excluded-indexer exhaustion is a
-/// server-topology problem where switching servers genuinely changes
-/// eligibility, so it must NOT carry the mixnet marker.
+/// refusal is never-retry.
 #[cfg(test)]
 mod ffi_error_routing_tests {
     use super::*;
@@ -1127,17 +1141,22 @@ mod ffi_error_routing_tests {
     }
 
     #[test]
-    fn excluded_indexer_exhaustion_is_an_indexer_failure_not_a_refusal() {
-        let mapped = ffi_error(LightClientError::NoEligibleDestination(
-            zingolib::destination::servers::NoEligibleDestinations::Empty(
-                zingolib::destination::servers::Transport::Mixnet,
-            ),
-        ));
-        assert!(
-            matches!(&mapped, ZingolibError::Indexer(_)),
-            "exhaustion routes as server-suspect, so it must not wear the mixnet marker: {mapped:?}"
-        );
-        assert!(mapped.to_string().starts_with("Error: indexer:"));
+    fn a_refused_vault_address_is_invalid_input_not_a_send_failure() {
+        let malformed = match ZcashAddress::try_from_encoded("not an address") {
+            Err(parse_error) => parse_error,
+            Ok(_) => unreachable!("the string holds no address encoding"),
+        };
+        for inner in [
+            WalletError::ParseError(malformed),
+            WalletError::OpReturnRecipientNotTransparent,
+        ] {
+            let mapped = ffi_error(LightClientError::SendError(SendError::OpReturn(inner)));
+            assert!(
+                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                "a refused vault address is the caller's input, which the app never retries: {mapped:?}"
+            );
+            assert!(mapped.to_string().starts_with("Error: invalid input:"));
+        }
     }
 }
 
@@ -1360,7 +1379,7 @@ mod regtest_activation_heights_tests {
     #[test]
     fn hint_without_schedule_prefix_still_fails_init() {
         let error = match build_connection_params(IndexerConnection {
-            server_uri: String::new(),
+            indexer: IndexerChoice::Offline,
             chain_hint: "shmegtest".to_string(),
             sync: SyncSettings {
                 performance_level: "Medium".to_string(),
@@ -2245,6 +2264,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.poll_sync() {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
         PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
+        PollReport::Panicked(text) => Err(ZingolibError::Panic(text)),
         PollReport::Ready(result) => match result {
             Ok(sync_result) => {
                 // A bucket boundary's tree state is witnessable only while its
@@ -2344,9 +2364,51 @@ pub fn pause_sync() -> Result<String, ZingolibError> {
     })
 }
 
+/// Asks the sync session to stop after its next batch. It does not wait: poll
+/// with `poll_sync` until it no longer answers "Sync task is not complete.".
+/// Stopping when nothing runs is not a failure.
+#[uniffi::export]
+pub fn stop_sync() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| match lightclient.stop_sync() {
+        Ok(_) => Ok("Stopping sync task...".to_string()),
+        Err(SyncModeError::SyncNotRunning) => Ok("Sync already stopped.".to_string()),
+        Err(e) => Err(ZingolibError::sync(&e)),
+    })
+}
+
+/// Whether the running session has scanned up to the chain tip it found, and
+/// how far along it is, as `{ caught_up, percent }`.
+///
+/// Read from the engine's published status alone: false and a null percent
+/// until it has published one. `status_sync` cannot answer this, because
+/// before a session's first publish it falls back to the wallet's stored
+/// state, which reads complete for a wallet that was at the tip when it was
+/// last saved. A continuous session never ends on its own, so this is the
+/// signal that it has reached the tip.
+#[uniffi::export]
+pub fn sync_caught_up() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        let Some(status) = lightclient.latest_sync_status() else {
+            return Ok(object! { "caught_up" => false, "percent" => json::Null }.pretty(2));
+        };
+        let caught_up = status.is_complete();
+        let percent = sync_progress::SyncProgress::from(status).percentage_total_outputs_scanned;
+        Ok(object! { "caught_up" => caught_up, "percent" => percent }.pretty(2))
+    })
+}
+
+/// The status the sync engine last published, or the one computed from the
+/// wallet when it has published none (a wallet just opened, or an engine not
+/// running). The published one costs no wallet lock, which the engine would
+/// otherwise contend for on every app poll.
 #[uniffi::export]
 fn status_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
+        if let Some(published) = lightclient.latest_sync_status() {
+            return Ok(
+                json::JsonValue::from(sync_progress::SyncProgress::from(published)).pretty(2),
+            );
+        }
         RT.block_on(async {
             let wallet = lightclient.wallet().read().await;
             match pepper_sync::sync_status(&*wallet).await {
@@ -2470,6 +2532,7 @@ enum ViewingKey {
     Encoded {
         ufvk: String,
         birthday: u32,
+        birthday_adjusted_from: Option<u32>,
         chain: ChainType,
     },
     Unavailable(wallet::error::KeyError),
@@ -2487,6 +2550,7 @@ impl ViewingKey {
             Ok(ufvk) => Self::Encoded {
                 ufvk: wallet::keys::unified::encode_ufvk(&ufvk, &wallet.chain_type()),
                 birthday: u32::from(wallet.birthday()),
+                birthday_adjusted_from: wallet.birthday_adjusted_from().map(u32::from),
                 chain: wallet.chain_type(),
             },
             Err(unavailable) => Self::Unavailable(unavailable),
@@ -2500,13 +2564,19 @@ impl Report for ViewingKey {
             Self::Encoded {
                 ufvk,
                 birthday,
+                birthday_adjusted_from,
                 chain,
-            } => Ok(object! {
-                "ufvk" => ufvk,
-                "birthday" => birthday,
-                "chain_name" => chain_name_short(chain)
+            } => {
+                let mut val = object! {
+                    "ufvk" => ufvk,
+                    "birthday" => birthday,
+                    "chain_name" => chain_name_short(chain)
+                };
+                if let Some(from) = birthday_adjusted_from {
+                    val["birthday_adjusted_from"] = from.into();
+                }
+                Ok(val.pretty(2))
             }
-            .pretty(2)),
             Self::Unavailable(unavailable) => Err(ZingolibError::Read(chain_text(&unavailable))),
         }
     }
@@ -2672,38 +2742,22 @@ mod wallet_validation_tests {
 }
 
 #[uniffi::export]
-pub fn change_server(serveruri: String) -> Result<String, ZingolibError> {
+pub fn change_server(choice: IndexerChoice) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
-        let uri = if serveruri.is_empty() {
-            // Offline: no server. `http::Uri::default()` is scheme-less and
-            // `set_indexer_uri` rejects it ("bad uri: invalid scheme"), so
-            // hand it the chain's first census indexer instead —
-            // syntactically valid, and never actually dialed while offline.
-            let census_chain = match lightclient.chain_type() {
-                ChainType::Testnet => zingolib::indexers::IndexerChain::Test,
-                ChainType::Mainnet | ChainType::Regtest(_) => {
-                    zingolib::indexers::IndexerChain::Main
-                }
-            };
-            let default = zingolib::indexers::active(census_chain)
-                .next()
-                .map(|indexer| indexer.uri.to_string())
-                .ok_or_else(|| ZingolibError::InvalidInput("empty indexer census".to_string()))?;
-            construct_indexer_uri(default).map_err(in_context(
-                ZingolibError::InvalidInput,
-                "invalid server uri",
-            ))?
-        } else {
-            construct_indexer_uri(serveruri).map_err(in_context(
-                ZingolibError::InvalidInput,
-                "invalid server uri",
-            ))?
-        };
+        let choice = indexer_choice(choice)?;
+        // A running engine keeps the indexer it was launched with, so end it;
+        // the app relaunches it against the new one.
+        let _ = lightclient.stop_sync();
         RT.block_on(async move {
             lightclient
-                .set_indexer_uri(uri)
+                .choose_indexer(choice)
                 .await
-                .map_err(|e| ffi_error(e.into()))?;
+                .map_err(|e| match e {
+                    lightclient::ChooseIndexerError::NoDefaultIndexer(no_default) => {
+                        ZingolibError::InvalidInput(no_default.to_string())
+                    }
+                    lightclient::ChooseIndexerError::Connect(connect) => ffi_error(connect.into()),
+                })?;
             // An explicit server choice supersedes any URI left pending by the
             // init fallback.
             if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
@@ -2712,6 +2766,18 @@ pub fn change_server(serveruri: String) -> Result<String, ZingolibError> {
             Ok("server set".to_string())
         })
     })
+}
+
+#[uniffi::export]
+pub fn default_indexer(chain_hint: String) -> Result<Option<String>, ZingolibError> {
+    let chain_type = chain_type_from_hint(&chain_hint)?;
+    Ok(config::default_indexer_for(&chain_type).map(|uri| {
+        let text = uri.to_string();
+        match text.strip_suffix('/') {
+            Some(bare) => bare.to_string(),
+            None => text,
+        }
+    }))
 }
 
 impl Report for keys::WalletKind {
@@ -3132,8 +3198,55 @@ enum NewTransparentAddress {
 impl NewTransparentAddress {
     /// - Adds the generated address to `wallet`.
     fn of(wallet: &mut wallet::LightWallet) -> Self {
+        Self::generated(wallet, |wallet| {
+            wallet.generate_transparent_address(AccountId::ZERO, true)
+        })
+    }
+
+    /// - Reserves the next refund address in `wallet`, the address a swap
+    ///   provider refunds a deposit to.
+    fn refund(wallet: &mut wallet::LightWallet) -> Self {
+        Self::next_refund(wallet, wallet::LightWallet::generate_refund_addresses)
+    }
+
+    fn derived_refund(wallet: &mut wallet::LightWallet) -> Self {
+        Self::next_refund(wallet, |wallet, n, account| {
+            wallet.derive_refund_addresses(n, account)
+        })
+    }
+
+    fn next_refund(
+        wallet: &mut wallet::LightWallet,
+        addresses: impl FnOnce(
+            &mut wallet::LightWallet,
+            usize,
+            AccountId,
+        ) -> Result<
+            Vec<(transparent::TransparentAddressId, TransparentAddress)>,
+            wallet::error::KeyError,
+        >,
+    ) -> Self {
+        Self::generated(wallet, |wallet| {
+            addresses(wallet, 1, AccountId::ZERO).map(|addresses| {
+                addresses
+                    .into_iter()
+                    .next()
+                    .expect("a request for one address yields one address")
+            })
+        })
+    }
+
+    fn generated(
+        wallet: &mut wallet::LightWallet,
+        generate: impl FnOnce(
+            &mut wallet::LightWallet,
+        ) -> Result<
+            (transparent::TransparentAddressId, TransparentAddress),
+            wallet::error::KeyError,
+        >,
+    ) -> Self {
         let network = wallet.chain_type();
-        match wallet.generate_transparent_address(AccountId::ZERO, true) {
+        match generate(wallet) {
             Ok((id, transparent_address)) => Self::Created {
                 id,
                 encoded_address: transparent::encode_address(&network, transparent_address),
@@ -3164,6 +3277,48 @@ impl Report for NewTransparentAddress {
 wallet_report!(
     pub fn create_new_transparent_address() => report_wallet_mut(NewTransparentAddress::of)
 );
+
+wallet_report!(
+    pub fn reserve_refund_address() => report_wallet_mut(NewTransparentAddress::refund)
+);
+
+wallet_report!(
+    pub fn derive_refund_address() => report_wallet_mut(NewTransparentAddress::derived_refund)
+);
+
+#[cfg(test)]
+mod refund_address_tests {
+    use super::*;
+    use zcash_transparent::keys::NonHardenedChildIndex;
+
+    #[test]
+    fn a_reserved_refund_address_reports_the_refund_scope() {
+        let id = transparent::TransparentAddressId::new(
+            AccountId::ZERO,
+            transparent::TransparentScope::Refund,
+            NonHardenedChildIndex::ZERO,
+        );
+        let encoded_address = transparent::encode_address(
+            &zingolib::config::ChainType::Mainnet,
+            TransparentAddress::PublicKeyHash([7; 20]),
+        );
+        let report = NewTransparentAddress::Created {
+            id,
+            encoded_address,
+        }
+        .report()
+        .expect("a created address always reports");
+        let parsed = json::parse(&report).expect("the report is JSON");
+        assert_eq!(parsed["account"].as_u32(), Some(0));
+        assert_eq!(parsed["address_index"].as_u32(), Some(0));
+        assert_eq!(parsed["scope"].as_str(), Some("refund"));
+        assert!(
+            parsed["encoded_address"]
+                .as_str()
+                .is_some_and(|address| address.starts_with("t1"))
+        );
+    }
+}
 
 fn ownership_report(
     ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
@@ -3522,18 +3677,47 @@ pub fn shield() -> Result<String, ZingolibError> {
     })
 }
 
+/// - Builds and transmits the stored proposal's transactions.
+/// - Restores the sync engine to the mode it held before the proposal.
+async fn transmit_stored_proposal(lightclient: &mut LightClient) -> Result<String, ZingolibError> {
+    let txids = lightclient
+        .send_stored_proposal(true)
+        .await
+        .map_err(ffi_error)?;
+    Ok(
+        object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+            .pretty(2),
+    )
+}
+
 #[uniffi::export]
 pub fn confirm() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| RT.block_on(transmit_stored_proposal(lightclient)))
+}
+
+/// - Stores an OP_RETURN proposal in the wallet, pausing sync while it is built.
+/// - Transmits the deshield, then the vault payment that carries the memo.
+/// - Leaves the proposal stored, with the deshield's txid, when the vault
+///   payment fails after the deshield was transmitted.
+#[uniffi::export]
+pub fn send_swap_deposit(
+    vault_address: String,
+    amount: u64,
+    memo_hex: String,
+) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let txids = lightclient
-                .send_stored_proposal(true)
+            let amount = Zatoshis::from_u64(amount)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?;
+            let memo = hex::decode(&memo_hex)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo hex"))?;
+            let memo = wallet::transparent::OpReturnData::new(memo)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo"))?;
+            lightclient
+                .propose_send_with_op_return(&vault_address, amount, memo, AccountId::ZERO)
                 .await
                 .map_err(ffi_error)?;
-            Ok(
-                object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
-                    .pretty(2),
-            )
+            transmit_stored_proposal(lightclient).await
         })
     })
 }

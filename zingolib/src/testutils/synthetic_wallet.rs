@@ -30,6 +30,8 @@ use pepper_sync::wallet::{
     IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransparentCoin, WalletTransaction,
 };
 use zcash_primitives::transaction::TxId;
+#[cfg(test)]
+use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::memo::Memo;
@@ -47,8 +49,6 @@ use crate::wallet::LightWallet;
 use crate::wallet::keys::unified::ReceiverSelection;
 #[cfg(test)]
 use zcash_address::ZcashAddress;
-#[cfg(test)]
-use zcash_keys::address::UnifiedAddress;
 
 /// Builds an offline [`LightWallet`] whose fabricated orchard funds pass
 /// every spendability gate, so `propose_send` (and balance/summary logic)
@@ -331,14 +331,13 @@ impl SyntheticWalletBuilder {
                 .next()
                 .map(|(key_id, address)| (*key_id, address.clone()))
                 .expect("a fresh wallet carries one transparent address");
-            let script = zcash_address::ZcashAddress::try_from_encoded(&address)
-                .expect("wallet-generated address encodes validly")
-                .convert_if_network::<zcash_transparent::address::TransparentAddress>(
-                    wallet.chain_type().network_type(),
-                )
-                .expect("wallet-generated address matches the wallet network")
-                .script()
-                .into();
+            let script = crate::wallet::keys::transparent_address_from_encoded(
+                wallet.chain_type().network_type(),
+                &address,
+            )
+            .expect("wallet-generated address encodes validly")
+            .script()
+            .into();
             let coin = TransparentCoin::new_for_test(
                 OutputId::new(txid, 0),
                 key_id,
@@ -363,39 +362,64 @@ impl SyntheticWalletBuilder {
 }
 
 #[cfg(test)]
+const STRANGER_SEED: &str = zingo_test_vectors::seeds::ABANDON_ART_SEED;
+
+#[cfg(test)]
 fn stranger_wallet() -> LightWallet {
-    SyntheticWalletBuilder::new(zingo_test_vectors::seeds::CHIMNEY_BETTER_SEED).build()
+    SyntheticWalletBuilder::new(STRANGER_SEED).build()
 }
 
 #[cfg(test)]
-fn stranger_orchard_address() -> (ChainType, UnifiedAddress) {
+pub(crate) fn external_address(pool: PoolType) -> String {
     let mut stranger = stranger_wallet();
+    let selection = match pool {
+        PoolType::ORCHARD | PoolType::IRONWOOD => ReceiverSelection::orchard_only(),
+        PoolType::SAPLING => ReceiverSelection::sapling_only(),
+        PoolType::Transparent => {
+            return stranger
+                .transparent_addresses()
+                .values()
+                .next()
+                .expect(
+                    "a seed-built synthetic wallet derives account zero's first transparent address",
+                )
+                .clone();
+        }
+    };
     let (_, unified_address) = stranger
-        .generate_unified_address(ReceiverSelection::orchard_only(), zip32::AccountId::ZERO)
-        .expect("a seed-built synthetic wallet holds account zero's Orchard key");
-    (stranger.chain_type(), unified_address)
+        .generate_unified_address(selection, zip32::AccountId::ZERO)
+        .expect("a seed-built synthetic wallet holds account zero's shielded keys");
+    unified_address.encode(&stranger.chain_type())
 }
 
 #[cfg(test)]
-pub(crate) fn external_orchard_address() -> String {
-    let (chain_type, unified_address) = stranger_orchard_address();
-    unified_address.encode(&chain_type)
+pub(crate) fn external_zcash_address(pool: PoolType) -> ZcashAddress {
+    ZcashAddress::try_from_encoded(&external_address(pool))
+        .expect("an address the stranger wallet just encoded parses")
 }
 
 #[cfg(test)]
-pub(crate) fn external_orchard_zcash_address() -> ZcashAddress {
-    let (chain_type, unified_address) = stranger_orchard_address();
-    unified_address.to_zcash_address(chain_type.network_type())
+pub(crate) fn external_transparent_pubkey_hash() -> [u8; 20] {
+    use pepper_sync::keys::decode_address;
+    use zcash_client_backend::address::Address;
+    use zcash_transparent::address::TransparentAddress;
+
+    let Address::Transparent(TransparentAddress::PublicKeyHash(taddr_bytes)) = decode_address(
+        &stranger_wallet().chain_type(),
+        &external_address(PoolType::Transparent),
+    )
+    .expect("the stranger wallet's first transparent address decodes") else {
+        panic!("a wallet-generated first taddr is p2pkh")
+    };
+    taddr_bytes
 }
 
 #[cfg(test)]
-pub(crate) fn external_transparent_address() -> String {
-    stranger_wallet()
-        .transparent_addresses()
-        .values()
-        .next()
-        .expect("a seed-built synthetic wallet derives account zero's first transparent address")
-        .clone()
+pub(crate) fn external_tex_address() -> String {
+    crate::testutils::interpret_taddr_as_tex_addr(
+        external_transparent_pubkey_hash(),
+        &stranger_wallet().chain_type(),
+    )
 }
 
 /// Injects `count` confirmed, unspent legacy-Orchard (V2) notes of `value`

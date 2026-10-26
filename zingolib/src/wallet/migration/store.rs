@@ -15,7 +15,9 @@ use pepper_sync::wallet::OutputId;
 
 use super::params::MigrationParams;
 use super::parts::{BoundNote, BoundaryWitness, PartId, PartRecord, PartState, SigningStrategy};
+use super::schedule::BucketGrid;
 use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
+use crate::config::ChainType;
 
 /// Version of this section's layout, bumped independently of the wallet
 /// version. Version 2 appends the [`MigrationMode`] byte after the parts.
@@ -23,7 +25,13 @@ use super::{ConsentBinding, MigrationMode, MigrationPhase, MigrationState};
 /// the fixed ZIP 318 formula, not a parameter. Version 4 appends each part's
 /// `anchor_bucket` after its `bucket_index`, the anchor having become a
 /// bucket of its own rather than the transmission window's (ADR 0018).
-const INNER_VERSION: u8 = 4;
+/// Version 5 numbers a part's buckets on the chain's ZIP 318 grid
+/// ([`super::schedule::BucketGrid`]): a bucket index is the ordinal of a grid
+/// boundary, which equals `height / M` below the NU7 activation and departs
+/// from it above, where the grid's boundaries are the multiples of `3·M`.
+/// The layout is unchanged; a section written before version 5 is renumbered
+/// at read.
+const INNER_VERSION: u8 = 5;
 
 /// Serializes the migration section.
 pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> {
@@ -79,7 +87,9 @@ pub fn write<W: Write>(mut writer: W, state: &MigrationState) -> io::Result<()> 
 }
 
 /// Deserializes the migration section.
-pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
+/// Reads the section. `chain` names the grid the parts' buckets are numbered
+/// on, which a section written before version 5 is renumbered to.
+pub fn read<R: Read>(mut reader: R, chain: ChainType) -> io::Result<MigrationState> {
     let inner_version = reader.read_u8()?;
     if inner_version > INNER_VERSION {
         return Err(Error::new(
@@ -175,7 +185,10 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         }
     };
 
-    let parts = Vector::read(&mut reader, |r| read_part(r, inner_version))?;
+    let mut parts = Vector::read(&mut reader, |r| read_part(r, inner_version))?;
+    if inner_version < 5 {
+        rebase_uniform_bucket_indices(&mut parts, &params.grid(chain));
+    }
 
     // Version 1 predates the mode marker. Scheduled is the conservative
     // reading: it makes the immediate path refuse to collapse the state
@@ -204,6 +217,39 @@ pub fn read<R: Read>(mut reader: R) -> io::Result<MigrationState> {
         phase,
         parts,
     })
+}
+
+/// Renumbers the buckets of a section written before version 5, when a
+/// bucket index meant `height / M` on a uniform grid, onto the chain's grid,
+/// where it is the ordinal of a grid boundary. The two agree below the NU7
+/// activation. Above it a uniform boundary that is not a grid boundary opens
+/// no bucket: such a transmission window moves up to the next grid boundary,
+/// and such an anchor is dropped so the next placement draws a legal one,
+/// with its cached witness unless a transaction already commits to it (as
+/// the version 4 reading did for anchors drawn at age zero).
+fn rebase_uniform_bucket_indices(parts: &mut [PartRecord], grid: &BucketGrid) {
+    for part in parts {
+        if let Some(index) = part.bucket_index {
+            part.bucket_index = Some(
+                grid.renumber_uniform_index(index)
+                    .unwrap_or_else(|boundary| grid.index_at_or_after(boundary)),
+            );
+        }
+        if let Some(index) = part.anchor_bucket {
+            match grid.renumber_uniform_index(index) {
+                Ok(index) => part.anchor_bucket = Some(index),
+                Err(_) => {
+                    part.anchor_bucket = None;
+                    if !matches!(
+                        part.state,
+                        PartState::Signed | PartState::Broadcast | PartState::Confirmed { .. }
+                    ) {
+                        part.anchor_witness = None;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn write_part<W: Write>(mut writer: W, part: &PartRecord) -> io::Result<()> {
@@ -558,9 +604,18 @@ mod tests {
         fn round_trips(state in arbitrary_migration_state()) {
             let mut bytes = Vec::new();
             write(&mut bytes, &state).expect("writes");
-            let recovered = read(bytes.as_slice()).expect("reads");
+            let recovered = read(bytes.as_slice(), ChainType::Mainnet).expect("reads");
             prop_assert_eq!(state, recovered);
         }
+    }
+
+    /// A chain on which NU7 never activates, so a bucket index reads back as
+    /// written at every height: the fixture tests' subject is the layout, not
+    /// the renumbering.
+    fn uniform_chain() -> ChainType {
+        ChainType::Regtest(crate::testutils::mock_activation_heights_with(|era| {
+            era.set_nu7(None)
+        }))
     }
 
     /// A freshly planned mainnet state, the smallest well-formed fixture.
@@ -585,7 +640,7 @@ mod tests {
         let mut bytes = Vec::new();
         write(&mut bytes, &planned_state()).expect("writes");
         bytes[0] = INNER_VERSION + 1;
-        assert!(read(bytes.as_slice()).is_err());
+        assert!(read(bytes.as_slice(), ChainType::Mainnet).is_err());
     }
 
     /// Relative to v3, a v1 blob carries the retired `expiry_delta` u32
@@ -606,7 +661,7 @@ mod tests {
         let offset = 1 + 4 + 1 + 8 * state.params.denominations.len() + 3 * 8 + 3 * 4 + 8;
         bytes.splice(offset..offset, 296u32.to_le_bytes());
 
-        let recovered = read(bytes.as_slice()).expect("a v1 blob still reads");
+        let recovered = read(bytes.as_slice(), ChainType::Mainnet).expect("a v1 blob still reads");
         assert_eq!(recovered.mode, MigrationMode::Scheduled);
         state.mode = MigrationMode::Scheduled;
         assert_eq!(recovered, state);
@@ -665,7 +720,9 @@ mod tests {
                 "anchor_bucket is written immediately after bucket_index"
             );
             bytes.drain(anchor_at..anchor_at + field.len());
-            read(bytes.as_slice()).expect("a v3 blob still reads").parts
+            read(bytes.as_slice(), uniform_chain())
+                .expect("a v3 blob still reads")
+                .parts
         };
 
         let signed = with_state(PartState::Signed);
@@ -708,7 +765,8 @@ mod tests {
         let mut bytes = Vec::new();
         write(&mut bytes, &state).expect("writes");
 
-        let error = read(bytes.as_slice()).expect_err("a zero modulus must not read");
+        let error =
+            read(bytes.as_slice(), ChainType::Mainnet).expect_err("a zero modulus must not read");
         assert_eq!(error.kind(), ErrorKind::InvalidData);
     }
 
@@ -733,12 +791,115 @@ mod tests {
             .expect("sentinel is unique in the fixture");
         bytes[position..position + 8].copy_from_slice(&PATCHED.to_le_bytes());
 
-        match read(bytes.as_slice()) {
+        match read(bytes.as_slice(), ChainType::Mainnet) {
             Err(error) => assert_eq!(error.kind(), ErrorKind::InvalidData),
             Ok(read_state) => assert_eq!(
                 read_state.params.max_actions_per_split_tx as u64, PATCHED,
                 "read silently truncated the persisted value"
             ),
         }
+    }
+    /// A section written before version 5 numbers its buckets on a uniform
+    /// grid, `height / M`. On a chain where NU7 is active those indices are
+    /// renumbered onto the chain's grid: a boundary that still opens a bucket
+    /// keeps its height, a window that does not moves up to the next
+    /// boundary, and such an anchor is dropped, with its witness unless a
+    /// transaction commits to it. On a chain without NU7, and for a version 5
+    /// section, the reading is the identity.
+    #[test]
+    fn a_v4_blob_is_renumbered_onto_the_chains_grid() {
+        use crate::testutils::mock_activation_heights_with;
+        let witness = BoundaryWitness {
+            anchor: [7; 32],
+            position: 11,
+            auth_path: vec![[3; 32]],
+        };
+        let part_with = |id: u32, state: PartState, bucket: u64, anchor: u64| {
+            let mut part = PartRecord::new(
+                PartId(id),
+                1_000_000,
+                BoundNote {
+                    output_id: OutputId::new(TxId::from_bytes([1; 32]), id),
+                    nullifier: [0; 32],
+                    commitment: [0; 32],
+                },
+            );
+            part.bucket_index = Some(bucket);
+            part.anchor_bucket = Some(anchor);
+            part.anchor_witness = Some(witness.clone());
+            part.state = state;
+            part
+        };
+        let blob = |parts: Vec<PartRecord>, inner_version: u8| {
+            let mut state = planned_state();
+            state.parts = parts;
+            let mut bytes = Vec::new();
+            write(&mut bytes, &state).expect("writes");
+            bytes[0] = inner_version;
+            bytes
+        };
+        // M is 144. With NU7 active from the second block the grid's boundaries
+        // are 0 and the multiples of 432: uniform buckets 3 and 6 open grid
+        // buckets 1 and 2, uniform buckets 4 and 5 open none.
+        let scaled = ChainType::Regtest(mock_activation_heights_with(|era| era.set_nu7(Some(1))));
+        let uniform = uniform_chain();
+        assert_eq!(planned_state().params.bucket_modulus, 144);
+
+        let recovered = read(
+            blob(
+                vec![
+                    part_with(0, PartState::Assigned, 6, 3),
+                    part_with(1, PartState::Assigned, 5, 4),
+                    part_with(2, PartState::Signed, 5, 4),
+                ],
+                4,
+            )
+            .as_slice(),
+            scaled,
+        )
+        .expect("a v4 blob reads")
+        .parts;
+        assert_eq!(recovered[0].bucket_index, Some(2));
+        assert_eq!(recovered[0].anchor_bucket, Some(1));
+        assert_eq!(recovered[0].anchor_witness, Some(witness.clone()));
+        assert_eq!(
+            recovered[1].bucket_index,
+            Some(2),
+            "the window moves to the next boundary"
+        );
+        assert_eq!(
+            recovered[1].anchor_bucket, None,
+            "an unsigned off-grid anchor is redrawn"
+        );
+        assert_eq!(recovered[1].anchor_witness, None);
+        assert_eq!(recovered[2].bucket_index, Some(2));
+        assert_eq!(recovered[2].anchor_bucket, None);
+        assert_eq!(
+            recovered[2].anchor_witness,
+            Some(witness.clone()),
+            "a signed part keeps the witness its transaction carries"
+        );
+
+        let identity = read(
+            blob(vec![part_with(0, PartState::Assigned, 5, 4)], 4).as_slice(),
+            uniform,
+        )
+        .expect("a v4 blob reads")
+        .parts;
+        assert_eq!(identity[0].bucket_index, Some(5));
+        assert_eq!(identity[0].anchor_bucket, Some(4));
+
+        let current = read(
+            blob(vec![part_with(0, PartState::Assigned, 5, 4)], INNER_VERSION).as_slice(),
+            scaled,
+        )
+        .expect("a current blob reads")
+        .parts;
+        assert_eq!(
+            current[0].bucket_index,
+            Some(5),
+            "a version 5 index is already the grid's"
+        );
+        assert_eq!(current[0].anchor_bucket, Some(4));
     }
 }

@@ -107,7 +107,10 @@ impl LightWallet {
         )
         .is_ok_and(|canonical_fee| {
             proposal.steps().iter().any(|step| {
-                step.is_canonical_crossing(&self.pool_migration_params(), canonical_fee)
+                step.is_canonical_crossing(
+                    &self.pool_migration_params(&self.chain_type),
+                    canonical_fee,
+                )
             })
         });
         (!holds_canonical_crossing).then(|| {
@@ -272,9 +275,11 @@ mod proposal_expiry {
     use crate::wallet::output::OutputRef;
     use pepper_sync::wallet::OutputId;
 
-    const TARGET: u32 = 147;
-    /// A ZIP 318 bucket boundary: a multiple of the 144-block grid.
-    const BUCKET_BOUNDARY: u32 = 144;
+    const TARGET: u32 = 435;
+    /// A ZIP 318 bucket boundary of the synthetic wallet's chain, which
+    /// activates NU7 at its second block: the grid's boundaries are 0 and the
+    /// multiples of 3 × 144 from there.
+    const BUCKET_BOUNDARY: u32 = 432;
 
     /// An ordinary proposal takes the wallet's delta for its target height.
     #[test]
@@ -356,6 +361,7 @@ mod tests {
 
     use zcash_address::ZcashAddress;
     use zcash_client_backend::zip321::TransactionRequest;
+    use zcash_protocol::PoolType;
     use zcash_protocol::memo::{Memo, MemoBytes};
     use zcash_protocol::value::Zatoshis;
 
@@ -379,7 +385,11 @@ mod tests {
         let mut client = LightClient::new_for_test(wallet).await;
         let proposal = from_inputs::propose(
             &mut client,
-            vec![(&synthetic_wallet::external_orchard_address(), PAYMENT, None)],
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
         )
         .await
         .expect("an Orchard-only wallet proposes an Orchard payment");

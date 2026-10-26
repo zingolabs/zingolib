@@ -1,8 +1,6 @@
 //! Zingo-Testutils
 //! Holds functionality for zingo testing
 
-#![warn(missing_docs)]
-
 use std::num::NonZeroU32;
 use std::{io::Read, string::String, time::Duration};
 
@@ -11,7 +9,6 @@ use pepper_sync::keys::decode_address;
 use zcash_address::unified::Fvk;
 use zcash_keys::address::UnifiedAddress;
 use zcash_keys::encoding::AddressCodec;
-use zcash_protocol::consensus::NetworkConstants;
 use zcash_protocol::{PoolType, ShieldedPool, consensus};
 use zingo_common_components::protocol::{ActivationHeights, ActivationHeightsBuilder};
 
@@ -26,9 +23,7 @@ use crate::wallet::summary::data::{
 
 /// The era the in-process tests run under: every network upgrade through
 /// NU7 active at height 1, so a mock chain validates the branch id mainnet
-/// carries from the NU7 activation. The regtest tier's era is
-/// `zingolib_testutils::scenarios::default_test_activation_heights`, which
-/// leaves NU7 off until an indexer serves it.
+/// carries from the NU7 activation.
 #[must_use]
 pub fn mock_activation_heights() -> ActivationHeights {
     mock_activation_heights_with(|era| era)
@@ -70,7 +65,6 @@ pub mod lightclient;
 pub mod macros;
 pub mod migration;
 pub mod mock_indexer;
-pub mod paths;
 pub mod socks5_relay;
 pub mod synthetic_wallet;
 
@@ -664,7 +658,7 @@ pub fn interpret_taddr_as_tex_addr(
     p: &impl zcash_protocol::consensus::Parameters,
 ) -> String {
     bech32::encode::<bech32::Bech32m>(
-        bech32::Hrp::parse_unchecked(p.network_type().hrp_tex_address()),
+        bech32::Hrp::parse_unchecked(zcash_address::constants::hrp_tex_address(p.network_type())),
         &taddr_bytes,
     )
     .unwrap()

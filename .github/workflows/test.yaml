@@ -13,6 +13,31 @@ on:
         required: false
         type: string
         default: normal
+      # Cargo arguments that select what the archive holds, in place of
+      # the default: the packages, the targets, the features. The default
+      # is the workspace without the proxy crate, whose `nym` feature would
+      # compile the nym-sdk stack into every archive; ci-pr.yaml's nym
+      # feature job tests the proxy crate instead.
+      archive-args:
+        required: false
+        type: string
+        default: --workspace --exclude zingo-nym-proxy-ffi
+      # The shards that run the archive, as a JSON array of partition
+      # numbers. Every shard pays for a checkout, a nextest install, the
+      # archive download and a container start before its first test, so
+      # a suite sizes its count to keep that overhead below the tests it
+      # runs. The workspace suite fills sixteen shards of two to five
+      # minutes.
+      partitions:
+        required: false
+        type: string
+        default: "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]"
+      # The content-addressed tag of the ci-build image. The caller
+      # resolves it once through ensure-image.yaml and passes it to every
+      # suite, so two suites in one run never build the same image twice.
+      image-tag:
+        required: true
+        type: string
 
 env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
@@ -20,18 +45,19 @@ env:
   ARCHIVE: nextest-archive-${{ inputs.suite }}
 
 jobs:
-  ensure-image:
-    uses: ./.github/workflows/ensure-image.yaml
-
   build-test-artifacts:
     name: Build test artifacts
-    needs: ensure-image
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ inputs.image-tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    runs-on: ubuntu-24.04
+    # The archive build is compile-bound: cargo compiles independent crates
+    # in parallel, so the job runs on the Linux runner that the
+    # CI_LINUX_RUNNER repository variable names, falling back to WarpBuild's
+    # sixteen-core label. Measured on 2026-10-16: 10.8 minutes on four cores,
+    # 3.1 on sixteen. The shards stay on the standard runner.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings
@@ -39,8 +65,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # Two suites in one run share this job's name, so a suite built
+      # with other features adds its name to the cache key and keeps its
+      # own entry. The default suite adds nothing: its key is the one dev
+      # saved before this workflow knew suites, so every pull request
+      # restores the resident entry instead of waiting for the next dev
+      # push to save a renamed one.
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
+        with:
+          key: ${{ inputs.suite != 'normal' && inputs.suite || '' }}
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -52,10 +86,17 @@ jobs:
           apt-get update
           apt-get install -y libsqlite3-dev pkg-config
 
+      # The arguments reach the shell through the environment rather than
+      # by expansion into the script, and an empty string falls back to
+      # the input's default: the workspace without the proxy crate. The
+      # expansion stays unquoted so that it splits into separate arguments.
       - name: Build and archive tests
+        env:
+          ARCHIVE_ARGS: ${{ inputs.archive-args }}
         run: |
+          # shellcheck disable=SC2086
           cargo nextest archive --verbose \
-            --workspace \
+            ${ARCHIVE_ARGS:---workspace --exclude zingo-nym-proxy-ffi} \
             --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive
@@ -69,11 +110,11 @@ jobs:
     name: Run ${{ inputs.suite }} tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    needs: [build-test-artifacts, ensure-image]
+    needs: build-test-artifacts
     env:
       RUSTFLAGS: -D warnings
     container:
-      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      image: ghcr.io/zingolabs/ci-build:${{ inputs.image-tag }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -81,16 +122,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        partition: ${{ fromJSON(inputs.partitions) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: create binaries dir
-        run: mkdir -p ./test_binaries/bins
-
-      - name: Symlink lightwalletd and zcash binaries
-        run: ln -s /usr/bin/lightwalletd /usr/bin/zainod /usr/bin/zebrad ./test_binaries/bins/
 
       - name: Install nextest
         uses: taiki-e/install-action@v2
@@ -102,10 +138,12 @@ jobs:
         with:
           name: ${{ env.ARCHIVE }}
 
+      # The partition count is the matrix's own size, so the shards and
+      # the denominator cannot drift apart.
       - name: Run the ${{ inputs.suite }} tests
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
             --archive-file "${ARCHIVE}.tar.zst" \
             --workspace-remap ./ \
-            --partition count:${{ matrix.partition }}/16 \
+            --partition count:${{ matrix.partition }}/${{ strategy.job-total }} \
             ${{ env.NEXTEST-FLAGS }}

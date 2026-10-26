@@ -1,7 +1,7 @@
 # The workbench tool binding-manifest reads bindings/published.toml and fails
-# when an entry is malformed, awaits `/publish`, names a commit this
-# repository lacks, changed after its merge, records audited crates that
-# `cargo metadata` at its commit does not report, or names a digest that the
+# when an entry is malformed or incomplete, names a commit this repository
+# lacks, changed after its merge, records audited crates that `cargo
+# metadata` at its commit does not report, or names a digest that the
 # registry does not serve for that commit.
 #
 # The check has its own workflow with no `paths` filter, for the reason
@@ -38,15 +38,8 @@ jobs:
         with:
           workspaces: tools/workbench
 
-      # The registry client is the orasust crate, whose release the
-      # workbench manifest pins under [package.metadata.orasust]. The cargo
-      # cache above hashes that manifest into its key and keeps the installed
-      # binary, so a bump misses the cache once and the build runs once per
-      # release.
       - name: Install orasust
-        run: |
-          version="$(cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin binding-manifest -- --orasust-version)"
-          cargo install --locked "orasust@${version}"
+        uses: ./.github/actions/install-orasust
 
       # On a pull request the merged entries are those of the base branch;
       # on a push they are those of the commit before the push, and the

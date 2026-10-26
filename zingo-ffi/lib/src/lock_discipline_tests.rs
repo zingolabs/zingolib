@@ -7,6 +7,8 @@
 //! checked against the fixture wallet, so a port that silences the endpoint
 //! fails just as loudly as one that keeps the write lock.
 
+use std::sync::Mutex;
+
 use super::*;
 
 /// Serializes the tests that initialize or lock the global `LIGHTCLIENT`.
@@ -385,4 +387,24 @@ fn latest_block_wallet_answers_beside_a_held_read_guard() {
         Some(0),
         "the fixture wallet's height answer changed shape: {answer}"
     );
+}
+
+/// - Poisons `LIGHTCLIENT` through a panic under its write guard, then re-initializes the wallet.
+#[test]
+fn a_panic_inside_a_guarded_call_poisons_the_client_until_the_next_init() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let outcome: Result<String, ZingolibError> =
+        with_initialized_lightclient(|_lightclient| panic!("a guarded call panics"));
+    let Err(ZingolibError::Panic(text)) = outcome else {
+        panic!("a panic under the guard must come back as the typed Panic error");
+    };
+    assert!(text.contains("a guarded call panics"), "{text}");
+    assert!(text.contains("lock_discipline_tests.rs"), "{text}");
+    assert!(matches!(
+        wallet_kind(),
+        Err(ZingolibError::LightclientLockPoisoned)
+    ));
+    init_offline_wallet();
+    wallet_kind().expect("the re-initialized wallet clears the poison and answers again");
 }

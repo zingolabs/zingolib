@@ -84,10 +84,6 @@ fn transparent_only_build_config() -> BuildConfig {
 }
 
 impl LightWallet {
-    /// The account's [`UnifiedSpendingKey`]. Callers derive the transparent
-    /// signing key from it and leave the `secp256k1` types inferred. The
-    /// `secp256k1` version used by `zcash_transparent` differs from the
-    /// version zingolib depends on.
     fn unified_spending_key(
         &self,
         account_id: zip32::AccountId,
@@ -405,11 +401,6 @@ mod tests {
         )
     }
 
-    /// The raw script bytes of a transparent output.
-    fn script_bytes(out: &TxOut) -> Vec<u8> {
-        out.script_pubkey().0.0.clone()
-    }
-
     /// Reads raw bytes back into a `Transaction` for inspection.
     fn read_tx(wallet: &LightWallet, raw: &[u8], target_height: BlockHeight) -> Transaction {
         Transaction::read(
@@ -449,15 +440,9 @@ mod tests {
             .transparent_bundle()
             .expect("a transparent transaction");
 
-        assert_eq!(bundle.vin.len(), 1, "spends exactly the source output");
+        crate::testutils::assertions::assert_null_data_send(bundle, PAYLOAD);
         assert_eq!(bundle.vin[0].prevout().n(), 0);
         assert_eq!(bundle.vin[0].prevout().hash(), &[7u8; 32]);
-
-        assert_eq!(
-            bundle.vout.len(),
-            2,
-            "recipient + OP_RETURN, no change output"
-        );
 
         let recipient_script: zcash_transparent::address::Script = recipient.script().into();
         let recipient_out = bundle
@@ -469,18 +454,6 @@ mod tests {
             recipient_out.value(),
             amount,
             "recipient is paid the amount"
-        );
-
-        let op_return_out = bundle
-            .vout
-            .iter()
-            .find(|out| out.value() == Zatoshis::ZERO)
-            .expect("a zero-value OP_RETURN output");
-        let script = script_bytes(op_return_out);
-        assert_eq!(script[0], 0x6a, "null-data script starts with OP_RETURN");
-        assert!(
-            script.windows(PAYLOAD.len()).any(|w| w == PAYLOAD),
-            "the OP_RETURN carries the payload verbatim"
         );
 
         assert_eq!(

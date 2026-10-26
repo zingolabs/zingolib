@@ -14,10 +14,10 @@ sync engine, send flow, and consumers (zingo-mobile, zingo-cli).
 
 ## Test infrastructure
 
-The domain of the integration-test harness: scenarios, network combos,
-chain caches, and observability instruments.
+The domain of the test infrastructure: the mock chain, the testnet cells,
+and the terms the regtest removal ruled on.
 
-- Glossary: [`zingolib_testutils/CONTEXT.md`](zingolib_testutils/CONTEXT.md)
+- Glossary: [`docs/testing/CONTEXT.md`](docs/testing/CONTEXT.md)
 
 ## Architecture decision records
 

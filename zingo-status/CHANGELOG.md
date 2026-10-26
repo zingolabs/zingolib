@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- Moves to `zcash_protocol` 0.11.0, replacing its pre-release.
 
 ### Deprecated
 
@@ -20,11 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.2] - 2026-10-15
 
-### Changed
+### Fixed
 
 - `confirmation_status::ConfirmationStatus::read` returns an `InvalidData`
   error for a serialized version above the one this build writes. It read any
-  version above 0 as version 1 before.
+  version above 0 as version 1 before, so a status written by a newer version
+  of this crate was decoded as the wrong variant instead of refused.
 
 ## [0.2.1] - 2026-06-05
 

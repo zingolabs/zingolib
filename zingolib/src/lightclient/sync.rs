@@ -98,6 +98,9 @@ impl LightClient {
                     // sync can only return an error in this context so ignore success and return errror.
                     let _ignore_sync_success = sync_result?;
                 }
+                PollReport::Panicked(text) => {
+                    return Err(LightClientError::SyncPanicked(text));
+                }
                 PollReport::NotReady => {
                     // this error should never be reached.
                     // timeout only occurs when sync has returned an error so handle will always be ready.
@@ -217,7 +220,7 @@ impl LightClient {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
                 self.sync_mode
                     .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
-                PollReport::Ready(sync_result.expect("task panicked"))
+                PollReport::from_join(sync_result)
             } else {
                 self.sync_handle = Some(sync_handle);
                 PollReport::NotReady
@@ -254,9 +257,8 @@ impl LightClient {
     /// capturing them while a continuous Sync Session runs.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
         // Completion-detection quantum: at 500ms this added up to half a
-        // second of pure quantization to every sync_and_await; the sync
-        // engine's own session on a regtest chain runs ~1.4s, so the poll
-        // interval was a visible fraction of every test's sync cost.
+        // second of pure quantization to every sync_and_await, a visible
+        // fraction of every test's sync cost.
         let mut interval = tokio::time::interval(Duration::from_millis(50));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -264,6 +266,7 @@ impl LightClient {
             match self.poll_sync() {
                 PollReport::NoHandle => return Err(LightClientError::SyncNotRunning),
                 PollReport::NotReady => (),
+                PollReport::Panicked(text) => return Err(LightClientError::SyncPanicked(text)),
                 PollReport::Ready(result) => {
                     let result = result.map_err(LightClientError::SyncError);
                     if result.is_ok() {

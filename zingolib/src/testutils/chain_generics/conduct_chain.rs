@@ -1,13 +1,11 @@
-//! A Lightclient test may involve hosting a server to send data to the LightClient. This trait can be asked to set simple scenarios where a mock LightServer sends data showing a note to a LightClient, the LightClient updates and responds by sending the note, and the Lightserver accepts the transaction and rebroadcasts it...
-//! The initial two implementors are
-//! lib-to-node, which links a lightserver to a Validator in regtest mode. see `impl ConductChain for LibtoNode
-//! darkside, a mode for the lightserver which mocks the Validator. search 'impl ConductChain for DarksideScenario
+use zcash_primitives::transaction::TxId;
 
 use crate::config::{ClientConfig, WalletConfig};
 use crate::get_base_address_macro;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::timed;
+use crate::wallet::LightWallet;
 use crate::wallet::keys::unified::ReceiverSelection;
 
 #[allow(async_fn_in_trait)]
@@ -124,4 +122,26 @@ pub trait ConductChain {
 
     /// how many blocks of leeway to allow the chain to Confirm a transaction
     fn confirmation_patience_blocks(&self) -> usize;
+
+    /// - Moves the chain tip forward up to the confirmation patience, syncing `client` after each
+    ///   block, and stops as soon as every one of `txids` is confirmed.
+    async fn await_confirmed(&mut self, client: &mut LightClient, txids: &[TxId]) -> bool {
+        for _ in 0..self.confirmation_patience_blocks() {
+            self.increase_chain_height().await;
+            self.sync_client_to_tip(client).await;
+            if all_confirmed(&*client.wallet().read().await, txids) {
+                return true;
+            }
+        }
+        all_confirmed(&*client.wallet().read().await, txids)
+    }
+}
+
+pub fn all_confirmed(wallet: &LightWallet, txids: &[TxId]) -> bool {
+    txids.iter().all(|txid| {
+        wallet
+            .wallet_transactions
+            .get(txid)
+            .is_some_and(|transaction| transaction.status().is_confirmed())
+    })
 }

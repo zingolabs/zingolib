@@ -26,7 +26,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::{RwLock, mpsc};
@@ -43,10 +43,15 @@ use zingo_netutils::lightwallet_protocol::{
     TxOut as CompactTxOut,
 };
 
+use incrementalmerkletree::Hashable as _;
 use incrementalmerkletree::frontier::CommitmentTree;
+use orchard::circuit::{OrchardCircuitVersion, VerifyingKey as OrchardVerifyingKey};
 use orchard::tree::MerkleHashOrchard;
-use zcash_primitives::merkle_tree::{read_commitment_tree, write_commitment_tree};
-use zcash_primitives::transaction::fees::zip317::{GRACE_ACTIONS, MARGINAL_FEE};
+use sapling_crypto::circuit::{OutputVerifyingKey, SpendVerifyingKey};
+use zcash_primitives::merkle_tree::{HashSer, read_commitment_tree, write_commitment_tree};
+#[cfg(test)]
+use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
+use zcash_primitives::transaction::sighash::{PrecomputedSighashData, SignableInput};
 use zcash_primitives::transaction::{Authorized, Transaction, TransactionData, TxId, TxVersion};
 use zcash_protocol::consensus::{
     BlockHeight, BranchId, COINBASE_MATURITY_BLOCKS, NetworkUpgrade, Parameters,
@@ -55,14 +60,18 @@ use zcash_protocol::value::{ZatBalance, Zatoshis};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zcash_transparent::address::Script;
 use zcash_transparent::bundle::{
-    Authorized as TransparentAuthorized, Bundle as TransparentBundle, OutPoint, TxIn, TxOut,
+    Authorization as TransparentAuthorization, Authorized as TransparentAuthorized,
+    Bundle as TransparentBundle, MapAuth as TransparentMapAuth, OutPoint, TxIn, TxOut,
 };
+use zcash_transparent::sighash::TransparentAuthorizingContext;
 use zingo_common_components::protocol::ActivationHeights;
 
 use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig};
 use crate::lightclient::LightClient;
+use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
+use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
@@ -84,9 +93,9 @@ const OP_SMALL_INTEGER_BASE: u8 = 0x50;
 const SMALL_INTEGER_MAX: u32 = 16;
 const SIGN_BIT: u8 = 0x80;
 const GENESIS_HEIGHT: BlockHeight = BlockHeight::from_u32(0);
+const NO_PREDECESSOR_HASH: [u8; 32] = [0u8; 32];
 const NO_EXPIRY: BlockHeight = BlockHeight::from_u32(0);
 const FAUCET_FUNDING: u64 = 1_000_000_000;
-const FAUCET_DEFAULT_TIP: u32 = 20;
 const FAUCET_MIN_TIP: u32 = 3;
 const FAUCET_HEADROOM: u64 = 1_000_000;
 
@@ -107,6 +116,9 @@ pub struct Rules {
     pub coinbase_maturity: bool,
     /// Whether the fee must satisfy the ZIP 317 mempool policy.
     pub fees: bool,
+    pub sapling_bundles: bool,
+    pub orchard_bundles: bool,
+    pub standard_scripts: bool,
 }
 
 impl Rules {
@@ -119,6 +131,9 @@ impl Rules {
         transparent_inputs: true,
         coinbase_maturity: true,
         fees: true,
+        sapling_bundles: true,
+        orchard_bundles: true,
+        standard_scripts: true,
     };
 
     /// The rule set with every check disabled.
@@ -130,6 +145,9 @@ impl Rules {
         transparent_inputs: false,
         coinbase_maturity: false,
         fees: false,
+        sapling_bundles: false,
+        orchard_bundles: false,
+        standard_scripts: false,
     };
 }
 
@@ -249,6 +267,14 @@ pub enum Rejection {
         /// The block limit on unpaid actions.
         limit: usize,
     },
+    InvalidSaplingBundle,
+    InvalidOrchardBundle(ShieldedPool),
+    NonStandardScript {
+        index: usize,
+    },
+    MultipleNullDataOutputs {
+        count: usize,
+    },
 }
 
 impl fmt::Display for Rejection {
@@ -316,6 +342,19 @@ impl fmt::Display for Rejection {
                 f,
                 "transaction has {unpaid} unpaid actions, above the mempool limit of {limit}"
             ),
+            Self::InvalidSaplingBundle => {
+                write!(f, "sapling bundle proofs or signatures do not verify")
+            }
+            Self::InvalidOrchardBundle(pool) => {
+                write!(f, "{pool:?} bundle proofs or signatures do not verify")
+            }
+            Self::NonStandardScript { index } => {
+                write!(f, "transparent output {index} has a non-standard script")
+            }
+            Self::MultipleNullDataOutputs { count } => write!(
+                f,
+                "transaction has {count} null-data outputs, above the limit of one"
+            ),
         }
     }
 }
@@ -343,9 +382,8 @@ pub fn check_zip317_mempool_policy(
     if fee < required {
         return Err(Rejection::FeeBelowMinimumRate { fee, required });
     }
-    let conventional_actions = logical_actions.max(GRACE_ACTIONS);
-    let paid_actions = usize::try_from(fee.into_u64() / MARGINAL_FEE.into_u64())
-        .expect("paid actions fit in usize");
+    let conventional_actions = fee_tables::conventional_actions(logical_actions);
+    let paid_actions = fee_tables::paid_actions(fee);
     let unpaid = conventional_actions.saturating_sub(paid_actions);
     if unpaid > BLOCK_UNPAID_ACTION_LIMIT {
         return Err(Rejection::UnpaidActions {
@@ -626,6 +664,37 @@ fn reduce_to_nullifiers(block: &mut CompactBlock) {
 
 fn fabricated_block_hash(height: u32) -> Vec<u8> {
     fabricated_branch_hash(height, 0)
+}
+
+/// The bytes of a note ciphertext a compact output carries.
+const COMPACT_CIPHERTEXT_LENGTH: usize = 52;
+
+/// The branch seed the filler transactions' ids are fabricated under, apart from any block's.
+const FILLER_TXID_SEED: u32 = 0xF111;
+
+fn block_time(height: u32) -> u32 {
+    BLOCK_TIME_BASE + height
+}
+
+fn chain_metadata(
+    sapling_tree: &SaplingTree,
+    orchard_tree: &OrchardTree,
+    ironwood_tree: &OrchardTree,
+) -> ChainMetadata {
+    ChainMetadata {
+        sapling_commitment_tree_size: sapling_tree.size() as u32,
+        orchard_commitment_tree_size: orchard_tree.size() as u32,
+        ironwood_commitment_tree_size: ironwood_tree.size() as u32,
+    }
+}
+
+fn decode_tree<Node: HashSer, const DEPTH: u8>(tree_hex: &str) -> CommitmentTree<Node, DEPTH> {
+    read_commitment_tree(
+        hex::decode(tree_hex)
+            .expect("the chain stores every tree state as the hex it encoded itself")
+            .as_slice(),
+    )
+    .expect("the chain stores every tree state as the bytes it serialized itself")
 }
 
 /// Where a lost-response submission lands, mirroring the validator's
@@ -953,6 +1022,12 @@ impl MockChain {
         BlockHeight::from_u32(self.tip() + 1)
     }
 
+    /// - Runs the Sapling and Halo2 provers for the built bundles.
+    pub async fn funding_transaction(&self, receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+        faucet_funding_transaction_on(self.activation_heights(), self.next_height(), receivers)
+            .await
+    }
+
     /// Returns the number of transactions in the mempool.
     pub fn mempool_len(&self) -> usize {
         self.mempool.len()
@@ -1036,7 +1111,50 @@ impl MockChain {
             check_fee(&transaction, input_total, bytes.len())?;
         }
 
+        if self.rules.standard_scripts {
+            check_standard_scripts(&transaction)?;
+        }
+
+        let verifies_sapling = self.rules.sapling_bundles && transaction.sapling_bundle().is_some();
+        let verifies_orchard = self.rules.orchard_bundles
+            && (transaction.orchard_bundle().is_some() || transaction.ironwood_bundle().is_some());
+        if verifies_sapling || verifies_orchard {
+            let inputs = self.spent_outputs(&transaction, next_height, &mempool)?;
+            let sighash = shielded_sighash(self.parse_transaction(bytes, next_height), inputs);
+            if verifies_sapling {
+                verify_sapling_bundle(&transaction, sighash)?;
+            }
+            if verifies_orchard {
+                if let Some(bundle) = transaction.orchard_bundle() {
+                    verify_orchard_bundle(bundle, sighash, ShieldedPool::Orchard)?;
+                }
+                if let Some(bundle) = transaction.ironwood_bundle() {
+                    verify_orchard_bundle(bundle, sighash, ShieldedPool::Ironwood)?;
+                }
+            }
+        }
+
         Ok(transaction)
+    }
+
+    fn spent_outputs(
+        &self,
+        transaction: &Transaction,
+        next_height: BlockHeight,
+        mempool: &MempoolState,
+    ) -> Result<Vec<TxOut>, Rejection> {
+        let Some(bundle) = transaction.transparent_bundle() else {
+            return Ok(Vec::new());
+        };
+        bundle
+            .vin
+            .iter()
+            .map(|txin| {
+                let outpoint = txin.prevout();
+                self.previous_output(outpoint, next_height, mempool)?
+                    .ok_or_else(|| Rejection::UnknownInput(outpoint.clone()))
+            })
+            .collect()
     }
 
     fn mempool_state(&self, next_height: BlockHeight) -> MempoolState {
@@ -1223,26 +1341,28 @@ impl MockChain {
             self.transactions
                 .insert(transaction.txid(), Mined { height, bytes });
         }
+        self.push_block(height, vtx);
+    }
+
+    /// - Appends the block of `vtx` at `height` to the chain, with the tree states and roots as of it.
+    /// - Drops the mempool subscribers and the expired mempool transactions.
+    fn push_block(&mut self, height: BlockHeight, vtx: Vec<CompactTx>) {
         // Chain from the stored predecessor hash rather than recomputing
         // it: after a reorg the predecessor may belong to a different
         // branch seed than this block.
-        let prev_hash = self
-            .blocks
-            .last()
-            .map(|block| block.hash.clone())
-            .unwrap_or_else(|| vec![0u8; 32]);
+        let prev_hash = self.block_hash_at(self.tip());
         self.blocks.push(CompactBlock {
             height: u64::from(u32::from(height)),
             hash: fabricated_branch_hash(u32::from(height), self.branch_seed),
             prev_hash,
-            time: BLOCK_TIME_BASE + u32::from(height),
+            time: block_time(u32::from(height)),
             header: vec![],
             vtx,
-            chain_metadata: Some(ChainMetadata {
-                sapling_commitment_tree_size: self.sapling_tree.size() as u32,
-                orchard_commitment_tree_size: self.orchard_tree.size() as u32,
-                ironwood_commitment_tree_size: self.ironwood_tree.size() as u32,
-            }),
+            chain_metadata: Some(chain_metadata(
+                &self.sapling_tree,
+                &self.orchard_tree,
+                &self.ironwood_tree,
+            )),
         });
         self.tree_states.push(tree_state_hex(
             &self.sapling_tree,
@@ -1279,6 +1399,49 @@ impl MockChain {
         }
     }
 
+    /// Mines one block of `actions` orchard actions no wallet decrypts, so a scan task over the chain splits
+    /// into loads by output count. Each action carries the empty leaf as its commitment and its nullifier, both
+    /// valid field elements, the ephemeral key of an earlier real action so trial decryption runs, and a random
+    /// ciphertext so it fails.
+    /// - Appends the commitments to the orchard tree.
+    /// - Appends one block to the chain.
+    pub fn mine_filler_orchard_block(&mut self, actions: usize) {
+        let ephemeral_key = self
+            .blocks
+            .iter()
+            .flat_map(|block| block.vtx.iter())
+            .flat_map(|tx| tx.actions.iter().chain(tx.ironwood_actions.iter()))
+            .map(|action| action.ephemeral_key.clone())
+            .next()
+            .expect("a real orchard or ironwood action precedes the filler blocks");
+        let leaf = MerkleHashOrchard::empty_leaf().to_bytes().to_vec();
+        let filler = (0..actions)
+            .map(|_| CompactOrchardAction {
+                nullifier: leaf.clone(),
+                cmx: leaf.clone(),
+                ephemeral_key: ephemeral_key.clone(),
+                ciphertext: rand::random_iter()
+                    .take(COMPACT_CIPHERTEXT_LENGTH)
+                    .collect(),
+            })
+            .collect();
+        for _ in 0..actions {
+            self.orchard_tree
+                .append(MerkleHashOrchard::empty_leaf())
+                .expect("the fabricated chain stays far below tree capacity");
+        }
+        let height = self.next_height();
+        self.push_block(
+            height,
+            vec![CompactTx {
+                index: 0,
+                txid: fabricated_branch_hash(u32::from(height), FILLER_TXID_SEED),
+                actions: filler,
+                ..Default::default()
+            }],
+        );
+    }
+
     /// Rewinds the chain to `height`, discarding every block above it,
     /// the reorg primitive. Blocks mined afterwards carry a new branch
     /// seed in their hashes, so a syncing wallet sees a hash mismatch
@@ -1296,25 +1459,10 @@ impl MockChain {
         self.blocks.truncate(height as usize);
         self.tree_states.truncate(height as usize + 1);
         self.roots.truncate(height as usize + 1);
-        let (sapling_hex, orchard_hex, ironwood_hex) = self.tree_states[height as usize].clone();
-        self.sapling_tree = read_commitment_tree(
-            hex::decode(sapling_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored sapling tree state deserializes");
-        self.orchard_tree = read_commitment_tree(
-            hex::decode(orchard_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored orchard tree state deserializes");
-        self.ironwood_tree = read_commitment_tree(
-            hex::decode(ironwood_hex)
-                .expect("stored tree state is valid hex")
-                .as_slice(),
-        )
-        .expect("stored ironwood tree state deserializes");
+        let (sapling_tree, orchard_tree, ironwood_tree) = self.trees_at(height);
+        self.sapling_tree = sapling_tree;
+        self.orchard_tree = orchard_tree;
+        self.ironwood_tree = ironwood_tree;
         let cutoff = BlockHeight::from_u32(height);
         let mut evicted: Vec<(BlockHeight, Vec<u8>)> = Vec::new();
         self.transactions.retain(|_, mined| {
@@ -1403,28 +1551,53 @@ impl MockChain {
     fn tree_state_at(&self, height: u32) -> Option<TreeState> {
         let (sapling_tree, orchard_tree, ironwood_tree) =
             self.tree_states.get(height as usize)?.clone();
-        // The stored block's own hash, so tree states follow the
-        // current branch after a reorg. Height 0 predates the chain.
-        let hash = if height == 0 {
-            fabricated_block_hash(0)
-        } else {
-            self.blocks[height as usize - 1].hash.clone()
-        };
         Some(TreeState {
             network: "regtest".to_string(),
             height: u64::from(height),
-            hash: hex::encode(hash),
-            time: BLOCK_TIME_BASE + height,
+            hash: hex::encode(self.block_hash_at(height)),
+            time: block_time(height),
             sapling_tree,
             orchard_tree,
             ironwood_tree,
         })
     }
 
+    fn trees_at(&self, height: u32) -> (SaplingTree, OrchardTree, OrchardTree) {
+        let (sapling_hex, orchard_hex, ironwood_hex) = &self.tree_states[height as usize];
+        (
+            decode_tree(sapling_hex),
+            decode_tree(orchard_hex),
+            decode_tree(ironwood_hex),
+        )
+    }
+
+    // The stored block's own hash, so tree states and predecessors follow
+    // the current branch after a reorg. The genesis block is fabricated on
+    // demand and never stored.
+    fn block_hash_at(&self, height: u32) -> Vec<u8> {
+        if height == u32::from(GENESIS_HEIGHT) {
+            fabricated_block_hash(height)
+        } else {
+            self.blocks[height as usize - 1].hash.clone()
+        }
+    }
+
     fn tip_hash(&self) -> Vec<u8> {
-        self.blocks
-            .last()
-            .map_or_else(|| fabricated_block_hash(0), |block| block.hash.clone())
+        self.block_hash_at(self.tip())
+    }
+
+    pub fn genesis_compact_block(&self) -> CompactBlock {
+        let genesis = u32::from(GENESIS_HEIGHT);
+        let (sapling_tree, orchard_tree, ironwood_tree) = self.trees_at(genesis);
+        CompactBlock {
+            height: u64::from(genesis),
+            hash: self.block_hash_at(genesis),
+            prev_hash: NO_PREDECESSOR_HASH.to_vec(),
+            time: block_time(genesis),
+            header: vec![],
+            vtx: vec![],
+            chain_metadata: Some(chain_metadata(&sapling_tree, &orchard_tree, &ironwood_tree)),
+        }
     }
 }
 
@@ -1441,6 +1614,187 @@ fn check_fee(
         Rejection::NegativeFee(Zatoshis::const_from_u64(i64::from(fee).unsigned_abs()))
     })?;
     check_zip317_mempool_policy(logical_actions(transaction), fee, size_bytes)
+}
+
+#[derive(Debug)]
+struct SighashInputs {
+    inputs: Vec<TxOut>,
+}
+
+impl TransparentAuthorization for SighashInputs {
+    type ScriptSig = ();
+}
+
+impl TransparentAuthorizingContext for SighashInputs {
+    fn input_amounts(&self) -> Vec<Zatoshis> {
+        self.inputs.iter().map(TxOut::value).collect()
+    }
+
+    fn input_scriptpubkeys(&self) -> Vec<Script> {
+        self.inputs
+            .iter()
+            .map(|input| input.script_pubkey().clone())
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+struct SighashAuthorization;
+
+impl zcash_primitives::transaction::Authorization for SighashAuthorization {
+    type TransparentAuth = SighashInputs;
+    type SaplingAuth = sapling_crypto::bundle::Authorized;
+    type OrchardAuth = orchard::bundle::Authorized;
+}
+
+struct ToSighashInputs(Vec<TxOut>);
+
+impl TransparentMapAuth<TransparentAuthorized, SighashInputs> for ToSighashInputs {
+    fn map_script_sig(&self, _: Script) {}
+
+    fn map_authorization(&self, _: TransparentAuthorized) -> SighashInputs {
+        SighashInputs {
+            inputs: self.0.clone(),
+        }
+    }
+}
+
+fn shielded_sighash(transaction: Transaction, inputs: Vec<TxOut>) -> [u8; 32] {
+    let data: TransactionData<SighashAuthorization> =
+        transaction
+            .into_data()
+            .map_authorization(ToSighashInputs(inputs), (), ());
+    *PrecomputedSighashData::new(data)
+        .signature_hash(&SignableInput::Shielded)
+        .as_ref()
+}
+
+/// - Parses the embedded Sapling parameters on the first call and caches the verifying keys for the process.
+fn sapling_verifying_keys() -> &'static (SpendVerifyingKey, OutputVerifyingKey) {
+    static KEYS: OnceLock<(SpendVerifyingKey, OutputVerifyingKey)> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        zcash_proofs::prover::LocalTxProver::from_bytes(
+            crate::SaplingParams::SPEND,
+            crate::SaplingParams::OUTPUT,
+        )
+        .verifying_keys()
+    })
+}
+
+/// - Builds the verifying key of `version` on its first call and caches it for the process.
+fn orchard_verifying_key(version: OrchardCircuitVersion) -> &'static OrchardVerifyingKey {
+    static INSECURE_PRE_NU6_2: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    static FIXED_POST_NU6_2: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    static POST_NU6_3: OnceLock<OrchardVerifyingKey> = OnceLock::new();
+    let key = match version {
+        OrchardCircuitVersion::InsecurePreNu6_2 => &INSECURE_PRE_NU6_2,
+        OrchardCircuitVersion::FixedPostNu6_2 => &FIXED_POST_NU6_2,
+        OrchardCircuitVersion::PostNu6_3 => &POST_NU6_3,
+    };
+    key.get_or_init(|| OrchardVerifyingKey::build(version))
+}
+
+fn verify_sapling_bundle(transaction: &Transaction, sighash: [u8; 32]) -> Result<(), Rejection> {
+    let Some(bundle) = transaction.sapling_bundle() else {
+        return Ok(());
+    };
+    let mut validator = sapling_crypto::BatchValidator::new();
+    if !validator.check_bundle(bundle.clone(), sighash) {
+        return Err(Rejection::InvalidSaplingBundle);
+    }
+    let (spend_key, output_key) = sapling_verifying_keys();
+    if validator.validate(spend_key, output_key, crate::utils::system_rng()) {
+        Ok(())
+    } else {
+        Err(Rejection::InvalidSaplingBundle)
+    }
+}
+
+fn verify_orchard_bundle(
+    bundle: &OrchardBundle,
+    sighash: [u8; 32],
+    pool: ShieldedPool,
+) -> Result<(), Rejection> {
+    let key = orchard_verifying_key(bundle.bundle_version().circuit_version());
+    let mut validator = orchard::bundle::BatchValidator::new(key);
+    let valid = validator.add_bundle(bundle, sighash).is_ok()
+        && validator.validate(crate::utils::system_rng());
+    if valid {
+        Ok(())
+    } else {
+        Err(Rejection::InvalidOrchardBundle(pool))
+    }
+}
+
+const OP_PUSHDATA1: u8 = 0x4c;
+const OP_DUP: u8 = 0x76;
+const OP_EQUAL: u8 = 0x87;
+const OP_EQUALVERIFY: u8 = 0x88;
+const OP_HASH160: u8 = 0xa9;
+const OP_CHECKSIG: u8 = 0xac;
+const HASH160_PUSH: u8 = 20;
+const MAX_DIRECT_PUSH: u8 = 75;
+const P2PKH_SCRIPT_LEN: usize = 25;
+const P2SH_SCRIPT_LEN: usize = 23;
+const MAX_NULL_DATA_PAYLOAD: usize = 80;
+
+fn is_p2pkh(script: &[u8]) -> bool {
+    script.len() == P2PKH_SCRIPT_LEN
+        && script[0] == OP_DUP
+        && script[1] == OP_HASH160
+        && script[2] == HASH160_PUSH
+        && script[23] == OP_EQUALVERIFY
+        && script[24] == OP_CHECKSIG
+}
+
+fn is_p2sh(script: &[u8]) -> bool {
+    script.len() == P2SH_SCRIPT_LEN
+        && script[0] == OP_HASH160
+        && script[1] == HASH160_PUSH
+        && script[22] == OP_EQUAL
+}
+
+fn null_data_payload(script: &[u8]) -> Option<usize> {
+    let Some((&OP_RETURN, mut rest)) = script.split_first() else {
+        return None;
+    };
+    let mut payload = 0;
+    while let Some((&opcode, tail)) = rest.split_first() {
+        let (length, tail) = match opcode {
+            0..=MAX_DIRECT_PUSH => (usize::from(opcode), tail),
+            OP_PUSHDATA1 => {
+                let (&length, tail) = tail.split_first()?;
+                (usize::from(length), tail)
+            }
+            _ => return None,
+        };
+        rest = tail.get(length..)?;
+        payload += length;
+    }
+    Some(payload)
+}
+
+fn check_standard_scripts(transaction: &Transaction) -> Result<(), Rejection> {
+    let Some(bundle) = transaction.transparent_bundle() else {
+        return Ok(());
+    };
+    let mut null_data_outputs = 0;
+    for (index, output) in bundle.vout.iter().enumerate() {
+        let script = output.script_pubkey().0.0.as_slice();
+        if is_p2pkh(script) || is_p2sh(script) {
+            continue;
+        }
+        match null_data_payload(script) {
+            Some(payload) if payload <= MAX_NULL_DATA_PAYLOAD => null_data_outputs += 1,
+            _ => return Err(Rejection::NonStandardScript { index }),
+        }
+    }
+    if null_data_outputs > 1 {
+        return Err(Rejection::MultipleNullDataOutputs {
+            count: null_data_outputs,
+        });
+    }
+    Ok(())
 }
 
 fn bytes32(raw: &[u8]) -> [u8; 32] {
@@ -1468,7 +1822,7 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
         .map(|output| CompactSaplingOutput {
             cmu: output.cmu().to_bytes().to_vec(),
             ephemeral_key: output.ephemeral_key().0.to_vec(),
-            ciphertext: output.enc_ciphertext()[..52].to_vec(),
+            ciphertext: output.enc_ciphertext()[..COMPACT_CIPHERTEXT_LENGTH].to_vec(),
         })
         .collect();
     let actions = transaction
@@ -1479,7 +1833,9 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()
+                [..COMPACT_CIPHERTEXT_LENGTH]
+                .to_vec(),
         })
         .collect();
     let ironwood_actions = transaction
@@ -1490,7 +1846,9 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
             nullifier: action.nullifier().to_bytes().to_vec(),
             cmx: action.cmx().to_bytes().to_vec(),
             ephemeral_key: action.encrypted_note().epk_bytes.to_vec(),
-            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()[..52].to_vec(),
+            ciphertext: action.encrypted_note().enc_ciphertext.as_ref()
+                [..COMPACT_CIPHERTEXT_LENGTH]
+                .to_vec(),
         })
         .collect();
     let vin = transaction
@@ -1575,17 +1933,19 @@ impl MockIndexerService {
         let fault = self.fault_for(Rpc::BlockRange).await?;
         let start = range.start.as_ref().map_or(0, |id| id.height) as usize;
         let end = range.end.as_ref().map_or(0, |id| id.height) as usize;
-        if start == 0 || end < start {
-            return Err(Status::invalid_argument(
-                "the mock serves ascending ranges starting at height 1",
-            ));
+        if end < start {
+            return Err(Status::invalid_argument("the mock serves ascending ranges"));
         }
         let chain = self.chain.read().await;
         if end > chain.blocks.len() {
             return Err(Status::not_found(format!("no block at height {end}")));
         }
         let pools = RequestedPools::from_range(&range)?;
-        let mut blocks: Vec<_> = chain.blocks[start - 1..end].to_vec();
+        let mut blocks: Vec<_> = (start == 0)
+            .then(|| chain.genesis_compact_block())
+            .into_iter()
+            .chain(chain.blocks[start.max(1) - 1..end].iter().cloned())
+            .collect();
         for block in &mut blocks {
             pools.prune(block);
             if nullifiers_only {
@@ -1636,9 +1996,12 @@ impl CompactTxStreamer for MockIndexerService {
         self.fault_for(Rpc::Block).await?;
         let height = request.into_inner().height;
         let chain = self.chain.read().await;
+        if height == u64::from(u32::from(GENESIS_HEIGHT)) {
+            return Ok(Response::new(chain.genesis_compact_block()));
+        }
         chain
             .blocks
-            .get((height as usize).wrapping_sub(1))
+            .get(height as usize - 1)
             .cloned()
             .map(Response::new)
             .ok_or_else(|| Status::not_found(format!("no block at height {height}")))
@@ -2061,6 +2424,18 @@ pub struct MockNet {
 }
 
 impl MockNet {
+    pub const DEFAULT_BIRTHDAY: u32 = 1;
+
+    /// - Takes the chain's read lock to read its activation schedule and next height, and
+    ///   releases it before running the Sapling and Halo2 provers for the built bundles.
+    pub async fn funding_transaction(&self, receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
+        let (activation_heights, height) = {
+            let chain = self.chain.read().await;
+            (chain.activation_heights(), chain.next_height())
+        };
+        faucet_funding_transaction_on(activation_heights, height, receivers).await
+    }
+
     /// Launches the mock server on an ephemeral localhost port with an
     /// empty chain.
     pub async fn launch() -> Self {
@@ -2168,15 +2543,13 @@ impl MockNet {
         builder
     }
 
-    /// Builds a `LightClient` for `mnemonic` (birthday 1) dialed at the
-    /// mock, with its wallet directory in a tempdir this net keeps
-    /// alive.
+    /// - Keeps the new wallet's directory alive in this net, as [`MockNet::client_with_birthday`] does.
     pub async fn client(
         &mut self,
         mnemonic: &str,
         wallet_settings_opt: Option<WalletSettings>,
     ) -> LightClient {
-        self.client_with_birthday(mnemonic, 1, wallet_settings_opt)
+        self.client_with_birthday(mnemonic, Self::DEFAULT_BIRTHDAY, wallet_settings_opt)
             .await
     }
 
@@ -2265,16 +2638,10 @@ impl ConductChain for MockNet {
     async fn create_faucet(&mut self) -> LightClient {
         let mut faucet = self.create_client().await;
         let address = get_base_address(&faucet, PoolType::Shielded(ShieldedPool::Orchard)).await;
-        {
-            let mut chain = self.chain.write().await;
-            let funding = faucet_funding_transaction_on(
-                chain.activation_heights(),
-                chain.next_height(),
-                vec![(&address, FAUCET_FUNDING, None)],
-            )
+        let funding = self
+            .funding_transaction(vec![(&address, FAUCET_FUNDING, None)])
             .await;
-            chain.mine_block(vec![funding]);
-        }
+        self.chain.write().await.mine_block(vec![funding]);
         faucet
             .sync_and_await()
             .await
@@ -2300,16 +2667,6 @@ impl ConductChain for MockNet {
     fn confirmation_patience_blocks(&self) -> usize {
         1
     }
-}
-
-/// - Runs the Sapling and Halo2 provers for the built bundles.
-pub async fn faucet_funding_transaction(receivers: Vec<(&str, u64, Option<&str>)>) -> Vec<u8> {
-    faucet_funding_transaction_on(
-        crate::testutils::mock_activation_heights(),
-        BlockHeight::from_u32(FAUCET_DEFAULT_TIP + 1),
-        receivers,
-    )
-    .await
 }
 
 fn ironwood_era(activation_heights: ActivationHeights, height: BlockHeight) -> bool {
@@ -2431,13 +2788,14 @@ mod tests {
     const HEIGHT_ONE: BlockHeight = BlockHeight::from_u32(1);
     const HEIGHT_TWO: BlockHeight = BlockHeight::from_u32(2);
 
-    async fn funding_bytes() -> Vec<u8> {
-        faucet_funding_transaction(vec![(
-            &synthetic_wallet::external_orchard_address(),
-            PAYMENT,
-            None,
-        )])
-        .await
+    async fn funding_bytes(chain: &MockChain) -> Vec<u8> {
+        chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )])
+            .await
     }
 
     fn lax_anchors() -> MockChain {
@@ -2509,7 +2867,7 @@ mod tests {
     #[tokio::test]
     async fn faucet_transaction_is_rejected_for_unknown_anchor() {
         let mut chain = MockChain::new();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
         assert!(
             matches!(rejection, Rejection::UnknownAnchor(_)),
@@ -2521,7 +2879,7 @@ mod tests {
     #[tokio::test]
     async fn resubmission_with_revealed_nullifier_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         chain.submit_transaction(bytes.clone()).unwrap();
         let in_mempool = chain.submit_transaction(bytes.clone()).unwrap_err();
         assert!(matches!(in_mempool, Rejection::DuplicateNullifier(_)));
@@ -2533,7 +2891,7 @@ mod tests {
     #[tokio::test]
     async fn reorg_removes_nullifiers_of_evicted_blocks() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         chain.mine_empty_blocks(2);
         chain.submit_transaction(bytes.clone()).unwrap();
         chain.mine_mempool();
@@ -2546,7 +2904,7 @@ mod tests {
     #[tokio::test]
     async fn expired_mempool_transactions_are_evicted_when_a_block_is_mined() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         chain.submit_transaction(bytes).unwrap();
         chain.mine_empty_blocks(u32::from(expiry) - 1);
@@ -2558,7 +2916,7 @@ mod tests {
     #[tokio::test]
     async fn expired_transaction_is_rejected() {
         let mut chain = lax_anchors();
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&chain).await;
         let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
         assert!(expiry > NO_EXPIRY);
         chain.mine_empty_blocks(u32::from(expiry));
@@ -2576,7 +2934,16 @@ mod tests {
     async fn transaction_with_wrong_branch_id_is_rejected() {
         let mut chain = MockChain::with_activation_heights(pre_ironwood_activation_heights());
         chain.rules.anchors = false;
-        let bytes = funding_bytes().await;
+        let bytes = faucet_funding_transaction_on(
+            crate::testutils::mock_activation_heights(),
+            chain.next_height(),
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
+        )
+        .await;
         let rejection = chain.submit_transaction(bytes).unwrap_err();
         assert!(
             matches!(
@@ -2590,7 +2957,7 @@ mod tests {
     #[test]
     fn coinbase_outputs_mature_after_one_hundred_blocks() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         assert!(
@@ -2628,9 +2995,31 @@ mod tests {
     }
 
     #[test]
+    fn the_genesis_block_precedes_the_first_block_and_follows_nothing() {
+        let mut chain = MockChain::new();
+        chain.mine_empty_blocks(1);
+        let genesis = chain.genesis_compact_block();
+        assert_eq!(genesis.height, 0);
+        assert_eq!(genesis.prev_hash, NO_PREDECESSOR_HASH.to_vec());
+        assert_eq!(
+            genesis.chain_metadata,
+            Some(chain_metadata(
+                &SaplingTree::empty(),
+                &OrchardTree::empty(),
+                &OrchardTree::empty()
+            ))
+        );
+        assert_eq!(chain.blocks[0].prev_hash, genesis.hash);
+        assert_eq!(
+            chain.tree_state_at(0).map(|state| state.hash),
+            Some(hex::encode(&genesis.hash))
+        );
+    }
+
+    #[test]
     fn unknown_transparent_input_is_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let outpoint = OutPoint::new([7; 32], 0);
         let spend = transparent_spend(&chain, outpoint.clone(), SPEND_VALUE, &miner);
         assert_eq!(
@@ -2642,7 +3031,7 @@ mod tests {
     #[test]
     fn mempool_outputs_are_spendable_before_they_are_mined() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
         let first = transparent_spend(
@@ -2672,7 +3061,7 @@ mod tests {
     #[test]
     fn outputs_above_inputs_are_rejected() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_outpoint = first_output(txid_of(&chain, &coinbase));
         chain.mine_empty_blocks(COINBASE_MATURITY_BLOCKS);
@@ -2691,7 +3080,7 @@ mod tests {
     #[test]
     fn unspent_outputs_exclude_spent_outpoints() {
         let mut chain = MockChain::new();
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         let coinbase = chain.mine_block_rewarding(&miner, REWARD, vec![]);
         let coinbase_txid = txid_of(&chain, &coinbase);
         let unspent = chain.unspent_outputs(&miner, HEIGHT_ONE).unwrap();
@@ -2723,7 +3112,7 @@ mod tests {
     async fn mempool_stream_yields_new_transactions_and_closes_on_new_block() {
         let chain = Arc::new(RwLock::new(lax_anchors()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         let mut stream = service
             .get_mempool_stream(Request::new(Empty {}))
             .await
@@ -2755,7 +3144,7 @@ mod tests {
     async fn mempool_stream_yields_existing_mempool_on_subscription() {
         let chain = Arc::new(RwLock::new(lax_anchors()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         chain
             .write()
             .await
@@ -2772,7 +3161,7 @@ mod tests {
     #[tokio::test]
     async fn address_utxos_stream_applies_injected_stream_faults() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
-        let miner = synthetic_wallet::external_transparent_address();
+        let miner = synthetic_wallet::external_address(PoolType::Transparent);
         {
             let mut chain = chain.write().await;
             chain.mine_block_rewarding(&miner, REWARD, vec![]);
@@ -2885,7 +3274,7 @@ mod tests {
     async fn send_transaction_returns_rejection_in_zaino_error_format() {
         let chain = Arc::new(RwLock::new(MockChain::new()));
         let service = MockIndexerService::new(chain.clone());
-        let bytes = funding_bytes().await;
+        let bytes = funding_bytes(&*chain.read().await).await;
         let status = service
             .send_transaction(Request::new(RawTransaction {
                 data: bytes,
@@ -2917,5 +3306,215 @@ mod tests {
         assert_eq!(info.sapling_activation_height, 1);
         let expected: u32 = BranchId::Nu6_2.into();
         assert_eq!(info.consensus_branch_id, format!("{expected:08x}"));
+    }
+
+    fn with_expiry(chain: &MockChain, bytes: &[u8], expiry: BlockHeight) -> Vec<u8> {
+        let data = chain
+            .parse_transaction(bytes, chain.next_height())
+            .into_data();
+        let transparent = data
+            .transparent_bundle()
+            .cloned()
+            .unwrap_or(TransparentBundle {
+                vin: vec![],
+                vout: vec![],
+                authorization: TransparentAuthorized,
+            });
+        transaction_bytes_for_branch(
+            data.consensus_branch_id(),
+            expiry,
+            transparent,
+            data.sapling_bundle().cloned(),
+            data.orchard_bundle().cloned(),
+            data.ironwood_bundle().cloned(),
+        )
+    }
+
+    fn with_corrupted_slice(bytes: &[u8], slice: &[u8]) -> Vec<u8> {
+        let offset = bytes
+            .windows(slice.len())
+            .position(|window| window == slice)
+            .expect("a bundle's proof is serialized verbatim inside its transaction");
+        let mut corrupted = bytes.to_vec();
+        corrupted[offset] ^= 1;
+        corrupted
+    }
+
+    fn null_data_transaction(chain: &MockChain, payloads: &[usize]) -> Vec<u8> {
+        let outputs = payloads
+            .iter()
+            .map(|&payload| {
+                let mut script = vec![OP_RETURN, OP_PUSHDATA1, payload as u8];
+                script.extend(std::iter::repeat_n(0xab, payload));
+                let mut serialized = vec![script.len() as u8];
+                serialized.extend(&script);
+                TxOut::new(
+                    Zatoshis::ZERO,
+                    Script::read(serialized.as_slice())
+                        .expect("a length-prefixed byte vector reads as a script"),
+                )
+            })
+            .collect();
+        let input = TxIn::from_parts(
+            OutPoint::new([0; 32], 0),
+            Script::read([0u8].as_slice()).expect("an empty script reads"),
+            u32::MAX,
+        );
+        transparent_only_transaction(
+            &chain.chain_type(),
+            chain.next_height(),
+            vec![input],
+            outputs,
+        )
+    }
+
+    fn only_standard_scripts() -> MockChain {
+        let mut chain = MockChain::new();
+        chain.rules = Rules::LAX;
+        chain.rules.standard_scripts = true;
+        chain
+    }
+
+    #[tokio::test]
+    async fn orchard_bundle_signed_over_another_sighash_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = funding_bytes(&chain).await;
+        let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
+        let resigned = with_expiry(&chain, &bytes, expiry + 1);
+        let rejection = chain
+            .submit_transaction(resigned)
+            .expect_err("signatures over the old header do not verify over the new one");
+        assert!(
+            matches!(rejection, Rejection::InvalidOrchardBundle(_)),
+            "{rejection}"
+        );
+        assert_eq!(chain.mempool_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn orchard_bundle_with_corrupted_proof_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = funding_bytes(&chain).await;
+        let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
+        let bundle = transaction
+            .ironwood_bundle()
+            .or(transaction.orchard_bundle())
+            .expect("the faucet pays an orchard-family receiver through an orchard-family bundle");
+        let corrupted = with_corrupted_slice(&bytes, bundle.authorization().proof().as_ref());
+        let rejection = chain
+            .submit_transaction(corrupted)
+            .expect_err("a corrupted proof does not verify");
+        assert!(
+            matches!(rejection, Rejection::InvalidOrchardBundle(_)),
+            "{rejection}"
+        );
+    }
+
+    #[tokio::test]
+    async fn sapling_bundle_signed_over_another_sighash_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_address(PoolType::SAPLING),
+                PAYMENT,
+                None,
+            )])
+            .await;
+        let expiry = chain.parse_transaction(&bytes, HEIGHT_ONE).expiry_height();
+        let resigned = with_expiry(&chain, &bytes, expiry + 1);
+        let rejection = chain
+            .submit_transaction(resigned)
+            .expect_err("the binding signature over the old header does not verify");
+        assert_eq!(rejection, Rejection::InvalidSaplingBundle);
+    }
+
+    #[tokio::test]
+    async fn sapling_bundle_with_corrupted_output_proof_is_rejected() {
+        let mut chain = lax_anchors();
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_address(PoolType::SAPLING),
+                PAYMENT,
+                None,
+            )])
+            .await;
+        let transaction = chain.parse_transaction(&bytes, HEIGHT_ONE);
+        let output = transaction
+            .sapling_bundle()
+            .and_then(|bundle| bundle.shielded_outputs().first())
+            .expect("the faucet pays a sapling receiver through a sapling output");
+        let corrupted = with_corrupted_slice(&bytes, output.zkproof().as_slice());
+        let rejection = chain
+            .submit_transaction(corrupted)
+            .expect_err("a corrupted output proof does not verify");
+        assert_eq!(rejection, Rejection::InvalidSaplingBundle);
+    }
+
+    #[tokio::test]
+    async fn valid_sapling_and_orchard_bundles_are_accepted_under_verification() {
+        let mut chain = lax_anchors();
+        let bytes = chain
+            .funding_transaction(vec![(
+                &synthetic_wallet::external_address(PoolType::SAPLING),
+                PAYMENT,
+                None,
+            )])
+            .await;
+        chain
+            .submit_transaction(bytes)
+            .expect("the faucet's own proofs and signatures verify");
+        assert_eq!(chain.mempool_len(), 1);
+    }
+
+    #[test]
+    fn null_data_output_within_the_payload_limit_is_standard() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD]);
+        assert!(chain.validate(&bytes).is_ok());
+    }
+
+    #[test]
+    fn null_data_output_above_the_payload_limit_is_rejected() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD + 1]);
+        let rejection = chain
+            .validate(&bytes)
+            .expect_err("an oversized null-data output is non-standard");
+        assert_eq!(rejection, Rejection::NonStandardScript { index: 0 });
+    }
+
+    #[test]
+    fn two_null_data_outputs_are_rejected() {
+        let chain = only_standard_scripts();
+        let bytes = null_data_transaction(&chain, &[1, 1]);
+        let rejection = chain
+            .validate(&bytes)
+            .expect_err("a second null-data output is non-standard");
+        assert_eq!(rejection, Rejection::MultipleNullDataOutputs { count: 2 });
+    }
+
+    #[test]
+    fn pay_to_public_key_hash_outputs_are_standard() {
+        let chain = only_standard_scripts();
+        let output = TxOut::new(
+            REWARD,
+            taddr_script(
+                &synthetic_wallet::external_address(PoolType::Transparent),
+                &chain.chain_type(),
+            )
+            .expect("a synthetic wallet's transparent address encodes a script"),
+        );
+        let input = TxIn::from_parts(
+            OutPoint::new([0; 32], 0),
+            Script::read([0u8].as_slice()).expect("an empty script reads"),
+            u32::MAX,
+        );
+        let bytes = transparent_only_transaction(
+            &chain.chain_type(),
+            chain.next_height(),
+            vec![input],
+            vec![output],
+        );
+        assert!(chain.validate(&bytes).is_ok());
     }
 }

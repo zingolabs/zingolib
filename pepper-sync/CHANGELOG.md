@@ -10,12 +10,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
+  `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
+  activation height, 3,543,405.
+- The anchor-checkpoint retention policy runs on the chain's block spacing
+  (`zcash_protocol::zip318::BlockSpacing`): from NU7 activation the ZIP 318
+  anchor grid's boundaries sit three times as many blocks apart, and the
+  retained checkpoints and the retention window, measured in reference
+  blocks, follow them.
+- `sync::MAX_REORG_ALLOWANCE` is 1000, following zebra's
+  `MAX_BLOCK_REORG_HEIGHT`, which zebra 5.2.0 raised from 100 and has kept
+  since. A re-org up to 1000 blocks deep is truncated and scanned again,
+  where a re-org deeper than 100 blocks cleared the wallet's chain data
+  before. The wallet keeps the wallet blocks and, through
+  `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE` and `MAX_SHARDTREE_CHECKPOINTS`,
+  the shard tree checkpoints of the last 1000 scanned blocks, and
+  transparent address discovery searches the 1000 blocks below the last
+  known chain height at the start of a sync session. A wallet whose last
+  known chain height is more than 1000 blocks above the server's chain
+  height returns `SyncError::ChainError`, where the bound was 100.
+- BREAKING: `wallet::traits::SyncShardTrees::update_shard_trees` takes the
+  session's chain height and the wallet's highest scanned block as of the
+  task's selection, in place of the wallet's highest scanned block at
+  processing time. A load's rolling checkpoint window hangs from the chain
+  height, so only the loads inside the top window of the chain place it,
+  whatever task they belong to. Every load also places a checkpoint at its
+  own last block, so a session stopped after it anchors a spend there, and
+  the anchor retention boundaries as of that block or the highest scanned
+  block when that is higher, so such a session anchors a pool crossing
+  too. Before, every load of a task above the highest scanned height placed
+  a full window hanging from its own last block, which the next load's
+  inserts pruned, and the scan and the update could disagree once another
+  task moved the wallet's highest scanned block between a load's scan and
+  its update.
+- A block hash that disagrees more than `MAX_REORG_ALLOWANCE` below the
+  chain height the wallet's scanned state was formed against is a
+  different chain: the wallet is cleared and
+  `ServerError::ChainVerificationError` returned, as for a re-org deeper
+  than the allowance. The depth was measured from the wallet's highest
+  scanned block, so a wallet stopped between the loads of a task that met
+  such a disagreement attempted a truncation, found no checkpoint at the
+  fork, and was cleared with `SyncError::TruncationError` instead.
+- Scanning places a shard tree checkpoint only on the blocks the wallet
+  will hold one for: the top `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`
+  blocks of a range scanned above the highest scanned height, the blocks of
+  a lower range inside that window, and the anchor retention boundaries
+  inside their window. Every other block's checkpoint was built, inserted
+  and pruned from each pool's tree for nothing, a fixed cost per block per
+  active pool that grew with the ironwood pool. The window was sized by
+  `MAX_SHARDTREE_CHECKPOINTS` before, which counts the pinned anchor
+  boundaries the rolling budget excludes, so the bottom six blocks of every
+  window were checkpointed and pruned as well. The heights come from one function,
+  `witness::checkpoint_heights`, which the shard tree update also uses to
+  decide the checkpoints it adds for blocks that leave a pool's tree
+  unchanged, so the two sides agree. A scan task carries the wallet's
+  highest scanned height from its selection for this.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+- The mempool stream is opened without a call deadline. It was opened with
+  the 20 s bound meant for a finite download, sent to the server as
+  `grpc-timeout`, so on mainnet almost every stream ended with
+  `DEADLINE_EXCEEDED` before the next block, logged a warning, and was
+  reopened with the whole mempool resent. The stream now ends when the
+  server ends it at the next block, which is the signal the monitor
+  already treats as a mined block.
+- The finite streams (block ranges, subtree roots, transparent address
+  transactions) are bounded at 120 s for the whole download in place of
+  20 s. A stall between messages is still caught after 15 s.
+- The scan results of a task's loads are processed in block height order.
+  The loads of a scan range are scanned concurrently and returned in
+  completion order, so a load could be processed before a lower load of the
+  same range. When the nullifier map is capped by the performance level,
+  every processed load of a range above unscanned ranges is scanned without
+  mapping, and a note found in the lower load then recorded the higher load
+  as a range whose nullifiers must be re-fetched before the note is known to
+  be unspent. That re-fetch only runs once every range below is scanned, so a
+  note received at the chain tip stayed unspendable for the whole historic
+  sync. A result arriving above an unprocessed lower load of its task is now
+  held back until that load arrives, and a worker takes a new load only while
+  the scanning workers and held results together stay within the worker pool,
+  so the loads in memory never exceed the pool.
 
 ## [0.6.0] - 2026-10-15
 
@@ -141,8 +219,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::traits::SyncWallet::get_transparent_addresses` and
   `get_transparent_addresses_mut` document that the returned addresses must be
   in use and must not include gap addresses.
-- `sync::SyncResult` `Display` output is headed "Sync result" instead of
-  "Sync completed succesfully", since sync may now return on explicit shutdown.
 - BREAKING: the truncation rescan announces itself. `error::SyncError::PoolHistoryReopened`
   is now a struct variant carrying the pool, the rescan height, the
   disagreeing block, and both tree sizes, and it renders one

@@ -132,7 +132,7 @@ pub(crate) enum Acquirer {
     /// The bundled binary a desktop spawns.
     Spawned(SpawnedBinary),
     /// The host that owns the proxy where a sandbox forbids subprocesses.
-    Hosted(HostedProvider),
+    Hosted(HostedAcquirer),
     /// A double that announces readiness itself, so a test can script the
     /// transition order the real readiness probe produces on its own clock.
     #[cfg(test)]
@@ -168,7 +168,12 @@ impl TransportAcquirable for AnnouncingAcquirer {
     ) -> Result<MixnetProxy, TransportError> {
         let addr = self.socks5_addr;
         let clutch = clutch.to_vec();
-        let proxy = MixnetProxy::attach(addr, &clutch, std::sync::Arc::clone(&publisher))?;
+        let proxy = MixnetProxy::attach(
+            addr,
+            &clutch,
+            crate::mixnet::test_indexer(),
+            std::sync::Arc::clone(&publisher),
+        )?;
         // The candidate announces readiness where a child would: into the
         // publisher its acquisition was handed.
         publisher.send_replace(crate::mixnet::MixnetStatus {
@@ -215,9 +220,7 @@ impl TransportAcquirable for Acquirer {
     fn rotation_verdict(&self) -> RotationVerdict {
         match self {
             Acquirer::Spawned(spawned) => spawned.rotation_verdict(),
-            Acquirer::Hosted(hosted) => {
-                <HostedProvider as TransportAcquirable>::rotation_verdict(hosted)
-            }
+            Acquirer::Hosted(hosted) => hosted.rotation_verdict(),
             #[cfg(test)]
             Acquirer::Announcing(announcing) => announcing.rotation_verdict(),
         }
@@ -229,9 +232,14 @@ pub use zingo_netutils::provider::{
     HostRefusal, HostedProvider, HostedTransport, ProxyHosting, RotationVerdict, rotation_interval,
 };
 
-impl TransportAcquirable for HostedProvider {
+pub(crate) struct HostedAcquirer {
+    pub(crate) provider: HostedProvider,
+    pub(crate) indexer: http::Uri,
+}
+
+impl TransportAcquirable for HostedAcquirer {
     async fn discover(&self) -> Result<HashSet<crate::mixnet::ExitNodeId>, TransportError> {
-        let provider = self.clone();
+        let provider = self.provider.clone();
         // The host's directory query blocks, so it runs off the runtime's
         // worker threads; the provider itself names no runtime.
         let reported = tokio::task::spawn_blocking(move || provider.discover_exit_nodes())
@@ -246,18 +254,23 @@ impl TransportAcquirable for HostedProvider {
         clutch: &[crate::mixnet::ExitNodeId],
         publisher: StatusPublisher,
     ) -> Result<MixnetProxy, TransportError> {
-        let provider = self.clone();
+        let provider = self.provider.clone();
         let clutch = clutch.to_vec();
         let hosted = tokio::task::spawn_blocking(move || provider.start_transport(&clutch))
             .await
             .map_err(|join| TransportError::HostUnavailable(join.to_string()))?
             .map_err(TransportError::HostRefused)?;
-        MixnetProxy::attach(hosted.socks5_addr, &[hosted.exit_node], publisher)
-            .map_err(TransportError::from)
+        MixnetProxy::attach(
+            hosted.socks5_addr,
+            &[hosted.exit_node],
+            self.indexer.clone(),
+            publisher,
+        )
+        .map_err(TransportError::from)
     }
 
     fn rotation_verdict(&self) -> RotationVerdict {
-        zingo_netutils::provider::HostedProvider::rotation_verdict(self)
+        self.provider.rotation_verdict()
     }
 }
 
@@ -344,8 +357,11 @@ mod tests {
         }
     }
 
-    fn hosted(host: ScriptedHost) -> HostedProvider {
-        HostedProvider::owned_by(host)
+    fn hosted(host: ScriptedHost) -> HostedAcquirer {
+        HostedAcquirer {
+            provider: HostedProvider::owned_by(host),
+            indexer: crate::mixnet::test_indexer(),
+        }
     }
 
     /// HYPOTHESIS: a host's directory answer seeds the Exit Pool exactly as

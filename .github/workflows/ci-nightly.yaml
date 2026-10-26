@@ -6,10 +6,16 @@ on:
   schedule:
     - cron: '30 3 * * *'
 
+# The testnet cells spend from one shared wallet, so two nightlies never
+# run at once: a dispatch queues behind the schedule instead of sharing it.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
 
   # The binding-layer-android job below builds x86_64 with the other ABIs,
-  # and the binding-layer-ios job builds the XCFrameworks on this commit,
+  # and the binding-layer-ios job builds the XCFramework on this commit,
   # so the per-PR workflow skips both of its Binding Layer builds here.
   # The per-PR cargo-hack job builds every feature set instead of checking
   # it, with the flags that job alone holds.
@@ -65,6 +71,81 @@ jobs:
           name: sync-ab-${{ github.sha }}
           path: sync-ab.log
 
+  # The testnet cells and the live staged probe, which no pull request
+  # runs: the one end-to-end mixnet send in the repository, the ten cells
+  # beside it that spend from the shared GloryGoddess wallet against the
+  # testnet indexer the suite names, and the nakednet probe of the
+  # mainnet Default Indexer. They reach networks the repository does not
+  # operate, so the run may fail without failing the nightly (ruled
+  # 2026-10-22); the step summary names each cell's outcome and the log
+  # is the artifact. The cells run one at a time through the nextest
+  # testnet group. The wallet one night syncs is the cache the next night
+  # restores, so each night syncs a day of blocks instead of the months
+  # since the committed snapshot; on a miss the environment seeds the
+  # wallet from that snapshot.
+  testnet-cells:
+    name: Testnet cells and the live probe
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+    timeout-minutes: 90
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    env:
+      NEXTEST_VERSION: "0.9.132"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@${{ env.NEXTEST_VERSION }}
+
+      - name: Restore the faucet wallet
+        uses: actions/cache@v4
+        with:
+          path: target/testnet/faucet
+          key: testnet-faucet-${{ github.run_id }}
+          restore-keys: testnet-faucet-
+
+      # The mixnet cell spawns the proxy that the provisioning precedence
+      # resolves (ADR 0024): the environment names the binary, and nothing
+      # is copied onto PATH.
+      - name: Build the proxy
+        run: cargo build --release --package zingo-netutils --features nym --bin nym-proxy
+
+      - name: Run the cells and the probe
+        continue-on-error: true
+        env:
+          ZINGO_NYM_PROXY: ${{ github.workspace }}/target/release/nym-proxy
+        run: |
+          cargo nextest run --verbose --profile ci --retries 0 \
+            --package libtonode-tests --package zingolib \
+            --features libtonode-tests/testnet,zingolib/nym \
+            --run-ignored all \
+            -E 'binary(testnet) | test(live_staged_probe_smoke)' \
+            2>&1 | tee testnet-cells.log
+
+      - name: Summarize each cell
+        if: ${{ always() }}
+        run: |
+          {
+            echo '## Testnet cells and the live probe'
+            echo
+            echo '```'
+            grep -E '^\s+(PASS|FAIL|TIMEOUT|SIGSEGV|SIGABRT|ABORT|LEAK) ' testnet-cells.log || echo 'no cell ran'
+            grep -E "panicked at|^\s+Summary " testnet-cells.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: testnet-cells-${{ github.sha }}
+          path: testnet-cells.log
+
   # The builder is the one source of every Binding Layer artifact name and
   # of the ABI list. One run of it here feeds the build workflows below, so
   # the names come from exactly one commit per run.
@@ -76,7 +157,8 @@ jobs:
       abis: ${{ steps.names.outputs.abis }}
       abi_artifacts: ${{ steps.names.outputs.abi_artifacts }}
       abi_pattern: ${{ steps.names.outputs.abi_pattern }}
-      aar_glob: ${{ steps.names.outputs.aar_glob }}
+      android_repository: ${{ steps.names.outputs.android_repository }}
+      maven_version: ${{ steps.names.outputs.maven_version }}
       bundle_android: ${{ steps.names.outputs.bundle_android }}
       bundle_ios: ${{ steps.names.outputs.bundle_ios }}
       ios_out: ${{ steps.names.outputs.ios_out }}
@@ -89,13 +171,15 @@ jobs:
         with:
           workspaces: tools/workbench
 
+      # The Maven version joins the wallet crate's version at the commit
+      # with the commit, so the workbench reads the manifest from git.
       - name: Name the artifacts
         id: names
         run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -- artifact --commit "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
-  # The nightly tier of zingolib/0054: the four Android ABIs in one AAR,
-  # and both XCFrameworks with the Swift sources on macOS. Each job runs
-  # the builder on this commit.
+  # The nightly tier of zingolib/0054: the four Android ABIs in one AAR
+  # inside the Maven layout, and the XCFramework with the Swift sources
+  # on macOS. Each job runs the builder on this commit.
   binding-layer-android:
     needs: binding-layer-names
     uses: ./.github/workflows/binding-layer-android.yaml
@@ -103,7 +187,8 @@ jobs:
       abis: ${{ needs.binding-layer-names.outputs.abis }}
       abi_artifacts: ${{ needs.binding-layer-names.outputs.abi_artifacts }}
       abi_pattern: ${{ needs.binding-layer-names.outputs.abi_pattern }}
-      aar_glob: ${{ needs.binding-layer-names.outputs.aar_glob }}
+      repository: ${{ needs.binding-layer-names.outputs.android_repository }}
+      version: ${{ needs.binding-layer-names.outputs.maven_version }}
       bundle: ${{ needs.binding-layer-names.outputs.bundle_android }}
 
   binding-layer-ios:

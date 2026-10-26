@@ -14,19 +14,12 @@ use zcash_protocol::consensus::{BlockHeight, Parameters};
 use pepper_sync::config::{SyncConfig, TransparentAddressDiscovery};
 use zingo_common_components::protocol::ActivationHeights;
 
-pub use crate::destination::servers::{IndexerConfig, Location, Role, Trust};
-
 use crate::wallet::{
     WalletBase, WalletSettings,
     error::{KeyError, WalletError},
     keys::unified::UnifiedKeyStore,
 };
 
-/// The default indexer URIs, from the census (the sole source of truth for
-/// indexer endpoints). NOTE: the census testnet default carries an explicit
-/// `:443`, retiring the old portless string this module completed to
-/// `:9067` — the drift between that completion and the mobile list's `:443`
-/// is what the census exists to end.
 /// Default wallet file name
 pub const DEFAULT_WALLET_NAME: &str = "zingo-wallet.dat";
 
@@ -278,22 +271,100 @@ impl WalletConfig {
     }
 }
 
-/// Constructs an `http::Uri` from `server`, adding an `http://` prefix and a
-/// `:9067` port when they are missing.
+/// The port an `https` URI names when it carries none.
+pub const HTTPS_DEFAULT_PORT: u16 = 443;
+/// The port an `http` URI names when it carries none.
+pub const HTTP_DEFAULT_PORT: u16 = 80;
+/// The scheme a bare `host[:port]` server string completes to: every
+/// indexer is reached over TLS.
+pub const DEFAULT_INDEXER_SCHEME: &str = "https";
+
+/// ```
+/// use zingolib::config::{construct_indexer_uri, HTTPS_DEFAULT_PORT, HTTP_DEFAULT_PORT};
+///
+/// // A bare host completes to https on the scheme's default port.
+/// let bare = construct_indexer_uri("mainnet.zainod.zingolabs.dev".to_string())?;
+/// assert_eq!(bare.scheme_str(), Some("https"));
+/// assert_eq!(bare.port_u16(), Some(HTTPS_DEFAULT_PORT));
+///
+/// // A scheme without a port gets that scheme's default port, path intact.
+/// let plain = construct_indexer_uri("http://127.0.0.1/lightwalletd".to_string())?;
+/// assert_eq!(plain.port_u16(), Some(HTTP_DEFAULT_PORT));
+/// assert_eq!(plain.path(), "/lightwalletd");
+///
+/// // An explicit port is never rewritten.
+/// let pinned = construct_indexer_uri("http://127.0.0.1:8137".to_string())?;
+/// assert_eq!(pinned.port_u16(), Some(8137));
+/// assert_eq!(pinned.scheme_str(), Some("http"));
+///
+/// // An empty string is the Indexerless URI.
+/// assert_eq!(construct_indexer_uri(String::new())?, http::Uri::default());
+/// # Ok::<(), http::uri::InvalidUri>(())
+/// ```
 pub fn construct_indexer_uri(server: String) -> Result<http::Uri, InvalidUri> {
     if server.is_empty() {
         return Ok(http::Uri::default());
     }
-    let mut s = if server.starts_with("http") {
+    let with_scheme = if server.contains("://") {
         server
     } else {
-        "http://".to_string() + &server
+        format!("{DEFAULT_INDEXER_SCHEME}://{server}")
     };
-    let uri: http::Uri = s.parse()?;
-    if uri.port().is_none() {
-        s += ":9067";
+    let uri: http::Uri = with_scheme.parse()?;
+    let (Some(scheme), Some(authority), None) = (uri.scheme_str(), uri.authority(), uri.port())
+    else {
+        return Ok(uri);
+    };
+    let port = match scheme {
+        "http" => HTTP_DEFAULT_PORT,
+        _ => HTTPS_DEFAULT_PORT,
+    };
+    let path_and_query = uri.path_and_query().map_or("", |path| path.as_str());
+    format!("{scheme}://{authority}:{port}{path_and_query}").parse()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IndexerChoice {
+    Offline,
+    Default,
+    Named(http::Uri),
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("no Default Indexer exists for {chain}; name an indexer URI")]
+pub struct NoDefaultIndexer {
+    pub chain: ChainType,
+}
+
+impl IndexerChoice {
+    /// ```
+    /// use zingolib::config::{ChainType, IndexerChoice};
+    ///
+    /// let mainnet = IndexerChoice::Default.resolve(&ChainType::Mainnet).expect("mainnet has a Default Indexer");
+    /// assert_eq!(mainnet.and_then(|uri| uri.port_u16()), Some(443));
+    /// assert!(IndexerChoice::Default.resolve(&ChainType::Testnet).is_err());
+    /// assert_eq!(IndexerChoice::Offline.resolve(&ChainType::Testnet).expect("Offline needs no Default Indexer"), None);
+    /// ```
+    pub fn resolve(self, chain: &ChainType) -> Result<Option<http::Uri>, NoDefaultIndexer> {
+        match self {
+            IndexerChoice::Offline => Ok(None),
+            IndexerChoice::Named(uri) => Ok(Some(uri)),
+            IndexerChoice::Default => default_indexer_for(chain)
+                .map(Some)
+                .ok_or(NoDefaultIndexer { chain: *chain }),
+        }
     }
-    s.parse()
+}
+
+pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
+    use zingo_netutils::default_indexer;
+    use zingo_netutils::default_indexer::IndexerChain;
+
+    match chain {
+        ChainType::Mainnet => default_indexer::default_indexer(IndexerChain::Main),
+        ChainType::Testnet => default_indexer::default_indexer(IndexerChain::Test),
+        ChainType::Regtest(_) => None,
+    }
 }
 
 /// Configuration data for the construction of a [`crate::lightclient::LightClient`].
@@ -302,28 +373,18 @@ pub struct ClientConfig {
     /// URI of the indexer the lightclient is connected to. `None` means the
     /// client is Indexerless (no Indexer connection).
     indexer_uri: Option<http::Uri>,
-    /// URI the Ironwood migration parts are transmitted to. Transmitting to a
-    /// different server than the one used for synchronization reduces the
-    /// correlation between the two (ZIP 318). While Mixnet Mode is on (the
-    /// `nym` feature, ADR 0011), this URI is dialed through the mixnet and
-    /// must be https on a host distinct from an untrusted synchronization
-    /// endpoint's (a shared host is refused). Unset, parts go to one
-    /// drawn Destination per submission. When both are
-    /// `None` the client emits no network traffic and transmission fails
-    /// with [`crate::lightclient::error::LightClientError::Offline`].
-    migration_transmission_uri: Option<http::Uri>,
-    /// The consumer's indexer classifications.
-    indexers: Vec<IndexerConfig>,
-    /// Overrides the chain's trust for an unclassified remote indexer.
-    remote_indexer_trust: Option<Trust>,
     /// Chain type of the blockchain the lightclient is connected to.
     chain_type: ChainType,
-    /// Directory where the wallet file will be created. By default, this will be in ~/.zcash on Linux and %APPDATA%\Zcash on Windows.
+    /// Directory where the wallet file will be created. By default, this is the user's data directory:
+    /// `~/.local/share/.zcash` on Linux, `%APPDATA%\Zcash` on Windows, `~/Library/Application Support/Zcash` on macOS.
     wallet_dir: PathBuf,
     /// Wallet file name. This will be created in the `wallet_dir`.
     wallet_name: String,
     /// Wallet config.
     wallet_config: WalletConfig,
+    /// Where the wallet file was copied from, when `build` brought it over from
+    /// the legacy default directory. See [`migrate_legacy_wallet`].
+    migrated_from: Option<PathBuf>,
 }
 
 impl ClientConfig {
@@ -337,24 +398,6 @@ impl ClientConfig {
     #[must_use]
     pub fn indexer_uri(&self) -> Option<http::Uri> {
         self.indexer_uri.clone()
-    }
-
-    /// Returns the migration transmission URI, if one is configured.
-    #[must_use]
-    pub fn migration_transmission_uri(&self) -> Option<http::Uri> {
-        self.migration_transmission_uri.clone()
-    }
-
-    /// Returns the indexer classifications.
-    #[must_use]
-    pub fn indexers(&self) -> &[IndexerConfig] {
-        &self.indexers
-    }
-
-    /// Returns the remote trust override, if any.
-    #[must_use]
-    pub fn remote_indexer_trust(&self) -> Option<Trust> {
-        self.remote_indexer_trust
     }
 
     /// Returns wallet directory.
@@ -381,6 +424,13 @@ impl ClientConfig {
         self.wallet_config.clone()
     }
 
+    /// The legacy path the wallet file was copied from by this `build`, if it
+    /// was. A consumer can tell its user the wallet moved; the original is kept.
+    #[must_use]
+    pub fn migrated_from(&self) -> Option<&Path> {
+        self.migrated_from.as_deref()
+    }
+
     /// Returns full path to wallet file.
     #[must_use]
     pub fn get_wallet_path(&self) -> Box<Path> {
@@ -394,10 +444,7 @@ impl ClientConfig {
 /// Builder for [`ClientConfig`].
 #[derive(Clone, Debug)]
 pub struct ClientConfigBuilder {
-    indexer_uri: Option<http::Uri>,
-    migration_transmission_uri: Option<http::Uri>,
-    indexers: Vec<IndexerConfig>,
-    remote_indexer_trust: Option<Trust>,
+    indexer_choice: IndexerChoice,
     chain_type: ChainType,
     wallet_dir: Option<PathBuf>,
     wallet_name: Option<String>,
@@ -413,30 +460,28 @@ impl ClientConfigBuilder {
     /// Connect to an indexer at the given URI.
     ///
     /// Without this call the client starts offline. See [`Self::build`].
+    pub fn set_indexer_uri(self, indexer_uri: http::Uri) -> Self {
+        self.set_indexer_choice(IndexerChoice::Named(indexer_uri))
+    }
+
+    /// ```
+    /// use zingolib::config::{ChainType, ClientConfig, ClientConfigError, IndexerChoice};
     ///
-    /// TODO: Will be renamed `set_indexer` and accept an `Indexer` type from
-    /// `zingo-netutils` instead of `http::Uri`.
-    pub fn set_indexer_uri(mut self, indexer_uri: http::Uri) -> Self {
-        self.indexer_uri = Some(indexer_uri);
-        self
-    }
-
-    /// Set a dedicated URI for transmitting Ironwood migration parts,
-    /// distinct from the synchronization endpoint.
-    pub fn set_migration_transmission_uri(mut self, migration_transmission_uri: http::Uri) -> Self {
-        self.migration_transmission_uri = Some(migration_transmission_uri);
-        self
-    }
-
-    /// Classify one indexer.
-    pub fn add_indexer(mut self, indexer: IndexerConfig) -> Self {
-        self.indexers.push(indexer);
-        self
-    }
-
-    /// Override the chain's trust for an unclassified remote indexer.
-    pub fn set_remote_indexer_trust(mut self, trust: Trust) -> Self {
-        self.remote_indexer_trust = Some(trust);
+    /// let mainnet = ClientConfig::builder()
+    ///     .set_chain_type(ChainType::Mainnet)
+    ///     .set_indexer_choice(IndexerChoice::Default)
+    ///     .build()
+    ///     .expect("mainnet has a Default Indexer");
+    /// assert_eq!(mainnet.indexer_uri().and_then(|uri| uri.port_u16()), Some(443));
+    ///
+    /// let testnet = ClientConfig::builder()
+    ///     .set_chain_type(ChainType::Testnet)
+    ///     .set_indexer_choice(IndexerChoice::Default)
+    ///     .build();
+    /// assert!(matches!(testnet, Err(ClientConfigError::NoDefaultIndexer(_))));
+    /// ```
+    pub fn set_indexer_choice(mut self, choice: IndexerChoice) -> Self {
+        self.indexer_choice = choice;
         self
     }
 
@@ -473,18 +518,27 @@ impl ClientConfigBuilder {
     ///
     /// To start online, call [`set_indexer_uri`](Self::set_indexer_uri) before building.
     pub fn build(self) -> Result<ClientConfig, ClientConfigError> {
+        let uses_default_dir = self.wallet_dir.is_none();
         let wallet_dir = wallet_dir_or_default(self.wallet_dir, self.chain_type)?;
         let wallet_name = wallet_name_or_default(self.wallet_name);
+        let migrated_from = if uses_default_dir {
+            legacy_default_wallet_dir(self.chain_type)
+                .map(|legacy_dir| migrate_legacy_wallet(&legacy_dir, &wallet_dir, &wallet_name))
+                .transpose()
+                .map_err(|e| ClientConfigError::FileError(e.to_string()))?
+                .flatten()
+        } else {
+            None
+        };
+        let indexer_uri = self.indexer_choice.resolve(&self.chain_type)?;
 
         Ok(ClientConfig {
-            indexer_uri: self.indexer_uri,
-            migration_transmission_uri: self.migration_transmission_uri,
-            indexers: self.indexers,
-            remote_indexer_trust: self.remote_indexer_trust,
+            indexer_uri,
             chain_type: self.chain_type,
             wallet_dir,
             wallet_name,
             wallet_config: self.wallet_config,
+            migrated_from,
         })
     }
 }
@@ -492,10 +546,7 @@ impl ClientConfigBuilder {
 impl Default for ClientConfigBuilder {
     fn default() -> Self {
         Self {
-            indexer_uri: None,
-            migration_transmission_uri: None,
-            indexers: Vec::new(),
-            remote_indexer_trust: None,
+            indexer_choice: IndexerChoice::Offline,
             wallet_dir: None,
             wallet_name: None,
             chain_type: ChainType::Mainnet,
@@ -523,6 +574,76 @@ fn wallet_name_or_default(opt_wallet_name: Option<String>) -> String {
     } else {
         wallet_name
     }
+}
+
+/// The default wallet directory zingolib used on Linux and other non-macOS,
+/// non-Windows desktops before `59bfee0b2`: `~/.zcash`, with each chain's
+/// subdirectory. Since then the default is the user's data directory
+/// (`~/.local/share/.zcash`), and a wallet left in the old one went unfound.
+/// macOS, Windows and mobile never used it.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "windows"
+)))]
+fn legacy_default_wallet_dir(chain: ChainType) -> Option<PathBuf> {
+    let mut dir = dirs::home_dir()?;
+    dir.push(".zcash");
+    match chain {
+        ChainType::Mainnet => {}
+        ChainType::Testnet => dir.push("testnet3"),
+        ChainType::Regtest(_) => dir.push("regtest"),
+    }
+    Some(dir)
+}
+
+#[cfg(any(
+    target_os = "ios",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "windows"
+))]
+fn legacy_default_wallet_dir(_chain: ChainType) -> Option<PathBuf> {
+    None
+}
+
+/// Brings `wallet_name` over from `legacy_dir` into `wallet_dir` when it is
+/// only in the legacy one, and answers the path it was copied from.
+///
+/// Only that file is copied, never the directory: `~/.zcash` is also zcashd's data
+/// directory. It is copied to a temporary file beside its destination, synced,
+/// and renamed into place, so an interrupted copy never leaves a partial wallet
+/// where one is read. The original stays where it was, untouched, so a
+/// consumer that still reads the legacy directory finds it, and no wallet data
+/// is ever deleted. Once the copy is in place, the legacy file is not looked at
+/// again.
+pub(crate) fn migrate_legacy_wallet(
+    legacy_dir: &Path,
+    wallet_dir: &Path,
+    wallet_name: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let destination = wallet_dir.join(wallet_name);
+    let source = legacy_dir.join(wallet_name);
+    if wallet_name.is_empty() || destination.exists() || !source.is_file() || source == destination
+    {
+        return Ok(None);
+    }
+    let staging = wallet_dir.join(format!("{wallet_name}.migrating"));
+    std::fs::copy(&source, &staging)?;
+    // Opened for writing: syncing needs write access on Windows.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&staging)?
+        .sync_all()?;
+    std::fs::rename(&staging, &destination)?;
+    tracing::info!(
+        "copied wallet {} from the legacy directory {} to {}",
+        wallet_name,
+        legacy_dir.display(),
+        wallet_dir.display()
+    );
+    Ok(Some(source))
 }
 
 fn wallet_dir_or_default(
@@ -564,7 +685,7 @@ fn wallet_dir_or_default(
                     ChainType::Regtest(_) => dir.push("regtest"),
                 }
 
-                Ok(dir)
+                Ok::<PathBuf, ClientConfigError>(dir)
             },
             Ok,
         )?;
@@ -586,6 +707,8 @@ pub enum ClientConfigError {
     UsersDataDirNotFound,
     #[error("Failed to create wallet directory. {0}")]
     FileError(String),
+    #[error(transparent)]
+    NoDefaultIndexer(#[from] NoDefaultIndexer),
 }
 
 #[cfg(test)]
@@ -596,8 +719,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_clientconfig() {
-        let valid_uri =
-            crate::config::construct_indexer_uri("https://zec.rocks:443".to_string()).unwrap();
+        let valid_uri = crate::config::construct_indexer_uri(
+            zingo_netutils::default_indexer::MAINNET_DEFAULT_INDEXER.to_string(),
+        )
+        .expect("MAINNET_DEFAULT_INDEXER is a literal the netutils doc-test pins parseable");
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
@@ -655,5 +780,90 @@ mod tests {
                 "lib_birthday({chain}) must exceed sapling activation"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod migrate_legacy_wallet_tests {
+    use super::migrate_legacy_wallet;
+
+    struct Dirs {
+        _root: tempfile::TempDir,
+        legacy: std::path::PathBuf,
+        current: std::path::PathBuf,
+    }
+
+    fn dirs() -> Dirs {
+        let root = tempfile::tempdir().expect("a temp dir");
+        let legacy = root.path().join("home/.zcash");
+        let current = root.path().join("share/.zcash");
+        std::fs::create_dir_all(&legacy).expect("legacy dir");
+        std::fs::create_dir_all(&current).expect("current dir");
+        Dirs {
+            _root: root,
+            legacy,
+            current,
+        }
+    }
+
+    /// Tests that a wallet only in the legacy directory is copied over, byte for byte, when built.
+    #[test]
+    fn copies_a_wallet_left_in_the_legacy_directory() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("zingo-wallet.dat"), b"the wallet").unwrap();
+
+        let from = migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap();
+
+        assert_eq!(from, Some(d.legacy.join("zingo-wallet.dat")));
+        assert_eq!(
+            std::fs::read(d.current.join("zingo-wallet.dat")).unwrap(),
+            b"the wallet"
+        );
+        // The original stays, and no staging file is left behind.
+        assert!(d.legacy.join("zingo-wallet.dat").exists());
+        assert!(!d.current.join("zingo-wallet.dat.migrating").exists());
+    }
+
+    /// Tests that a wallet already in the current directory is left as it is when the legacy one also holds it.
+    #[test]
+    fn leaves_a_wallet_already_in_the_current_directory() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("zingo-wallet.dat"), b"old").unwrap();
+        std::fs::write(d.current.join("zingo-wallet.dat"), b"current").unwrap();
+
+        assert_eq!(
+            migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
+        assert_eq!(
+            std::fs::read(d.current.join("zingo-wallet.dat")).unwrap(),
+            b"current"
+        );
+    }
+
+    /// Tests that nothing is copied when the legacy directory does not hold the wallet.
+    #[test]
+    fn copies_nothing_for_a_wallet_the_legacy_directory_does_not_hold() {
+        let d = dirs();
+        std::fs::write(d.legacy.join("wallet.dat"), b"zcashd").unwrap();
+
+        assert_eq!(
+            migrate_legacy_wallet(&d.legacy, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
+        assert!(!d.current.join("wallet.dat").exists());
+        assert!(!d.current.join("zingo-wallet.dat").exists());
+    }
+
+    /// Tests that a missing legacy directory is not an error.
+    #[test]
+    fn copies_nothing_when_there_is_no_legacy_directory() {
+        let d = dirs();
+        let missing = d.legacy.join("nowhere");
+
+        assert_eq!(
+            migrate_legacy_wallet(&missing, &d.current, "zingo-wallet.dat").unwrap(),
+            None
+        );
     }
 }

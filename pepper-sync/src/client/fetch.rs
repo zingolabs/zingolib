@@ -17,7 +17,7 @@ use zingo_netutils::{
 
 use crate::client::FetchRequest;
 
-use zingo_netutils::time::{HEAVY_UNARY_TIMEOUT, UNARY_RPC_TIMEOUT};
+use zingo_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
 use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 
@@ -236,7 +236,7 @@ where
                     ]
                 },
             },
-            HEAVY_UNARY_TIMEOUT,
+            FINITE_STREAM_TIMEOUT,
         )
         .await
 }
@@ -262,7 +262,7 @@ where
                 }),
                 pool_types: vec![],
             },
-            HEAVY_UNARY_TIMEOUT,
+            FINITE_STREAM_TIMEOUT,
         )
         .await
 }
@@ -283,7 +283,7 @@ where
                 shielded_protocol,
                 max_entries,
             },
-            HEAVY_UNARY_TIMEOUT,
+            FINITE_STREAM_TIMEOUT,
         )
         .await
 }
@@ -370,7 +370,7 @@ where
     client
         .get_taddress_txids(
             TransparentAddressBlockFilter { address, range },
-            HEAVY_UNARY_TIMEOUT,
+            FINITE_STREAM_TIMEOUT,
         )
         .await
 }
@@ -384,5 +384,5 @@ pub(crate) async fn get_mempool_stream<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    client.get_mempool_stream(HEAVY_UNARY_TIMEOUT).await
+    client.get_mempool_stream().await
 }

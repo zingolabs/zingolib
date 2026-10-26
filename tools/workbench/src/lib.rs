@@ -21,9 +21,15 @@ pub mod binding_changelog;
 pub mod binding_layer;
 pub mod binding_manifest;
 pub mod binding_publish;
+pub mod cache_families;
+pub mod closed_pr_runs;
 pub mod dupes_gate;
+pub mod nextest_ceilings;
 pub mod orasust;
+pub mod panic_strategy;
+pub mod runner_labels;
 pub mod session;
+pub mod test_placement;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -120,6 +126,7 @@ pub fn finished_in(
 }
 
 pub const CARGO: &str = "cargo";
+pub const GH: &str = "gh";
 const VERSION_FLAG: &str = "--version";
 
 /// - Runs `cargo <name> --version` as a child process, with stderr inherited, and waits for it.
@@ -523,6 +530,34 @@ pub const MANIFEST: &str = "Cargo.toml";
 pub const LIST_SEPARATOR: &str = ", ";
 
 /// The zingolib root, which is the directory that holds the workbench crate at `tools/workbench`.
+/// - Reads every directory under `root`, skipping any directory named in `skipped_directories`
+///   and never following symbolic links.
+pub fn files_under(root: &Path, skipped_directories: &[&str]) -> Result<Vec<PathBuf>, Vec<String>> {
+    let mut files = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let unreadable = |error: std::io::Error| vec![format!("{}: {error}", directory.display())];
+        for entry in std::fs::read_dir(&directory).map_err(unreadable)? {
+            let entry = entry.map_err(unreadable)?;
+            let file_type = entry.file_type().map_err(unreadable)?;
+            let path = entry.path();
+            if file_type.is_dir() {
+                let name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default();
+                if !skipped_directories.contains(&name) {
+                    pending.push(path);
+                }
+            } else if file_type.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 pub fn repo_root() -> Result<PathBuf, Vec<String>> {
     root_above(Path::new(BUILT_WORKBENCH_DIR))
 }
@@ -654,6 +689,38 @@ fn is_concrete_numeric(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn files_under_walks_every_directory_but_the_skipped_ones_in_sorted_order(
+    ) -> Result<(), Vec<String>> {
+        let root = std::env::temp_dir().join(format!(
+            "workbench-files-under-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        let io = |error: std::io::Error| vec![format!("{}: {error}", root.display())];
+        std::fs::create_dir_all(root.join("src/deep")).map_err(io)?;
+        std::fs::create_dir_all(root.join("target/debug")).map_err(io)?;
+        std::fs::write(root.join("src/deep/b.rs"), "").map_err(io)?;
+        std::fs::write(root.join("src/a.rs"), "").map_err(io)?;
+        std::fs::write(root.join("README.md"), "").map_err(io)?;
+        std::fs::write(root.join("target/debug/generated.rs"), "").map_err(io)?;
+        let files = super::files_under(&root, &["target"])?;
+        std::fs::remove_dir_all(&root).map_err(io)?;
+        assert_eq!(
+            files,
+            [
+                root.join("README.md"),
+                root.join("src/a.rs"),
+                root.join("src/deep/b.rs"),
+            ]
+        );
+        assert!(
+            super::files_under(&root, &[]).is_err(),
+            "a missing root is an error"
+        );
+        Ok(())
+    }
+
     #[test]
     fn a_warning_is_a_workflow_command_only_under_actions() {
         assert_eq!(
@@ -801,12 +868,55 @@ mod tests {
     fn every_workspace_is_found_by_its_lockfile() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         let found = workspace_manifests(&root)?;
-        for workspace in ["", "zingo-netutils", WORKBENCH_RELATIVE_DIR] {
+        for workspace in ["", WORKBENCH_RELATIVE_DIR] {
             assert!(
                 found.contains(&root.join(workspace).join(MANIFEST)),
                 "{workspace:?}"
             );
         }
+        Ok(())
+    }
+
+    const VERIFIER_SHIM: &str = "rustls-platform-verifier";
+    const PACKAGE_KEY: &str = "package";
+    const NAME_KEY: &str = "name";
+    const SOURCE_KEY: &str = "source";
+
+    #[test]
+    fn the_verifier_shim_patch_is_in_effect() -> Result<(), Vec<String>> {
+        let lockfile = repo_root()?.join(LOCKFILE);
+        let text = at_path(&lockfile, "read", |path| std::fs::read_to_string(path))?;
+        let document: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|error| vec![format!("{} does not parse: {error}", lockfile.display())])?;
+        let packages = document
+            .get(PACKAGE_KEY)
+            .and_then(|item| item.as_array_of_tables())
+            .ok_or_else(|| {
+                vec![format!(
+                    "{} holds no [[package]] tables",
+                    lockfile.display()
+                )]
+            })?;
+        let verifiers: Vec<&toml_edit::Table> = packages
+            .iter()
+            .filter(|package| {
+                package.get(NAME_KEY).and_then(|name| name.as_str()) == Some(VERIFIER_SHIM)
+            })
+            .collect();
+        let shim = match verifiers.as_slice() {
+            [shim] => shim,
+            other => {
+                return Err(vec![format!(
+                    "the lockfile holds {} entries for {VERIFIER_SHIM}, not one: the zingo-adrs zingolib/0021 patch table is not in effect",
+                    other.len()
+                )]);
+            }
+        };
+        assert!(
+            shim.get(SOURCE_KEY).is_none(),
+            "the lockfile resolves {VERIFIER_SHIM} from a registry, so the zingo-adrs zingolib/0021 patch table is not in effect"
+        );
         Ok(())
     }
 

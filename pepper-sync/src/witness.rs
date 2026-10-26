@@ -1,6 +1,7 @@
 //! Module for structs and types associated with witness construction
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 use std::sync::Arc;
 
 use incrementalmerkletree::{
@@ -14,6 +15,8 @@ use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRe
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
 use zingo_netutils::lightwallet_protocol::TreeState;
+
+use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
@@ -395,30 +398,102 @@ pub(crate) fn get_ironwood_tree(
 pub(crate) const ANCHOR_RETENTION_INTERVALS: u32 = zcash_protocol::zip318::ANCHOR_AGE_CAP + 2;
 
 /// The anchor-checkpoint retention policy in force for `consensus_parameters` — the ZIP 318
-/// grid from the Ironwood pool's activation — or `None` when that upgrade never activates.
+/// grid from the Ironwood pool's activation, on the chain's block spacing — or `None` when that
+/// upgrade never activates. From NU7 activation the grid's boundaries sit three times as many
+/// blocks apart, and the retained checkpoints follow them.
 pub(crate) fn anchor_retention_policy(
     consensus_parameters: &impl zcash_protocol::consensus::Parameters,
 ) -> Option<AnchorRetention> {
     crate::wallet::PoolActivation::of(consensus_parameters, zcash_protocol::ShieldedPool::Ironwood)
         .map(|activation| {
-            AnchorRetention::new(activation.height(), AnchorRetentionInterval::default())
+            AnchorRetention::new(
+                activation.height(),
+                zcash_protocol::zip318::BlockSpacing::for_network(consensus_parameters),
+                AnchorRetentionInterval::default(),
+            )
         })
 }
 
 /// The height range whose grid-boundary checkpoints must currently be pinned, given `as_of`,
-/// the wallet's newest scanned block.
+/// the wallet's newest scanned block: the last [`ANCHOR_RETENTION_INTERVALS`] grid intervals,
+/// measured in reference blocks and converted to blocks by the policy's spacing, so the window
+/// keeps its length in time across NU7 activation.
 pub(crate) fn anchor_retention_window(
     policy: &AnchorRetention,
     as_of: BlockHeight,
 ) -> std::ops::RangeInclusive<BlockHeight> {
-    let span = policy
+    let reference_blocks = policy
         .intervals()
         .iter()
         .map(|interval| interval.block_count().get())
         .max()
         .unwrap_or(0)
         .saturating_mul(ANCHOR_RETENTION_INTERVALS);
-    as_of.saturating_sub(span)..=as_of
+    retreat(policy.spacing(), as_of, reference_blocks)..=as_of
+}
+
+/// The greatest height from which `reference_blocks` reference blocks advance no further than
+/// `to`: the inverse of [`BlockSpacing::advance`], which is monotone in its start, found by
+/// bisection. Zero when `to` is less than that many reference blocks from genesis.
+///
+/// [`BlockSpacing::advance`]: zcash_protocol::zip318::BlockSpacing::advance
+fn retreat(
+    spacing: zcash_protocol::zip318::BlockSpacing,
+    to: BlockHeight,
+    reference_blocks: u32,
+) -> BlockHeight {
+    let (mut low, mut high) = (0u32, u32::from(to));
+    while low < high {
+        let mid = low + (high - low).div_ceil(2);
+        if spacing.advance(BlockHeight::from_u32(mid), reference_blocks) <= to {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    BlockHeight::from_u32(low)
+}
+
+// checkpoints are held for the top SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE blocks of the chain only, the
+// non-retained budget of a shard tree: a re-org is measured from the chain height and a spend anchors close to
+// it, so no anchor or truncation needs a checkpoint below this window once the chain tip is scanned. the pinned
+// anchor boundaries are added separately.
+fn checkpoint_range(
+    block_range: &Range<BlockHeight>,
+    chain_height: BlockHeight,
+) -> Range<BlockHeight> {
+    let window_start = chain_height.saturating_sub(SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE - 1);
+
+    std::cmp::max(block_range.start, window_start)..block_range.end
+}
+
+// the blocks of `block_range`, one load of a scan task, the shard trees hold a checkpoint for: the blocks inside
+// the rolling window hanging from `chain_height`, the load's last block, so a session stopped after this load
+// anchors a spend there, and the anchor retention boundaries of `policy` inside its window as of the load's
+// last block, or `highest_scanned_height` when that is higher, so such a session anchors a pool crossing too.
+// the scan places a leaf checkpoint on these blocks and on no other, and the shard tree update adds a
+// checkpoint to every tree the block leaves unchanged.
+pub(crate) fn checkpoint_heights(
+    block_range: &Range<BlockHeight>,
+    chain_height: BlockHeight,
+    highest_scanned_height: BlockHeight,
+    policy: Option<&AnchorRetention>,
+) -> BTreeSet<BlockHeight> {
+    let last_block = block_range.end - 1;
+    let window = checkpoint_range(block_range, chain_height);
+    let mut heights = (u32::from(window.start)..u32::from(window.end))
+        .map(BlockHeight::from_u32)
+        .collect::<BTreeSet<_>>();
+    heights.insert(last_block);
+    if let Some(policy) = policy {
+        let retention_window =
+            anchor_retention_window(policy, std::cmp::max(highest_scanned_height, last_block));
+        let start = std::cmp::max(*retention_window.start(), block_range.start);
+        let end = std::cmp::min(*retention_window.end(), last_block);
+        heights.extend(policy.retained_in_range(start..=end));
+    }
+
+    heights
 }
 
 /// Re-derives one shard store's pinned-checkpoint set from `policy`, pinning every grid
@@ -522,19 +597,148 @@ mod tests {
         );
     }
 
+    mod checkpoint_heights {
+        use std::num::NonZeroU32;
+
+        use super::*;
+
+        const CHAIN_HEIGHT: u32 = 20_000;
+        const WINDOW_START: u32 = CHAIN_HEIGHT - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1;
+        const HIGHEST_SCANNED: u32 = 10_000;
+        const INTERVAL: u32 = 50;
+
+        fn heights(
+            block_range: Range<u32>,
+            highest_scanned_height: u32,
+            policy: Option<&AnchorRetention>,
+        ) -> Vec<u32> {
+            checkpoint_heights(
+                &(BlockHeight::from_u32(block_range.start)..BlockHeight::from_u32(block_range.end)),
+                BlockHeight::from_u32(CHAIN_HEIGHT),
+                BlockHeight::from_u32(highest_scanned_height),
+                policy,
+            )
+            .into_iter()
+            .map(u32::from)
+            .collect()
+        }
+
+        fn policy() -> AnchorRetention {
+            AnchorRetention::new(
+                BlockHeight::from_u32(1),
+                zcash_protocol::zip318::BlockSpacing::UNIFORM,
+                AnchorRetentionInterval::custom(NonZeroU32::new(INTERVAL).expect("nonzero")),
+            )
+        }
+
+        /// A load inside the top window of the chain holds a checkpoint on every block from the window start.
+        #[test]
+        fn a_load_inside_the_window_checkpoints_every_block_from_the_window_start() {
+            let range = WINDOW_START - 10..WINDOW_START + 10;
+
+            assert_eq!(
+                heights(range.clone(), HIGHEST_SCANNED, None),
+                (WINDOW_START..range.end).collect::<Vec<_>>()
+            );
+        }
+
+        /// A load below the window holds a checkpoint on its last block and on no other, whether it lies above
+        /// or below the highest scanned height.
+        #[test]
+        fn a_load_below_the_window_checkpoints_its_last_block_only() {
+            let above = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let below = HIGHEST_SCANNED - 2_000..HIGHEST_SCANNED - 1_000;
+
+            assert_eq!(
+                heights(above.clone(), HIGHEST_SCANNED, None),
+                vec![above.end - 1]
+            );
+            assert_eq!(
+                heights(below.clone(), HIGHEST_SCANNED, None),
+                vec![below.end - 1]
+            );
+        }
+
+        /// A load above the highest scanned height holds the anchor retention boundaries inside the retention
+        /// window as of its last block, beside the last block.
+        #[test]
+        fn anchor_boundaries_as_of_the_last_block_are_held() {
+            let policy = policy();
+            let range = HIGHEST_SCANNED + 1_000..HIGHEST_SCANNED + 2_000;
+            let retention_window =
+                anchor_retention_window(&policy, BlockHeight::from_u32(range.end - 1));
+            let boundaries = range
+                .clone()
+                .filter(|height| height % INTERVAL == 0)
+                .filter(|height| retention_window.contains(&BlockHeight::from_u32(*height)))
+                .collect::<Vec<_>>();
+            assert!(!boundaries.is_empty(), "the test range holds a boundary");
+
+            assert_eq!(
+                heights(range.clone(), HIGHEST_SCANNED, Some(&policy)),
+                boundaries
+                    .into_iter()
+                    .chain(std::iter::once(range.end - 1))
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        /// A load below the highest scanned height holds the boundaries as of that height, so a load below
+        /// that retention window holds none.
+        #[test]
+        fn anchor_boundaries_below_the_highest_scanned_height_are_as_of_it() {
+            let policy = policy();
+            let retention_start = u32::from(
+                *anchor_retention_window(&policy, BlockHeight::from_u32(HIGHEST_SCANNED)).start(),
+            );
+            let outside = HIGHEST_SCANNED - 5_000..HIGHEST_SCANNED - 4_000;
+            let inside = retention_start..retention_start + 2 * INTERVAL;
+            let boundaries = inside
+                .clone()
+                .filter(|height| height % INTERVAL == 0)
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                heights(outside.clone(), HIGHEST_SCANNED, Some(&policy)),
+                vec![outside.end - 1]
+            );
+            assert_eq!(
+                heights(inside.clone(), HIGHEST_SCANNED, Some(&policy)),
+                boundaries
+                    .into_iter()
+                    .chain(std::iter::once(inside.end - 1))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     /// Pinned grid boundaries survive checkpoint pruning until re-deriving the pins releases
     /// them.
     #[test]
     fn pinned_boundaries_survive_pruning_until_released() {
-        let policy =
-            AnchorRetention::new(BlockHeight::from_u32(1), AnchorRetentionInterval::default());
+        const INTERVAL: u32 = 144;
+        // holds the four boundaries the assertions name
+        const HEIGHTS_WITH_BOUNDARIES: u32 = 600;
+        const TOP: u32 = SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + HEIGHTS_WITH_BOUNDARIES;
+        // a pinned boundary inside the rolling window holds no rolling slot, so the window spans up to one
+        // more height per boundary it crosses
+        const OLDEST_ROLLING: u32 = TOP
+            - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE
+            - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE / INTERVAL
+            - 1;
+
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            AnchorRetentionInterval::default(),
+        );
         let mut tree = empty_shard_tree::<
             sapling_crypto::Node,
             { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
             SHARD_HEIGHT,
         >();
 
-        for height in 1..=600u32 {
+        for height in 1..=TOP {
             let height = BlockHeight::from_u32(height);
             if policy.retains(height) {
                 tree.store_mut()
@@ -557,9 +761,9 @@ mod tests {
         let count = tree.store().checkpoint_count().expect("infallible");
         tree.store()
             .for_each_checkpoint(count, |id, _| {
-                if u32::from(*id) < 494 {
+                if u32::from(*id) < OLDEST_ROLLING {
                     assert_eq!(
-                        u32::from(*id) % 144,
+                        u32::from(*id) % INTERVAL,
                         0,
                         "old checkpoint {id} is not a boundary"
                     );
@@ -583,11 +787,42 @@ mod tests {
         let window = anchor_retention_window(&policy, BlockHeight::from_u32(1200));
         assert_eq!(*window.start(), BlockHeight::from_u32(336));
         repin_anchor_checkpoints(&policy, &window, tree.store_mut());
-        tree.append_checkpoint(BlockHeight::from_u32(601))
+        tree.append_checkpoint(BlockHeight::from_u32(TOP + 1))
             .expect("infallible");
         assert!(!checkpoint_exists(tree.store(), 144));
         assert!(!checkpoint_exists(tree.store(), 288));
         assert!(checkpoint_exists(tree.store(), 432));
         assert!(checkpoint_exists(tree.store(), 576));
+    }
+
+    /// The window retreats by reference blocks: across the NU7 activation a
+    /// reference block is three blocks, so the same window reaches less far
+    /// below the tip, and the start is exactly the height that advances to
+    /// the tip.
+    #[test]
+    fn the_retention_window_retreats_by_reference_blocks_across_the_activation() {
+        use zcash_protocol::zip318::BlockSpacing;
+        let spacing = BlockSpacing::with_nu7_activation(BlockHeight::from_u32(1_000));
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(1),
+            spacing,
+            AnchorRetentionInterval::default(),
+        );
+        let reference_blocks = 144 * ANCHOR_RETENTION_INTERVALS;
+        for tip in [999u32, 1_000, 1_001, 1_300, 2_000, 5_000] {
+            let tip = BlockHeight::from_u32(tip);
+            let start = *anchor_retention_window(&policy, tip).start();
+            assert!(spacing.advance(start, reference_blocks) <= tip, "{tip:?}");
+            assert!(
+                spacing.advance(start + 1, reference_blocks) > tip,
+                "{tip:?}: {start:?} is not the greatest start"
+            );
+        }
+        // Entirely above the activation the window is three times as long in blocks.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(5_000)).start();
+        assert_eq!(start, BlockHeight::from_u32(5_000 - 3 * reference_blocks));
+        // Entirely below it the window is the uniform one.
+        let start = *anchor_retention_window(&policy, BlockHeight::from_u32(999)).start();
+        assert_eq!(start, BlockHeight::from_u32(999 - reference_blocks));
     }
 }

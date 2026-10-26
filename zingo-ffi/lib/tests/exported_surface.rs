@@ -681,10 +681,8 @@ const GENERIC_TYPE_NAMES: [&str; 8] = [
     "Status",
 ];
 
-const UDL_LABELLED_SIGNATURES: [&str; 2] = [
-    "get_latest_block_server(serveruri: String) -> Result<String, ZingolibError>",
-    "change_server(serveruri: String) -> Result<String, ZingolibError>",
-];
+const UDL_LABELLED_SIGNATURES: [&str; 1] =
+    ["get_latest_block_server(serveruri: String) -> Result<String, ZingolibError>"];
 
 fn workflow_paths() -> BTreeSet<String> {
     let workflow = read(WORKFLOW_FILE);
