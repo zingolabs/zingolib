@@ -65,6 +65,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place of `Init`, when the wallet bytes were written for another chain.
 
 ### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `split_status`, `reschedule_parts`,
+  `window_timeline`, `execute_due_parts` and `execute_status` of the object
+  `PrivateMigrationDriver`, which the module `private_migration_drivers` exports
+  only under the non-default feature `unstable`. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
 - Sync is continuous: wallets are created and loaded with
   `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
   the chain tip and never ends on its own. `poll_sync` answers "Sync task is
