@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ClientConfig::migrated_from` reports the legacy path a wallet file was
+  copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
 - `wallet::keys::transparent_address_from_encoded` decodes a transparent
   address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
   dropped the `TryFromAddress` conversion that did this inline.
@@ -67,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the change strategies consult it. The greedy input selector also
   spends from a later shielded pool when the preferred pool's change alone
   would be dust, where it reported insufficient funds.
+- `InputSource::select_spendable_notes` on `LightWallet` selects from the
+  pools the input selector names alone. In 7.0.0 a request those pools could
+  not cover was topped up from Sapling, Orchard and Ironwood in that order,
+  and all-funds selection drew on every pool whatever the request named. The
+  greedy input selector rejects a note from a pool it did not name, so the
+  shortfall now reaches the consumer as insufficient funds.
 - `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
   `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
   `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
@@ -201,6 +209,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** remove `wallet::keys::legacy::extended_transparent` from the public API. The module is crate-private: its `ExtendedPrivKey` and `ExtendedPubKey` hold the 32 secret-key bytes or the 33 compressed-point bytes and the 32-byte chain code the wallet file stores, and each reader validates the scalar or the point through the `zcash_transparent` account key types before the wallet loads. `Debug` prints a BLAKE2b digest of both fields. The derivation API (`KeyIndex`, `with_seed`, `derive_private_key`, `derive_public_key`, `get_ext_taddr_from_bip39seed`), which nothing called, is gone. zingolib no longer depends on `secp256k1`, `hmac` or `sha2` directly.
 
 ### Fixed
+- On Linux and other non-macOS, non-Windows desktops, a wallet left in the
+  legacy default directory `~/.zcash` is found again. The default moved to the
+  user's data directory (`~/.local/share/.zcash`) and nothing carried existing
+  wallets over, so a consumer updating past that change failed to open them
+  with `ENOENT`. `ClientConfigBuilder::build`, when it uses the default
+  directory, copies the named wallet file over from `~/.zcash` (with its chain's
+  subdirectory) when it is only there. Only that file is copied, never the
+  directory, which zcashd also uses. The copy is staged and renamed into place,
+  and the original is kept.
 - `poll_sync`, the save poll, `shutdown_save_task` and the wallet write no
   longer `expect` on a task's join handle. Under `panic = "unwind"` tokio
   contains a task's panic, the join yields an error, and the old `expect`
