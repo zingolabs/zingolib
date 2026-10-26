@@ -1,7 +1,7 @@
 # The Publication Record, defined in zingolib/CONTEXT.md#consumers:
 # one entry per Published Commit, oldest first. Each entry records what the
 # registry holds for its commit. The publish workflow, started by
-# `gh workflow run binding-layer-publish.yaml`,
+# `gh workflow run publish-bindings.yaml`,
 # pushes the bundles, appends the entry with its digests and its audited
 # crates, regenerates bindings/CHANGELOG.md in the same commit on the branch
 # record/<commit>, and opens the pull request that merges it. An entry is

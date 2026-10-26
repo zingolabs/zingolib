@@ -1,13 +1,10 @@
 # The Binding Layer
 
-- [Binding Layer](../zingolib/CONTEXT.md#consumers)
-- [Prebuilt Bundle](../zingolib/CONTEXT.md#consumers)
-- [Bundle Pin](../zingolib/CONTEXT.md#consumers)
-- [Published Commit](../zingolib/CONTEXT.md#consumers)
-- [Publication Record](../zingolib/CONTEXT.md#consumers)
-
 zingolib supports React Native mobile development. This file is the guide
-to building and publishing the Binding Layer.
+to building and publishing the Binding Layer. The glossary's
+[Consumers section](../zingolib/CONTEXT.md#consumers) defines the Binding
+Layer, the Prebuilt Bundle, the Bundle Pin, the Published Commit and the
+Publication Record.
 
 ## Build
 
@@ -51,15 +48,18 @@ waits on that merge; the registry holds the bundles once the push ends.
 
 ```sh
 # The head of dev, or one older commit of dev.
-gh workflow run binding-layer-publish.yaml --ref dev
-gh workflow run binding-layer-publish.yaml --ref dev --field commit=<sha>
+gh workflow run publish-bindings.yaml --ref dev
+gh workflow run publish-bindings.yaml --ref dev --field commit=<sha>
 ```
 
 An older commit is tagged `publish/<commit>` and built by a relayed run. The
-plan refuses a commit older than the last entry, a pending record, and a
-commit the record names. The record's push and pull request use the GitHub
-App `zingolib-binding-layer-publisher`. A consumer pins and fetches with
-the package in [`pin/README.md`](pin/README.md):
+plan refuses a commit older than the last entry, and it refuses a
+publication while another record's pull request is pending. A commit the
+record names, or whose own record is pending, ends the run after the plan.
+The record's push and pull request use the GitHub App
+`zingolib-binding-layer-publisher`, the App that the secrets
+`BINDING_PUBLISH_APP_ID` and `BINDING_PUBLISH_APP_PRIVATE_KEY` name. A
+consumer pins and fetches with the package in [`pin/README.md`](pin/README.md):
 
 ```sh
 yarn --silent pin <commit> --platform android --platform ios

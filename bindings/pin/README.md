@@ -165,4 +165,4 @@ raise the version, and the same workflow fails the pull request when it does
 not.
 
 [pin]: https://github.com/zingolabs/zingolib/tree/14405155a52f47a9ab690ba99197a3422e5445c9/bindings/pin#zingolib-bundle-pin
-[vocabulary]: https://github.com/zingolabs/zingolib/blob/dev/zingolib/CONTEXT.md#consumers
+[vocabulary]: https://github.com/zingolabs/zingolib/blob/755c3adaea5906cf55357e69ad1b0a27d746cdb8/zingolib/CONTEXT.md#consumers
