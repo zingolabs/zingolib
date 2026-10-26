@@ -73,11 +73,10 @@ cancel_ironwood_migration() -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::start(&self, plan_hash_hex: String, per_bucket: Option<u32>) -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::continue_splitting(&self) -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::quick_split(&self) -> Result<String, ZingolibError>
-#[cfg(feature = "unstable")] impl PrivateMigrationDriver::split_status(&self) -> Result<String, ZingolibError>
+#[cfg(feature = "unstable")] impl PrivateMigrationDriver::progress(&self) -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::reschedule_parts(&self, per_bucket: u32) -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::window_timeline(&self) -> Result<String, ZingolibError>
 #[cfg(feature = "unstable")] impl PrivateMigrationDriver::execute_due_parts(&self, spacing_ms: u64) -> Result<String, ZingolibError>
-#[cfg(feature = "unstable")] impl PrivateMigrationDriver::execute_status(&self) -> Result<String, ZingolibError>
 attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError>
 enable_mixnet(proxy_path: String) -> Result<String, ZingolibError>
 disable_mixnet() -> Result<String, ZingolibError>

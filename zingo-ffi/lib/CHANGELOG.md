@@ -69,10 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
   `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
   `execute_due_parts_status` are now the methods `plan`, `start`,
-  `continue_splitting`, `quick_split`, `split_status`, `reschedule_parts`,
-  `window_timeline`, `execute_due_parts` and `execute_status` of the object
-  `PrivateMigrationDriver`, which the module `private_migration_drivers` exports
-  only under the non-default feature `unstable`. The published Binding Sets are
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
   built without that feature and no longer carry them; zingo-mobile offers only
   the drain. `migration_status`, `reconcile_migration` and
   `cancel_ironwood_migration` stay, since the mobile client cancels a private
