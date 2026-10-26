@@ -1265,6 +1265,52 @@ mod tests {
         );
     }
 
+    // Tests that selection returns the requested pools' notes alone when they fall short. Upstream
+    // input selection rejects a note from a pool it did not ask for
+    // (GreedyInputSelectorError::UnrequestedPoolSelected) and reports the shortfall itself.
+    #[test]
+    fn at_least_selection_stays_in_the_requested_pools_when_they_fall_short() {
+        let notes = funded_wallet()
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AtLeast(Zatoshis::const_from_u64(200_000)),
+                &[ShieldedPool::Ironwood, ShieldedPool::Orchard],
+                TargetHeight::from(21),
+                ConfirmationsPolicy::new_symmetrical(
+                    NonZeroU32::new(1).expect("one is nonzero"),
+                    false,
+                ),
+                &[],
+                LockFilter::Unfiltered,
+            )
+            .expect("selection over synthetic funds succeeds");
+        assert!(notes.sapling().is_empty());
+        assert_eq!(notes.ironwood().len(), 1);
+        assert_eq!(notes.orchard().len(), 1);
+    }
+
+    // Tests that all-funds selection gathers the requested pools alone.
+    #[test]
+    fn all_funds_selection_gathers_only_the_requested_pools() {
+        let notes = funded_wallet()
+            .select_spendable_notes(
+                zip32::AccountId::ZERO,
+                TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
+                &[ShieldedPool::Orchard],
+                TargetHeight::from(21),
+                ConfirmationsPolicy::new_symmetrical(
+                    NonZeroU32::new(1).expect("one is nonzero"),
+                    false,
+                ),
+                &[],
+                LockFilter::Unfiltered,
+            )
+            .expect("all-funds selection succeeds on a funded, synced wallet");
+        assert!(notes.sapling().is_empty());
+        assert!(notes.ironwood().is_empty());
+        assert_eq!(notes.orchard().len(), 1);
+    }
+
     /// Pins the resolution of the FIXME at the `PoolType::IRONWOOD` label in
     /// `InputSource::select_spendable_notes`: the code is right and the comment
     /// above it is stale.
