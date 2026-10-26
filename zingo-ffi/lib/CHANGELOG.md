@@ -134,6 +134,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 
 ### Removed
+- BREAKING: the private migration's driving functions, `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts`
+  and `execute_due_parts_status`. The mobile client offers only the drain, so
+  nothing calls them. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` remain, so a client can cancel a migration that
+  an older build left in flight.
 - BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
   Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
   dedicated migration transmission endpoint to set.

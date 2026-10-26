@@ -64,17 +64,8 @@ send_swap_deposit(vault_address: String, amount: u64, memo_hex: String) -> Resul
 plan_orchard_drain() -> Result<String, ZingolibError>
 drain_orchard_to_ironwood() -> Result<String, ZingolibError>
 drain_status() -> Result<String, ZingolibError>
-plan_ironwood_migration() -> Result<String, ZingolibError>
-start_ironwood_migration(plan_hash_hex: String, per_bucket: Option<u32>) -> Result<String, ZingolibError>
-continue_note_splitting() -> Result<String, ZingolibError>
-quick_split() -> Result<String, ZingolibError>
-split_status() -> Result<String, ZingolibError>
-reschedule_parts(per_bucket: u32) -> Result<String, ZingolibError>
 migration_status() -> Result<String, ZingolibError>
-window_timeline() -> Result<String, ZingolibError>
 reconcile_migration() -> Result<String, ZingolibError>
-execute_due_parts(spacing_ms: u64) -> Result<String, ZingolibError>
-execute_due_parts_status() -> Result<String, ZingolibError>
 cancel_ironwood_migration() -> Result<String, ZingolibError>
 attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError>
 enable_mixnet(proxy_path: String) -> Result<String, ZingolibError>
