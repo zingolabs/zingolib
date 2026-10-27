@@ -27,7 +27,7 @@ on:
       - "rust-toolchain.toml"
       - "bindings/**"
       - "**/uniffi.toml"
-      - "zingo-ffi/lib/src/exported_surface.txt"
+      - "zingo-ffi/lib/src/exported_surface.snapshot.txt"
       - ".github/workflows/**"
       - "deny.toml"
       - ".github/actions/**"

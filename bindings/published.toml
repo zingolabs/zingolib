@@ -1,7 +1,7 @@
-# The Publication Record of the Binding Layer: zingolib's own record of the
-# Prebuilt Bundles it has published, one entry per Published Commit, oldest
-# first. Each entry records what the registry holds for its commit. The
-# publish workflow, started by `gh workflow run publish-bindings.yaml`,
+# The Publication Record, defined in zingolib/CONTEXT.md#consumers:
+# one entry per Published Commit, oldest first. Each entry records what the
+# registry holds for its commit. The publish workflow, started by
+# `gh workflow run publish-bindings.yaml`,
 # pushes the bundles, appends the entry with its digests and its audited
 # crates, regenerates bindings/CHANGELOG.md in the same commit on the branch
 # record/<commit>, and opens the pull request that merges it. An entry is
@@ -78,3 +78,9 @@ commit = "755c3adaea5906cf55357e69ad1b0a27d746cdb8"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:13d4dc60a75919026025e37d6388851a3ccf547e1ab7e511916ffd146a590080"
 ios = "sha256:d851f057ff7cb3b3b802da5341c2245971240920d9d0c646c43f276c2ff62879"
+
+[[entry]]
+commit = "3fb32d277ef956e75da124c1442526fb4d91d97a"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:f78a8bce0f300fe2bfbd78964c27d0661cd874f3a84121024fbd4b00f405a78b"
+ios = "sha256:e1c629971678fd713439880ef2be848c383cb40da34fde78fb47d0648d8a8521"
