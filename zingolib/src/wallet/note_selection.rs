@@ -1,8 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, OutputInterface, SaplingNote};
 use zcash_client_backend::data_api::{MaxSpendMode, TargetValue};
-use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::ShieldedPool;
 
@@ -34,24 +33,24 @@ pub(crate) enum Selection {
 }
 
 #[derive(Clone, Copy)]
-enum Remaining {
-    Positive(u64),
+enum Budget {
+    Remaining(u64),
     Covered,
+    Unbounded,
 }
 
-impl Remaining {
-    fn of(target: u64, selected: u64) -> Self {
-        if selected < target {
-            Remaining::Positive(target - selected)
-        } else {
-            Remaining::Covered
+impl Budget {
+    fn toward(target: u64) -> Self {
+        Budget::Remaining(target).less(0)
+    }
+
+    fn less(self, value: u64) -> Self {
+        match self {
+            Budget::Remaining(still) if value < still => Budget::Remaining(still - value),
+            Budget::Remaining(_) => Budget::Covered,
+            Budget::Covered | Budget::Unbounded => self,
         }
     }
-}
-
-enum Budget<'a> {
-    Bounded(&'a mut Remaining),
-    Unbounded,
 }
 
 #[derive(Clone, Copy)]
@@ -87,31 +86,25 @@ pub(crate) fn select(
     sources: &[ShieldedPool],
     mut candidates: Candidates,
 ) -> Selection {
-    let mut notes = PoolNotes::default();
-    match target_value {
+    let (stages, mut budget) = match target_value {
         TargetValue::AtLeast(at_least) => {
-            let mut remaining = Remaining::of(at_least.into_u64(), 0);
-            for (stage, pool) in passes(&BUDGETED_STAGES, sources) {
-                pick_pool(
-                    pool,
-                    stage,
-                    &mut candidates,
-                    &mut notes,
-                    Budget::Bounded(&mut remaining),
-                );
-            }
-            match remaining {
-                Remaining::Positive(_) => Selection::Insufficient { notes },
-                Remaining::Covered => Selection::Sufficient { notes },
-            }
+            (&BUDGETED_STAGES[..], Budget::toward(at_least.into_u64()))
         }
         TargetValue::AllFunds(MaxSpendMode::MaxSpendable) => {
-            for (stage, pool) in passes(&ALL_FUNDS_STAGES, sources) {
-                pick_pool(pool, stage, &mut candidates, &mut notes, Budget::Unbounded);
-            }
-            Selection::AllSpendable { notes }
+            (&ALL_FUNDS_STAGES[..], Budget::Unbounded)
         }
-        TargetValue::AllFunds(MaxSpendMode::Everything) => Selection::EverythingUnsupported,
+        TargetValue::AllFunds(MaxSpendMode::Everything) => {
+            return Selection::EverythingUnsupported;
+        }
+    };
+    let mut notes = PoolNotes::default();
+    for (stage, pool) in passes(stages, sources) {
+        budget = pick_pool(pool, stage, &mut candidates, &mut notes, budget);
+    }
+    match budget {
+        Budget::Remaining(_) => Selection::Insufficient { notes },
+        Budget::Covered => Selection::Sufficient { notes },
+        Budget::Unbounded => Selection::AllSpendable { notes },
     }
 }
 
@@ -129,86 +122,111 @@ fn pick_pool(
     stage: Stage,
     candidates: &mut Candidates,
     notes: &mut PoolNotes,
-    budget: Budget<'_>,
-) {
+    budget: Budget,
+) -> Budget {
     match pool {
-        ShieldedPool::Sapling => pick(&mut candidates.sapling, &mut notes.sapling, budget, stage),
-        ShieldedPool::Orchard => pick(&mut candidates.orchard, &mut notes.orchard, budget, stage),
+        ShieldedPool::Sapling => {
+            pick_into(&mut candidates.sapling, &mut notes.sapling, budget, stage)
+        }
+        ShieldedPool::Orchard => {
+            pick_into(&mut candidates.orchard, &mut notes.orchard, budget, stage)
+        }
         ShieldedPool::Ironwood => {
-            pick(&mut candidates.ironwood, &mut notes.ironwood, budget, stage)
+            pick_into(&mut candidates.ironwood, &mut notes.ironwood, budget, stage)
         }
     }
 }
 
-type Key = (u64, OutputId);
-
-fn key_of<N: OutputInterface>(note: &N) -> Key {
-    (note.value(), note.output_id())
-}
-
-fn least_key_of_value(value: u64) -> Key {
-    (value, OutputId::new(TxId::from_bytes([0; 32]), 0))
-}
-
-fn admitted<N: OutputInterface>(
-    slots: &BTreeMap<Key, Candidate<N>>,
+fn pick_into<N: OutputInterface>(
+    candidates: &mut Vec<Candidate<N>>,
+    notes: &mut Vec<N>,
+    budget: Budget,
     stage: Stage,
-) -> BTreeSet<Key> {
-    let fee = MARGINAL_FEE.into_u64();
-    slots
-        .iter()
-        .filter(|(_, candidate)| stage.admits(candidate) && candidate.note.value() > fee)
-        .map(|(&key, _)| key)
-        .collect()
+) -> Budget {
+    let pick = pick(std::mem::take(candidates), budget, stage);
+    *candidates = pick.left;
+    notes.extend(pick.taken);
+    pick.budget
+}
+
+struct Pick<N> {
+    taken: Vec<N>,
+    left: Vec<Candidate<N>>,
+    budget: Budget,
 }
 
 fn pick<N: OutputInterface>(
-    candidates: &mut Vec<Candidate<N>>,
-    selected: &mut Vec<N>,
-    budget: Budget<'_>,
+    candidates: Vec<Candidate<N>>,
+    mut budget: Budget,
     stage: Stage,
-) {
-    let mut slots = candidates
-        .drain(..)
-        .map(|candidate| (key_of(&candidate.note), candidate))
-        .collect::<BTreeMap<_, _>>();
-    let mut eligible = admitted(&slots, stage);
-    let picked = match budget {
-        Budget::Unbounded => eligible.into_iter().collect::<Vec<_>>(),
-        Budget::Bounded(remaining) => {
-            let fee = MARGINAL_FEE.into_u64();
-            let mut picked = Vec::new();
-            if let Remaining::Positive(target) = *remaining {
-                let mut total = 0;
-                while let Remaining::Positive(still) = *remaining {
-                    let Some(&key) = eligible
-                        .range(least_key_of_value(still + fee + 1)..)
-                        .next()
-                        .or_else(|| eligible.last())
-                    else {
-                        break;
-                    };
-                    eligible.remove(&key);
-                    total += key.0;
-                    picked.push(key);
-                    *remaining = Remaining::of(target, total);
+) -> Pick<N> {
+    if let Budget::Covered = budget {
+        return Pick {
+            taken: Vec::new(),
+            left: candidates,
+            budget,
+        };
+    }
+    let fee = MARGINAL_FEE.into_u64();
+    let (admitted, mut left): (Vec<_>, Vec<_>) = candidates
+        .into_iter()
+        .partition(|candidate| stage.admits(candidate) && candidate.note.value() > fee);
+    let mut admitted = Admitted::of(admitted);
+    let mut taken = Vec::new();
+    while let Some(candidate) = admitted.take(budget) {
+        budget = budget.less(candidate.note.value());
+        taken.push(candidate.note);
+    }
+    left.extend(admitted.into_candidates());
+    Pick {
+        taken,
+        left,
+        budget,
+    }
+}
+
+struct Admitted<N>(BTreeMap<u64, BTreeMap<OutputId, Candidate<N>>>);
+
+impl<N: OutputInterface> Admitted<N> {
+    fn of(candidates: Vec<Candidate<N>>) -> Self {
+        let mut by_value = BTreeMap::<u64, BTreeMap<_, _>>::new();
+        for candidate in candidates {
+            by_value
+                .entry(candidate.note.value())
+                .or_default()
+                .insert(candidate.note.output_id(), candidate);
+        }
+        Admitted(by_value)
+    }
+
+    fn take(&mut self, budget: Budget) -> Option<Candidate<N>> {
+        let value = match budget {
+            Budget::Covered => return None,
+            Budget::Unbounded => *self.0.keys().next()?,
+            Budget::Remaining(still) => {
+                let covering = still + MARGINAL_FEE.into_u64() + 1;
+                match self.0.range(covering..).next() {
+                    Some((&value, _)) => value,
+                    None => *self.0.keys().next_back()?,
                 }
             }
-            picked
+        };
+        let mut of_value = self.0.remove(&value)?;
+        let (_, candidate) = of_value.pop_first()?;
+        if !of_value.is_empty() {
+            self.0.insert(value, of_value);
         }
-    };
-    selected.extend(
-        picked
-            .iter()
-            .filter_map(|key| slots.remove(key))
-            .map(|candidate| candidate.note),
-    );
-    candidates.extend(slots.into_values());
+        Some(candidate)
+    }
+
+    fn into_candidates(self) -> impl Iterator<Item = Candidate<N>> {
+        self.0.into_values().flat_map(BTreeMap::into_values)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
 
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
@@ -404,7 +422,6 @@ mod tests {
         ));
     }
 
-    // Three orchard notes whose values exercise both branches of a budgeted pick.
     fn ladder_wallet() -> LightWallet {
         SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .tip(20)
@@ -444,7 +461,6 @@ mod tests {
             .collect()
     }
 
-    // Tests that a budgeted pick takes the smallest note that alone covers the remainder plus one marginal fee.
     #[test]
     fn budgeted_pick_prefers_the_smallest_single_covering_note() {
         let Selection::Sufficient { notes } = select(
@@ -457,7 +473,6 @@ mod tests {
         assert_eq!(values(&notes.orchard), [30_000]);
     }
 
-    // Tests that a budgeted pick falls back to the largest note and then covers the remainder from the rest.
     #[test]
     fn budgeted_pick_falls_back_to_the_largest_note_then_covers_the_rest() {
         let target = 100_000;
@@ -472,28 +487,38 @@ mod tests {
         assert!(all_values(&notes).iter().sum::<u64>() >= target);
     }
 
-    // Tests that a pick moves every selected note out of the candidates and leaves the rest in place.
     #[test]
     fn pick_conserves_the_candidates() {
-        let mut candidates = candidates_of(&ladder_wallet()).orchard;
+        let candidates = candidates_of(&ladder_wallet()).orchard;
         let before = candidate_ids(&candidates);
-        let mut selected = Vec::new();
-        let mut remaining = Remaining::of(100_000, 0);
-        pick(
-            &mut candidates,
-            &mut selected,
-            Budget::Bounded(&mut remaining),
-            Stage::AnyReserved,
-        );
-        let taken = ids(&selected);
-        let left = candidate_ids(&candidates);
+        let pick = pick(candidates, Budget::toward(100_000), Stage::AnyReserved);
+        let taken = ids(&pick.taken);
+        let left = candidate_ids(&pick.left);
         assert_eq!(taken.len() + left.len(), before.len());
         assert!(taken.is_disjoint(&left));
         assert_eq!(taken.union(&left).copied().collect::<BTreeSet<_>>(), before);
-        assert!(matches!(remaining, Remaining::Covered));
+        assert!(matches!(pick.budget, Budget::Covered));
     }
 
-    // Tests that neither selection mode spends a note at or below the dust line.
+    #[test]
+    fn covered_budget_picks_nothing() {
+        let candidates = candidates_of(&ladder_wallet()).orchard;
+        let before = candidate_ids(&candidates);
+        let pick = pick(candidates, Budget::Covered, Stage::AnyReserved);
+        assert!(pick.taken.is_empty());
+        assert_eq!(candidate_ids(&pick.left), before);
+        assert!(matches!(pick.budget, Budget::Covered));
+    }
+
+    #[test]
+    fn unbounded_pick_takes_every_admitted_note_by_rising_value() {
+        let candidates = candidates_of(&ladder_wallet()).orchard;
+        let pick = pick(candidates, Budget::Unbounded, Stage::AnyReserved);
+        assert_eq!(values(&pick.taken), [10_000, 30_000, 90_000]);
+        assert!(pick.left.is_empty());
+        assert!(matches!(pick.budget, Budget::Unbounded));
+    }
+
     #[test]
     fn no_selected_note_sits_at_or_below_the_dust_line() {
         let dust = MARGINAL_FEE.into_u64();
@@ -513,7 +538,6 @@ mod tests {
         assert!(all_values(&notes).iter().all(|&value| value > dust));
     }
 
-    // Tests that the selected notes, and their order, do not depend on the order the candidates arrive in.
     #[test]
     fn selection_is_independent_of_candidate_order() {
         let wallet = ladder_wallet();
@@ -562,7 +586,6 @@ mod tests {
         );
     }
 
-    // Tests that note_candidates drops excluded notes and flags reserved ones.
     #[test]
     fn note_candidates_honour_exclusions_and_reservations() {
         let wallet = funded_wallet();

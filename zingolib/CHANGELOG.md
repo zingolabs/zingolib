@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a hosted enable on a session that holds no Session Indexer.
 
 ### Changed
+- **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
+  returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
+  selection probes a reservation in constant time. A consumer that indexed
+  or sorted the vector collects the set first.
 - **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
   pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
   pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
