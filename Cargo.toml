@@ -26,7 +26,7 @@ resolver = "2"
 
 [workspace.dependencies]
 ### Workspace
-pepper-sync = { version = "0.6.0", path = "pepper-sync" }
+pepper-sync = { version = "0.7.0", path = "pepper-sync" }
 zingo-memo = { version = "0.3.0", path = "zingo-memo" }
 zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
