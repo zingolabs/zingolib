@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [7.0.0] - 2026-10-27
+
+### Added
 - `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
   answers the zingolabs endpoint a session attaches to when the consumer
   goes online without naming one, `MAINNET_DEFAULT_INDEXER`
@@ -35,8 +47,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server or link. A stall between messages is still caught by
   `time::STREAM_MSG_TIMEOUT`.
 
-### Deprecated
-
 ### Removed
 
 - BREAKING: the `indexers` module: the census `Indexer`, `INDEXERS`, the
@@ -55,8 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `time::test::WALLET_RECORD_LAG_BOUND`, behind `testutils`. The live test
   that bounded the sender's wallet record reaching the mempool retired
   with the regtest removal, and no other test enforced the bound.
-
-### Fixed
 
 ## [6.0.0] - 2026-10-15
 
