@@ -6435,7 +6435,7 @@ dependencies = [
 
 [[package]]
 name = "pepper-sync"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bip32 0.6.0",
  "byteorder",
