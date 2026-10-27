@@ -44,3 +44,4 @@ syn = { workspace = true }
 
 [features]
 zingo-nym-proxy-ffi = ["dep:zingo-nym-proxy-ffi"]
+unstable = []

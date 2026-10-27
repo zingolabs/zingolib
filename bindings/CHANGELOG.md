@@ -12,6 +12,64 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 3fb32d277ef956e75da124c1442526fb4d91d97a
+
+Since 755c3adaea5906cf55357e69ad1b0a27d746cdb8.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
+
+## 755c3adaea5906cf55357e69ad1b0a27d746cdb8
+
+Since 625f617b63070855d1a4b2a2f61d071cb27c6f82.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `ClientConfig::migrated_from` reports the legacy path a wallet file was
+  copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
+
+##### Changed
+- `InputSource::select_spendable_notes` on `LightWallet` selects from the
+  pools the input selector names alone. In 7.0.0 a request those pools could
+  not cover was topped up from Sapling, Orchard and Ironwood in that order,
+  and all-funds selection drew on every pool whatever the request named. The
+  greedy input selector rejects a note from a pool it did not name, so the
+  shortfall now reaches the consumer as insufficient funds.
+
+##### Fixed
+- On Linux and other non-macOS, non-Windows desktops, a wallet left in the
+  legacy default directory `~/.zcash` is found again. The default moved to the
+  user's data directory (`~/.local/share/.zcash`) and nothing carried existing
+  wallets over, so a consumer updating past that change failed to open them
+  with `ENOENT`. `ClientConfigBuilder::build`, when it uses the default
+  directory, copies the named wallet file over from `~/.zcash` (with its chain's
+  subdirectory) when it is only there. Only that file is copied, never the
+  directory, which zcashd also uses. The copy is staged and renamed into place,
+  and the original is kept.
+
 ## 625f617b63070855d1a4b2a2f61d071cb27c6f82
 
 Since c060a45041adeeb3f36571bbbdc645a582701bcc.
