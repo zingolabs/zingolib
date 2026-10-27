@@ -11145,7 +11145,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-memo"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "zcash_address",
  "zcash_encoding",
@@ -11218,7 +11218,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-price"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "byteorder",
  "serde",
@@ -11232,7 +11232,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-status"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "byteorder",
  "zcash_protocol",
