@@ -11,12 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- BREAKING: moves to `zingo-netutils` 7.0.0. `PriceError::RequestFailed` carries
-  its `socks5_fetch::Socks5FetchError`, so a consumer moves to the same version.
-
 ### Deprecated
 
 ### Removed
+
+### Fixed
+
+## [0.3.0] - 2026-10-27
+
+### Changed
+
+- BREAKING: moves to `zingo-netutils` 7.0.0. `PriceError::RequestFailed` carries
+  its `socks5_fetch::Socks5FetchError`, so a consumer moves to the same version.
 
 ### Fixed
 

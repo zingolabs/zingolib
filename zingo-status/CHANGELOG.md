@@ -11,13 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-- Moves to `zcash_protocol` 0.11.0, replacing its pre-release.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+## [0.3.0] - 2026-10-27
+
+### Changed
+- BREAKING: moves to `zcash_protocol` 0.11.0, replacing its pre-release.
+  `confirmation_status::ConfirmationStatus` takes and returns that crate's
+  `BlockHeight`, so a consumer moves to the same version.
 
 ## [0.2.2] - 2026-10-15
 
