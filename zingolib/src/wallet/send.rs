@@ -139,7 +139,11 @@ impl LightWallet {
     }
 
     /// Whether `protocol`'s shard tree retains a checkpoint at `height`.
-    fn checkpoint_is_retained(&self, protocol: ShieldedPool, height: BlockHeight) -> bool {
+    pub(crate) fn checkpoint_is_retained(
+        &self,
+        protocol: ShieldedPool,
+        height: BlockHeight,
+    ) -> bool {
         use shardtree::store::ShardStore;
 
         match protocol {
