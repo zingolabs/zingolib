@@ -71,7 +71,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
-use workbench::{repo_root, run};
+use workbench::{cargo_make, repo_root, run};
 
 /// The session kind a reserved first word names, following the house idiom
 /// that gives `makers test` its `packages` and `live` words.
@@ -719,8 +719,8 @@ fn tell(child: &mut Child, line: &str) {
 // reach the era this comparison looks back into.
 fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     if arm.hosted {
-        let mut command = Command::new("makers");
-        command.arg("run-cli").arg("--release");
+        let mut command = cargo_make("run-cli");
+        command.arg("--release");
         if arm.spec.nakednet {
             command.arg("--nakednet");
         }
