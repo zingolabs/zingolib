@@ -177,7 +177,7 @@ fn pick<N: OutputInterface>(
         budget = budget.less(candidate.note.value());
         taken.push(candidate.note);
     }
-    left.extend(admitted.into_candidates());
+    left.extend(admitted.0.into_values().flat_map(BTreeMap::into_values));
     Pick {
         taken,
         left,
@@ -217,10 +217,6 @@ impl<N: OutputInterface> Admitted<N> {
             self.0.insert(value, of_value);
         }
         Some(candidate)
-    }
-
-    fn into_candidates(self) -> impl Iterator<Item = Candidate<N>> {
-        self.0.into_values().flat_map(BTreeMap::into_values)
     }
 }
 
