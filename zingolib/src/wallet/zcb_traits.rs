@@ -1,4 +1,9 @@
-use std::{collections::HashMap, convert::Infallible, num::NonZeroU32, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::Infallible,
+    num::NonZeroU32,
+    ops::Range,
+};
 
 use secrecy::SecretVec;
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
@@ -953,10 +958,11 @@ impl InputSource for LightWallet {
             .as_ref()
             .map(migration::MigrationState::reserved_output_ids)
             .unwrap_or_default();
+        let unreserved = HashSet::new();
         let candidates = note_selection::Candidates {
-            sapling: self.note_candidates(anchor_height, account, exclude, &[])?,
+            sapling: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
             orchard: self.note_candidates(anchor_height, account, exclude, &reserved)?,
-            ironwood: self.note_candidates(anchor_height, account, exclude, &[])?,
+            ironwood: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
         };
         let notes = match note_selection::select(target_value, sources, candidates) {
             Selection::Sufficient { notes }

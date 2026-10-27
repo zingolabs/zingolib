@@ -1,5 +1,8 @@
-use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputInterface, SaplingNote};
+use std::collections::{BTreeMap, BTreeSet};
+
+use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, OutputInterface, SaplingNote};
 use zcash_client_backend::data_api::{MaxSpendMode, TargetValue};
+use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::ShieldedPool;
 
@@ -137,13 +140,25 @@ fn pick_pool(
     }
 }
 
-fn admitted<N: OutputInterface>(candidates: &[Candidate<N>], stage: Stage) -> Vec<usize> {
+type Key = (u64, OutputId);
+
+fn key_of<N: OutputInterface>(note: &N) -> Key {
+    (note.value(), note.output_id())
+}
+
+fn least_key_of_value(value: u64) -> Key {
+    (value, OutputId::new(TxId::from_bytes([0; 32]), 0))
+}
+
+fn admitted<N: OutputInterface>(
+    slots: &BTreeMap<Key, Candidate<N>>,
+    stage: Stage,
+) -> BTreeSet<Key> {
     let fee = MARGINAL_FEE.into_u64();
-    candidates
+    slots
         .iter()
-        .enumerate()
         .filter(|(_, candidate)| stage.admits(candidate) && candidate.note.value() > fee)
-        .map(|(index, _)| index)
+        .map(|(&key, _)| key)
         .collect()
 }
 
@@ -153,62 +168,55 @@ fn pick<N: OutputInterface>(
     budget: Budget<'_>,
     stage: Stage,
 ) {
+    let mut slots = candidates
+        .drain(..)
+        .map(|candidate| (key_of(&candidate.note), candidate))
+        .collect::<BTreeMap<_, _>>();
+    let mut eligible = admitted(&slots, stage);
     let picked = match budget {
-        Budget::Unbounded => admitted(candidates, stage),
+        Budget::Unbounded => eligible.into_iter().collect::<Vec<_>>(),
         Budget::Bounded(remaining) => {
-            let Remaining::Positive(target) = *remaining else {
-                return;
-            };
             let fee = MARGINAL_FEE.into_u64();
-            let value_at = |index: &usize| candidates[*index].note.value();
-            let mut eligible = admitted(candidates, stage);
-            eligible.sort_by_key(value_at);
             let mut picked = Vec::new();
-            let mut total = 0;
-            let mut cursor = 0;
-            loop {
-                *remaining = Remaining::of(target, total);
-                let Remaining::Positive(still) = *remaining else {
-                    break;
-                };
-                match eligible.get(cursor) {
-                    Some(&index) if value_at(&index) > still + fee => {
-                        total += value_at(&index);
-                        picked.push(index);
-                        eligible.remove(cursor);
-                    }
-                    Some(_) => cursor += 1,
-                    None => match eligible.pop() {
-                        Some(index) => {
-                            total += value_at(&index);
-                            picked.push(index);
-                            cursor = 0;
-                        }
-                        None => break,
-                    },
+            if let Remaining::Positive(target) = *remaining {
+                let mut total = 0;
+                while let Remaining::Positive(still) = *remaining {
+                    let Some(&key) = eligible
+                        .range(least_key_of_value(still + fee + 1)..)
+                        .next()
+                        .or_else(|| eligible.last())
+                    else {
+                        break;
+                    };
+                    eligible.remove(&key);
+                    total += key.0;
+                    picked.push(key);
+                    *remaining = Remaining::of(target, total);
                 }
             }
             picked
         }
     };
-    let mut slots = candidates.drain(..).map(Some).collect::<Vec<_>>();
     selected.extend(
         picked
             .iter()
-            .filter_map(|&index| slots[index].take())
+            .filter_map(|key| slots.remove(key))
             .map(|candidate| candidate.note),
     );
-    candidates.extend(slots.into_iter().flatten());
+    candidates.extend(slots.into_values());
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use zcash_protocol::consensus::BlockHeight;
     use zcash_protocol::value::Zatoshis;
 
     use super::*;
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
     use crate::wallet::LightWallet;
+    use crate::wallet::output::OutputRef;
 
     const ALL_POOLS: [ShieldedPool; 3] = [
         ShieldedPool::Sapling,
@@ -231,13 +239,13 @@ mod tests {
         let account = zip32::AccountId::ZERO;
         Candidates {
             sapling: wallet
-                .note_candidates(anchor_height, account, &[], &[])
+                .note_candidates(anchor_height, account, &[], &HashSet::new())
                 .expect("the synthetic wallet is synced"),
             orchard: wallet
-                .note_candidates(anchor_height, account, &[], &[])
+                .note_candidates(anchor_height, account, &[], &HashSet::new())
                 .expect("the synthetic wallet is synced"),
             ironwood: wallet
-                .note_candidates(anchor_height, account, &[], &[])
+                .note_candidates(anchor_height, account, &[], &HashSet::new())
                 .expect("the synthetic wallet is synced"),
         }
     }
@@ -394,5 +402,190 @@ mod tests {
             ),
             Selection::EverythingUnsupported
         ));
+    }
+
+    // Three orchard notes whose values exercise both branches of a budgeted pick.
+    fn ladder_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .orchard_note(10_000)
+            .orchard_note(30_000)
+            .orchard_note(90_000)
+            .build()
+    }
+
+    fn all_funds() -> TargetValue {
+        TargetValue::AllFunds(MaxSpendMode::MaxSpendable)
+    }
+
+    fn sorted_values<N: OutputInterface>(notes: &[N]) -> Vec<u64> {
+        let mut values = values(notes);
+        values.sort_unstable();
+        values
+    }
+
+    fn all_values(notes: &PoolNotes) -> Vec<u64> {
+        [
+            values(&notes.sapling),
+            values(&notes.orchard),
+            values(&notes.ironwood),
+        ]
+        .concat()
+    }
+
+    fn ids<N: OutputInterface>(notes: &[N]) -> BTreeSet<OutputId> {
+        notes.iter().map(OutputInterface::output_id).collect()
+    }
+
+    fn candidate_ids<N: OutputInterface>(candidates: &[Candidate<N>]) -> BTreeSet<OutputId> {
+        candidates
+            .iter()
+            .map(|candidate| candidate.note.output_id())
+            .collect()
+    }
+
+    // Tests that a budgeted pick takes the smallest note that alone covers the remainder plus one marginal fee.
+    #[test]
+    fn budgeted_pick_prefers_the_smallest_single_covering_note() {
+        let Selection::Sufficient { notes } = select(
+            at_least(20_000),
+            &[ShieldedPool::Orchard],
+            candidates_of(&ladder_wallet()),
+        ) else {
+            panic!("the ladder wallet covers 20_000");
+        };
+        assert_eq!(values(&notes.orchard), [30_000]);
+    }
+
+    // Tests that a budgeted pick falls back to the largest note and then covers the remainder from the rest.
+    #[test]
+    fn budgeted_pick_falls_back_to_the_largest_note_then_covers_the_rest() {
+        let target = 100_000;
+        let Selection::Sufficient { notes } = select(
+            at_least(target),
+            &[ShieldedPool::Orchard],
+            candidates_of(&ladder_wallet()),
+        ) else {
+            panic!("the ladder wallet covers 100_000");
+        };
+        assert_eq!(sorted_values(&notes.orchard), [30_000, 90_000]);
+        assert!(all_values(&notes).iter().sum::<u64>() >= target);
+    }
+
+    // Tests that a pick moves every selected note out of the candidates and leaves the rest in place.
+    #[test]
+    fn pick_conserves_the_candidates() {
+        let mut candidates = candidates_of(&ladder_wallet()).orchard;
+        let before = candidate_ids(&candidates);
+        let mut selected = Vec::new();
+        let mut remaining = Remaining::of(100_000, 0);
+        pick(
+            &mut candidates,
+            &mut selected,
+            Budget::Bounded(&mut remaining),
+            Stage::AnyReserved,
+        );
+        let taken = ids(&selected);
+        let left = candidate_ids(&candidates);
+        assert_eq!(taken.len() + left.len(), before.len());
+        assert!(taken.is_disjoint(&left));
+        assert_eq!(taken.union(&left).copied().collect::<BTreeSet<_>>(), before);
+        assert!(matches!(remaining, Remaining::Covered));
+    }
+
+    // Tests that neither selection mode spends a note at or below the dust line.
+    #[test]
+    fn no_selected_note_sits_at_or_below_the_dust_line() {
+        let dust = MARGINAL_FEE.into_u64();
+        let Selection::Insufficient { notes } = select(
+            at_least(1_000_000),
+            &ALL_POOLS,
+            candidates_of(&funded_wallet()),
+        ) else {
+            panic!("the funded wallet holds 220_000 above the dust line");
+        };
+        assert!(all_values(&notes).iter().all(|&value| value > dust));
+        let Selection::AllSpendable { notes } =
+            select(all_funds(), &ALL_POOLS, candidates_of(&funded_wallet()))
+        else {
+            panic!("all funds in MaxSpendable mode is supported");
+        };
+        assert!(all_values(&notes).iter().all(|&value| value > dust));
+    }
+
+    // Tests that the selected notes, and their order, do not depend on the order the candidates arrive in.
+    #[test]
+    fn selection_is_independent_of_candidate_order() {
+        let wallet = ladder_wallet();
+        let forward = candidates_of(&wallet);
+        let mut reversed = candidates_of(&wallet);
+        reversed.orchard.reverse();
+        let (
+            Selection::AllSpendable {
+                notes: from_forward,
+            },
+            Selection::AllSpendable {
+                notes: from_reversed,
+            },
+        ) = (
+            select(all_funds(), &[ShieldedPool::Orchard], forward),
+            select(all_funds(), &[ShieldedPool::Orchard], reversed),
+        )
+        else {
+            panic!("all funds in MaxSpendable mode is supported");
+        };
+        assert_eq!(
+            values(&from_forward.orchard),
+            values(&from_reversed.orchard)
+        );
+
+        let forward = candidates_of(&wallet);
+        let mut reversed = candidates_of(&wallet);
+        reversed.orchard.reverse();
+        let (
+            Selection::Sufficient {
+                notes: from_forward,
+            },
+            Selection::Sufficient {
+                notes: from_reversed,
+            },
+        ) = (
+            select(at_least(100_000), &[ShieldedPool::Orchard], forward),
+            select(at_least(100_000), &[ShieldedPool::Orchard], reversed),
+        )
+        else {
+            panic!("the ladder wallet covers 100_000");
+        };
+        assert_eq!(
+            values(&from_forward.orchard),
+            values(&from_reversed.orchard)
+        );
+    }
+
+    // Tests that note_candidates drops excluded notes and flags reserved ones.
+    #[test]
+    fn note_candidates_honour_exclusions_and_reservations() {
+        let wallet = funded_wallet();
+        let orchard = candidates_of(&wallet).orchard;
+        let id_of = |value: u64| {
+            orchard
+                .iter()
+                .find(|candidate| candidate.note.value() == value)
+                .map(|candidate| candidate.note.output_id())
+                .expect("the funded wallet holds an orchard note of this value")
+        };
+        let excluded = id_of(100_000);
+        let reserved = id_of(5_000);
+        let candidates: Vec<Candidate<OrchardNote>> = wallet
+            .note_candidates(
+                BlockHeight::from_u32(20),
+                zip32::AccountId::ZERO,
+                &[OutputRef::new(excluded, OrchardNote::POOL_TYPE)],
+                &HashSet::from([reserved]),
+            )
+            .expect("the synthetic wallet is synced");
+        assert_eq!(candidate_ids(&candidates), BTreeSet::from([reserved]));
+        assert!(candidates.iter().all(|candidate| candidate.certain));
+        assert!(candidates.iter().all(|candidate| candidate.reserved));
     }
 }

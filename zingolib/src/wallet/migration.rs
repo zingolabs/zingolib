@@ -38,6 +38,8 @@
 //! over the private path above. That is the `immediate` module, which shares nothing with
 //! this two-phase design but the transaction builder.
 
+use std::collections::HashSet;
+
 // The submodules carry a crate ceiling: the re-export block below is this
 // module's whole public surface, so a new public name is a deliberate act
 // here rather than a side effect of `pub` in a submodule. Two modules stay
@@ -154,7 +156,7 @@ impl MigrationState {
     /// selection for ordinary sends, without ever blocking a spend the user
     /// insists on (an insistent spend consumes them and the affected parts
     /// are invalidated on the next reconciliation).
-    pub fn reserved_output_ids(&self) -> Vec<pepper_sync::wallet::OutputId> {
+    pub fn reserved_output_ids(&self) -> HashSet<pepper_sync::wallet::OutputId> {
         self.parts
             .iter()
             .filter(|part| {
