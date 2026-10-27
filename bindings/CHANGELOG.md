@@ -12,6 +12,31 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 3fb32d277ef956e75da124c1442526fb4d91d97a
+
+Since 755c3adaea5906cf55357e69ad1b0a27d746cdb8.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
+
 ## 755c3adaea5906cf55357e69ad1b0a27d746cdb8
 
 Since 625f617b63070855d1a4b2a2f61d071cb27c6f82.
