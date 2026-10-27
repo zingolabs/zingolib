@@ -11162,7 +11162,7 @@ dependencies = [
 
 [[package]]
 name = "zingo-netutils"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "futures-channel",
  "http 1.5.0",

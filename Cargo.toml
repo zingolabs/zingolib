@@ -58,7 +58,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { version = "6.0.0", path = "zingo-netutils", features = [
+zingo-netutils = { version = "7.0.0", path = "zingo-netutils", features = [
   "globally-public-transparent",
 ] }
 zingo-nym-proxy-ffi = { version = "0.1.0", path = "zingo-netutils/nym-proxy-ffi" }
