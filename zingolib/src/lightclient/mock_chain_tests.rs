@@ -1984,16 +1984,15 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
 
 /// Funds the client's transparent address during a continuous sync session
 /// and waits until the funding and four blocks over it are scanned, so the
-/// funds are confirmed and shieldable. Returns the scanned tip.
+/// funds are confirmed and shieldable. Returns the scanned tip. The session
+/// is scanned to the tip before the funding is built, the order the other
+/// continuous sync tests fund in.
 async fn fund_transparent_under_continuous_sync(net: &MockNet, client: &LightClient) -> u32 {
+    // bound first: a guard in the call's argument would live across the wait and starve the engine's chain reads.
+    let tip = net.chain.read().await.tip();
+    wait_until_scanned_to(client, tip).await;
     let taddr = get_base_address(client, PoolType::Transparent).await;
-    let funding = net.funding_transaction(vec![(&taddr, 500_000, None)]).await;
-    wait_until_scanned_to(client, 10).await;
-    {
-        let mut chain = net.chain.write().await;
-        chain.mine_block(vec![funding]);
-        chain.mine_empty_blocks(4);
-    }
+    fund(net, vec![(&taddr, 500_000, None)], 4).await;
     let funded_tip = net.chain.read().await.tip();
     wait_until_scanned_to(client, funded_tip).await;
     funded_tip
