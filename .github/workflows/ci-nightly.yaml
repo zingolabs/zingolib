@@ -60,8 +60,12 @@ jobs:
 
       - name: Compare the arms
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
+        # The install-action ships the cargo-make binary only, no makers
+        # alias, and bash here means pipefail, so a failed comparison fails
+        # the job instead of leaving tee to report success.
+        shell: bash
         run: |
-          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+          cargo make sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
             --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
 
       - name: Keep the report
