@@ -47,6 +47,14 @@
 //! notes where a fundless one only discards, so reproducing someone's
 //! measurement means giving the comparison their wallet.
 //!
+//! The indexer is the caller's as well. `--server` pins one indexer in
+//! every arm, defaulting to mainnet's Default Indexer. The CLI's own
+//! default is not held fixed across commits: before zingolib 8 an online
+//! session without `--server` ran the Server-Selection Sweep and attached
+//! to whichever curated lightwalletd it ranked first, and from zingolib 8
+//! it attaches to the Default Indexer, so two arms straddling that change
+//! would measure two servers.
+//!
 //! Two readings ride beside the rate. The session's peak resident memory
 //! is the CLI process's high-water mark, read from `/proc` once the span
 //! closes and before the session quits, so it spans the boot and the
@@ -65,8 +73,8 @@
 //! own noise: a candidate that moves within it has not moved.
 //!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
-//! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
-//! kind, as `makers test packages` and `makers test live` name their
+//! [--runs <n>] [--seconds <n>] [--seed <mnemonic>] [--server <uri>]`. The reserved
+//! first word names the session kind, as `makers test packages` and `makers test live` name their
 //! scopes, and omitting it names the same kind.
 #![forbid(unsafe_code)]
 
@@ -132,6 +140,11 @@ const LOG_FILTER: &str = "info";
 const GUARD_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon abandon abandon art";
+
+/// The indexer every arm pins, when `--server` names no other: mainnet's
+/// Default Indexer, the one an online zingolib 8 session attaches to
+/// without `--server`.
+const DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
 
 /// Measured runs per arm, when `--runs` names no other count.
 const DEFAULT_RUNS: usize = 3;
@@ -278,6 +291,8 @@ struct Request {
     runs: usize,
     seconds: u64,
     seed: String,
+    /// The indexer every arm pins.
+    server: String,
     // Where the readings go in Bencher Metric Format, when a sink wants
     // them.
     json: Option<PathBuf>,
@@ -341,6 +356,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
     let mut seed = GUARD_MNEMONIC.to_string();
+    let mut server = DEFAULT_INDEXER.to_string();
     let mut json = None;
     while let Some(argument) = arguments.next() {
         let mut value = |name: &str| {
@@ -363,6 +379,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                     .map_err(|e| vec![format!("--runs {raw}: {e}")])?;
             }
             "--seed" => seed = value("--seed")?,
+            "--server" => server = value("--server")?,
             "--json" => json = Some(PathBuf::from(value("--json")?)),
             "--seconds" => {
                 let raw = value("--seconds")?;
@@ -405,6 +422,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         runs,
         seconds,
         seed,
+        server,
         json,
     })
 }
@@ -734,6 +752,8 @@ fn measure(arm: &Arm, request: &Request, budget: Duration) -> Result<Reading, Ve
     let mut child = command
         .arg("--seed")
         .arg(&request.seed)
+        .arg("--server")
+        .arg(&request.server)
         .arg("--birthday")
         .arg(request.birthday.to_string())
         .arg("--data-dir")
@@ -1165,6 +1185,7 @@ mod tests {
             runs: DEFAULT_RUNS,
             seconds,
             seed: seed.to_string(),
+            server: DEFAULT_INDEXER.to_string(),
             json: None,
         }
     }
