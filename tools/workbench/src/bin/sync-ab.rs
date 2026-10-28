@@ -58,6 +58,12 @@
 //! compares them only as far as its arms scanned alike, and a comparison
 //! that means to measure them runs to completion.
 //!
+//! `--json <path>` writes the readings in Bencher Metric Format beside the
+//! report, a benchmark per arm named by its role and the window. A sink
+//! that graphs the nights then holds the baseline measured again each
+//! night beside the candidate, and that baseline series is the runner's
+//! own noise: a candidate that moves within it has not moved.
+//!
 //! Usage: `makers sync-ab [cli] <arm> <arm> --birthday <height>
 //! [--runs <n>] [--seconds <n>] [--seed <mnemonic>]`. The reserved first word names the session
 //! kind, as `makers test packages` and `makers test live` name their
@@ -71,7 +77,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
-use workbench::{repo_root, run};
+use workbench::{cargo_make, repo_root, run, write};
 
 /// The session kind a reserved first word names, following the house idiom
 /// that gives `makers test` its `packages` and `live` words.
@@ -188,6 +194,22 @@ const MIB_NAME: &str = "MiB";
 // The word for a reading the platform did not give.
 const UNAVAILABLE: &str = "unavailable";
 
+// The role each arm plays in the metrics file, by position: the first arm
+// is the baseline the second is measured against.
+const BASELINE_ROLE: &str = "baseline";
+const CANDIDATE_ROLE: &str = "candidate";
+
+// The measures the metrics file carries, each named with its unit so a
+// sink that creates a measure from its slug needs no further description.
+const OUTPUTS_PER_SECOND: &str = "outputs-per-second";
+const BOOT_SECONDS: &str = "boot-seconds";
+const PEAK_RSS_BYTES: &str = "peak-rss-bytes";
+const WALLET_FILE_BYTES: &str = "wallet-file-bytes";
+
+// The words a benchmark's window is written in.
+const TO_COMPLETION: &str = "to completion";
+const SEEDED: &str = ", seeded";
+
 // The factor from a ratio to a percentage.
 const PERCENT: f64 = 100.0;
 
@@ -256,6 +278,9 @@ struct Request {
     runs: usize,
     seconds: u64,
     seed: String,
+    // Where the readings go in Bencher Metric Format, when a sink wants
+    // them.
+    json: Option<PathBuf>,
 }
 
 /// One arm's checkout, how it is launched, and its readings.
@@ -316,6 +341,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
     let mut runs = DEFAULT_RUNS;
     let mut seconds = DEFAULT_SECONDS;
     let mut seed = GUARD_MNEMONIC.to_string();
+    let mut json = None;
     while let Some(argument) = arguments.next() {
         let mut value = |name: &str| {
             arguments
@@ -337,6 +363,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
                     .map_err(|e| vec![format!("--runs {raw}: {e}")])?;
             }
             "--seed" => seed = value("--seed")?,
+            "--json" => json = Some(PathBuf::from(value("--json")?)),
             "--seconds" => {
                 let raw = value("--seconds")?;
                 seconds = raw
@@ -378,6 +405,7 @@ fn parse_request() -> Result<Request, Vec<String>> {
         runs,
         seconds,
         seed,
+        json,
     })
 }
 
@@ -398,7 +426,94 @@ fn compare() -> Result<(), Vec<String>> {
         retire(&root, &arm.worktree);
     }
     report(&arms, request.seconds > 0);
+    if let Some(path) = &request.json {
+        let series: Vec<(String, Vec<Metric>)> = [BASELINE_ROLE, CANDIDATE_ROLE]
+            .into_iter()
+            .zip(&arms)
+            .map(|(role, arm)| (benchmark(role, &arm.spec, &request), metrics(arm)))
+            .collect();
+        write(path, metric_format(&series))?;
+    }
     Ok(())
+}
+
+// One reading of an arm as the metrics file carries it: the mean, and one
+// deviation either side of it when more than one session gave it.
+struct Metric {
+    measure: &'static str,
+    value: f64,
+    bounds: Option<(f64, f64)>,
+}
+
+fn metric(measure: &'static str, samples: &[f64]) -> Metric {
+    let value = mean(samples);
+    Metric {
+        measure,
+        value,
+        bounds: deviation(samples).map(|spread| (value - spread, value + spread)),
+    }
+}
+
+// The arm's readings in the order the report prints them, leaving out a
+// reading some session did not give.
+fn metrics(arm: &Arm) -> Vec<Metric> {
+    let boots: Vec<f64> = arm.boots.iter().map(Duration::as_secs_f64).collect();
+    let as_f64 = |counted: Vec<u64>| counted.into_iter().map(|b| b as f64).collect::<Vec<_>>();
+    [
+        Some(metric(OUTPUTS_PER_SECOND, &arm.rates)),
+        Some(metric(BOOT_SECONDS, &boots)),
+        complete(&arm.peaks).map(|peaks| metric(PEAK_RSS_BYTES, &as_f64(peaks))),
+        complete(&arm.wallet_files).map(|files| metric(WALLET_FILE_BYTES, &as_f64(files))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+// The series an arm's readings join, named by the arm's role and the
+// window, so a change of window starts a new series instead of bending the
+// old one.
+fn benchmark(role: &str, spec: &Spec, request: &Request) -> String {
+    let kind = if spec.nakednet { NAKEDNET_KIND } else { "" };
+    let window = if request.seconds > 0 {
+        format!("{}s", request.seconds)
+    } else {
+        TO_COMPLETION.to_string()
+    };
+    let seeded = if request.seed == GUARD_MNEMONIC {
+        ""
+    } else {
+        SEEDED
+    };
+    format!(
+        "{role}{kind} (birthday {}, {window}{seeded})",
+        request.birthday
+    )
+}
+
+// The Bencher Metric Format text: a benchmark per arm, a measure per
+// reading. Every name comes from a constant or a number, so nothing here
+// needs escaping.
+fn metric_format(series: &[(String, Vec<Metric>)]) -> String {
+    let benchmarks: Vec<String> = series
+        .iter()
+        .map(|(benchmark, metrics)| {
+            let measures: Vec<String> = metrics
+                .iter()
+                .map(|metric| {
+                    let bounds = metric.bounds.map_or_else(String::new, |(low, high)| {
+                        format!(", \"lower_value\": {low}, \"upper_value\": {high}")
+                    });
+                    format!(
+                        "    \"{}\": {{\"value\": {}{bounds}}}",
+                        metric.measure, metric.value
+                    )
+                })
+                .collect();
+            format!("  \"{benchmark}\": {{\n{}\n  }}", measures.join(",\n"))
+        })
+        .collect();
+    format!("{{\n{}\n}}\n", benchmarks.join(",\n"))
 }
 
 // Warms both arms up, then measures them in alternating rounds.
@@ -719,8 +834,8 @@ fn tell(child: &mut Child, line: &str) {
 // reach the era this comparison looks back into.
 fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     if arm.hosted {
-        let mut command = Command::new("makers");
-        command.arg("run-cli").arg("--release");
+        let mut command = cargo_make("run-cli");
+        command.arg("--release");
         if arm.spec.nakednet {
             command.arg("--nakednet");
         }
@@ -966,9 +1081,15 @@ fn change(left: f64, right: f64) -> f64 {
 // or when a session gave no reading, so the arms' means cover the same
 // sessions as their rates.
 fn mean_bytes(samples: &[Option<u64>]) -> Option<u64> {
-    let counted: Option<Vec<u64>> = samples.iter().copied().collect();
-    let counted = counted.filter(|counted| !counted.is_empty())?;
+    let counted = complete(samples)?;
     Some(counted.iter().sum::<u64>() / counted.len() as u64)
+}
+
+// The sampled byte counts when every session gave one, and nothing when
+// any session did not.
+fn complete(samples: &[Option<u64>]) -> Option<Vec<u64>> {
+    let counted: Option<Vec<u64>> = samples.iter().copied().collect();
+    counted.filter(|counted| !counted.is_empty())
 }
 
 // A byte count in `unit`, or the word for a reading the platform did not
@@ -1036,6 +1157,48 @@ fn git(root: &Path, args: &[&str]) -> Result<(), Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request(seconds: u64, seed: &str) -> Request {
+        Request {
+            specs: [Spec::parse("a"), Spec::parse("b")],
+            birthday: 2_571_710,
+            runs: DEFAULT_RUNS,
+            seconds,
+            seed: seed.to_string(),
+            json: None,
+        }
+    }
+
+    #[test]
+    fn benchmark_names_the_role_the_kind_and_the_window() {
+        let bounded = request(90, GUARD_MNEMONIC);
+        assert_eq!(
+            benchmark(BASELINE_ROLE, &Spec::parse("a:nakednet"), &bounded),
+            "baseline:nakednet (birthday 2571710, 90s)"
+        );
+        let whole = request(0, "some other mnemonic");
+        assert_eq!(
+            benchmark(CANDIDATE_ROLE, &Spec::parse("b"), &whole),
+            "candidate (birthday 2571710, to completion, seeded)"
+        );
+    }
+
+    #[test]
+    fn metric_format_bounds_a_reading_only_where_a_deviation_exists() {
+        let series = vec![(
+            "candidate (birthday 1, 90s)".to_string(),
+            vec![
+                metric(OUTPUTS_PER_SECOND, &[100.0, 110.0, 120.0]),
+                metric(BOOT_SECONDS, &[2.5]),
+            ],
+        )];
+        assert_eq!(
+            metric_format(&series),
+            "{\n  \"candidate (birthday 1, 90s)\": {\n    \"outputs-per-second\": \
+             {\"value\": 110, \"lower_value\": 100, \"upper_value\": 120},\n    \
+             \"boot-seconds\": {\"value\": 2.5}\n  }\n}\n"
+        );
+    }
 
     /// The launch as the beta tag writes it, five arguments on one line.
     const EARLY_ERA: &str = "        let sync_handle = tokio::spawn(async move {

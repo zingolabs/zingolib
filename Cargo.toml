@@ -26,15 +26,15 @@ resolver = "2"
 
 [workspace.dependencies]
 ### Workspace
-pepper-sync = { version = "0.6.0", path = "pepper-sync" }
-zingo-memo = { version = "0.2.0", path = "zingo-memo" }
+pepper-sync = { version = "0.7.0", path = "pepper-sync" }
+zingo-memo = { version = "0.3.0", path = "zingo-memo" }
 zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
 # zingolib re-enables it only under its `nym` feature (the mixnet-only
 # price rule). The crate's own default keeps the fetch for standalone
 # builds and tests.
-zingo-price = { version = "0.2.0", path = "zingo-price", default-features = false }
-zingo-status = { version = "0.2.2", path = "zingo-status" }
+zingo-price = { version = "0.3.0", path = "zingo-price", default-features = false }
+zingo-status = { version = "0.3.0", path = "zingo-status" }
 zingolib = { version = "7.0.0", path = "zingolib" }
 
 ### Tests and Integration Tests
@@ -58,7 +58,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { version = "6.0.0", path = "zingo-netutils", features = [
+zingo-netutils = { version = "7.0.0", path = "zingo-netutils", features = [
   "globally-public-transparent",
 ] }
 zingo-nym-proxy-ffi = { version = "0.1.0", path = "zingo-netutils/nym-proxy-ffi" }

@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [0.7.0] - 2026-10-27
+
+### Changed
 - BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
   `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
   activation height, 3,543,405.
@@ -65,10 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decide the checkpoints it adds for blocks that leave a pool's tree
   unchanged, so the two sides agree. A scan task carries the wallet's
   highest scanned height from its selection for this.
-
-### Deprecated
-
-### Removed
 
 ### Fixed
 - The mempool stream is opened without a call deadline. It was opened with
