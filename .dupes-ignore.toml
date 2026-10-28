@@ -605,3 +605,27 @@ reason = "trait delegation pair: one type implementing two traits cannot share t
 [[ignore]]
 fingerprint = "ab76baf131af1b5d"
 reason = "trait delegation pair: one type implementing two traits cannot share the impl, so the Sapling prover adapter's SpendProver and OutputProver methods delegate identically"
+
+[[ignore]]
+fingerprint = "5fa706d93b4b84d6"
+reason = "FFI export pair send/preview_send: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "a64e7fbc9ad3d25f"
+reason = "FFI export pair send/preview_send, the lock closures (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "186f0ce75040647b"
+reason = "FFI export pair send_all/preview_send_all: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "a6187a2ebbec45af"
+reason = "FFI export pair send_all/preview_send_all, the lock closures (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "951708b4f685840f"
+reason = "FFI export pair shield/preview_shield: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "ac5a148388d91457"
+reason = "FFI export pair shield/preview_shield, the lock closures (zingolib#3104)"

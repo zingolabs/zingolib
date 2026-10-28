@@ -77,6 +77,10 @@ send(send_json: String) -> Result<String, ZingolibError>
 send_all(address: String, memo: String) -> Result<String, ZingolibError>
 shield() -> Result<String, ZingolibError>
 confirm() -> Result<String, ZingolibError>
+decline() -> Result<String, ZingolibError>
+preview_send(send_json: String) -> Result<String, ZingolibError>
+preview_send_all(address: String, memo: String) -> Result<String, ZingolibError>
+preview_shield() -> Result<String, ZingolibError>
 send_swap_deposit(vault_address: String, amount: u64, memo_hex: String) -> Result<String, ZingolibError>
 plan_orchard_drain() -> Result<String, ZingolibError>
 drain_orchard_to_ironwood() -> Result<String, ZingolibError>

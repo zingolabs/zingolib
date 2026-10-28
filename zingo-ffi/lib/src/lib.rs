@@ -37,6 +37,7 @@ use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::proposal::Proposal;
+use zcash_client_backend::zip321::TransactionRequest;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 use zcash_protocol::{PoolType, ShieldedPool};
@@ -47,7 +48,7 @@ use zingolib::config::{
 };
 use zingolib::data;
 use zingolib::data::PollReport;
-use zingolib::data::proposal::total_fee;
+use zingolib::data::proposal::{ProportionalFeeProposal, ProportionalFeeShieldProposal, total_fee};
 use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient;
@@ -59,7 +60,7 @@ use zingolib::utils;
 use zingolib::utils::{conversion::address_from_str, conversion::txid_from_hex_encoded_str};
 use zingolib::wallet;
 use zingolib::wallet::WalletSettings;
-use zingolib::wallet::error::{ProposeSendError, WalletError};
+use zingolib::wallet::error::{ProposeSendError, ProposeShieldError, WalletError};
 use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
@@ -3453,63 +3454,152 @@ fn proposal_destination_pools<FeeRuleT, NoteRef>(
     pools
 }
 
+/// The request `send` and `preview_send` take: a JSON list of
+/// `{ address, amount, memo? }` receivers.
+fn send_request_from_json(send_json: &str) -> Result<TransactionRequest, ZingolibError> {
+    let json_args = json::parse(send_json).map_err(in_context(
+        ZingolibError::InvalidInput,
+        "it is not a valid JSON",
+    ))?;
+
+    let mut receivers = Receivers::new();
+    for j in json_args.members() {
+        let recipient_address = match j["address"].as_str() {
+            Some(addr) => ZcashAddress::try_from_encoded(addr)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
+            None => {
+                return Err(ZingolibError::InvalidInput("missing address".to_string()));
+            }
+        };
+
+        let amount = match j["amount"].as_u64() {
+            Some(a) => Zatoshis::from_u64(a)
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
+            None => {
+                return Err(ZingolibError::InvalidInput("missing amount".to_string()));
+            }
+        };
+
+        let memo = match j["memo"].as_str() {
+            Some(m) => Some(
+                interpret_memo_string(m.to_string())
+                    .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
+            ),
+            None => None,
+        };
+
+        receivers.push(zingolib::data::receivers::Receiver {
+            recipient_address,
+            amount,
+            memo,
+        });
+    }
+
+    transaction_request_from_receivers(receivers)
+        .map_err(in_context(ZingolibError::InvalidInput, "request error"))
+}
+
+/// The arguments `send_all` and `preview_send_all` take: the recipient, and
+/// a memo that is none for the empty string.
+fn send_all_request(
+    address: String,
+    memo: String,
+) -> Result<(ZcashAddress, Option<MemoBytes>), ZingolibError> {
+    let address = ZcashAddress::try_from_encoded(&address)
+        .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?;
+    let memo = if memo.is_empty() {
+        None
+    } else {
+        Some(
+            interpret_memo_string(memo)
+                .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
+        )
+    };
+    Ok((address, memo))
+}
+
+/// The answer `send` and `preview_send` share: the fee and the pools the
+/// proposal moves value between.
+fn send_answer(
+    proposed: Result<ProportionalFeeProposal, ProposeSendError>,
+) -> Result<String, ZingolibError> {
+    let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
+    let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
+    Ok(object! {
+        "fee" => fee.into_u64(),
+        "source_pools" => proposal_source_pools(&proposal),
+        "destination_pools" => proposal_destination_pools(&proposal),
+    }
+    .pretty(2))
+}
+
+/// The answer `send_all` and `preview_send_all` share: `send`'s, plus the
+/// amount the recipient receives.
+fn send_all_answer(
+    proposed: Result<ProportionalFeeProposal, ProposeSendError>,
+) -> Result<String, ZingolibError> {
+    let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
+    let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
+    let amount = proposal_recipient_amount(&proposal);
+    Ok(object! {
+        "amount" => amount.into_u64(),
+        "fee" => fee.into_u64(),
+        "source_pools" => proposal_source_pools(&proposal),
+        "destination_pools" => proposal_destination_pools(&proposal),
+    }
+    .pretty(2))
+}
+
+/// The answer `shield` and `preview_shield` share: the value shielded and
+/// the fee.
+fn shield_answer(
+    proposed: Result<ProportionalFeeShieldProposal, ProposeShieldError>,
+) -> Result<String, ZingolibError> {
+    let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
+    if proposal.steps().len() != 1 {
+        return Err(ZingolibError::InvalidInput(
+            "shielding transactions should not have multiple proposal steps".to_string(),
+        ));
+    }
+    let step = proposal.steps().first();
+    let value_to_shield = step
+        .balance()
+        .proposed_change()
+        .iter()
+        .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
+        .ok_or_else(|| {
+            ZingolibError::InvalidInput("shield amount outside valid range of zatoshis".to_string())
+        })?;
+    let fee = step.balance().fee_required();
+    Ok(object! {
+        "value_to_shield" => value_to_shield.into_u64(),
+        "fee" => fee.into_u64(),
+    }
+    .pretty(2))
+}
+
+/// Proposes a transfer, for `confirm` to transmit. Answers the fee and the
+/// pools, what `preview_send` answers without proposing.
+///
+/// The stored proposal holds sync paused until it is settled: `confirm`
+/// transmits it, `decline` drops it. Nothing else resumes a continuous sync
+/// session, so a caller that only wants the fee calls `preview_send`.
 #[uniffi::export]
 pub fn send(send_json: String) -> Result<String, ZingolibError> {
+    let request = send_request_from_json(&send_json)?;
     with_initialized_lightclient(|lightclient| {
-        RT.block_on(async move {
-            let json_args = json::parse(&send_json).map_err(in_context(
-                ZingolibError::InvalidInput,
-                "it is not a valid JSON",
-            ))?;
+        send_answer(RT.block_on(lightclient.propose_send(request, AccountId::ZERO)))
+    })
+}
 
-            let mut receivers = Receivers::new();
-            for j in json_args.members() {
-                let recipient_address = match j["address"].as_str() {
-                    Some(addr) => ZcashAddress::try_from_encoded(addr)
-                        .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
-                    None => {
-                        return Err(ZingolibError::InvalidInput("missing address".to_string()));
-                    }
-                };
-
-                let amount = match j["amount"].as_u64() {
-                    Some(a) => Zatoshis::from_u64(a)
-                        .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
-                    None => {
-                        return Err(ZingolibError::InvalidInput("missing amount".to_string()));
-                    }
-                };
-
-                let memo =
-                    match j["memo"].as_str() {
-                        Some(m) => Some(interpret_memo_string(m.to_string()).map_err(|e| {
-                            ZingolibError::InvalidInput(format!("invalid memo: {e}"))
-                        })?),
-                        None => None,
-                    };
-
-                receivers.push(zingolib::data::receivers::Receiver {
-                    recipient_address,
-                    amount,
-                    memo,
-                });
-            }
-
-            let request = transaction_request_from_receivers(receivers)
-                .map_err(in_context(ZingolibError::InvalidInput, "request error"))?;
-
-            let proposal = lightclient
-                .propose_send(request, AccountId::ZERO)
-                .await
-                .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
-            Ok(object! {
-                "fee" => fee.into_u64(),
-                "source_pools" => proposal_source_pools(&proposal),
-                "destination_pools" => proposal_destination_pools(&proposal),
-            }
-            .pretty(2))
-        })
+/// `send`'s answer for `send_json`, without storing a proposal or pausing
+/// sync: the fee and pools to show while the user is still deciding. The
+/// request is not sendable from here; `send` proposes it.
+#[uniffi::export]
+pub fn preview_send(send_json: String) -> Result<String, ZingolibError> {
+    let request = send_request_from_json(&send_json)?;
+    with_initialized_lightclient_read(|lightclient| {
+        send_answer(RT.block_on(lightclient.preview_send(request, AccountId::ZERO)))
     })
 }
 
@@ -3522,35 +3612,24 @@ pub fn send(send_json: String) -> Result<String, ZingolibError> {
 /// Returns the same shape as `send`, plus `amount`: what the recipient
 /// actually receives, which the caller writes back into the amount field so
 /// the figure shown is the figure sent.
+///
+/// The stored proposal holds sync paused until `confirm` or `decline`
+/// settles it, as `send`'s does; `preview_send_all` shows the same figures
+/// without proposing.
 #[uniffi::export]
 pub fn send_all(address: String, memo: String) -> Result<String, ZingolibError> {
+    let (address, memo) = send_all_request(address, memo)?;
     with_initialized_lightclient(|lightclient| {
-        RT.block_on(async move {
-            let address = ZcashAddress::try_from_encoded(&address)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?;
-            let memo = if memo.is_empty() {
-                None
-            } else {
-                Some(
-                    interpret_memo_string(memo)
-                        .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
-                )
-            };
+        send_all_answer(RT.block_on(lightclient.propose_send_all(address, memo, AccountId::ZERO)))
+    })
+}
 
-            let proposal = lightclient
-                .propose_send_all(address, memo, AccountId::ZERO)
-                .await
-                .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
-            let amount = proposal_recipient_amount(&proposal);
-            Ok(object! {
-                "amount" => amount.into_u64(),
-                "fee" => fee.into_u64(),
-                "source_pools" => proposal_source_pools(&proposal),
-                "destination_pools" => proposal_destination_pools(&proposal),
-            }
-            .pretty(2))
-        })
+/// `send_all`'s answer, without storing a proposal or pausing sync.
+#[uniffi::export]
+pub fn preview_send_all(address: String, memo: String) -> Result<String, ZingolibError> {
+    let (address, memo) = send_all_request(address, memo)?;
+    with_initialized_lightclient_read(|lightclient| {
+        send_all_answer(RT.block_on(lightclient.preview_send_all(address, memo, AccountId::ZERO)))
     })
 }
 
@@ -3570,37 +3649,25 @@ fn proposal_recipient_amount<FeeRuleT, NoteRef>(
         .unwrap_or(Zatoshis::ZERO)
 }
 
+/// Proposes a shield of the transparent balance, for `confirm` to transmit.
+/// Answers the value shielded and the fee.
+///
+/// The stored proposal holds sync paused until `confirm` or `decline`
+/// settles it, as `send`'s does. A caller that only wants the fee, such as
+/// a screen that shows it whenever transparent funds confirm, calls
+/// `preview_shield` instead (#3104).
 #[uniffi::export]
 pub fn shield() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
-        RT.block_on(async move {
-            let proposal = lightclient
-                .propose_shield(AccountId::ZERO)
-                .await
-                .map_err(|e| ffi_error(SendError::from(e).into()))?;
-            if proposal.steps().len() != 1 {
-                return Err(ZingolibError::InvalidInput(
-                    "shielding transactions should not have multiple proposal steps".to_string(),
-                ));
-            }
-            let step = proposal.steps().first();
-            let value_to_shield = step
-                .balance()
-                .proposed_change()
-                .iter()
-                .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
-                .ok_or_else(|| {
-                    ZingolibError::InvalidInput(
-                        "shield amount outside valid range of zatoshis".to_string(),
-                    )
-                })?;
-            let fee = step.balance().fee_required();
-            Ok(object! {
-                "value_to_shield" => value_to_shield.into_u64(),
-                "fee" => fee.into_u64(),
-            }
-            .pretty(2))
-        })
+        shield_answer(RT.block_on(lightclient.propose_shield(AccountId::ZERO)))
+    })
+}
+
+/// `shield`'s answer, without storing a proposal or pausing sync.
+#[uniffi::export]
+pub fn preview_shield() -> Result<String, ZingolibError> {
+    with_initialized_lightclient_read(|lightclient| {
+        shield_answer(RT.block_on(lightclient.preview_shield(AccountId::ZERO)))
     })
 }
 
@@ -3617,9 +3684,22 @@ async fn transmit_stored_proposal(lightclient: &mut LightClient) -> Result<Strin
     )
 }
 
+/// Transmits the stored proposal, the go-ahead of the two-call send, and
+/// lets sync resume. `decline` is the other way to settle it.
 #[uniffi::export]
 pub fn confirm() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| RT.block_on(transmit_stored_proposal(lightclient)))
+}
+
+/// Drops the proposal `send`, `send_all` or `shield` stored, without
+/// transmitting it, and lets sync resume. The counterpart of `confirm`.
+/// Succeeds with no proposal stored.
+#[uniffi::export]
+pub fn decline() -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(lightclient.clear_proposal());
+        Ok("Proposal declined.".to_string())
+    })
 }
 
 /// - Stores an OP_RETURN proposal in the wallet, pausing sync while it is built.

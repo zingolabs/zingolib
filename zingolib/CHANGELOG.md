@@ -49,18 +49,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
 - `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
   or a hosted enable on a session that holds no Session Indexer.
-- `LightClient::send_fee` and `LightClient::shield_fee` report the fee a send
-  or a shield would pay without storing a proposal or pausing sync, the
-  display-only reads beside `max_send_value`. A consumer that proposed only to
-  show a fee left the stored proposal's pause on a continuous sync session
-  with nothing to resume it (#3104). The `lightclient::propose` module docs
-  now state the contract: a stored proposal holds sync paused until the
-  consumer settles it, confirming with `send_stored_proposal` or
-  `calculate_stored_proposal`, or declining with `clear_proposal`.
+- `LightClient::preview_send`, `preview_send_all` and `preview_shield` create
+  the proposal the matching `propose_*` would store and return it without
+  storing it or pausing sync, the display-only reads beside `max_send_value`
+  for a consumer that shows a fee while its user is still deciding. A consumer
+  that proposed only to show a fee left the stored proposal's pause on a
+  continuous sync session with nothing to resume it (#3104). The
+  `lightclient::propose` module docs now state the contract: a stored proposal
+  holds sync paused until the consumer settles it, confirming with
+  `send_stored_proposal` or `calculate_stored_proposal`, or declining with
+  `clear_proposal`.
+- `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
+  the aliases `propose_send`, `propose_shield` and the previews return, are
+  public, so a consumer can name them.
 
 ### Changed
-- `data::proposal::total_fee` is generic over the proposal's input kind, so
-  it sums a shield proposal's fees as well as a send proposal's.
 - **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
   pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
   pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,

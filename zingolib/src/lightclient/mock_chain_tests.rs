@@ -2069,12 +2069,12 @@ async fn stored_shield_proposal_pauses_continuous_sync_until_declined() {
         .expect("a stopped session over the mock chain completes without error");
 }
 
-/// The fee-only reads are what a consumer calls to show a fee without
-/// proposing (issue #3104): `shield_fee` and `send_fee` store no proposal
-/// and leave a continuous sync session running, so the new blocks mined
-/// after the read are scanned without any further call.
+/// The previews are what a consumer calls to show a fee without proposing
+/// (issue #3104): `preview_shield` and `preview_send` store no proposal and
+/// leave a continuous sync session running, so the new blocks mined after
+/// the preview are scanned without any further call.
 #[tokio::test]
-async fn fee_reads_leave_continuous_sync_running() {
+async fn previews_leave_continuous_sync_running() {
     let mut net = MockNet::launch().await;
     net.chain.write().await.mine_empty_blocks(10);
     let mut client = net
@@ -2083,11 +2083,11 @@ async fn fee_reads_leave_continuous_sync_running() {
     client.sync().await.expect("continuous sync launches");
     fund_transparent_under_continuous_sync(&net, &client).await;
 
-    let shield_fee = client
-        .shield_fee(zip32::AccountId::ZERO)
+    let shield = client
+        .preview_shield(zip32::AccountId::ZERO)
         .await
         .expect("the confirmed transparent funds can be shielded");
-    assert!(shield_fee > Zatoshis::ZERO);
+    assert!(shield.steps().first().balance().fee_required() > Zatoshis::ZERO);
     assert_eq!(client.sync_mode(), pepper_sync::wallet::SyncMode::Running);
 
     // nothing shielded yet, so a send has no shielded funds to pay from.
@@ -2103,7 +2103,7 @@ async fn fee_reads_leave_continuous_sync_running() {
     ])
     .expect("one receiver with an amount is a valid request");
     assert!(matches!(
-        client.send_fee(request, zip32::AccountId::ZERO).await,
+        client.preview_send(request, zip32::AccountId::ZERO).await,
         Err(ProposeSendError::Proposal(
             zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
         ))
@@ -2117,7 +2117,7 @@ async fn fee_reads_leave_continuous_sync_running() {
                 crate::lightclient::error::SendError::NoStoredProposal
             ))
         ),
-        "a fee read stores no proposal"
+        "a preview stores no proposal"
     );
 
     net.chain.write().await.mine_empty_blocks(3);
