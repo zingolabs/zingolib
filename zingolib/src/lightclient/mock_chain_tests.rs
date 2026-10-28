@@ -1982,6 +1982,157 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
     }
 }
 
+/// Funds the client's transparent address during a continuous sync session
+/// and waits until the funding and four blocks over it are scanned, so the
+/// funds are confirmed and shieldable. Returns the scanned tip.
+async fn fund_transparent_under_continuous_sync(net: &MockNet, client: &LightClient) -> u32 {
+    let taddr = get_base_address(client, PoolType::Transparent).await;
+    let funding = net.funding_transaction(vec![(&taddr, 500_000, None)]).await;
+    wait_until_scanned_to(client, 10).await;
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_block(vec![funding]);
+        chain.mine_empty_blocks(4);
+    }
+    let funded_tip = net.chain.read().await.tip();
+    wait_until_scanned_to(client, funded_tip).await;
+    funded_tip
+}
+
+/// The contract of a stored proposal (issue #3104): once transparent funds
+/// received during a continuous sync session are confirmed and the consumer
+/// proposes a shield, the stored proposal pauses the engine, and nothing but
+/// settling the proposal resumes it. The session stops scanning and
+/// publishing while `poll_sync` keeps answering "not complete". Declining
+/// the proposal with `clear_proposal` resumes it.
+#[tokio::test]
+async fn stored_shield_proposal_pauses_continuous_sync_until_declined() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    let funded_tip = fund_transparent_under_continuous_sync(&net, &client).await;
+
+    client
+        .propose_shield(zip32::AccountId::ZERO)
+        .await
+        .expect("the confirmed transparent funds can be shielded");
+    assert_eq!(client.sync_mode(), pepper_sync::wallet::SyncMode::Paused);
+    let published_before = client
+        .latest_sync_status()
+        .expect("a session that scanned to the tip has published a status")
+        .scan_ranges;
+
+    net.chain.write().await.mine_empty_blocks(3);
+    let new_tip = net.chain.read().await.tip();
+    // longer than one continuous sync interval (CHECK_NEW_BLOCKS_INTERVAL is 10 s).
+    tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+
+    assert!(
+        matches!(client.poll_sync(), crate::data::PollReport::NotReady),
+        "the session is still running"
+    );
+    assert_eq!(client.sync_mode(), pepper_sync::wallet::SyncMode::Paused);
+    let scanned_end = client
+        .wallet()
+        .read()
+        .await
+        .sync_state
+        .scan_ranges()
+        .last()
+        .map(|range| u32::from(range.block_range().end) - 1);
+    assert_eq!(
+        scanned_end,
+        Some(funded_tip),
+        "the paused engine did not even create a scan range for the new blocks"
+    );
+    assert_eq!(
+        client
+            .latest_sync_status()
+            .expect("a session that scanned to the tip has published a status")
+            .scan_ranges,
+        published_before,
+        "the paused engine publishes nothing"
+    );
+
+    client.clear_proposal().await;
+    wait_until_scanned_to(&client, new_tip).await;
+
+    client
+        .stop_sync()
+        .expect("the session is running, so it can be stopped");
+    client
+        .await_sync()
+        .await
+        .expect("a stopped session over the mock chain completes without error");
+}
+
+/// The fee-only reads are what a consumer calls to show a fee without
+/// proposing (issue #3104): `shield_fee` and `send_fee` store no proposal
+/// and leave a continuous sync session running, so the new blocks mined
+/// after the read are scanned without any further call.
+#[tokio::test]
+async fn fee_reads_leave_continuous_sync_running() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(10);
+    let mut client = net
+        .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    fund_transparent_under_continuous_sync(&net, &client).await;
+
+    let shield_fee = client
+        .shield_fee(zip32::AccountId::ZERO)
+        .await
+        .expect("the confirmed transparent funds can be shielded");
+    assert!(shield_fee > Zatoshis::ZERO);
+    assert_eq!(client.sync_mode(), pepper_sync::wallet::SyncMode::Running);
+
+    // nothing shielded yet, so a send has no shielded funds to pay from.
+    let request = crate::data::receivers::transaction_request_from_receivers(vec![
+        crate::data::receivers::Receiver::new(
+            crate::utils::conversion::address_from_str(
+                &get_base_address(&client, PoolType::ORCHARD).await,
+            )
+            .expect("the wallet encodes its own orchard address"),
+            Zatoshis::const_from_u64(10_000),
+            None,
+        ),
+    ])
+    .expect("one receiver with an amount is a valid request");
+    assert!(matches!(
+        client.send_fee(request, zip32::AccountId::ZERO).await,
+        Err(ProposeSendError::Proposal(
+            zcash_client_backend::data_api::error::Error::InsufficientFunds { .. }
+        ))
+    ));
+    assert_eq!(client.sync_mode(), pepper_sync::wallet::SyncMode::Running);
+
+    assert!(
+        matches!(
+            client.send_stored_proposal(true).await,
+            Err(crate::lightclient::error::LightClientError::SendError(
+                crate::lightclient::error::SendError::NoStoredProposal
+            ))
+        ),
+        "a fee read stores no proposal"
+    );
+
+    net.chain.write().await.mine_empty_blocks(3);
+    let new_tip = net.chain.read().await.tip();
+    wait_until_scanned_to(&client, new_tip).await;
+
+    client
+        .stop_sync()
+        .expect("the session is running, so it can be stopped");
+    client
+        .await_sync()
+        .await
+        .expect("a stopped session over the mock chain completes without error");
+}
+
 /// Waits until every block up to `height` is scanned.
 async fn wait_until_scanned_to(client: &crate::lightclient::LightClient, height: u32) {
     tokio::time::timeout(std::time::Duration::from_secs(60), async {

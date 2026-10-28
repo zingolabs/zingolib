@@ -1,4 +1,22 @@
 //! `LightClient` function `do_propose` generates a proposal to send to specified addresses.
+//!
+//! # A stored proposal holds sync paused
+//!
+//! Every `propose_*` method stores the proposal it creates and pauses a
+//! running sync engine for as long as the proposal is stored, so the wallet
+//! state it selected against cannot shift under it. The pause ends only when
+//! the consumer settles the proposal, one of:
+//!
+//! - **confirm** it with [`LightClient::send_stored_proposal`] or
+//!   [`LightClient::calculate_stored_proposal`], or
+//! - **decline** it with [`LightClient::clear_proposal`].
+//!
+//! Nothing else resumes the engine: a continuous sync session under an
+//! unsettled proposal stops scanning and stops publishing status until one
+//! of those is called (issue #3104). A consumer that only wants to show a
+//! fee must not propose. The fee-only reads [`LightClient::send_fee`],
+//! [`LightClient::shield_fee`] and [`LightClient::max_send_value`] store
+//! nothing and pause nothing.
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::error::Error as ProposalError;
@@ -9,6 +27,7 @@ use crate::data::proposal::OpReturnProposal;
 use crate::data::proposal::ProportionalFeeProposal;
 use crate::data::proposal::ProportionalFeeShieldProposal;
 use crate::data::proposal::ZingoProposal;
+use crate::data::proposal::total_fee;
 use crate::data::receivers::Receiver;
 use crate::data::receivers::transaction_request_from_receivers;
 use crate::lightclient::LightClient;
@@ -27,6 +46,12 @@ impl LightClient {
     /// selected against cannot shift before the send builds it. A proposal
     /// that fails to come into existence releases the pause on the way
     /// out, restoring the engine to the mode it was found in.
+    ///
+    /// The caller must settle the stored proposal to let sync resume:
+    /// confirm it with [`Self::send_stored_proposal`] or
+    /// [`Self::calculate_stored_proposal`], or decline it with
+    /// [`Self::clear_proposal`]. To show a fee without proposing, use
+    /// [`Self::send_fee`] (see the module docs).
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
@@ -52,7 +77,9 @@ impl LightClient {
 
     /// Creates and stores a proposal that sends all shielded funds of
     /// `account_id` to `address`, under the same pause as
-    /// [`Self::propose_send`].
+    /// [`Self::propose_send`], which the caller settles the same way. To
+    /// show the sendable amount without proposing, use
+    /// [`Self::max_send_value`].
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
@@ -78,9 +105,10 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal for shielding all transparent funds,
-    /// under the same stored-proposal pause as [`Self::propose_send`].
-    /// The shield path previously read spendable coins without pausing
-    /// the engine at all.
+    /// under the same stored-proposal pause as [`Self::propose_send`],
+    /// which the caller settles the same way. To show the shield fee
+    /// without proposing, use [`Self::shield_fee`]. The shield path
+    /// previously read spendable coins without pausing the engine at all.
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
@@ -106,7 +134,8 @@ impl LightClient {
     /// Creates and stores a proposal to send `amount` to the transparent
     /// address `recipient` with `data` in an OP_RETURN (null-data) output.
     /// `recipient` is a P2PKH, P2SH, or TEX address. Holds the same
-    /// stored-proposal pause as [`Self::propose_send`].
+    /// stored-proposal pause as [`Self::propose_send`], which the caller
+    /// settles the same way.
     ///
     /// The ephemeral source address is derived, not reserved. The wallet
     /// reserves it in [`Self::send_stored_proposal`], when the deshield
@@ -224,11 +253,50 @@ impl LightClient {
         ))
     }
 
+    /// Returns the fee a send of `request` from `account_id` would pay,
+    /// without storing a proposal or pausing sync. A display-only read for
+    /// a consumer that shows the fee while the user is still deciding; to
+    /// send, call [`Self::propose_send`] with the same request and settle
+    /// it (see the module docs). The errors are those of `propose_send`:
+    /// a wallet that cannot cover the request returns `InsufficientFunds`,
+    /// one that still needs a scan returns `ScanRequired`.
+    pub async fn send_fee(
+        &self,
+        request: TransactionRequest,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, ProposeSendError> {
+        let proposal = self
+            .wallet()
+            .write()
+            .await
+            .create_send_proposal(request, account_id)?;
+        total_fee(&proposal).map_err(|e| ProposeSendError::Proposal(ProposalError::BalanceError(e)))
+    }
+
+    /// Returns the fee a shield of all transparent funds of `account_id`
+    /// would pay, without storing a proposal or pausing sync. A
+    /// display-only read; to shield, call [`Self::propose_shield`] and
+    /// settle it (see the module docs). The errors are those of
+    /// `propose_shield`.
+    pub async fn shield_fee(
+        &self,
+        account_id: zip32::AccountId,
+    ) -> Result<Zatoshis, ProposeShieldError> {
+        let proposal = self
+            .wallet()
+            .write()
+            .await
+            .create_shield_proposal(account_id)?;
+        total_fee(&proposal)
+            .map_err(|e| ProposeShieldError::Component(ProposalError::BalanceError(e)))
+    }
+
     /// Returns the maximum value that can be sent from `account_id` to
     /// `address`: the shielded spendable balance less the fee. A wallet
     /// that cannot cover the fee reports zero. A wallet that still needs
     /// a scan returns the `ScanRequired` error. To send that amount, use
     /// [`Self::propose_send_all`] rather than a `propose_send` request.
+    /// Stores nothing and pauses nothing.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,

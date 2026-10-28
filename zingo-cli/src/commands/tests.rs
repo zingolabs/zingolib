@@ -1346,6 +1346,24 @@ mod offline_contract {
         /// Offline signing (ADR 0006): `calculate` signs the stored
         /// proposal with no Indexer, leaving Calculated transactions for a
         /// connected `transmit`.
+        /// `decline` drops the stored proposal (issue #3104), so a later
+        /// `calculate` finds none. It succeeds with nothing stored too.
+        #[test]
+        fn decline_drops_the_stored_proposal() {
+            let mut client = funded_offline_client();
+            let address = own_unified_address(&mut client);
+            assert_works_offline(&mut client, "send", &[&address, "50000"]);
+            let output = assert_works_offline(&mut client, "decline", &[]);
+            assert!(output.contains("success"), "{output}");
+            let error = exec(&mut client, "calculate", &[]).expect_err("nothing stored");
+            assert!(
+                format!("{error:?}").contains("NoStoredProposal"),
+                "{error:?}"
+            );
+            let output = assert_works_offline(&mut client, "decline", &[]);
+            assert!(output.contains("success"), "{output}");
+        }
+
         #[test]
         fn calculate_signs_offline() {
             let mut client = funded_offline_client();

@@ -175,8 +175,11 @@ pub fn total_payment_amount(proposal: &ProportionalFeeProposal) -> Result<Zatosh
         })
 }
 
-/// total sum of all fees in a proposal
-pub fn total_fee(proposal: &ProportionalFeeProposal) -> Result<Zatoshis, BalanceError> {
+/// total sum of all fees in a proposal, of any input kind: a send
+/// proposal or a shield proposal
+pub fn total_fee<NoteRef>(
+    proposal: &Proposal<zip317::FeeRule, NoteRef>,
+) -> Result<Zatoshis, BalanceError> {
     proposal
         .steps()
         .iter()

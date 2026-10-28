@@ -324,6 +324,11 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn decline() {
+            assert_no_arg_command("decline", CliCommand::Decline);
+        }
+
+        #[test]
         fn calculate() {
             assert_no_arg_command("calculate", CliCommand::Calculate);
         }
