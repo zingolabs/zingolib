@@ -421,7 +421,7 @@ fn build_dir(root: &Path, arm: Arm) -> PathBuf {
     bench_dir(root).join("builds").join(arm.name())
 }
 
-/// The `makers run-cli` invocation the prebuild and every session share.
+/// The `cargo make run-cli` invocation the prebuild and every session share.
 ///
 /// Both go through here so the two cannot drift in profile, features, or
 /// build directory, and the profile is release because an unoptimized
@@ -455,7 +455,7 @@ fn prebuild(root: &Path, arm: Arm) -> Result<(), Vec<String>> {
     let status = run_cli(root, arm)
         .arg("--build-only")
         .status()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli --build-only: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli --build-only: {e}")])?;
     if status.success() {
         return Ok(());
     }
@@ -490,7 +490,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut child = command
         .process_group(0)
         .spawn()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli: {e}")])?;
 
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;
