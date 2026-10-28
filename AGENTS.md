@@ -48,10 +48,15 @@
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
-  is gone. Never add an entry for a new group, with one exception: a
+  is gone. Never add an entry for a new group, with two exceptions: a
   trait-delegation pair, where one type implements two traits whose
   methods delegate identically and cannot share an impl, takes an entry
-  whose reason names the pair. Otherwise remove the duplication, then run
+  whose reason names the pair; and an FFI export pair, where the same
+  call runs under the write lock storing its result and under the read
+  lock previewing it (`send`/`preview_send`), takes one entry for the
+  functions and one for their lock closures, each naming the pair. The
+  gate erases identifiers, so it cannot tell the two apart (ruled
+  2026-10-28, zingolib#3104). Otherwise remove the duplication, then run
   `dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the

@@ -1,4 +1,23 @@
 //! `LightClient` function `do_propose` generates a proposal to send to specified addresses.
+//!
+//! # A stored proposal holds sync paused
+//!
+//! Every `propose_*` method stores the proposal it creates and pauses a
+//! running sync engine for as long as the proposal is stored, so the wallet
+//! state it selected against cannot shift under it. The pause ends only when
+//! the consumer settles the proposal, one of:
+//!
+//! - **confirm** it with [`LightClient::send_stored_proposal`] or
+//!   [`LightClient::calculate_stored_proposal`], or
+//! - **decline** it with [`LightClient::clear_proposal`].
+//!
+//! Nothing else resumes the engine: a continuous sync session under an
+//! unsettled proposal stops scanning and stops publishing status until one
+//! of those is called (issue #3104). A consumer that only wants to show a
+//! fee must not propose. The previews [`LightClient::preview_send`],
+//! [`LightClient::preview_send_all`] and [`LightClient::preview_shield`]
+//! return the proposal without storing it, and [`LightClient::max_send_value`]
+//! its sendable amount: none of them pauses anything.
 
 use zcash_address::ZcashAddress;
 use zcash_client_backend::data_api::error::Error as ProposalError;
@@ -27,6 +46,12 @@ impl LightClient {
     /// selected against cannot shift before the send builds it. A proposal
     /// that fails to come into existence releases the pause on the way
     /// out, restoring the engine to the mode it was found in.
+    ///
+    /// The caller must settle the stored proposal to let sync resume:
+    /// confirm it with [`Self::send_stored_proposal`] or
+    /// [`Self::calculate_stored_proposal`], or decline it with
+    /// [`Self::clear_proposal`]. To show a fee without proposing, use
+    /// [`Self::preview_send`] (see the module docs).
     pub async fn propose_send(
         &mut self,
         request: TransactionRequest,
@@ -52,7 +77,9 @@ impl LightClient {
 
     /// Creates and stores a proposal that sends all shielded funds of
     /// `account_id` to `address`, under the same pause as
-    /// [`Self::propose_send`].
+    /// [`Self::propose_send`], which the caller settles the same way. To
+    /// show the fee and amount without proposing, use
+    /// [`Self::preview_send_all`].
     pub async fn propose_send_all(
         &mut self,
         address: ZcashAddress,
@@ -78,9 +105,10 @@ impl LightClient {
     }
 
     /// Creates and stores a proposal for shielding all transparent funds,
-    /// under the same stored-proposal pause as [`Self::propose_send`].
-    /// The shield path previously read spendable coins without pausing
-    /// the engine at all.
+    /// under the same stored-proposal pause as [`Self::propose_send`],
+    /// which the caller settles the same way. To show the shield fee
+    /// without proposing, use [`Self::preview_shield`]. The shield path
+    /// previously read spendable coins without pausing the engine at all.
     pub async fn propose_shield(
         &mut self,
         account_id: zip32::AccountId,
@@ -106,7 +134,8 @@ impl LightClient {
     /// Creates and stores a proposal to send `amount` to the transparent
     /// address `recipient` with `data` in an OP_RETURN (null-data) output.
     /// `recipient` is a P2PKH, P2SH, or TEX address. Holds the same
-    /// stored-proposal pause as [`Self::propose_send`].
+    /// stored-proposal pause as [`Self::propose_send`], which the caller
+    /// settles the same way.
     ///
     /// The ephemeral source address is derived, not reserved. The wallet
     /// reserves it in [`Self::send_stored_proposal`], when the deshield
@@ -224,22 +253,68 @@ impl LightClient {
         ))
     }
 
+    /// Creates the proposal [`Self::propose_send`] would store, without
+    /// storing it or pausing sync: a display-only read of its fee and
+    /// pools for a consumer whose user is still deciding. The proposal
+    /// cannot be sent; to send, call `propose_send` with the same request
+    /// and settle it (see the module docs). The errors are those of
+    /// `propose_send`: a wallet that cannot cover the request returns
+    /// `InsufficientFunds`, one that still needs a scan `ScanRequired`.
+    pub async fn preview_send(
+        &self,
+        request: TransactionRequest,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        self.preview(|wallet| wallet.create_send_proposal(request, account_id))
+            .await
+    }
+
+    /// Creates the proposal [`Self::propose_send_all`] would store, without
+    /// storing it or pausing sync, the preview of a send-all: its fee, the
+    /// amount the recipient receives and its pools.
+    pub async fn preview_send_all(
+        &self,
+        address: ZcashAddress,
+        memo: Option<zcash_protocol::memo::MemoBytes>,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeProposal, ProposeSendError> {
+        self.preview(|wallet| wallet.create_send_all_proposal(address, memo, account_id))
+            .await
+    }
+
+    /// Creates the proposal [`Self::propose_shield`] would store, without
+    /// storing it or pausing sync, the preview of a shield: its fee and
+    /// the value it shields. The errors are those of `propose_shield`.
+    pub async fn preview_shield(
+        &self,
+        account_id: zip32::AccountId,
+    ) -> Result<ProportionalFeeShieldProposal, ProposeShieldError> {
+        self.preview(|wallet| wallet.create_shield_proposal(account_id))
+            .await
+    }
+
+    /// Runs one proposal creation against the wallet and returns what it
+    /// made, storing nothing. Creation takes the wallet write lock, as the
+    /// input selection traits are `&mut`, and holds it only for the call.
+    async fn preview<T, E>(
+        &self,
+        create: impl FnOnce(&mut crate::wallet::LightWallet) -> Result<T, E>,
+    ) -> Result<T, E> {
+        create(&mut *self.wallet().write().await)
+    }
+
     /// Returns the maximum value that can be sent from `account_id` to
     /// `address`: the shielded spendable balance less the fee. A wallet
     /// that cannot cover the fee reports zero. A wallet that still needs
     /// a scan returns the `ScanRequired` error. To send that amount, use
     /// [`Self::propose_send_all`] rather than a `propose_send` request.
+    /// Stores nothing and pauses nothing.
     pub async fn max_send_value(
         &self,
         address: ZcashAddress,
         account_id: zip32::AccountId,
     ) -> Result<Zatoshis, ProposeSendError> {
-        let proposal = self
-            .wallet()
-            .write()
-            .await
-            .create_send_all_proposal(address, None, account_id);
-        match proposal {
+        match self.preview_send_all(address, None, account_id).await {
             Ok(proposal) => Ok(recipient_amount(&proposal)),
             Err(ProposeSendError::Proposal(ProposalError::InsufficientFunds { .. })) => {
                 Ok(Zatoshis::ZERO)

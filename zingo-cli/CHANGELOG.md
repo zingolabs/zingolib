@@ -104,6 +104,10 @@ contract and the server binding replaced what 0.4.0 shipped.
   subscriber and chooses where log output goes. The binary entry point
   calls it once instead of deriving the mode of operation a second time to
   decide that.
+- `decline` drops the proposal that `send`, `send_all` or `shield` stored,
+  the counterpart of `confirm`. A stored proposal holds sync paused until
+  `confirm`, `calculate` or `decline` settles it (#3104); the help of the
+  three proposing commands says so.
 
 ### Changed
 - BREAKING: moves to the librustzcash NU7 release cohort zingolib pins, which

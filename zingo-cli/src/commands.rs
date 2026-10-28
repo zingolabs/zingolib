@@ -317,6 +317,11 @@ async fn confirm(lightclient: &mut LightClient) -> Result<String, CommandError> 
     transmit_txids(lightclient.send_stored_proposal(true)).await
 }
 
+async fn decline(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    lightclient.clear_proposal().await;
+    Ok(object! { "result" => "success" }.pretty(JSON_INDENT))
+}
+
 #[cfg(feature = "nym")]
 async fn current_price(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.update_current_price().await {
@@ -2187,6 +2192,15 @@ pub(crate) enum CliCommand {
     )]
     CurrentPrice,
     #[command(
+        about = "Drop the latest proposal, letting sync resume.",
+        long_about = indoc! {r"
+            Drop the proposal that 'send', 'send_all' or 'shield' stored, without
+            transmitting it. A stored proposal holds sync paused until 'confirm',
+            'calculate' or this command settles it. Succeeds with no proposal stored.
+        "}
+    )]
+    Decline,
+    #[command(
         about = "Delete wallet file from disk",
         long_about = indoc! {r"
             Delete the wallet file from disk.
@@ -2511,6 +2525,9 @@ pub(crate) enum CliCommand {
         long_about = concat!(
             "Propose a transfer of ZEC. Shows the fee, then 'confirm' transmits it.\n",
             "\n",
+            "The proposal holds sync paused until it is settled: 'confirm' or 'calculate'\n",
+            "to go ahead, 'decline' to drop it.\n",
+            "\n",
             "Example:\n",
             "    send ",
             crate::examples::sapling_address!(),
@@ -2532,6 +2549,9 @@ pub(crate) enum CliCommand {
         long_about = concat!(
             "Propose a transfer of every shielded ZEC to one address. Shows the fee,\n",
             "then 'confirm' transmits it.\n",
+            "\n",
+            "The proposal holds sync paused until it is settled: 'confirm' or 'calculate'\n",
+            "to go ahead, 'decline' to drop it.\n",
             "\n",
             "Skips transparent funds: shield those first, see `help shield`.\n",
             "\n",
@@ -2581,6 +2601,9 @@ pub(crate) enum CliCommand {
         long_about = indoc! {r"
             Propose a shield of transparent funds into the ironwood pool. Shows the
             fee, then 'confirm' transmits it.
+
+            The proposal holds sync paused until it is settled: 'confirm' or 'calculate'
+            to go ahead, 'decline' to drop it.
         "}
     )]
     Shield,
@@ -2708,6 +2731,7 @@ impl CliCommand {
             CliCommand::Coins { .. } => "Coins",
             CliCommand::Confirm => "Confirm",
             CliCommand::CurrentPrice => "CurrentPrice",
+            CliCommand::Decline => "Decline",
             CliCommand::Delete => "Delete",
             CliCommand::Drain { .. } => "Drain",
             CliCommand::ExportUfvk => "ExportUfvk",
@@ -2795,6 +2819,7 @@ impl CliCommand {
             | CliCommand::Clear
             | CliCommand::Coins { .. }
             | CliCommand::Confirm
+            | CliCommand::Decline
             | CliCommand::Delete
             | CliCommand::Drain { .. }
             | CliCommand::ExportUfvk
@@ -2863,6 +2888,7 @@ impl CliCommand {
             | CliCommand::CheckAddress { .. }
             | CliCommand::Clear
             | CliCommand::Coins { .. }
+            | CliCommand::Decline
             | CliCommand::Delete
             | CliCommand::ExportUfvk
             | CliCommand::Height
@@ -3010,6 +3036,7 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::Coins { scope: None },
         CliCommand::Confirm,
         CliCommand::CurrentPrice,
+        CliCommand::Decline,
         CliCommand::Delete,
         CliCommand::Drain {
             sub: DrainSubCommand::Plan,
@@ -3220,6 +3247,7 @@ async fn run_parsed(
         CliCommand::Coins { scope } => coins(scope, lightclient).await,
         CliCommand::Confirm => confirm(lightclient).await,
         CliCommand::CurrentPrice => current_price(lightclient).await,
+        CliCommand::Decline => decline(lightclient).await,
         CliCommand::Delete => delete(lightclient).await,
         CliCommand::Drain { sub } => drain(sub, lightclient).await,
         CliCommand::ExportUfvk => export_ufvk(lightclient).await,
