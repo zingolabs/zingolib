@@ -262,8 +262,13 @@ cargo publish --workspace
 with every crate outside the set passed as `--exclude`. Cargo publishes
 the set in dependency order and waits for each crate to be indexed before
 the next.
-The crates.io token is the publisher's own for now. Moving the publish into
-CI under crates.io Trusted Publishing is listed under the open questions.
+
+The publish runs on the maintainer's machine with that maintainer's own
+crates.io token, and the signed tags are the record of who cut the
+release. That is the interim arrangement: zingolib#3115 moves the publish
+into a workflow at the release tag under crates.io Trusted Publishing,
+with a tag ruleset and an environment approval in place of the local
+token, once the first cycle under this procedure has run.
 
 The Binding Layer needs no second publication when the release commit is a
 candidate that step 5 already published, because the Published Commit is the
@@ -335,19 +340,14 @@ released the moment it merges.
 
 ## Open questions
 
-1. Whether the publish moves into CI. crates.io Trusted Publishing lets a
-   workflow run at the release tag publish with a short-lived token and no
-   stored secret, and zaino's pipeline records the same move as an open
-   item. Until then the publish is a maintainer's local step and the signed
-   tag is the record of who cut the release.
-2. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
+1. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
    led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
    on crates.io, so it is in the set like any other crate.
-3. The retirement of `stable` itself is a decision for a zingo-adrs record
+2. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-4. The nightly Sync A/B job compares `dev` with the day before. A release
+3. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.
