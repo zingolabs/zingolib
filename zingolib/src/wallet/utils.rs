@@ -12,6 +12,8 @@ use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover;
 use zcash_protocol::memo::MemoBytes;
 
+use super::sapling_params::{self, SaplingParamBytes, SaplingParamsError};
+
 pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
 
 /// ```
@@ -97,17 +99,31 @@ pub(crate) struct LazySaplingProver {
 }
 
 impl LazySaplingProver {
-    /// - Parses the embedded Sapling parameters on this adapter's first call.
-    fn prover(&self) -> &prover::LocalTxProver {
-        self.prover.get_or_init(|| {
-            #[cfg(test)]
-            note_sapling_prover_parse();
-            prover::LocalTxProver::from_bytes(
-                crate::SaplingParams::SPEND,
-                crate::SaplingParams::OUTPUT,
-            )
+    /// - Loads and parses the Sapling parameters now, for a build that
+    ///   makes Sapling proofs.
+    pub(crate) fn parsed() -> Result<Self, SaplingParamsError> {
+        Ok(Self {
+            prover: std::sync::OnceLock::from(parse_sapling_prover(&sapling_params::load()?)),
         })
     }
+
+    /// - Loads and parses the Sapling parameters on this adapter's first call.
+    /// - Panics when the parameters cannot be loaded.
+    fn prover(&self) -> &prover::LocalTxProver {
+        self.prover.get_or_init(|| {
+            parse_sapling_prover(&sapling_params::load().expect(
+                "a build that makes Sapling proofs takes `LazySaplingProver::parsed`, \
+                 and embedded parameters always load",
+            ))
+        })
+    }
+}
+
+/// - Increments this thread's count of Sapling parameter parses, in tests.
+fn parse_sapling_prover(params: &SaplingParamBytes) -> prover::LocalTxProver {
+    #[cfg(test)]
+    note_sapling_prover_parse();
+    prover::LocalTxProver::from_bytes(&params.spend, &params.output)
 }
 
 impl sapling_prover::SpendProver for LazySaplingProver {
@@ -135,7 +151,7 @@ impl sapling_prover::SpendProver for LazySaplingProver {
         )
     }
 
-    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    /// - Loads and parses the Sapling parameters if this adapter has not yet.
     fn create_proof<R: rand::Rng>(
         &self,
         circuit: sapling_circuit::Spend,
@@ -168,7 +184,7 @@ impl sapling_prover::OutputProver for LazySaplingProver {
         )
     }
 
-    /// - Parses the embedded Sapling parameters if this adapter has not yet.
+    /// - Loads and parses the Sapling parameters if this adapter has not yet.
     fn create_proof<R: rand::Rng>(
         &self,
         circuit: sapling_circuit::Output,
@@ -191,20 +207,6 @@ pub fn get_zcash_params_path() -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// HYPOTHESIS: the embedded Sapling parameters are present whole, so
-    /// loading them is infallible. Falsified if either blob is empty.
-    #[test]
-    fn embedded_sapling_params_load_whole() {
-        assert!(
-            !crate::SaplingParams::OUTPUT.is_empty(),
-            "output params are embedded"
-        );
-        assert!(
-            !crate::SaplingParams::SPEND.is_empty(),
-            "spend params are embedded"
-        );
-    }
 
     #[test]
     fn test_memo_bytes_from_string_plain_text() {

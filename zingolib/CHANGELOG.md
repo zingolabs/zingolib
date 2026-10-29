@@ -62,8 +62,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
   the aliases `propose_send`, `propose_shield` and the previews return, are
   public, so a consumer can name them.
+- The `runtime-sapling-params` feature reads the Sapling proving parameters
+  from a directory the consumer names with `wallet::sapling_params::set_directory`
+  and checks each file's length and BLAKE2b digest. A mobile build ships
+  without the 51 MB of parameters and its build makes no network fetch. The
+  consumer fetches the files. A send that spends, pays or changes to Sapling
+  loads them first and reports a missing or altered file as
+  `CalculateTransactionError::SaplingParams`.
+- `wallet::sapling_params::SaplingParamFile` names each parameter file and
+  verifies bytes against its published length and digest, and
+  `SaplingParamsError` reports the refusal. `proves_sapling` tells a consumer
+  whether a proposal needs the parameters, to fetch them before it signs.
 
 ### Changed
+- **Breaking:** `CalculateTransactionError::SaplingParams` carries a
+  `wallet::sapling_params::SaplingParamsError` in place of a `String`.
 - **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
   pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
   pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
