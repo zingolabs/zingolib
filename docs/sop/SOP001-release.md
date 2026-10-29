@@ -1,4 +1,4 @@
-# Releasing from dev
+# SOP001: Releasing from dev
 
 Status: draft, 2026-10-29. Nothing below binds until the team has agreed it
 and the decision to retire `stable` is recorded in zingo-adrs. The record

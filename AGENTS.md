@@ -72,7 +72,7 @@
   the same pull request, a dependency moves only to a version on crates.io
   or a git pin the team accepts shipping, and the `[X.Y.Z]` section of a
   cut changelog is never edited after the cut. The procedure is
-  `docs/release/sop.md`. Ruled 2026-10-29.
+  `docs/sop/SOP001-release.md`. Ruled 2026-10-29.
 
 ## Writing & Code Style
 
