@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [8.0.0] - 2026-10-28
+
+### Added
 - `ClientConfig::migrated_from` reports the legacy path a wallet file was
   copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
 - `wallet::keys::transparent_address_from_encoded` decodes a transparent
@@ -189,8 +201,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
   bare path. `ProxyResolution` renders the path and its provenance through
   `Display`, and the `PathLookup` rendering names every source that was empty.
-
-### Deprecated
 
 ### Removed
 - **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
