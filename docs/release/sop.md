@@ -187,11 +187,18 @@ When the line holds every fix the window asked for, tag its head
 `<lead crate>_vX.Y.Z-rc.(N+1)`, then open the pull request that merges the
 line into `dev`. That merge is required before the next step, for two
 reasons: the fix must reach `dev`, and the Binding Layer publishes only a
-commit that `dev` reaches. The merge resolves the changelog by keeping the
-fix's lines in the `[X.Y.Z]` section, where the line put them.
+commit that `dev` reaches. The merge is a true merge commit, never a squash
+or a rebase, since either would rewrite the fixes into new commits that the
+tag does not name and `dev` would not reach the candidate. The merge
+resolves the changelog by keeping the fix's lines in the `[X.Y.Z]` section,
+where the line put them.
 
-Repeat step 5 at the new candidate. The release line is where every later
-candidate of the cycle is tagged.
+Repeat step 5 at the new candidate, naming the candidate's own commit in
+the dispatch. The merge commit holds everything `dev` gained since `rc.0`
+as well, so publishing it, or the head of `dev`, would hand consumers the
+work the release line exists to exclude. The candidate's commit is the same
+object on both branches, and its tree holds `rc.0` plus the fixes alone.
+The release line is where every later candidate of the cycle is tagged.
 
 ### 7. Tag the release
 
