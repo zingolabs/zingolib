@@ -62,6 +62,17 @@
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
   dupes-gate -- <cargo-dupes arguments>`.
+- **A pull request merges into `dev` only when `dev` could be released the
+  moment it lands.** Releases are cut from `dev` with no `stable` branch
+  (zingo-adrs zingolib/0064), so a candidate can be taken on any day. Work
+  that would leave `dev` mid-way through a larger feature or refactor, with
+  a dead code path, a half-migrated type, a disabled test or an unfinished
+  flag, targets an integration branch `integration/<name>` and reaches
+  `dev` when the arc is whole. Every change writes its changelog lines in
+  the same pull request, a dependency moves only to a version on crates.io
+  or a git pin the team accepts shipping, and the `[X.Y.Z]` section of a
+  cut changelog is never edited after the cut. The procedure is
+  `docs/release/sop.md`. Ruled 2026-10-29.
 
 ## Writing & Code Style
 
