@@ -84,3 +84,9 @@ commit = "3fb32d277ef956e75da124c1442526fb4d91d97a"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:f78a8bce0f300fe2bfbd78964c27d0661cd874f3a84121024fbd4b00f405a78b"
 ios = "sha256:e1c629971678fd713439880ef2be848c383cb40da34fde78fb47d0648d8a8521"
+
+[[entry]]
+commit = "d496bea8c7c476f2dd54f437674f7b4d1cc19b87"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:830af8fcfcebb24ebc968cad749937af261a6dc2e7d73fb64b51e684e01d09c7"
+ios = "sha256:6b26c296643f318f74e8bef99e0c5451f1acff5d4a459ef363eb0efa8fc557a9"

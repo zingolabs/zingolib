@@ -12,6 +12,49 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## d496bea8c7c476f2dd54f437674f7b4d1cc19b87
+
+Since 3fb32d277ef956e75da124c1442526fb4d91d97a.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- The committed `src/exported_surface.snapshot.txt` pins the exported surface: every
+- `preview_send(send_json)`, `preview_send_all(address, memo)` and
+  `preview_shield()` answer exactly what `send`, `send_all` and `shield`
+  answer, without storing a proposal or pausing sync. They are the calls for
+  a screen that shows a fee while the user is still deciding. A proposal
+  made only to show a fee held a continuous sync session paused with nothing
+  to resume it (zingolib#3104). They answer on the read lock.
+- `decline()` drops the proposal `send`, `send_all` or `shield` stored,
+  without transmitting it, and lets sync resume: the counterpart of
+  `confirm`. It succeeds with no proposal stored. A stored proposal holds
+  sync paused until `confirm` or `decline` settles it, and the docs of the
+  three proposing calls now say so.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightClient::preview_send`, `preview_send_all` and `preview_shield` create
+  the proposal the matching `propose_*` would store and return it without
+  storing it or pausing sync, the display-only reads beside `max_send_value`
+  for a consumer that shows a fee while its user is still deciding. A consumer
+  that proposed only to show a fee left the stored proposal's pause on a
+  continuous sync session with nothing to resume it (#3104). The
+  `lightclient::propose` module docs now state the contract: a stored proposal
+  holds sync paused until the consumer settles it, confirming with
+  `send_stored_proposal` or `calculate_stored_proposal`, or declining with
+  `clear_proposal`.
+- `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
+  the aliases `propose_send`, `propose_shield` and the previews return, are
+  public, so a consumer can name them.
+
 ## 3fb32d277ef956e75da124c1442526fb4d91d97a
 
 Since 755c3adaea5906cf55357e69ad1b0a27d746cdb8.
