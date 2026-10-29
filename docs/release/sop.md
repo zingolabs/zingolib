@@ -335,23 +335,19 @@ released the moment it merges.
 
 ## Open questions
 
-1. CI on release lines. Pull requests into any branch run the PR checks,
-   but the push workflows list only `stable` and `dev`. Adding
-   `release/**` to those lists gives a line a merge-commit run. The same
-   lists need `stable` removed once the branch is retired.
-2. Whether the publish moves into CI. crates.io Trusted Publishing lets a
+1. Whether the publish moves into CI. crates.io Trusted Publishing lets a
    workflow run at the release tag publish with a short-lived token and no
    stored secret, and zaino's pipeline records the same move as an open
    item. Until then the publish is a maintainer's local step and the signed
    tag is the record of who cut the release.
-3. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
+2. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
    led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
    on crates.io, so it is in the set like any other crate.
-4. The retirement of `stable` itself is a decision for a zingo-adrs record
+3. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-5. The nightly Sync A/B job compares `dev` with the day before. A release
+4. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.

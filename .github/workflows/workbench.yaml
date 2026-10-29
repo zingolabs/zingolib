@@ -17,7 +17,7 @@ on:
       - ".github/workflows/workbench.yaml"
       - ".github/actions/**"
   push:
-    branches: [stable, dev]
+    branches: [dev, "release/**"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
