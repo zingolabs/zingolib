@@ -38,8 +38,11 @@ A release is one or more of these, each done from one release commit:
 
 The release set is the group of crates one release cycle bumps together.
 A cycle has a lead crate, the one whose version names the candidate tags
-and the release line. For a cycle that releases `zingolib`, the lead crate
-is `zingolib`.
+and the release line. The lead is a name, not a position in the dependency
+order: `zingolib` leads whenever it is in the set, since that is the version
+consumers pair with and the cycle is called by. Otherwise the lead is the
+crate the cycle is named for, by default the one highest in the publish
+order among the set.
 
 A release candidate is a commit tagged `<lead crate>_vX.Y.Z-rc.N`, counted
 from 0. The candidate is of the whole set, so it carries one tag, on the
@@ -76,11 +79,27 @@ Decide each bump by Semantic Versioning, with these house rules:
   `--only-explicit-features`, because the baseline's `nym` feature does not
   build on its own.
 
-A crate that depends on a bumped crate is bumped too, since its manifest
-pins the dependency's version. Cargo orders the set by dependency at publish
-time, so the order needs no thought here. The current order, read from a
-dry run on 2026-10-29, is `zingo-memo`, `zingo-net-diag`, `zingo-status`,
+A crate whose dependency took a breaking bump is bumped too, since the
+requirement its published manifest carries must move to the new major, and
+that dependency line is a `Changed` entry in its changelog. The size of the
+forced bump is set by the dependent's own interface, not by the
+dependency's: a binary whose commands and output did not change takes a
+patch, and only a crate that exposes the dependency's types in its public
+API inherits the major. A compatible bump of a dependency forces nothing:
+the requirement already admits it, and the dependent crate releases when
+its own section says so. Cargo orders the set by dependency at publish
+time, so the order needs no thought here. The
+current order, read from a dry run on 2026-10-29, is `zingo-memo`,
+`zingo-net-diag`, `zingo-status`,
 `zingo-netutils`, `pepper-sync`, `zingo-price`, `zingolib`, `zingo-cli`.
+
+`zingo-cli` is a crate of the set like any other, with a version of its own
+that does not track zingolib's. It stays in this workspace because it is
+the library's test driver as well as a product: the benchmarks and the
+nightly runs build it at the commit under test, and its commands change in
+the pull request that changes the library. It releases when its changelog
+has entries, which a zingolib major bump supplies by the rule above, and
+it may lead a cycle of its own.
 
 ### 2. Open the release pull request against dev
 
@@ -340,14 +359,11 @@ released the moment it merges.
 
 ## Open questions
 
-1. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
-   led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
-   on crates.io, so it is in the set like any other crate.
-2. The retirement of `stable` itself is a decision for a zingo-adrs record
+1. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-3. The nightly Sync A/B job compares `dev` with the day before. A release
+2. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.
