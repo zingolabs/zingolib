@@ -99,6 +99,15 @@ in the set:
 Then `cargo update --workspace --offline` refreshes `Cargo.lock`, and the
 checks below run before the pull request is marked ready.
 
+The pull request opens a tracking issue for the cycle, `release <lead
+crate> vX.Y.Z`, which lists the evidence the cycle wants before its
+candidate becomes the release: the automated runs at the candidate, and
+the reports expected from whoever tests its artifacts. Each report lands
+as a comment, the fixes of step 6 link to it, and the release tag closes
+it. The list is the cycle's own. It shrinks as a workspace test takes over
+what a manual check used to cover, and this procedure does not change
+when it does.
+
 The version and `path` pair is what makes a single pass work. Cargo strips
 the `path` when it packages a crate and keeps the version requirement, so a
 dependent crate can name the version its dependency is about to become
@@ -161,14 +170,32 @@ channel is published at the candidate commit:
 
   The run pushes both Prebuilt Bundles to `ghcr.io` tagged by the commit,
   and opens the record pull request that `bindings/published.toml` and
-  `bindings/CHANGELOG.md` take. Merge that record. zingo-mobile and
-  kitchen-sync pin the Published Commit with their Bundle Pin and run their
-  own test plans against it.
+  `bindings/CHANGELOG.md` take. Merge that record. A consumer pins the
+  Published Commit with its Bundle Pin and tests it under its own plan.
 - `zingo-cli` is tested from a checkout of the tag with `makers run-cli`,
-  online and against mainnet, for the test plan the cycle's lead agrees.
+  online and against mainnet, for whatever the tracking issue asks.
 
-The window stays open until every consumer in the test plan has reported,
-or until the lead calls it. A candidate with no report is not a release.
+The candidate becomes the release when the lead judges the evidence on the
+tracking issue sufficient. The decision is zingolib's. Evidence is of three
+kinds: the candidate's own pull request checks and the nightly runs that
+include it, the workspace test suite run at the candidate, and reports from
+whoever tested the candidate's published artifacts. A report is positive
+and named: who ran what against which commit, and that it passed. Silence
+is not a report, since no issue found means nothing when nothing was run,
+and a candidate with no report is not a release.
+
+A consumer's report is input and nothing more. No consumer holds a veto
+over the window, and no consumer's silence holds it open. The window has
+no fixed length, and the lead may close it with the evidence in hand or
+wait for a report that is still coming. Either way the tracking issue
+shows what the release was judged on.
+
+As of late 2026 the reports come mostly from zingo-mobile, which pins the
+candidate's Published Commit, tests the app by hand on both platforms, and
+ships a public beta from it. That is where the evidence comes from today,
+not a dependency of the procedure. The aim is that the workspace's own
+tests cover what a phone tester checks, and each cycle's issue drops a
+manual item as a test takes it over.
 
 ### 6. A candidate needs a fix
 
@@ -308,28 +335,23 @@ released the moment it merges.
 
 ## Open questions
 
-1. The test plan and the sign-off. Who tests a candidate, on which
-   consumers, for how long, and who may call the window closed. The draft
-   says "the lead agrees" and leaves the rest open. A written minimum, for
-   example zingo-cli sync and send on mainnet plus one zingo-mobile build
-   per platform, would make the window predictable.
-2. CI on release lines. Pull requests into any branch run the PR checks,
+1. CI on release lines. Pull requests into any branch run the PR checks,
    but the push workflows list only `stable` and `dev`. Adding
    `release/**` to those lists gives a line a merge-commit run. The same
    lists need `stable` removed once the branch is retired.
-3. Whether the publish moves into CI. crates.io Trusted Publishing lets a
+2. Whether the publish moves into CI. crates.io Trusted Publishing lets a
    workflow run at the release tag publish with a short-lived token and no
    stored secret, and zaino's pipeline records the same move as an open
    item. Until then the publish is a maintainer's local step and the signed
    tag is the record of who cut the release.
-4. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
+3. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
    led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
    on crates.io, so it is in the set like any other crate.
-5. The retirement of `stable` itself is a decision for a zingo-adrs record
+4. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-6. The nightly Sync A/B job compares `dev` with the day before. A release
+5. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.
