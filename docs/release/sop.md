@@ -49,7 +49,9 @@ A release line is a branch `release/<lead crate>_vX.Y.Z` created from the
 first candidate's tag, and only when that candidate needs a fix. It holds
 the fixes and the later candidates, and it merges back into `dev` after
 each candidate is tagged. It is deleted once the release is published and
-its last merge into `dev` has landed.
+its last merge into `dev` has landed. Every release has a line of its own,
+a patch release included, so the name always says which version is in
+flight and the `release/` namespace holds nothing but lines.
 
 ## The procedure
 
@@ -80,9 +82,10 @@ dry run on 2026-10-29, is `zingo-memo`, `zingo-net-diag`, `zingo-status`,
 
 ### 2. Open the release pull request against dev
 
-One pull request, named `release/<lead crate>_vX.Y.Z-prep` or similar, with
-one commit titled `release <crate> vX.Y.Z[, <crate> vX.Y.Z ...]`. It
-carries, for every crate in the set:
+One pull request from a branch `prep/<lead crate>_vX.Y.Z`, outside the
+`release/` namespace since it is not a line, with one commit titled
+`release <crate> vX.Y.Z[, <crate> vX.Y.Z ...]`. It carries, for every crate
+in the set:
 
 - the `version` in the crate's `Cargo.toml`.
 - the matching `version` in the root `[workspace.dependencies]` entry, which
@@ -254,8 +257,8 @@ with the crate's changelog section as its body.
 ## A hotfix after the release
 
 A defect in a published version, found after its release line is gone,
-starts a patch cycle. The patch's release line is created from the release
-tag rather than from `dev`:
+starts a patch cycle. The patch has a release line of its own, created from
+the release tag rather than from `dev`:
 
 ```sh
 git switch -c release/<lead crate>_vX.Y.(Z+1) <lead crate>_vX.Y.Z
@@ -303,40 +306,32 @@ released the moment it merges.
 
 ## Open questions
 
-1. Naming. The release line is written here as `release/<lead
-   crate>_vX.Y.Z` and the candidate tag as `<lead crate>_vX.Y.Z-rc.N`, which
-   matches the tags 8.0.0 used. The slash keeps the branch name distinct
-   from the tag name, which the full-ref push already guards. A line per
-   version means a patch release gets its own line from the release tag. A
-   line per minor, `release/zingolib_v8.0`, would keep patches on one
-   branch at the cost of a name that does not say which version is in
-   flight. Preference needed.
-2. Candidate tags per crate or per set. 8.0.0 tagged candidates on
+1. Candidate tags per crate or per set. 8.0.0 tagged candidates on
    `zingolib` alone and the release on every crate. The draft keeps that.
    If a cycle releases `pepper-sync` without `zingolib`, the lead crate is
    `pepper-sync` and its tags carry the candidate.
-3. The test plan and the sign-off. Who tests a candidate, on which
+2. The test plan and the sign-off. Who tests a candidate, on which
    consumers, for how long, and who may call the window closed. The draft
    says "the lead agrees" and leaves the rest open. A written minimum, for
    example zingo-cli sync and send on mainnet plus one zingo-mobile build
    per platform, would make the window predictable.
-4. CI on release lines. Pull requests into any branch run the PR checks,
+3. CI on release lines. Pull requests into any branch run the PR checks,
    but the push workflows list only `stable` and `dev`. Adding
    `release/**` to those lists gives a line a merge-commit run. The same
    lists need `stable` removed once the branch is retired.
-5. Whether the publish moves into CI. crates.io Trusted Publishing lets a
+4. Whether the publish moves into CI. crates.io Trusted Publishing lets a
    workflow run at the release tag publish with a short-lived token and no
    stored secret, and zaino's pipeline records the same move as an open
    item. Until then the publish is a maintainer's local step and the signed
    tag is the record of who cut the release.
-6. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
+5. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
    led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
    on crates.io, so it is in the set like any other crate.
-7. The retirement of `stable` itself is a decision for a zingo-adrs record
+6. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-8. The nightly Sync A/B job compares `dev` with the day before. A release
+7. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.
