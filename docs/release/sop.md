@@ -236,9 +236,8 @@ with the crate's changelog section as its body.
 
 - Confirm the release line's last merge into `dev` has landed, then delete
   the line.
-- Move zingo-mobile's submodule and Bundle Pin to the release commit if the
-  mobile cycle calls for it. That is zingo-mobile's own release procedure,
-  not this one.
+- Move zingo-mobile's Bundle Pin to the release commit if the mobile cycle
+  calls for it. That is zingo-mobile's own release procedure, not this one.
 - Publish the Bundle Pin package if `bindings/pin` changed since its last
   version. The push to `dev` does this on its own.
 
