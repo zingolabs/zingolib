@@ -117,16 +117,14 @@ All of these run on the release pull request's head, locally or in CI.
 - The publish dry run passes for the whole set in one command:
 
   ```sh
-  cargo publish --workspace --dry-run \
-    --exclude zingo --exclude zingo-nym-proxy-ffi
+  cargo publish --workspace --dry-run
   ```
 
-  The two excluded crates are the Binding Layer crates, which zingolib/0054
-  rules are never published to crates.io. Until they carry
-  `publish = false` in their manifests they must be excluded by hand, and
-  the first one fails the whole run without it. The dry run reports a crate
-  whose version already exists on crates.io as a warning, so a crate left
-  out of the set is excluded as well rather than relied on to be skipped.
+  The Binding Layer crates carry `publish = false`, since zingolib/0054
+  rules they are never published to crates.io, so cargo passes them by.
+  The dry run reports a crate whose version already exists on crates.io as
+  a warning, so a crate left out of the set is passed with `--exclude`
+  rather than relied on to be skipped.
 - `cargo-semver-checks` agrees with every bump, as in step 1.
 - `Cargo.lock` holds no yanked version. The dry run warns about each one
   it finds, and `cargo update <crate>` moves past it.
@@ -216,11 +214,12 @@ Tag the commit once per crate in the set, `<crate>_vX.Y.Z` with the message
 From a clean checkout of the release commit:
 
 ```sh
-cargo publish --workspace --exclude zingo --exclude zingo-nym-proxy-ffi
+cargo publish --workspace
 ```
 
-with every crate outside the set excluded too. Cargo publishes the set in
-dependency order and waits for each crate to be indexed before the next.
+with every crate outside the set passed as `--exclude`. Cargo publishes
+the set in dependency order and waits for each crate to be indexed before
+the next.
 The crates.io token is the publisher's own for now. Moving the publish into
 CI under crates.io Trusted Publishing is listed under the open questions.
 
@@ -307,10 +306,7 @@ released the moment it merges.
    ancestor. The alternative, publishing only commits of `dev` and asking
    mobile to test the merge commit, reintroduces the new work the release
    line exists to exclude. zingolib#3113 tracks the amendment.
-2. The Binding Layer crates `zingo` and `zingo-nym-proxy-ffi` should carry
-   `publish = false`, so the workspace publish and its dry run need no
-   `--exclude`. Small pull request.
-3. Naming. The release line is written here as `release/<lead
+2. Naming. The release line is written here as `release/<lead
    crate>_vX.Y.Z` and the candidate tag as `<lead crate>_vX.Y.Z-rc.N`, which
    matches the tags 8.0.0 used. The slash keeps the branch name distinct
    from the tag name, which the full-ref push already guards. A line per
@@ -318,32 +314,32 @@ released the moment it merges.
    line per minor, `release/zingolib_v8.0`, would keep patches on one
    branch at the cost of a name that does not say which version is in
    flight. Preference needed.
-4. Candidate tags per crate or per set. 8.0.0 tagged candidates on
+3. Candidate tags per crate or per set. 8.0.0 tagged candidates on
    `zingolib` alone and the release on every crate. The draft keeps that.
    If a cycle releases `pepper-sync` without `zingolib`, the lead crate is
    `pepper-sync` and its tags carry the candidate.
-5. The test plan and the sign-off. Who tests a candidate, on which
+4. The test plan and the sign-off. Who tests a candidate, on which
    consumers, for how long, and who may call the window closed. The draft
    says "the lead agrees" and leaves the rest open. A written minimum, for
    example zingo-cli sync and send on mainnet plus one zingo-mobile build
    per platform, would make the window predictable.
-6. CI on release lines. Pull requests into any branch run the PR checks,
+5. CI on release lines. Pull requests into any branch run the PR checks,
    but the push workflows list only `stable` and `dev`. Adding
    `release/**` to those lists gives a line a merge-commit run. The same
    lists need `stable` removed once the branch is retired.
-7. Whether the publish moves into CI. crates.io Trusted Publishing lets a
+6. Whether the publish moves into CI. crates.io Trusted Publishing lets a
    workflow run at the release tag publish with a short-lived token and no
    stored secret, and zaino's pipeline records the same move as an open
    item. Until then the publish is a maintainer's local step and the signed
    tag is the record of who cut the release.
-8. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
+7. Whether `zingo-cli` keeps a changelog date and tag of its own in a cycle
    led by `zingolib`. It was released as 0.5.0 in the 8.0.0 commit and is
    on crates.io, so it is in the set like any other crate.
-9. The retirement of `stable` itself is a decision for a zingo-adrs record
+8. The retirement of `stable` itself is a decision for a zingo-adrs record
    in the `zingolib/` scope, superseding the `stable` parts of org record
    003 for this repository. This document is the procedure that record
    would point at.
-10. The nightly Sync A/B job compares `dev` with the day before. A release
+9. The nightly Sync A/B job compares `dev` with the day before. A release
     line gets no benchmark. If a candidate's fix touches sync, the fix pull
     request runs `makers sync-ab` by hand and carries the two numbers, as
     AGENTS.md asks of a bisected regression.
