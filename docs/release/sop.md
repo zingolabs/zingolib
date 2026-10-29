@@ -1,8 +1,9 @@
 # Releasing from dev
 
 Status: draft, 2026-10-29. Nothing below binds until the team has agreed it
-and the decision to retire `stable` is recorded in zingo-adrs. Open
-questions are collected at the end.
+and the decision to retire `stable` is recorded in zingo-adrs. The record
+is zingolib/0064, proposed in zingo-adrs#62, and it names this document as
+the specification it governs.
 
 ## What changed and why
 
@@ -88,9 +89,8 @@ patch, and only a crate that exposes the dependency's types in its public
 API inherits the major. A compatible bump of a dependency forces nothing:
 the requirement already admits it, and the dependent crate releases when
 its own section says so. Cargo orders the set by dependency at publish
-time, so the order needs no thought here. The
-current order, read from a dry run on 2026-10-29, is `zingo-memo`,
-`zingo-net-diag`, `zingo-status`,
+time, so the order needs no thought here. The current order, read from a
+dry run on 2026-10-29, is `zingo-memo`, `zingo-net-diag`, `zingo-status`,
 `zingo-netutils`, `pepper-sync`, `zingo-price`, `zingolib`, `zingo-cli`.
 
 `zingo-cli` is a crate of the set like any other, with a version of its own
@@ -232,6 +232,12 @@ is cherry-picked from `dev` onto the line unless it is the fix itself, and
 nothing merges from `dev` into the line at all. The line exists to exclude
 what landed on `dev` since the candidate.
 
+The nightly Sync A/B job compares `dev` with the day before, so a release
+line gets no benchmark of its own. A fix that touches sync runs
+`makers sync-ab` by hand against the candidate it fixes, and its pull
+request carries the two numbers, as AGENTS.md asks of a bisected
+regression.
+
 When the line holds every fix the window asked for, tag its head
 `<lead crate>_vX.Y.Z-rc.(N+1)`, then open the pull request that merges the
 line into `dev`. That merge is required before the next step, for two
@@ -356,14 +362,3 @@ released the moment it merges.
 - A dependency moves on `dev` only to a version on crates.io or to a git
   pin the team accepts shipping. `[patch.crates-io]` entries pointing at a
   branch block a candidate until they are resolved.
-
-## Open questions
-
-1. The retirement of `stable` itself is a decision for a zingo-adrs record
-   in the `zingolib/` scope, superseding the `stable` parts of org record
-   003 for this repository. This document is the procedure that record
-   would point at.
-2. The nightly Sync A/B job compares `dev` with the day before. A release
-    line gets no benchmark. If a candidate's fix touches sync, the fix pull
-    request runs `makers sync-ab` by hand and carries the two numbers, as
-    AGENTS.md asks of a bisected regression.
