@@ -365,14 +365,14 @@ pub fn planned(
     }
     let entries = binding_manifest::entries_at(root, Some(default_branch))?;
     let recorded = entries.iter().any(|entry| entry.commit == commit);
-    if let Some(last) = entries.last().filter(|_| !recorded) {
-        if !crate::is_ancestor(root, &last.commit, &commit)? {
-            return Err(vec![format!(
-                "{commit} is older than {}, the last entry of {} on {default_branch}, and the record is oldest first",
-                last.commit,
-                binding_manifest::FILE
-            )]);
-        }
+    if !recorded
+        && !entries.is_empty()
+        && binding_manifest::recorded_ancestor(root, &entries, &commit)?.is_none()
+    {
+        return Err(vec![format!(
+            "no entry of {} on {default_branch} is an ancestor of {commit}, so its changelog section would have no base",
+            binding_manifest::FILE
+        )]);
     }
     let relay = commit != run_at;
     if relay && !recorded && !dispatchable(root, &commit)? {
@@ -1039,7 +1039,7 @@ mod tests {
         "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
     #[test]
-    fn a_commit_older_than_the_last_entry_is_refused_and_a_recorded_one_is_reported(
+    fn a_commit_descending_from_no_entry_is_refused_and_a_recorded_one_is_reported(
     ) -> Result<(), Vec<String>> {
         let repo = crate::scratch_dir("publish-plan-order")?;
         crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", BRANCH])?;
@@ -1053,14 +1053,50 @@ mod tests {
         crate::hermetic_git(&repo, &["add", binding_manifest::FILE])?;
         let tip = binding_manifest::commit_on(&repo, "tip")?;
 
-        let older = crate::refused(planned(&repo, &first, &tip, BRANCH))?.concat();
+        let rootless = crate::refused(planned(&repo, &first, &tip, BRANCH))?.concat();
         assert!(
-            older.contains("older") && older.contains(&published),
-            "{older}"
+            rootless.contains("no entry") && rootless.contains(&first),
+            "{rootless}"
         );
         assert!(planned(&repo, &published, &tip, BRANCH)?.recorded);
         let next = planned(&repo, &tip, &tip, BRANCH)?;
         assert!(!next.recorded && !next.relay);
+        Ok(())
+    }
+
+    #[test]
+    fn a_release_line_candidate_descending_from_an_earlier_entry_is_accepted(
+    ) -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("publish-plan-release-line")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", BRANCH])?;
+        append(&repo, PUBLISH_WORKFLOW, "on:")?;
+        append(&repo, PUBLISH_WORKFLOW, &format!("  {DISPATCH_TRIGGER}"))?;
+        crate::hermetic_git(&repo, &["add", PUBLISH_WORKFLOW])?;
+        let first = binding_manifest::commit_on(&repo, "first")?;
+        let candidate = binding_manifest::commit_on(&repo, "candidate")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "release"])?;
+        let fix = binding_manifest::commit_on(&repo, "fix")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", BRANCH])?;
+        let later = binding_manifest::commit_on(&repo, "later")?;
+        let record = format!(
+            "[[entry]]\ncommit = \"{candidate}\"\nsince = \"{first}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n\
+             [[entry]]\ncommit = \"{later}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
+        );
+        crate::create_parent(&repo.join(binding_manifest::FILE))?;
+        crate::write(&repo.join(binding_manifest::FILE), record)?;
+        crate::hermetic_git(&repo, &["add", binding_manifest::FILE])?;
+        binding_manifest::commit_on(&repo, "record")?;
+        crate::hermetic_git(
+            &repo,
+            &["merge", "--quiet", "--no-ff", "--no-edit", "release"],
+        )?;
+        let tip = crate::commit_of(&repo, crate::BRANCH_TIP)?;
+
+        let plan = planned(&repo, &fix, &tip, BRANCH)?;
+        assert!(plan.relay && !plan.recorded);
+        assert_eq!(plan.commit, fix);
+        let rootless = crate::refused(planned(&repo, &first, &tip, BRANCH))?.concat();
+        assert!(rootless.contains("no entry"), "{rootless}");
         Ok(())
     }
 

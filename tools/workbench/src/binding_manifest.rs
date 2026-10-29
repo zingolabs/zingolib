@@ -313,17 +313,41 @@ pub fn unchanged_since_base(base: &[Entry], head: &[Entry]) -> Result<(), Vec<St
     )
 }
 
-pub fn publication_commits(entries: &[Entry]) -> Vec<(String, String)> {
+/// - Runs `git merge-base --is-ancestor` in `root` once per entry of `earlier`, newest first,
+///   until one is an ancestor of `commit`.
+pub fn recorded_ancestor<'a>(
+    root: &Path,
+    earlier: &'a [Entry],
+    commit: &str,
+) -> Result<Option<&'a Entry>, Vec<String>> {
+    for entry in earlier.iter().rev() {
+        if crate::is_ancestor(root, &entry.commit, commit)? {
+            return Ok(Some(entry));
+        }
+    }
+    Ok(None)
+}
+
+/// - Runs `git merge-base --is-ancestor` in `root` through [`recorded_ancestor`] for every entry.
+pub fn publication_commits(
+    root: &Path,
+    entries: &[Entry],
+) -> Result<Vec<(String, String)>, Vec<String>> {
     entries
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let since = entries[..index]
-                .last()
-                .map(|previous| previous.commit.clone())
-                .or_else(|| entry.since.clone())
-                .unwrap_or_default();
-            (entry.commit.clone(), since)
+            let since = match recorded_ancestor(root, &entries[..index], &entry.commit)? {
+                Some(ancestor) => ancestor.commit.clone(),
+                None => entry.since.clone().ok_or_else(|| {
+                    vec![format!(
+                        "no earlier entry is an ancestor of entry {} ({}), and it names no since commit",
+                        ordinal(index),
+                        entry.commit
+                    )]
+                })?,
+            };
+            Ok((entry.commit.clone(), since))
         })
         .collect()
 }
@@ -1015,18 +1039,41 @@ mod tests {
     }
 
     #[test]
-    fn each_publication_follows_the_previous_entry_and_the_first_its_since(
+    fn each_publication_follows_its_nearest_recorded_ancestor_and_the_first_its_since(
     ) -> Result<(), Vec<String>> {
+        let repo = crate::scratch_dir("manifest-publication-commits")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let origin = commit_on(&repo, "origin")?;
+        let first = commit_on(&repo, "first")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "side"])?;
+        let fix = commit_on(&repo, "fix")?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "main"])?;
+        let second = commit_on(&repo, "second")?;
+        crate::hermetic_git(&repo, &["merge", "--quiet", "--no-ff", "--no-edit", "side"])?;
+
         let entries = vec![
-            entry(FIRST, Some(ORIGIN), &[ANDROID])?,
-            entry(SECOND, None, &[ANDROID])?,
+            entry(&first, Some(&origin), &[ANDROID])?,
+            entry(&second, None, &[ANDROID])?,
+            entry(&fix, None, &[ANDROID])?,
         ];
         assert_eq!(
-            publication_commits(&entries),
+            publication_commits(&repo, &entries)?,
             [
-                (FIRST.to_string(), ORIGIN.to_string()),
-                (SECOND.to_string(), FIRST.to_string())
+                (first.clone(), origin.clone()),
+                (second.clone(), first.clone()),
+                (fix.clone(), first.clone())
             ]
+        );
+        let rootless = vec![
+            entry(&second, Some(&origin), &[ANDROID])?,
+            entry(&first, None, &[ANDROID])?,
+        ];
+        let refused = crate::refused(publication_commits(&repo, &rootless))?.concat();
+        assert!(
+            refused.contains("entry 2")
+                && refused.contains(&first)
+                && refused.contains("no earlier entry is an ancestor"),
+            "{refused}"
         );
         Ok(())
     }

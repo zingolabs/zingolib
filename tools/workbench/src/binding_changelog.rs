@@ -333,9 +333,11 @@ pub fn render_header() -> String {
         "{TITLE}\n\n\
          The workbench tool `{BINARY}` writes every section below, one per entry\n\
          of `{}`, from the lines that the entry's audited crate changelogs\n\
-         gained after the previous entry's commit, named as `Since`, up to the\n\
-         entry's commit, which the section heading names, each under the\n\
-         headings it sits beneath in its changelog. The check in CI\n\
+         gained after its `Since` commit, the newest earlier entry that is an\n\
+         ancestor of the entry's commit (the first entry names its own), up to\n\
+         the entry's commit, which the section heading names, each under the\n\
+         headings it sits beneath in its changelog. A release line candidate\n\
+         therefore follows the candidate it fixes, not the last entry. The check in CI\n\
          regenerates every section and fails when the committed file differs. The\n\
          audited crates of an entry are the two Binding Layer crates and their\n\
          direct dependencies in this repository at the entry's commit, as the\n\
@@ -433,7 +435,7 @@ fn regenerated(root: &Path) -> Result<String, Error> {
 }
 
 fn regenerated_from(root: &Path, entries: &[binding_manifest::Entry]) -> Result<String, Error> {
-    let sections = binding_manifest::publication_commits(entries)
+    let sections = binding_manifest::publication_commits(root, entries)?
         .iter()
         .zip(entries)
         .rev()
@@ -480,6 +482,7 @@ pub fn main() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -804,6 +807,90 @@ mod tests {
             render_file(&header, &[newest.clone(), older.clone()]),
             format!("{header}\n{newest}\n{older}")
         );
+    }
+
+    fn bullets(items: &[&str]) -> String {
+        items.iter().map(|item| format!("- {item}\n")).collect()
+    }
+
+    fn changelog_commit(
+        repo: &Path,
+        dir: &str,
+        added: &[&str],
+        fixed: &[&str],
+    ) -> Result<String, Vec<String>> {
+        let file = repo.join(dir).join(CRATE_CHANGELOG);
+        crate::create_parent(&file)?;
+        crate::write(
+            &file,
+            format!(
+                "# Changelog\n\n## [Unreleased]\n\n### Added\n{}\n### Changed\n\n### Fixed\n{}",
+                bullets(added),
+                bullets(fixed)
+            ),
+        )?;
+        crate::hermetic_git(repo, &["add", "--all"])?;
+        binding_manifest::commit_on(repo, "changelog")
+    }
+
+    #[test]
+    fn a_release_line_section_follows_the_candidate_it_fixes_and_not_the_last_entry(
+    ) -> Result<(), Error> {
+        let repo = crate::scratch_dir("changelog-release-line")?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let dir = "crate-a";
+        let origin = changelog_commit(&repo, dir, &[], &[])?;
+        let candidate = changelog_commit(&repo, dir, &["one"], &[])?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "release"])?;
+        let fix = changelog_commit(&repo, dir, &["one"], &["fix"])?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "main"])?;
+        let later = changelog_commit(&repo, dir, &["one", "two"], &[])?;
+        crate::hermetic_git(
+            &repo,
+            &["merge", "--quiet", "--no-ff", "--no-edit", "release"],
+        )?;
+
+        let audited = vec![binding_manifest::AuditedCrate {
+            name: "a".to_string(),
+            dir: PathBuf::from(dir),
+        }];
+        let entry = |commit: &str, since: Option<&str>| binding_manifest::Entry {
+            commit: commit.to_string(),
+            since: since.map(str::to_string),
+            digests: Vec::new(),
+            audited: audited.clone(),
+        };
+        let entries = [
+            entry(&candidate, Some(&origin)),
+            entry(&later, None),
+            entry(&fix, None),
+        ];
+        let file = regenerated_from(&repo, &entries)?;
+        let section_start = format!("\n{SECTION_MARK}");
+        let sections: Vec<&str> = file.split(section_start.as_str()).skip(1).collect();
+        let fix_section = sections
+            .iter()
+            .find(|section| section.starts_with(&fix))
+            .expect("the newest section is the release line candidate's");
+        assert!(
+            fix_section.contains(&format!("{SINCE_PREFIX}{candidate}{SINCE_SUFFIX}")),
+            "{fix_section}"
+        );
+        assert!(
+            fix_section.contains("- fix") && !fix_section.contains("- two"),
+            "{fix_section}"
+        );
+        let later_section = sections
+            .iter()
+            .find(|section| section.starts_with(&later))
+            .expect("the later commit of main has its own section");
+        assert!(
+            later_section.contains(&format!("{SINCE_PREFIX}{candidate}{SINCE_SUFFIX}"))
+                && later_section.contains("- two")
+                && !later_section.contains("- fix"),
+            "{later_section}"
+        );
+        Ok(())
     }
 
     #[test]
