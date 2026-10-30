@@ -1324,6 +1324,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cobs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
+dependencies = [
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2261,6 +2270,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-io"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
+
+[[package]]
+name = "embedded-io"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2372,6 +2393,18 @@ checksum = "2cae5503f6dc8629246d7e9b3450d3712e5be20f2ed7f9fb6b67212a4f315adc"
 dependencies = [
  "blake2b_simd",
 ]
+
+[[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fastrand"
@@ -2980,6 +3013,15 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashlink"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
+dependencies = [
+ "hashbrown 0.14.5",
+]
+
+[[package]]
+name = "hashlink"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
@@ -3538,6 +3580,18 @@ checksum = "cb68373c0d6620ef8105e855e7745e18b0d00d3bdb07fb532e434244cdb9a714"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
+]
+
+[[package]]
+name = "imt-tree"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecd3f4e337229b52ef524363f8d09969ddd4ae980f5d9cdafd43de715805c83d"
+dependencies = [
+ "anyhow",
+ "hex",
+ "rayon",
+ "voting-crypto-deps",
 ]
 
 [[package]]
@@ -6387,6 +6441,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "pczt"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6b48fdfdc5c6b58a00514f9b2504fae98f7cde9f741f3477264b411cd69134d"
+dependencies = [
+ "blake2b_simd",
+ "bls12_381",
+ "document-features",
+ "ff 0.14.0",
+ "getset",
+ "jubjub",
+ "nonempty",
+ "orchard",
+ "pasta_curves",
+ "postcard",
+ "rand_core 0.10.1",
+ "redjubjub",
+ "sapling-crypto",
+ "secp256k1 0.33.1",
+ "serde",
+ "serde_with",
+ "subtle 2.6.1",
+ "zcash_note_encryption",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_script",
+ "zcash_transparent",
+ "zeroize",
+]
+
+[[package]]
 name = "peg"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6617,6 +6702,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13bee6c73da26345c729282832b60b0363cf3dd9f4bfd81d8551b7a1c889a113"
 
 [[package]]
+name = "pir-client"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb8943485702ed3b4ed3ef994dac19831f46226126b0a8755d3a77f4a0f9d4e2"
+dependencies = [
+ "anyhow",
+ "futures",
+ "hex",
+ "imt-tree",
+ "log",
+ "pir-types",
+ "serde_json",
+ "tokio",
+ "valar-ypir",
+ "voting-crypto-deps",
+]
+
+[[package]]
+name = "pir-types"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "640d5d7475cc17e07c9558015a99f64335ab0481010fed7f7593334bd55ffade"
+dependencies = [
+ "anyhow",
+ "imt-tree",
+ "serde",
+ "voting-crypto-deps",
+]
+
+[[package]]
 name = "pkcs1"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6725,6 +6840,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be97d76faf1bfab666e1375477b23fde79eccf0276e9b63b92a39d676a889ba9"
 dependencies = [
  "rand 0.8.7",
+]
+
+[[package]]
+name = "postcard"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
+dependencies = [
+ "cobs",
+ "embedded-io 0.4.0",
+ "embedded-io 0.6.1",
+ "serde",
 ]
 
 [[package]]
@@ -7548,6 +7675,20 @@ dependencies = [
  "spki 0.7.3",
  "subtle 2.6.1",
  "zeroize",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7753b721174eb8ff87a9a0e799e2d7bc3749323e773db92e0984debb00019d6e"
+dependencies = [
+ "bitflags 2.13.1",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink 0.9.1",
+ "libsqlite3-sys",
+ "smallvec",
 ]
 
 [[package]]
@@ -8506,7 +8647,7 @@ dependencies = [
  "futures-io",
  "futures-util",
  "hashbrown 0.15.5",
- "hashlink",
+ "hashlink 0.10.0",
  "indexmap 2.14.0",
  "log",
  "memchr",
@@ -9942,6 +10083,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "valar-spiral-rs"
+version = "0.5.3-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25241fdd53c5952c5c80557c6d248a2835cf9e722de52e16bbbba794009b80b9"
+dependencies = [
+ "fastrand",
+ "getrandom 0.2.17",
+ "rand 0.8.7",
+ "rand_chacha 0.3.1",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle 2.6.1",
+]
+
+[[package]]
+name = "valar-ypir"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7154e4ee01f132c54ca282542dba1b453742c85af63b4f954103928396a25852"
+dependencies = [
+ "cc",
+ "fastrand",
+ "log",
+ "rand 0.8.7",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "sha1",
+ "valar-spiral-rs",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9983,6 +10156,64 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "vote-commitment-tree"
+version = "0.8.0"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+dependencies = [
+ "anyhow",
+ "imt-tree",
+ "incrementalmerkletree",
+ "lazy_static",
+ "libc",
+ "shardtree",
+ "voting-crypto-deps",
+]
+
+[[package]]
+name = "vote-commitment-tree-client"
+version = "0.10.0"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "vote-commitment-tree",
+ "voting-crypto-deps",
+]
+
+[[package]]
+name = "voting-circuits"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1c88ee79ee1dc06daa89ffdb7a0db92aa7e0da8c4337dc24b83156a4a362bfa"
+dependencies = [
+ "blake2b_simd",
+ "itertools 0.14.0",
+ "lazy_static",
+ "voting-crypto-deps",
+]
+
+[[package]]
+name = "voting-crypto-deps"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e0f4e392a7c2f5ff79dbcfe4aca3eed58ffaf3cd7e84c700d1ac62d707f984"
+dependencies = [
+ "halo2_gadgets",
+ "halo2_poseidon",
+ "halo2_proofs",
+ "incrementalmerkletree",
+ "orchard",
+ "pasta_curves",
+ "rand 0.10.2",
+ "sinsemilla",
+ "zcash_note_encryption",
+ "zip32",
 ]
 
 [[package]]
@@ -10739,10 +10970,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "zakura-wallet-lib"
+version = "0.1.0-rc9.5"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+dependencies = [
+ "orchard",
+ "pczt",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_primitives",
+]
+
+[[package]]
 name = "zcash_address"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "372023d82d978ab3f27b8e9f7f9b56fc61f3c9cc2b72ec2f8e3bbb278497e474"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "bech32",
  "bs58",
@@ -10755,8 +10997,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27228f279facfd6b9dd015cea88538020c30f87c8a4aa59e8ed85808d81febb5"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "base64 0.22.1",
  "bech32",
@@ -10816,8 +11057,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e35ad8dafd173b0465e5963b520b241f497d978319faed46547bd81f403fa98"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "bech32",
  "bip32 0.6.0",
@@ -10859,8 +11099,7 @@ dependencies = [
 [[package]]
 name = "zcash_pool_migration"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b5211aea88f920316150527eda23efe419b507d03c8dda9e655bfbf22bfa68d"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "corez",
  "getset",
@@ -10873,8 +11112,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50ad9ffda3d83c35e401b2f914980762f201ab40525cb0aab67b8d91e180e7df"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -10926,8 +11164,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "266da226b6be42545b9fc299f1def9f5e525764845b8afa874f167155de943ba"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "corez",
  "document-features",
@@ -10965,8 +11202,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb804d0179500e9543502dd6dfa178826617107897e6fe171241e5b767b7a0dd"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "bip32 0.6.0",
  "bs58",
@@ -10984,6 +11220,53 @@ dependencies = [
  "zcash_script",
  "zcash_spec",
  "zip32",
+]
+
+[[package]]
+name = "zcash_voting"
+version = "5.2.0-rc.2"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "blake2b_simd",
+ "bytes",
+ "ed25519-dalek",
+ "futures-util",
+ "hex",
+ "http 1.5.0",
+ "http-body-util",
+ "hyper 1.11.0",
+ "hyper-rustls 0.27.9",
+ "hyper-util",
+ "imt-tree",
+ "nonempty",
+ "pir-client",
+ "pir-types",
+ "prost 0.14.4",
+ "rand 0.8.7",
+ "rayon",
+ "rusqlite",
+ "rustls 0.23.43",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle 2.6.1",
+ "thiserror 2.0.19",
+ "tokio",
+ "tonic",
+ "tower-service",
+ "url",
+ "uuid",
+ "valar-spiral-rs",
+ "valar-ypir",
+ "vote-commitment-tree",
+ "vote-commitment-tree-client",
+ "voting-circuits",
+ "voting-crypto-deps",
+ "zakura-wallet-lib",
+ "zcash_protocol",
+ "zeroize",
 ]
 
 [[package]]
@@ -11328,7 +11611,23 @@ dependencies = [
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
+ "zingolib-voting",
  "zip32",
+]
+
+[[package]]
+name = "zingolib-voting"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "http 1.5.0",
+ "prost 0.14.4",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "zcash_voting",
 ]
 
 [[package]]
@@ -11348,8 +11647,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6960586c9e1a91c734e9175913e22b88f2df11617f1decdefb15dd971ffd383"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
 dependencies = [
  "base64 0.22.1",
  "nom",
@@ -11397,3 +11695,23 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "schemerz-rusqlite"
+version = "0.371.0"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+
+[[patch.unused]]
+name = "zakura-client-backend"
+version = "0.1.0-rc9.5"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+
+[[patch.unused]]
+name = "zakura-client-sqlite"
+version = "0.1.0-rc9.5"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+
+[[patch.unused]]
+name = "zcash_client_sqlite"
+version = "0.23.0"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"

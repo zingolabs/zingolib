@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The shielded-voting surface on `LightClient`, wired through the new
+  workspace member `zingolib-voting`: `active_voting_round` resolves the
+  pinned config, authenticates the open round's `ea_pk` against it, and
+  reports the wallet's bundle-quantized weight at the snapshot height;
+  `begin_voting` arms a round and returns a `VotingProgressHandle` over typed
+  `VotingEvent`s; `cast_vote` journals the ballot and drives the round
+  lifecycle (bundle precompute, PIR warmup, delegation, cast, helper-share
+  delivery) with crash recovery from the voting sidecar; `voting_results`
+  reads the round's durable state back. Software signing stays inside the
+  wallet's seed boundary. The staging static config source is pinned in
+  `zingolib-voting` (`STAGING_STATIC_VOTING_CONFIG_SOURCE`); production
+  pinning is a one-line swap there.
 - `ClientConfig::migrated_from` reports the legacy path a wallet file was
   copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
 - `wallet::keys::transparent_address_from_encoded` decodes a transparent
