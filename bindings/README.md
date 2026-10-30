@@ -57,8 +57,10 @@ plan refuses a commit none of whose ancestors is in the record, and it
 refuses a publication while another record's pull request is pending. A
 release candidate on a release line is accepted once the line has merged
 into `dev`, since the candidate it fixes is among its ancestors, and its
-changelog section follows that candidate. A commit the
-record names, or whose own record is pending, ends the run after the plan.
+changelog section follows that candidate. The first commit of `dev`
+published after the merge follows both the candidate and the last entry of
+`dev`, and its section carries the lines neither had. A commit the record
+names, or whose own record is pending, ends the run after the plan.
 The record's push and pull request use the GitHub App
 `zingolib-binding-layer-publisher`, the App that the secrets
 `BINDING_PUBLISH_APP_ID` and `BINDING_PUBLISH_APP_PRIVATE_KEY` name. A

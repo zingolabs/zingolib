@@ -367,7 +367,7 @@ pub fn planned(
     let recorded = entries.iter().any(|entry| entry.commit == commit);
     if !recorded
         && !entries.is_empty()
-        && binding_manifest::recorded_ancestor(root, &entries, &commit)?.is_none()
+        && binding_manifest::recorded_ancestors(root, &entries, &commit)?.is_empty()
     {
         return Err(vec![format!(
             "no entry of {} on {default_branch} is an ancestor of {commit}, so its changelog section would have no base",
