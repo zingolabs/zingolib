@@ -39,6 +39,7 @@ pub mod migration;
 pub(crate) mod note_selection;
 pub mod output;
 pub mod propose;
+pub mod sapling_params;
 pub mod send;
 pub mod summary;
 pub mod sync;

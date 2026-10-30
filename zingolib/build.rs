@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! - Downloads the Sapling proving parameters into the user's parameter
 //!   cache when they are absent, and hands their paths to rustc through
-//!   `SAPLING_SPEND_PARAMS` and `SAPLING_OUTPUT_PARAMS`.
+//!   `SAPLING_SPEND_PARAMS` and `SAPLING_OUTPUT_PARAMS`, unless the
+//!   `runtime-sapling-params` feature is on.
 //! - Writes `git_description.txt` and `git_description.rs` into `OUT_DIR`
 //!   and prints `cargo:rustc-env=ZINGOLIB_DESCRIPTOR`.
 //! - Prints `cargo:rerun-if-changed` for this script, both parameter
@@ -18,6 +19,7 @@ const BUILD_SCRIPT: &str = "build.rs";
 const DESCRIPTOR_TEXT_FILE: &str = "git_description.txt";
 const DESCRIPTOR_ENV: &str = "ZINGOLIB_DESCRIPTOR";
 const DESCRIPTOR_SOURCE_FILE: &str = "git_description.rs";
+const RUNTIME_PARAMS_FEATURE: &str = "CARGO_FEATURE_RUNTIME_SAPLING_PARAMS";
 
 /// - Prints `cargo:rerun-if-changed` for this script and the git state
 ///   behind the descriptor.
@@ -160,7 +162,9 @@ fn publish_param_path(variable: &str, path: &Path) {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     register_rerun_watches();
-    get_zcash_params();
+    if env::var_os(RUNTIME_PARAMS_FEATURE).is_none() {
+        get_zcash_params();
+    }
     git_description()?;
     Ok(())
 }

@@ -17,7 +17,7 @@ use zcash_protocol::{ShieldedPool, TxId};
 
 use super::LightWallet;
 use super::error::{CalculateTransactionError, KeyError};
-use crate::wallet::utils;
+use crate::wallet::{sapling_params, utils};
 
 impl LightWallet {
     /// Creates and stores transaction from the given `proposal`, returning the txids for each calculated transaction.
@@ -69,7 +69,11 @@ impl LightWallet {
             .ok_or(KeyError::NoAccountKeys)?
             .try_into()?;
 
-        let sapling_prover = utils::LazySaplingProver::default();
+        let sapling_prover = if sapling_params::proves_sapling(&proposal) {
+            utils::LazySaplingProver::parsed()?
+        } else {
+            utils::LazySaplingProver::default()
+        };
 
         let expiry_height = self.proposal_expiry_height(&proposal);
 

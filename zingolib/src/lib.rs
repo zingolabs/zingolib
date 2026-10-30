@@ -31,8 +31,10 @@ pub use zingo_netutils::ensure_default_crypto_provider;
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 
+#[cfg(not(feature = "runtime-sapling-params"))]
 pub struct SaplingParams;
 
+#[cfg(not(feature = "runtime-sapling-params"))]
 impl SaplingParams {
     pub const SPEND: &'static [u8] = include_bytes!(env!("SAPLING_SPEND_PARAMS"));
     pub const OUTPUT: &'static [u8] = include_bytes!(env!("SAPLING_OUTPUT_PARAMS"));

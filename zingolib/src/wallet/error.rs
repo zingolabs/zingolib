@@ -307,7 +307,7 @@ pub enum CalculateTransactionError<NoteRef> {
     #[error("No unified spending key found for this account. {0}")]
     NoSpendingKey(#[from] KeyError),
     #[error("Failed to load sapling paramaters. {0}")]
-    SaplingParams(String),
+    SaplingParams(#[from] crate::wallet::sapling_params::SaplingParamsError),
     #[error("Failed to calculate transaction. {0}")]
     Calculation(
         zcash_client_backend::data_api::error::Error<

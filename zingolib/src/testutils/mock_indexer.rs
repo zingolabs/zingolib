@@ -1673,11 +1673,10 @@ fn shielded_sighash(transaction: Transaction, inputs: Vec<TxOut>) -> [u8; 32] {
 fn sapling_verifying_keys() -> &'static (SpendVerifyingKey, OutputVerifyingKey) {
     static KEYS: OnceLock<(SpendVerifyingKey, OutputVerifyingKey)> = OnceLock::new();
     KEYS.get_or_init(|| {
-        zcash_proofs::prover::LocalTxProver::from_bytes(
-            crate::SaplingParams::SPEND,
-            crate::SaplingParams::OUTPUT,
-        )
-        .verifying_keys()
+        let params = crate::wallet::sapling_params::load()
+            .expect("the mock indexer runs where the Sapling parameters load");
+        zcash_proofs::prover::LocalTxProver::from_bytes(&params.spend, &params.output)
+            .verifying_keys()
     })
 }
 
