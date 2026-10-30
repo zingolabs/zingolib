@@ -12,6 +12,12 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## 81d799775f11e882896e8710e8af12d6d4d29a41
+
+Since d496bea8c7c476f2dd54f437674f7b4d1cc19b87.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
 ## d496bea8c7c476f2dd54f437674f7b4d1cc19b87
 
 Since 3fb32d277ef956e75da124c1442526fb4d91d97a.
