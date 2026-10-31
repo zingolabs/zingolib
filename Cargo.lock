@@ -1345,7 +1345,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.52.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3443,7 +3443,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3461,7 +3461,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -7019,7 +7019,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph",
@@ -7040,7 +7040,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7053,7 +7053,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7142,7 +7142,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.43",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -7181,7 +7181,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -10161,7 +10161,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree"
 version = "0.8.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#12495798dffde3264025a0b044f1d87c82efca52"
 dependencies = [
  "anyhow",
  "imt-tree",
@@ -10175,7 +10175,7 @@ dependencies = [
 [[package]]
 name = "vote-commitment-tree-client"
 version = "0.10.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#12495798dffde3264025a0b044f1d87c82efca52"
 dependencies = [
  "base64 0.22.1",
  "hex",
@@ -10470,7 +10470,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -10970,18 +10970,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zakura-wallet-lib"
-version = "0.1.0-rc9.5"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
-dependencies = [
- "orchard",
- "pczt",
- "zcash_client_backend",
- "zcash_keys",
- "zcash_primitives",
-]
-
-[[package]]
 name = "zcash_address"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11232,7 +11220,7 @@ dependencies = [
 [[package]]
 name = "zcash_voting"
 version = "5.2.0-rc.2"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#12495798dffde3264025a0b044f1d87c82efca52"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -11248,6 +11236,8 @@ dependencies = [
  "hyper-util",
  "imt-tree",
  "nonempty",
+ "orchard",
+ "pczt",
  "pir-client",
  "pir-types",
  "prost 0.14.4",
@@ -11271,7 +11261,9 @@ dependencies = [
  "vote-commitment-tree-client",
  "voting-circuits",
  "voting-crypto-deps",
- "zakura-wallet-lib",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_primitives",
  "zcash_protocol",
  "zeroize",
 ]
