@@ -1,5 +1,7 @@
 //! All things needed to create, manaage, and use notes
 
+use std::collections::HashSet;
+
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
@@ -246,7 +248,7 @@ impl LightWallet {
     pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
-        exclude: &'a [OutputId],
+        exclude: &HashSet<OutputId>,
         account: zip32::AccountId,
         include_potentially_spent_notes: bool,
     ) -> Result<Vec<&'a N>, WalletError> {
@@ -394,18 +396,18 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
         exclude: &[OutputRef],
-        reserved: &[OutputId],
+        reserved: &HashSet<OutputId>,
     ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
         let exclude = exclude
             .iter()
             .filter(|output_ref| output_ref.pool_type() == N::POOL_TYPE)
             .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
         let certain = self
             .spendable_notes::<N>(anchor_height, &exclude, account, false)?
             .into_iter()
             .map(N::output_id)
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
         Ok(self
             .spendable_notes::<N>(anchor_height, &exclude, account, true)?
             .into_iter()

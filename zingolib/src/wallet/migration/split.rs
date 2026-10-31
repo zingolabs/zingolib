@@ -6,6 +6,7 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
+use std::collections::HashSet;
 use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
@@ -551,7 +552,7 @@ impl crate::wallet::LightWallet {
         Ok(self
             .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                 anchor_height,
-                &[],
+                &HashSet::new(),
                 account,
                 include_potentially_spent,
             )?
@@ -708,7 +709,7 @@ impl crate::wallet::LightWallet {
             let mut candidates: Vec<&pepper_sync::wallet::OrchardNote> = self
                 .spendable_notes::<pepper_sync::wallet::OrchardNote>(
                     anchor_height,
-                    &[],
+                    &HashSet::new(),
                     account,
                     false,
                 )?
