@@ -10984,7 +10984,8 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.14.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "372023d82d978ab3f27b8e9f7f9b56fc61f3c9cc2b72ec2f8e3bbb278497e474"
 dependencies = [
  "bech32",
  "bs58",
@@ -10997,7 +10998,8 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.25.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27228f279facfd6b9dd015cea88538020c30f87c8a4aa59e8ed85808d81febb5"
 dependencies = [
  "base64 0.22.1",
  "bech32",
@@ -11057,7 +11059,8 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.17.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e35ad8dafd173b0465e5963b520b241f497d978319faed46547bd81f403fa98"
 dependencies = [
  "bech32",
  "bip32 0.6.0",
@@ -11099,7 +11102,8 @@ dependencies = [
 [[package]]
 name = "zcash_pool_migration"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b5211aea88f920316150527eda23efe419b507d03c8dda9e655bfbf22bfa68d"
 dependencies = [
  "corez",
  "getset",
@@ -11112,7 +11116,8 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.31.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50ad9ffda3d83c35e401b2f914980762f201ab40525cb0aab67b8d91e180e7df"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -11164,7 +11169,8 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.11.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "266da226b6be42545b9fc299f1def9f5e525764845b8afa874f167155de943ba"
 dependencies = [
  "corez",
  "document-features",
@@ -11202,7 +11208,8 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.11.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb804d0179500e9543502dd6dfa178826617107897e6fe171241e5b767b7a0dd"
 dependencies = [
  "bip32 0.6.0",
  "bs58",
@@ -11647,7 +11654,8 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.10.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6960586c9e1a91c734e9175913e22b88f2df11617f1decdefb15dd971ffd383"
 dependencies = [
  "base64 0.22.1",
  "nom",
@@ -11695,23 +11703,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "schemerz-rusqlite"
-version = "0.371.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
-
-[[patch.unused]]
-name = "zakura-client-backend"
-version = "0.1.0-rc9.5"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
-
-[[patch.unused]]
-name = "zakura-client-sqlite"
-version = "0.1.0-rc9.5"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"
-
-[[patch.unused]]
-name = "zcash_client_sqlite"
-version = "0.23.0"
-source = "git+https://github.com/zingolabs/zcash_voting?branch=feat%2Flrz-librustzcash-0-31-port#b62c123875118060d29de0fd129365f7d1870e47"

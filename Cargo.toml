@@ -208,23 +208,12 @@ opt-level = "z"
 # crate.
 [patch.crates-io]
 rustls-platform-verifier = { path = "zingo-netutils/webpki-verifier-shim" }
-# The voting integration resolves zcash_voting and its fork/vendored slice
-# from the port branch of the zingolabs fork (PR #1), until it merges to
-# main. Git patches only discover workspace members; the membership commit
-# on the branch makes the fork and vendored crates discoverable. The four
-# sqlite-side entries warn as unused under plain lrz and turn load-bearing
-# once wallet-db builds matter.
+# The voting integration resolves two packages from the port branch of the
+# zingolabs fork (PR #1): zcash_voting itself, and the feature-split
+# zakura-wallet-lib fork that makes its sqlite slice opt-in. Everything else
+# resolves from the registry; the fork's vendored copies are manifest-only
+# re-bases that matter only inside the fork's own dual-stack resolve. The
+# sqlite-side entries become necessary only if a wallet-db build of
+# zcash_voting ever lands here.
 zcash_voting = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
 zakura-wallet-lib = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_protocol = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_client_backend = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_primitives = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_keys = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_address = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_transparent = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_pool_migration = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zip321 = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zcash_client_sqlite = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zakura-client-sqlite = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-zakura-client-backend = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
-schemerz-rusqlite = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
