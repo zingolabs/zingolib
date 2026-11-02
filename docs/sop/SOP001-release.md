@@ -245,9 +245,11 @@ line into `dev`. That merge is required before the next step, for two
 reasons: the fix must reach `dev`, and the Binding Layer publishes only a
 commit that `dev` reaches. The merge is a true merge commit, never a squash
 or a rebase, since either would rewrite the fixes into new commits that the
-tag does not name and `dev` would not reach the candidate. The merge
-resolves the changelog by keeping the fix's lines in the `[X.Y.Z]` section,
-where the line put them.
+tag does not name and `dev` would not reach the candidate. The repository
+allows a squash and a rebase, and a ruleset cannot forbid them for one
+source branch alone, so whoever merges chooses the merge commit by hand,
+and the pull request template says so. The merge resolves the changelog by
+keeping the fix's lines in the `[X.Y.Z]` section, where the line put them.
 
 The publication record accepts the candidate at this point, whether or
 not a commit of `dev` was published between `rc.0` and the merge: the plan
@@ -326,12 +328,22 @@ git switch -c release/<lead crate>_vX.Y.(Z+1) <lead crate>_vX.Y.Z
 The version bump and changelog cut of step 2 happen in the fix pull request
 into that line, since there is no `dev` candidate to inherit them. Every
 other step runs as written: the candidate is tagged on the line, the line
-merges into `dev` before the Binding Layer publishes, the release is tagged
-on the line's last candidate, and the line merges back once more if the
-release commit added anything.
+merges into `dev` before the Binding Layer publishes, and the release is
+tagged on the line's last candidate. The line merges into `dev` once per
+candidate and never after the release, since step 7 commits nothing
+between the last candidate and the release.
 
-The changelog on `dev` gains the `[X.Y.(Z+1)]` section through that merge,
-below `[Unreleased]` and above `[X.Y.Z]`.
+The merge-back resolves every conflict in a `Cargo.toml` version and in
+`Cargo.lock` to the `dev` side, because `dev` may have cut a newer version
+since X.Y.Z and the patch never moves it back. The changelog on `dev`
+gains the `[X.Y.(Z+1)]` section through the merge, in version order: above
+`[X.Y.Z]` and below any section `dev` cut since. When `dev` has cut no
+release since X.Y.Z, the fix's lines stay in `[X.Y.(Z+1)]` alone, since the
+next release from `dev` descends from the patch and a reader walking up
+from X.Y.Z meets them there. When `dev` has cut a release since, that
+release lacks the fix and the next one from `dev` is the first on its line
+to carry it, so the merge also adds the fix's lines under `[Unreleased]`,
+and a reader coming from the newer release meets them once as well.
 
 ## What dev now has to hold
 
