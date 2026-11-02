@@ -1,5 +1,5 @@
 Fixes: 
 
-A pull request from a `release/**` line merges into `dev` by merge commit,
-never by squash or rebase, so `dev` reaches the tagged candidate
-(`docs/sop/SOP001-release.md`, step 6).
+A pull request into `dev` merges by merge commit alone, which the ruleset on
+`dev` enforces: a release line's tagged candidate has to stay reachable from
+`dev` (`docs/sop/SOP001-release.md`, step 6).

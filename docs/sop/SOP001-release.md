@@ -245,11 +245,11 @@ line into `dev`. That merge is required before the next step, for two
 reasons: the fix must reach `dev`, and the Binding Layer publishes only a
 commit that `dev` reaches. The merge is a true merge commit, never a squash
 or a rebase, since either would rewrite the fixes into new commits that the
-tag does not name and `dev` would not reach the candidate. The repository
-allows a squash and a rebase, and a ruleset cannot forbid them for one
-source branch alone, so whoever merges chooses the merge commit by hand,
-and the pull request template says so. The merge resolves the changelog by
-keeping the fix's lines in the `[X.Y.Z]` section, where the line put them.
+tag does not name and `dev` would not reach the candidate. A ruleset on
+`dev` allows the merge commit alone for every pull request into it, so the
+merge button offers neither, and the pull request template says why. The
+merge resolves the changelog by keeping the fix's lines in the `[X.Y.Z]`
+section, where the line put them.
 
 The publication record accepts the candidate at this point, whether or
 not a commit of `dev` was published between `rc.0` and the merge: the plan
