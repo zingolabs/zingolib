@@ -32,13 +32,14 @@ on:
       - "deny.toml"
       - ".github/actions/**"
   push:
-    branches: [stable, dev]
+    branches: [dev, "release/**"]
 
 # One CI tree per pull request: a new commit on a PR'd branch cancels the
 # superseded commit's still-running jobs (including the container test
 # matrix called through test.yaml), returning those runners to the pool.
-# Pushes to stable/dev group by ref but never cancel a running tree —
-# GitHub instead collapses any queued runs behind it to the newest.
+# Pushes to dev and the release lines group by ref but never cancel a
+# running tree — GitHub instead collapses any queued runs behind it to the
+# newest.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
