@@ -58,9 +58,13 @@ jobs:
         run: npm pack --dry-run
 
       # A pull request that changes the package must name a version npm
-      # does not hold, or the publish job would publish nothing.
+      # does not hold, or the publish job would publish nothing. Only a
+      # pull request into dev feeds that job, so only there is the check
+      # meaningful: a merge of dev into stable carries versions dev
+      # already published, and a hotfix into stable reaches npm through
+      # its backport into dev, where the check runs against dev.
       - name: Check that a changed package raises its version
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && github.base_ref == 'dev' }}
         env:
           BASE: origin/${{ github.base_ref }}
         run: |

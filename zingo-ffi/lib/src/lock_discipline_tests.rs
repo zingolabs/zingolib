@@ -408,3 +408,59 @@ fn a_panic_inside_a_guarded_call_poisons_the_client_until_the_next_init() {
     init_offline_wallet();
     wallet_kind().expect("the re-initialized wallet clears the poison and answers again");
 }
+
+/// The previews answer on the read lock (#3104): a Send screen asks for a
+/// fee while the user types, beside whatever else holds the client. The
+/// never-synced fixture refuses with `ScanRequired`, which the preview
+/// reports as the matching send or shield error, and the refusal arrives
+/// beside the guard rather than queuing behind it.
+#[test]
+fn preview_send_refuses_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let outcome = outcome_under_held_read_lock(|| {
+        let address = get_developer_donation_address().expect("static address");
+        preview_send(format!(r#"[{{"address":"{address}","amount":50000}}]"#))
+    });
+    assert!(
+        matches!(outcome, Err(ZingolibError::Send(_))),
+        "a never-synced wallet cannot size a send: {outcome:?}"
+    );
+}
+
+#[test]
+fn preview_send_all_refuses_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let outcome = outcome_under_held_read_lock(|| {
+        let address = get_developer_donation_address().expect("static address");
+        preview_send_all(address, String::new())
+    });
+    assert!(
+        matches!(outcome, Err(ZingolibError::Send(_))),
+        "a never-synced wallet cannot size a send-all: {outcome:?}"
+    );
+}
+
+#[test]
+fn preview_shield_refuses_beside_a_held_read_guard() {
+    let _serial = serialized();
+    init_offline_wallet();
+    let outcome = outcome_under_held_read_lock(preview_shield);
+    assert!(
+        matches!(outcome, Err(ZingolibError::Shield(_))),
+        "a never-synced wallet cannot size a shield: {outcome:?}"
+    );
+}
+
+/// `decline` with nothing stored is not a failure: the Send screen calls it
+/// on every back-out, proposal or not.
+#[test]
+fn decline_succeeds_with_no_proposal_stored() {
+    let _serial = serialized();
+    init_offline_wallet();
+    assert_eq!(
+        decline().expect("declining with nothing stored succeeds"),
+        "Proposal declined."
+    );
+}

@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
-use workbench::{repo_root, run};
+use workbench::{cargo_make, repo_root, run};
 
 /// Agreeing representations of `zingolib::lightclient::sync`'s minted log
 /// markers, restated because the workbench is deliberately std-only and
@@ -427,11 +427,10 @@ fn build_dir(root: &Path, arm: Arm) -> PathBuf {
 /// build directory, and the profile is release because an unoptimized
 /// core-second answers nothing about what the mixnet costs a user.
 fn run_cli(root: &Path, arm: Arm) -> Command {
-    let mut command = Command::new("makers");
+    let mut command = cargo_make("run-cli");
     command
         .current_dir(root)
         .env("RUST_LOG", LOG_FILTER)
-        .arg("run-cli")
         .arg("--release")
         .arg("--target-dir")
         .arg(build_dir(root, arm));

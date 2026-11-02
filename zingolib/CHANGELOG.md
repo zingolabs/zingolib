@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [8.0.0] - 2026-10-28
+
+### Added
 - `ClientConfig::migrated_from` reports the legacy path a wallet file was
   copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
 - `wallet::keys::transparent_address_from_encoded` decodes a transparent
@@ -49,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
 - `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
   or a hosted enable on a session that holds no Session Indexer.
+- `LightClient::preview_send`, `preview_send_all` and `preview_shield` create
+  the proposal the matching `propose_*` would store and return it without
+  storing it or pausing sync, the display-only reads beside `max_send_value`
+  for a consumer that shows a fee while its user is still deciding. A consumer
+  that proposed only to show a fee left the stored proposal's pause on a
+  continuous sync session with nothing to resume it (#3104). The
+  `lightclient::propose` module docs now state the contract: a stored proposal
+  holds sync paused until the consumer settles it, confirming with
+  `send_stored_proposal` or `calculate_stored_proposal`, or declining with
+  `clear_proposal`.
+- `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
+  the aliases `propose_send`, `propose_shield` and the previews return, are
+  public, so a consumer can name them.
 
 ### Changed
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
@@ -180,8 +205,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Environment`, `Bundled`, or `PathLookup { bundled_dir }`), in place of the
   bare path. `ProxyResolution` renders the path and its provenance through
   `Display`, and the `PathLookup` rendering names every source that was empty.
-
-### Deprecated
 
 ### Removed
 - **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`

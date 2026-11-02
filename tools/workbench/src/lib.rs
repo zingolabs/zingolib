@@ -128,6 +128,15 @@ pub fn finished_in(
 pub const CARGO: &str = "cargo";
 pub const GH: &str = "gh";
 const VERSION_FLAG: &str = "--version";
+const MAKE: &str = "make";
+
+// The cargo-make front door, reached as a cargo subcommand because a
+// host that installs only the `cargo-make` binary has no `makers`.
+pub fn cargo_make(task: &str) -> Command {
+    let mut command = Command::new(CARGO);
+    command.arg(MAKE).arg(task);
+    command
+}
 
 /// - Runs `cargo <name> --version` as a child process, with stderr inherited, and waits for it.
 pub fn cargo_subcommand_version(name: &str, install_command: &str) -> Result<String, Vec<String>> {

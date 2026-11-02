@@ -732,7 +732,11 @@ impl LightClient {
 
     /// Clears any stored send proposal and restores the sync engine to the
     /// mode it held before the proposal was created, the decline path of
-    /// the two-phase send. Previously the pause a proposal took outlived a
+    /// the two-phase send and the counterpart of
+    /// [`Self::send_stored_proposal`]. A consumer that proposed and does
+    /// not go ahead must call this, or a continuous sync session remains
+    /// paused (see the `lightclient::propose` module docs). Succeeds with
+    /// no proposal stored. Previously the pause a proposal took outlived a
     /// declined proposal until some later send opted into resuming.
     pub async fn clear_proposal(&mut self) {
         self.wallet().write().await.clear_proposal();

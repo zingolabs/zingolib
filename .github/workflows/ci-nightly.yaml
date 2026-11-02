@@ -60,16 +60,44 @@ jobs:
 
       - name: Compare the arms
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now }}
+        # The install-action ships the cargo-make binary only, no makers
+        # alias, and bash here means pipefail, so a failed comparison fails
+        # the job instead of leaving tee to report success.
+        shell: bash
         run: |
-          makers sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
-            --birthday 2571710 --seconds 90 2>&1 | tee sync-ab.log
+          cargo make sync-ab "${{ steps.arms.outputs.before }}" "${{ steps.arms.outputs.now }}" \
+            --birthday 2571710 --seconds 90 --json sync-ab.json 2>&1 | tee sync-ab.log
+
+      # Both arms go to Bencher under the candidate's hash. The candidate is
+      # the night's head and the baseline is the day before measured again,
+      # so the baseline series is the runner's own noise floor, and a
+      # candidate that moves within it has not moved. The project slug is
+      # the BENCHER_PROJECT repository variable, and a repository without
+      # one keeps the report as an artifact only.
+      - name: Install Bencher
+        if: ${{ steps.arms.outputs.before != steps.arms.outputs.now && vars.BENCHER_PROJECT != '' }}
+        uses: bencherdev/bencher@v0.6.13
+
+      - name: Publish both arms to Bencher
+        if: ${{ steps.arms.outputs.before != steps.arms.outputs.now && vars.BENCHER_PROJECT != '' }}
+        run: |
+          bencher run \
+            --project "${{ vars.BENCHER_PROJECT }}" \
+            --key "${{ secrets.BENCHER_API_KEY }}" \
+            --branch "zingolib/${{ github.ref_name }}" \
+            --hash "${{ steps.arms.outputs.now }}" \
+            --testbed ubuntu-24.04 \
+            --adapter json \
+            --file sync-ab.json
 
       - name: Keep the report
         if: ${{ always() && steps.arms.outputs.before != steps.arms.outputs.now }}
         uses: actions/upload-artifact@v7
         with:
           name: sync-ab-${{ github.sha }}
-          path: sync-ab.log
+          path: |
+            sync-ab.log
+            sync-ab.json
 
   # The testnet cells and the live staged probe, which no pull request
   # runs: the one end-to-end mixnet send in the repository, the ten cells

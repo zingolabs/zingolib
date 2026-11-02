@@ -1,7 +1,12 @@
 [package]
 name = "zingo-cli"
-version = "0.4.0"
+description = "Zingo command line wallet."
+version = "0.5.0"
+authors = ["<zingo@zingolabs.org>"]
 edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
 
 [features]
 # The mixnet transport is a default capability: every ordinary build carries

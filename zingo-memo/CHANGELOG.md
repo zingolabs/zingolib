@@ -10,16 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-- BREAKING: moves to `zcash_address` 0.14.0, `zcash_keys` 0.17.0 and
-  `zcash_protocol` 0.11.0, replacing their pre-releases. The memo's encoding
-  is unchanged: a recipient's unified address is recorded with every receiver
-  it carries, which is now `UnifiedAddress::encode`'s own form.
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+## [0.3.0] - 2026-10-27
+
+### Changed
+- BREAKING: moves to `zcash_address` 0.14.0, `zcash_keys` 0.17.0 and
+  `zcash_protocol` 0.11.0, replacing their pre-releases. The memo's encoding
+  is unchanged: a recipient's unified address is recorded with every receiver
+  it carries, which is now `UnifiedAddress::encode`'s own form.
 
 ## [0.2.0] - 2026-10-15
 
