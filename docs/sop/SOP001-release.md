@@ -1,9 +1,10 @@
 # SOP001: Releasing from dev
 
-Status: draft, 2026-10-29. Nothing below binds until the team has agreed it
-and the decision to retire `stable` is recorded in zingo-adrs. The record
-is zingolib/0064, proposed in zingo-adrs#62, and it names this document as
-the specification it governs.
+Status: accepted, 2026-11-02. The decision this procedure carries out is
+zingo-adrs record
+[zingolib/0064](https://github.com/zingolabs/zingo-adrs/blob/dev/zingolib/0064-releases-are-cut-from-dev.md),
+accepted on 2026-11-02, which names this document as the specification it
+governs.
 
 ## What changed and why
 
@@ -248,15 +249,14 @@ tag does not name and `dev` would not reach the candidate. The merge
 resolves the changelog by keeping the fix's lines in the `[X.Y.Z]` section,
 where the line put them.
 
-The publication record and its tooling are required to accept the
-candidate at this point. Today `binding-publish` refuses it whenever a
-commit of `dev` was published between `rc.0` and the merge, because the
-record's last entry must be an ancestor of the new commit, and the
-changelog generator takes each entry's `since` from the previous entry.
-zingolib#3113 specifies the change: the plan accepts a commit that `dev`
-reaches and that descends from any earlier entry, and an entry's `since`
-is its nearest recorded ancestor. This procedure does not function until
-that change lands.
+The publication record accepts the candidate at this point, whether or
+not a commit of `dev` was published between `rc.0` and the merge: the plan
+accepts a commit that `dev` reaches and that descends from any earlier
+entry, and an entry's changelog section follows the earlier entries that
+are ancestors of its commit and of no other such entry, the rule
+zingolib#3116 put in place. The candidate's section follows `rc.0`, and
+the first commit of `dev` published after the merge follows both the
+candidate and the last entry of `dev`.
 
 Repeat step 5 at the new candidate, naming the candidate's own commit in
 the dispatch. The merge commit holds everything `dev` gained since `rc.0`
