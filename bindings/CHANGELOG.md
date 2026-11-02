@@ -2,15 +2,26 @@
 
 The workbench tool `binding-changelog` writes every section below, one per entry
 of `bindings/published.toml`, from the lines that the entry's audited crate changelogs
-gained after the previous entry's commit, named as `Since`, up to the
-entry's commit, which the section heading names, each under the
-headings it sits beneath in its changelog. The check in CI
-regenerates every section and fails when the committed file differs. The
+gained after its `Since` commits, up to the entry's commit, which the
+section heading names, each under the headings it sits beneath in its
+changelog. The `Since` commits of an entry are the earlier entries that
+are ancestors of its commit and of no other such entry (the first entry
+names its own). A release line candidate therefore follows the candidate
+it fixes, not the last entry, and the first entry after the line merges
+back follows both the line's candidate and the last entry of `dev`, with
+the lines that neither had. The check in CI regenerates every section
+and fails when the committed file differs. The
 audited crates of an entry are the two Binding Layer crates and their
 direct dependencies in this repository at the entry's commit, as the
 publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
+
+## 81d799775f11e882896e8710e8af12d6d4d29a41
+
+Since d496bea8c7c476f2dd54f437674f7b4d1cc19b87.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
 
 ## d496bea8c7c476f2dd54f437674f7b4d1cc19b87
 
