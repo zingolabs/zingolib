@@ -21,11 +21,17 @@
 # commit from before this trigger existed cannot be dispatched, and the
 # plan refuses it by name.
 #
-# The record is oldest first, so the plan refuses a commit older than the
-# last entry, and it refuses a publication while another record's pull
-# request is pending. A commit the registry already holds is not rebuilt,
-# and a commit the record names already, or whose record is pending, ends
-# the run after the plan.
+# The record is in order of publication, and each entry's changelog section
+# follows the earlier entries that are ancestors of its commit and of no
+# other such entry, so the plan refuses a commit none of whose ancestors is
+# in the record, and it refuses a publication while another record's pull
+# request is pending. A release line candidate, merged into dev after a
+# later commit of dev was published, has the candidate it fixes among its
+# ancestors and is accepted, and the first commit of dev after the merge
+# follows both the candidate and the last entry of dev. A commit the
+# registry already holds is not rebuilt, and a
+# commit the record names already, or whose record is pending, ends the
+# run after the plan.
 #
 # The record's push and its pull request use an installation token of the
 # GitHub App that the secrets BINDING_PUBLISH_APP_ID and
@@ -104,8 +110,8 @@ jobs:
         with:
           workspaces: tools/workbench
 
-      # The tool refuses a commit off the default branch, one older than the
-      # last entry, one whose publish workflow has no dispatch trigger, and
+      # The tool refuses a commit off the default branch, one that descends
+      # from no entry, one whose publish workflow has no dispatch trigger, and
       # a publication while another record is pending. It reports whether
       # this run is at the commit, whether the tag exists already, and
       # whether the record names the commit.

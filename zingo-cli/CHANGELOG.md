@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+## [0.5.0] - 2026-10-28
+
 Every entry below describes the change since 0.4.0, the last release: the
 mixnet, the Connectivity Consent, the `network` family and the ZIP 318
 migration commands are new since then, and the clap grammar, the error
@@ -108,6 +120,8 @@ contract and the server binding replaced what 0.4.0 shipped.
   the counterpart of `confirm`. A stored proposal holds sync paused until
   `confirm`, `calculate` or `decline` settles it (#3104); the help of the
   three proposing commands says so.
+- The crate carries the package metadata crates.io requires (description,
+  license, repository), so 0.5.0 is its first crates.io publication.
 
 ### Changed
 - BREAKING: moves to the librustzcash NU7 release cohort zingolib pins, which
@@ -219,8 +233,6 @@ contract and the server binding replaced what 0.4.0 shipped.
 - The interactive prompt and one-shot mode parse through one grammar,
   exactly once, at the process boundary. The command channel carries parsed
   values, so no string is re-parsed inside the process.
-
-### Deprecated
 
 ### Removed
 - The launch-time server selection: the `get_info()` probe of the curated
