@@ -1,16 +1,11 @@
 //! Sync implementations for [`crate::lightclient::LightClient`] and related types.
 
 use std::borrow::BorrowMut;
-use std::sync::Arc;
-use std::sync::atomic;
-use std::time::Duration;
 
 use futures::FutureExt;
 use pepper_sync::config::SyncConfig;
 use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables};
-use pepper_sync::wallet::SyncMode;
-use tokio::time::MissedTickBehavior;
-use tokio::time::interval;
+use pepper_sync::wallet::{SyncMode, SyncModeHandle};
 use tokio::time::timeout;
 
 use crate::data::PollReport;
@@ -21,6 +16,42 @@ use super::SyncResult;
 use super::error::LightClientError;
 
 use zingo_netutils::time::SYNC_START_TIMEOUT;
+
+/// A change of mode a consumer requests of the sync engine through [`LightClient::request_sync_mode`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyncModeRequest {
+    /// Pause a running engine, releasing the wallet lock until it is resumed.
+    Pause,
+    /// Resume a paused engine.
+    Resume,
+}
+
+/// The transition a [`SyncModeRequest`] specifies for the engine.
+struct SyncModeTransition {
+    /// The mode the request moves the engine from.
+    from: SyncMode,
+    /// The mode the request moves the engine to.
+    to: SyncMode,
+    /// The error the request fails with when the engine holds a mode other than `from`.
+    error: SyncModeError,
+}
+
+impl SyncModeRequest {
+    fn transition(self) -> SyncModeTransition {
+        match self {
+            Self::Pause => SyncModeTransition {
+                from: SyncMode::Running,
+                to: SyncMode::Paused,
+                error: SyncModeError::SyncNotRunning,
+            },
+            Self::Resume => SyncModeTransition {
+                from: SyncMode::Paused,
+                to: SyncMode::Running,
+                error: SyncModeError::SyncNotPaused,
+            },
+        }
+    }
+}
 
 /// Minted log marker opening the sync engine's span.
 pub const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
@@ -82,14 +113,11 @@ impl LightClient {
         });
         self.sync_handle = Some(sync_handle);
 
-        if timeout(SYNC_START_TIMEOUT, async {
-            let mut interval = interval(Duration::from_millis(50));
-            interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-            interval.tick().await;
-            while self.sync_mode() == SyncMode::NotRunning {
-                interval.tick().await;
-            }
-        })
+        let mut sync_mode_changes = self.sync_mode.subscribe();
+        if timeout(
+            SYNC_START_TIMEOUT,
+            sync_mode_changes.wait_for(|mode| *mode != SyncMode::NotRunning),
+        )
         .await
         .is_err()
         {
@@ -109,8 +137,7 @@ impl LightClient {
                         sync_handle.abort();
                         let _ignore_cancelled = sync_handle.await;
                     }
-                    self.sync_mode
-                        .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+                    self.sync_mode.set(SyncMode::NotRunning);
                     return Err(LightClientError::SyncLaunchError);
                 }
                 PollReport::NoHandle => {
@@ -128,16 +155,7 @@ impl LightClient {
     ///
     /// If sync is already running, stops sync and waits for it to shutdown before clearing the wallet and rescanning.
     pub async fn rescan(&mut self) -> Result<(), LightClientError> {
-        if self.sync_mode() != SyncMode::NotRunning {
-            self.stop_sync().expect("infallible in this scope");
-
-            let mut interval = tokio::time::interval(Duration::from_millis(500));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            interval.tick().await;
-            while matches!(self.poll_sync(), PollReport::NotReady) {
-                interval.tick().await;
-            }
-        }
+        self.shutdown_sync().await;
         self.wallet().write().await.clear_all();
         self.sync().await
     }
@@ -152,8 +170,7 @@ impl LightClient {
         if let Some(sync_handle) = self.sync_handle.take() {
             let _session_outcome = sync_handle.await;
         }
-        self.sync_mode
-            .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+        self.sync_mode.set(SyncMode::NotRunning);
     }
 
     /// Returns the sync engine's most recently published status without touching the wallet lock.
@@ -174,19 +191,21 @@ impl LightClient {
         self.sync_progress.clone()
     }
 
-    /// Returns the lightclient's sync mode in non-atomic (enum) form.
+    /// Returns the lightclient's sync mode.
     pub fn sync_mode(&self) -> SyncMode {
-        SyncMode::from_atomic_u8(&self.sync_mode)
-            .expect("this library does not allow setting of non-valid sync mode variants")
+        self.sync_mode.get()
     }
 
-    /// Pause the sync engine, releasing the wallet lock until [`crate::lightclient::LightClient::resume_sync`] is called.
+    /// Pauses or resumes the sync engine as `request` specifies.
     ///
-    /// Returns an error if sync is not running or paused.
-    pub fn pause_sync(&self) -> Result<(), SyncModeError> {
-        match SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)? {
-            SyncMode::Running => Ok(()),
-            _ => Err(SyncModeError::SyncNotRunning),
+    /// Fails with [`SyncModeError::SyncNotRunning`] for a pause of an engine that is not running. Fails with
+    /// [`SyncModeError::SyncNotPaused`] for a resume of an engine that is not paused.
+    pub fn request_sync_mode(&self, request: SyncModeRequest) -> Result<(), SyncModeError> {
+        let SyncModeTransition { from, to, error } = request.transition();
+        if self.sync_mode.transition(from, to) == from {
+            Ok(())
+        } else {
+            Err(error)
         }
     }
 
@@ -198,19 +217,9 @@ impl LightClient {
             SyncMode::NotRunning => SyncMode::NotRunning,
             _ => SyncMode::Shutdown,
         };
-        match SyncMode::apply(&self.sync_mode, stop_unless_idle)? {
+        match self.sync_mode.apply(stop_unless_idle) {
             SyncMode::NotRunning => Err(SyncModeError::SyncNotRunning),
             _ => Ok(()),
-        }
-    }
-
-    /// Resume scanning after [`crate::lightclient::LightClient::pause_sync`] has been called.
-    ///
-    /// Returns an error if sync is not paused.
-    pub fn resume_sync(&self) -> Result<(), SyncModeError> {
-        match SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running)? {
-            SyncMode::Paused => Ok(()),
-            _ => Err(SyncModeError::SyncNotPaused),
         }
     }
 
@@ -218,16 +227,14 @@ impl LightClient {
     pub fn poll_sync(&mut self) -> PollReport<SyncResult, SyncError<WalletError>> {
         if let Some(mut sync_handle) = self.sync_handle.take() {
             if let Some(sync_result) = sync_handle.borrow_mut().now_or_never() {
-                self.sync_mode
-                    .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+                self.sync_mode.set(SyncMode::NotRunning);
                 PollReport::from_join(sync_result)
             } else {
                 self.sync_handle = Some(sync_handle);
                 PollReport::NotReady
             }
         } else {
-            self.sync_mode
-                .store(SyncMode::NotRunning as u8, atomic::Ordering::Release);
+            self.sync_mode.set(SyncMode::NotRunning);
             PollReport::NoHandle
         }
     }
@@ -256,29 +263,26 @@ impl LightClient {
     /// witnesses are captured. See [`Self::capture_migration_witnesses`] for
     /// capturing them while a continuous Sync Session runs.
     pub async fn await_sync(&mut self) -> Result<SyncResult, LightClientError> {
-        // Completion-detection quantum: at 500ms this added up to half a
-        // second of pure quantization to every sync_and_await, a visible
-        // fraction of every test's sync cost.
-        let mut interval = tokio::time::interval(Duration::from_millis(50));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            interval.tick().await;
-            match self.poll_sync() {
-                PollReport::NoHandle => return Err(LightClientError::SyncNotRunning),
-                PollReport::NotReady => (),
-                PollReport::Panicked(text) => return Err(LightClientError::SyncPanicked(text)),
-                PollReport::Ready(result) => {
-                    let result = result.map_err(LightClientError::SyncError);
-                    if result.is_ok() {
-                        // Boundary checkpoints are only retained for a finite
-                        // window; capture migration part witnesses while they
-                        // are available.
-                        self.wallet().write().await.refresh_part_witnesses()?;
-                    }
-                    return result;
-                }
+        let Some(sync_handle) = self.sync_handle.as_mut() else {
+            return Err(LightClientError::SyncNotRunning);
+        };
+        let joined = sync_handle.await;
+        self.sync_handle = None;
+        self.sync_mode.set(SyncMode::NotRunning);
+        let result = match PollReport::from_join(joined) {
+            PollReport::Ready(result) => result.map_err(LightClientError::SyncError),
+            PollReport::Panicked(text) => return Err(LightClientError::SyncPanicked(text)),
+            PollReport::NoHandle | PollReport::NotReady => {
+                unreachable!("a joined task reports its result or its panic")
             }
+        };
+        if result.is_ok() {
+            // Boundary checkpoints are only retained for a finite
+            // window; capture migration part witnesses while they
+            // are available.
+            self.wallet().write().await.refresh_part_witnesses()?;
         }
+        result
     }
 
     /// Calls [`crate::lightclient::LightClient::sync`] and then [`crate::lightclient::LightClient::await_sync`].
@@ -332,7 +336,9 @@ impl LightClient {
         loop {
             let resume_on_drop = match self.sync_mode() {
                 SyncMode::Running => {
-                    if SyncMode::transition(&self.sync_mode, SyncMode::Running, SyncMode::Paused)?
+                    if self
+                        .sync_mode
+                        .transition(SyncMode::Running, SyncMode::Paused)
                         != SyncMode::Running
                     {
                         // The engine changed state between the read and the
@@ -416,7 +422,7 @@ impl LightClient {
 /// racy call shape (planning against a wallet a running sync is still
 /// mutating) has no well-typed spelling.
 pub struct SyncPauseGuard {
-    sync_mode: Arc<atomic::AtomicU8>,
+    sync_mode: SyncModeHandle,
     resume_on_drop: bool,
 }
 
@@ -437,8 +443,9 @@ impl Drop for SyncPauseGuard {
         if self.resume_on_drop {
             // Resume only if the engine is still paused: a stop_sync issued
             // while the guard was held must win over the resume.
-            let _ignore_raced_transition =
-                SyncMode::transition(&self.sync_mode, SyncMode::Paused, SyncMode::Running);
+            let _ignore_raced_transition = self
+                .sync_mode
+                .transition(SyncMode::Paused, SyncMode::Running);
         }
     }
 }
@@ -449,20 +456,17 @@ mod tests {
     use pepper_sync::wallet::SyncMode;
     use zcash_protocol::consensus::H0;
 
-    use super::atomic;
     use crate::data::PollReport;
     use crate::lightclient::{LightClient, SyncResult};
     use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 
-    /// An offline client whose sync-mode atomic the tests drive directly.
+    /// An offline client whose sync mode the tests drive directly.
     /// No engine runs, so every observed transition is the guard's own.
     async fn offline_client(mode: SyncMode) -> LightClient {
         let wallet =
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build();
         let client = LightClient::new_for_test(wallet).await;
-        client
-            .sync_mode
-            .store(mode as u8, atomic::Ordering::Release);
+        client.sync_mode.set(mode);
         client
     }
 
@@ -566,9 +570,11 @@ mod tests {
         let sync_mode = client.sync_mode.clone();
         let (shut_down, engine_shut_down) = tokio::sync::oneshot::channel();
         client.sync_handle = Some(tokio::spawn(async move {
-            while SyncMode::from_atomic_u8(&sync_mode)? != SyncMode::Shutdown {
-                tokio::task::yield_now().await;
-            }
+            sync_mode
+                .subscribe()
+                .wait_for(|mode| *mode == SyncMode::Shutdown)
+                .await
+                .expect("the client holds the handle");
             let _receiver_outlives_the_engine = shut_down.send(());
             Ok(session_without_scanning())
         }));

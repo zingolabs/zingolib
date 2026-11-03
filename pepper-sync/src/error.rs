@@ -548,9 +548,6 @@ pub enum ServerError {
 /// Sync mode error.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncModeError {
-    /// Invalid sync mode.
-    #[error("invalid sync mode. {0}")]
-    InvalidSyncMode(u8),
     /// Sync is already running.
     #[error("sync is already running")]
     SyncAlreadyRunning,

@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- BREAKING: `LightClient::request_sync_mode` takes a `SyncModeRequest`,
+  `Pause` or `Resume`, in place of `pause_sync` and `resume_sync`, which
+  were one transition written twice.
+- `LightClient` holds its sync mode as `pepper_sync::wallet::SyncModeHandle`,
+  so the engine is notified of each pause, resume and stop request. The sync
+  launch, `await_sync` and `rescan` await the engine in place of polling it
+  at 50 ms and 500 ms.
 
 ### Deprecated
 

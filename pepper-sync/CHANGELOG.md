@@ -8,14 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::SyncModeHandle`, the sync mode shared between the engine and its
+  consumer: `get`, `set`, `apply` and `transition` read and write the one
+  mode from every clone, and `subscribe` returns a watch receiver that
+  sends a notification on each change.
 
 ### Changed
+- BREAKING: `sync` takes the sync mode as `wallet::SyncModeHandle` in place
+  of `Arc<AtomicU8>`. The engine awaits the mode, so a pause, a resume and
+  a shutdown request are handled when they are made. The 50 ms tick, the
+  one-second pause tick and the 50 ms shutdown polls of the session-start
+  requests and of the mempool monitor are gone with it.
+- The scanner dispatches loads and scan tasks on the events the loader and
+  the workers send: a load ready, the loader idle, a worker's results. The
+  wallet write lock is taken on those events alone, where a timer took it
+  twenty times a second for the length of every session, idle or not.
 
 ### Deprecated
 
 ### Removed
+- `SyncMode::from_u8`, `SyncMode::from_atomic_u8`, `SyncMode::apply` and
+  `SyncMode::transition`, whose work `wallet::SyncModeHandle` does, and
+  `SyncModeError::InvalidSyncMode`, which a typed mode cannot produce.
 
 ### Fixed
+- The mempool stream request is held until the server answers it or the
+  session shuts down. A three-second tick dropped and reissued the pending
+  request, so an indexer that took longer to answer never served the
+  mempool stream and new blocks were noticed by the ten-second check alone.
 
 ## [0.7.0] - 2026-10-27
 

@@ -6454,6 +6454,7 @@ dependencies = [
  "subtle 2.6.1",
  "thiserror 2.0.19",
  "tokio",
+ "tokio-util",
  "tonic",
  "tracing",
  "zcash_address",

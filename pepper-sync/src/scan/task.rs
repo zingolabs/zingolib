@@ -1,17 +1,11 @@
 use std::{
-    borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicBool},
-    },
     time::Duration,
 };
 
-use futures::FutureExt;
 use tokio::{
-    sync::mpsc,
+    sync::{mpsc, watch},
     task::{JoinError, JoinHandle},
 };
 
@@ -41,6 +35,34 @@ const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
+/// The identity of one scan worker: the size of the pool at its spawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WorkerId(usize);
+
+/// Whether the loader or a worker holds a task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Activity {
+    Idle,
+    Busy,
+}
+
+/// The results of one load, sent by the worker that scanned it.
+pub(crate) struct WorkerResults {
+    pub(crate) worker: WorkerId,
+    pub(crate) load: ScanLoad,
+    pub(crate) results: Result<ScanResults, ScanError>,
+}
+
+/// An event the loader sends to the scanner.
+pub(crate) enum LoaderEvent {
+    /// A load is ready for a worker.
+    Load(Box<ScanTask>),
+    /// The loader's activity changed.
+    Idle,
+    /// The loader task has ended, with the error it ended on.
+    Exited(Result<(), ServerError>),
+}
+
 pub(crate) enum ScannerState {
     Verification,
     Scan,
@@ -65,11 +87,10 @@ pub(crate) struct Scanner<P> {
     pub(crate) state: ScannerState,
     loader: Option<Loader<P>>,
     pub(crate) workers: Vec<ScanWorker<P>>,
-    unique_id: usize,
     next_task_id: TaskId,
     in_flight_tasks: BTreeMap<TaskId, ScanRange>,
     load_order: LoadOrder,
-    scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
+    scan_results_sender: mpsc::UnboundedSender<WorkerResults>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: P,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -83,7 +104,7 @@ where
 {
     pub(crate) fn new(
         consensus_parameters: P,
-        scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
+        scan_results_sender: mpsc::UnboundedSender<WorkerResults>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
         transparent_gap_limit: u32,
@@ -94,7 +115,6 @@ where
             state: ScannerState::Verification,
             loader: None,
             workers,
-            unique_id: 0,
             next_task_id: TaskId::first(),
             in_flight_tasks: BTreeMap::new(),
             load_order: LoadOrder::default(),
@@ -173,16 +193,6 @@ where
         self.loader = Some(loader);
     }
 
-    fn check_loader_error(&mut self) -> Result<(), ServerError> {
-        let loader = self.loader.take();
-        if let Some(mut loader) = loader {
-            loader.check_error()?;
-            self.loader = Some(loader);
-        }
-
-        Ok(())
-    }
-
     pub(crate) async fn shutdown_loader(&mut self) -> Result<(), ServerError> {
         let loader = self.loader.take();
         if let Some(mut loader) = loader {
@@ -196,9 +206,10 @@ where
     ///
     /// When the worker is running it will wait for a scan task.
     pub(crate) fn spawn_worker(&mut self, max_outputs: usize) {
-        tracing::debug!("Spawning worker {}", self.unique_id);
+        let id = WorkerId(self.workers.len());
+        tracing::debug!("Spawning worker {id:?}");
         let mut worker = ScanWorker::new(
-            self.unique_id,
+            id,
             self.consensus_parameters.clone(),
             self.scan_results_sender.clone(),
             self.fetch_request_sender.clone(),
@@ -207,7 +218,6 @@ where
         );
         worker.run(max_outputs);
         self.workers.push(worker);
-        self.unique_id += 1;
     }
 
     /// Spawns the initial pool of workers.
@@ -219,18 +229,53 @@ where
         }
     }
 
-    pub(crate) fn idle_worker(&self) -> Option<&ScanWorker<P>> {
-        if let Some(idle_worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            Some(idle_worker)
-        } else {
-            None
+    /// Marks the worker of `worker_id` idle.
+    pub(crate) fn release_worker(&mut self, worker_id: WorkerId) {
+        if let Some(worker) = self
+            .workers
+            .iter_mut()
+            .find(|worker| worker.id == worker_id)
+        {
+            worker.activity = Activity::Idle;
         }
+    }
+
+    /// Returns whether the loader task runs.
+    pub(crate) fn loader_running(&self) -> bool {
+        self.loader
+            .as_ref()
+            .is_some_and(|loader| loader.handle.is_some())
+    }
+
+    /// Awaits the loader's next event. Never resolves when no loader task runs.
+    pub(crate) async fn loader_event(&mut self) -> LoaderEvent {
+        match self.loader.as_mut() {
+            Some(loader) => loader.event().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    /// Applies a loader event. Returns the error the loader ended on.
+    pub(crate) fn apply_loader_event(&mut self, event: LoaderEvent) -> Result<(), ServerError> {
+        match event {
+            LoaderEvent::Load(load) => {
+                let loader = self.loader.as_mut().expect("loader should be running");
+                debug_assert!(
+                    loader.load.is_none(),
+                    "a load is received into an empty slot"
+                );
+                loader.load = Some(*load);
+            }
+            LoaderEvent::Idle => (),
+            LoaderEvent::Exited(outcome) => outcome?,
+        }
+        Ok(())
     }
 
     /// Shutdown worker by `worker_id`.
     ///
     /// Panics if worker with given `worker_id` is not found.
-    pub(crate) async fn shutdown_worker(&mut self, worker_id: usize) {
+    pub(crate) async fn shutdown_worker(&mut self, worker_id: WorkerId) {
         let worker_index = self
             .workers
             .iter()
@@ -257,71 +302,65 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
-        self.check_loader_error()?;
+        loop {
+            match self.state {
+                ScannerState::Verification => {
+                    self.update_workers();
 
-        match self.state {
-            ScannerState::Verification => {
-                self.loader
-                    .as_mut()
-                    .expect("loader should be running")
-                    .update_load_store();
-                self.update_workers();
-
-                let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-                if !sync_state
-                    .scan_ranges()
-                    .iter()
-                    .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
-                {
-                    if sync_state
+                    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+                    if !sync_state
                         .scan_ranges()
                         .iter()
-                        .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
+                        .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
                     {
-                        // the last scan ranges with `Verify` priority are currently being scanned.
-                        return Ok(());
+                        if sync_state
+                            .scan_ranges()
+                            .iter()
+                            .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
+                        {
+                            // the last scan ranges with `Verify` priority are currently being scanned.
+                            return Ok(());
+                        }
+                        self.state.verified();
+                        continue;
                     }
-                    // verification complete
-                    self.state.verified();
-                    return Ok(());
+
+                    // scan ranges with `Verify` priority
+                    self.update_loader(wallet, nullifier_map_limit_exceeded)
+                        .map_err(SyncError::WalletError)?;
                 }
+                ScannerState::Scan => {
+                    self.update_workers();
+                    self.update_loader(wallet, nullifier_map_limit_exceeded)
+                        .map_err(SyncError::WalletError)?;
+                }
+                ScannerState::Complete => {}
+            }
 
-                // scan ranges with `Verify` priority
-                self.update_loader(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
-            }
-            ScannerState::Scan => {
-                self.loader
-                    .as_mut()
-                    .expect("loader should be running")
-                    .update_load_store();
-                self.update_workers();
-                self.update_loader(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
-            }
-            ScannerState::Complete => {}
+            return Ok(());
         }
-
-        Ok(())
     }
 
     fn update_workers(&mut self) {
-        let loader = self.loader.as_ref().expect("loader should be running");
+        let loader = self.loader.as_mut().expect("loader should be running");
         let scanning_workers = self
             .workers
             .iter()
-            .filter(|worker| worker.is_scanning())
+            .filter(|worker| worker.activity == Activity::Busy)
             .count();
         if loader.load.is_some()
             && load_admitted(scanning_workers, self.load_order.held())
-            && let Some(worker) = self.idle_worker()
+            && let Some(worker) = self
+                .workers
+                .iter_mut()
+                .find(|worker| worker.activity == Activity::Idle)
         {
-            let load = loader
-                .load
-                .clone()
-                .expect("load should exist in this closure");
-            worker.add_scan_task(load);
-            self.loader.as_mut().expect("loader should be running").load = None;
+            worker.add_scan_task(
+                loader
+                    .load
+                    .take()
+                    .expect("load should exist in this closure"),
+            );
         }
     }
 
@@ -334,7 +373,7 @@ where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
         let loader = self.loader.as_ref().expect("loader should be running");
-        if !loader.is_loading() {
+        if *loader.activity.borrow() == Activity::Idle {
             if let Some(scan_task) = sync::state::create_scan_task(
                 &self.consensus_parameters,
                 wallet,
@@ -375,7 +414,11 @@ where
 
 struct Loader<P> {
     handle: Option<JoinHandle<Result<(), ServerError>>>,
-    is_loading: Arc<AtomicBool>,
+    /// Busy from a scan task being given until its last load is sent.
+    activity: watch::Sender<Activity>,
+    /// Subscribed once, at construction.
+    activity_changes: watch::Receiver<Activity>,
+    /// A load received from the loader task and not yet given to a worker.
     load: Option<ScanTask>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
@@ -391,9 +434,11 @@ where
         consensus_parameters: P,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ) -> Self {
+        let activity = watch::Sender::new(Activity::Idle);
         Self {
             handle: None,
-            is_loading: Arc::new(AtomicBool::new(false)),
+            activity_changes: activity.subscribe(),
+            activity,
             load: None,
             consensus_parameters,
             scan_task_sender: None,
@@ -411,7 +456,7 @@ where
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_loading = self.is_loading.clone();
+        let activity = self.activity.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -638,10 +683,10 @@ where
 
                 let _ignore_error = load_sender.send(scan_task).await;
 
-                is_loading.store(false, atomic::Ordering::Release);
+                activity.send_replace(Activity::Idle);
             }
 
-            is_loading.store(false, atomic::Ordering::Release);
+            activity.send_replace(Activity::Idle);
 
             Ok(())
         });
@@ -651,44 +696,37 @@ where
         self.load_receiver = Some(load_receiver);
     }
 
-    fn is_loading(&self) -> bool {
-        self.is_loading.load(atomic::Ordering::Acquire)
-    }
-
     fn add_scan_task(&self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
-        self.scan_task_sender
+        self.activity.send_replace(Activity::Busy);
+        match self
+            .scan_task_sender
             .clone()
             .expect("loader should be running")
             .try_send(scan_task)
-            .expect("loader should never be sent multiple tasks at one time");
-        self.is_loading.store(true, atomic::Ordering::Release);
-    }
-
-    fn update_load_store(&mut self) {
-        let load_receiver = self
-            .load_receiver
-            .as_mut()
-            .expect("loader should be running");
-        if self.load.is_none() && !load_receiver.is_empty() {
-            self.load = Some(
-                load_receiver
-                    .try_recv()
-                    .expect("channel should be non-empty!"),
-            );
+        {
+            Ok(()) => (),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                panic!("loader should never be sent multiple tasks at one time")
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => (),
         }
     }
 
-    fn check_error(&mut self) -> Result<(), ServerError> {
-        if let Some(mut handle) = self.handle.take() {
-            if let Some(result) = handle.borrow_mut().now_or_never() {
-                result.expect("task panicked")?;
-            } else {
-                self.handle = Some(handle);
+    /// Awaits the next event of the loader task.
+    ///
+    /// A load is awaited while none is held. The idle event is sent once per change of the activity. The exit of the
+    /// loader task is awaited while it runs. Its handle is taken on exit.
+    async fn event(&mut self) -> LoaderEvent {
+        let awaiting_load = self.load.is_none();
+        tokio::select! {
+            Some(load) = receive(&mut self.load_receiver), if awaiting_load => LoaderEvent::Load(Box::new(load)),
+            Ok(()) = self.activity_changes.changed() => LoaderEvent::Idle,
+            exit = join(&mut self.handle) => {
+                self.handle = None;
+                LoaderEvent::Exited(exit.expect("task panicked"))
             }
         }
-
-        Ok(())
     }
 
     /// Shuts down loader by dropping the sender to the loader task and awaiting the handle.
@@ -703,10 +741,9 @@ where
             drop(receiver);
         }
 
-        let mut handle = self
-            .handle
-            .take()
-            .expect("loader should always have a handle to take!");
+        let Some(mut handle) = self.handle.take() else {
+            return Ok(());
+        };
 
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res.expect("task panicked")?,
@@ -718,6 +755,22 @@ where
         }
 
         Ok(())
+    }
+}
+
+/// Receives from `receiver`. Never resolves when there is none.
+async fn receive<T>(receiver: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+    match receiver {
+        Some(receiver) => receiver.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Joins `handle`. Never resolves when there is none.
+async fn join<T>(handle: &mut Option<JoinHandle<T>>) -> Result<T, JoinError> {
+    match handle {
+        Some(handle) => handle.await,
+        None => std::future::pending().await,
     }
 }
 
@@ -786,12 +839,13 @@ fn includes_blocks_above_floor(
 }
 
 pub(crate) struct ScanWorker<P> {
-    id: usize,
+    id: WorkerId,
     handle: Option<JoinHandle<()>>,
-    is_scanning: Arc<AtomicBool>,
+    /// Busy from a load being given until its results are received.
+    activity: Activity,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
-    scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
+    scan_results_sender: mpsc::UnboundedSender<WorkerResults>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
     transparent_gap_limit: u32,
@@ -802,9 +856,9 @@ where
     P: consensus::Parameters + Sync + Send + 'static,
 {
     fn new(
-        id: usize,
+        id: WorkerId,
         consensus_parameters: P,
-        scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
+        scan_results_sender: mpsc::UnboundedSender<WorkerResults>,
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
         transparent_gap_limit: u32,
@@ -812,7 +866,7 @@ where
         Self {
             id,
             handle: None,
-            is_scanning: Arc::new(AtomicBool::new(false)),
+            activity: Activity::Idle,
             consensus_parameters,
             scan_task_sender: None,
             scan_results_sender,
@@ -822,7 +876,7 @@ where
         }
     }
 
-    pub(crate) fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> WorkerId {
         self.id
     }
 
@@ -833,7 +887,7 @@ where
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_scanning = self.is_scanning.clone();
+        let worker = self.id;
         let scan_results_sender = self.scan_results_sender.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
@@ -848,7 +902,7 @@ where
                     chain_height: scan_task.chain_height,
                     highest_scanned_height: scan_task.highest_scanned_height,
                 };
-                let scan_results = scan(
+                let results = scan(
                     fetch_request_sender.clone(),
                     &consensus_parameters,
                     &ufvks,
@@ -857,30 +911,30 @@ where
                     transparent_gap_limit,
                 )
                 .await;
-                let _ignore_error = scan_results_sender.send((load, scan_results));
-
-                is_scanning.store(false, atomic::Ordering::Release);
+                let _ignore_error = scan_results_sender.send(WorkerResults {
+                    worker,
+                    load,
+                    results,
+                });
             }
-
-            is_scanning.store(false, atomic::Ordering::Release);
         });
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
     }
 
-    fn is_scanning(&self) -> bool {
-        self.is_scanning.load(atomic::Ordering::Acquire)
-    }
-
-    fn add_scan_task(&self, scan_task: ScanTask) {
-        tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+    fn add_scan_task(&mut self, scan_task: ScanTask) {
+        tracing::trace!(
+            "Adding scan task to worker {:?}:\n{:#?}",
+            self.id,
+            &scan_task
+        );
         self.scan_task_sender
             .clone()
             .expect("worker should be running")
             .try_send(scan_task)
             .expect("worker should never be sent multiple tasks at one time");
-        self.is_scanning.store(true, atomic::Ordering::Release);
+        self.activity = Activity::Busy;
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -888,7 +942,7 @@ where
     /// This should always be called in the context of the scanner as it must be also be removed from the worker pool
     /// (See `Scanner::shutdown_worker`).
     async fn shutdown(&mut self) -> Result<(), JoinError> {
-        tracing::debug!("Shutting down worker {}", self.id);
+        tracing::debug!("Shutting down worker {:?}", self.id);
         if let Some(sender) = self.scan_task_sender.take() {
             drop(sender);
         }

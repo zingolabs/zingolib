@@ -9,13 +9,12 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     ops::Range,
-    sync::atomic::{self, AtomicU8},
 };
 
 use incrementalmerkletree::Position;
 use orchard::tree::MerkleHashOrchard;
 use shardtree::{ShardTree, store::memory::MemoryShardStore};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use zcash_address::unified::ParseError;
 use zcash_keys::{address::UnifiedAddress, encoding::encode_payment_address};
 use zcash_primitives::{block::BlockHash, transaction::TxId};
@@ -33,7 +32,7 @@ use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::FetchRequest,
-    error::{ServerError, SyncModeError},
+    error::ServerError,
     keys::{self, KeyId, transparent::TransparentAddressId},
     scan::compact_blocks::calculate_block_tree_bounds,
     shardtree_ext::{CheckpointAppendOutcome, ShardTreeExt as _},
@@ -426,24 +425,6 @@ pub enum SyncMode {
 }
 
 impl SyncMode {
-    /// Constructor from u8.
-    ///
-    /// Returns `None` if `mode` is not a valid enum variant.
-    pub fn from_u8(mode: u8) -> Result<Self, SyncModeError> {
-        match mode {
-            0 => Ok(Self::NotRunning),
-            1 => Ok(Self::Paused),
-            2 => Ok(Self::Running),
-            3 => Ok(Self::Shutdown),
-            _ => Err(SyncModeError::InvalidSyncMode(mode)),
-        }
-    }
-
-    /// Reads the mode held in `atomic_sync_mode`, failing when the byte is no variant of this enum.
-    pub fn from_atomic_u8(atomic_sync_mode: &AtomicU8) -> Result<SyncMode, SyncModeError> {
-        SyncMode::from_u8(atomic_sync_mode.load(atomic::Ordering::Acquire))
-    }
-
     /// Returns the mode a completed scan leaves behind, which is `Shutdown` for a running engine and the same mode for every other.
     pub fn on_completion(self) -> Self {
         match self {
@@ -451,32 +432,56 @@ impl SyncMode {
             other => other,
         }
     }
+}
 
-    /// Replaces the mode held in `atomic_sync_mode` with `step` of it in one atomic exchange and returns the mode it replaced.
-    pub fn apply(
-        atomic_sync_mode: &AtomicU8,
-        step: impl Fn(Self) -> Self,
-    ) -> Result<Self, SyncModeError> {
-        atomic_sync_mode
-            .try_update(
-                atomic::Ordering::AcqRel,
-                atomic::Ordering::Acquire,
-                |mode| Self::from_u8(mode).ok().map(|mode| step(mode) as u8),
-            )
-            .map_err(SyncModeError::InvalidSyncMode)
-            .and_then(Self::from_u8)
+/// The sync mode shared between the sync engine and the consumer that launched it.
+///
+/// Every clone reads and writes the one mode. A write that changes the mode notifies every receiver of
+/// [`Self::subscribe`].
+#[derive(Clone, Debug)]
+pub struct SyncModeHandle(watch::Sender<SyncMode>);
+
+impl Default for SyncModeHandle {
+    fn default() -> Self {
+        Self::new(SyncMode::NotRunning)
+    }
+}
+
+impl SyncModeHandle {
+    /// Creates a handle holding `mode`.
+    pub fn new(mode: SyncMode) -> Self {
+        Self(watch::Sender::new(mode))
     }
 
-    /// Moves `atomic_sync_mode` from `from` to `to` when it holds `from` and returns the mode it held before.
-    pub fn transition(
-        atomic_sync_mode: &AtomicU8,
-        from: Self,
-        to: Self,
-    ) -> Result<Self, SyncModeError> {
-        Self::apply(
-            atomic_sync_mode,
-            |mode| if mode == from { to } else { mode },
-        )
+    /// Returns the mode held.
+    pub fn get(&self) -> SyncMode {
+        *self.0.borrow()
+    }
+
+    /// Replaces the mode held with `mode` and returns the mode it replaced.
+    pub fn set(&self, mode: SyncMode) -> SyncMode {
+        self.apply(|_replaced| mode)
+    }
+
+    /// Replaces the mode held with `step` of it in one exchange and returns the mode it replaced.
+    pub fn apply(&self, step: impl FnOnce(SyncMode) -> SyncMode) -> SyncMode {
+        let mut replaced = SyncMode::NotRunning;
+        self.0.send_if_modified(|mode| {
+            replaced = *mode;
+            *mode = step(replaced);
+            *mode != replaced
+        });
+        replaced
+    }
+
+    /// Moves the mode from `from` to `to` when it holds `from` and returns the mode it held before.
+    pub fn transition(&self, from: SyncMode, to: SyncMode) -> SyncMode {
+        self.apply(|mode| if mode == from { to } else { mode })
+    }
+
+    /// Returns a receiver whose [`watch::Receiver::changed`] resolves on the next change of mode after this call.
+    pub fn subscribe(&self) -> watch::Receiver<SyncMode> {
+        self.0.subscribe()
     }
 }
 
