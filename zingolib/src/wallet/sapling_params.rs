@@ -12,10 +12,23 @@ use zcash_protocol::{PoolType, ShieldedPool};
 
 // The published lengths and BLAKE2b digests of the Sapling MPC outputs, the
 // values `zcash_proofs` verifies against and keeps private.
-const SPEND_BYTES: usize = 47_958_396;
-const OUTPUT_BYTES: usize = 3_592_860;
-const SPEND_DIGEST: &str = "8270785a1a0d0bc77196f000ee6d221c9c9894f55307bd9357c3f0105d31ca63991ab91324160d8f53e2bbd3c2633a6eb8bdf5205d822e7f3f73edac51b2b70c";
-const OUTPUT_DIGEST: &str = "657e3d38dbb5cb5e7dd2970e8b03d69b4787dd907285b5a7f0790dcc8072f60bf593b32cc2d1c030e00ff5ae64bf84c5c3beb84ddc841d48264b4a171744d028";
+struct Published {
+    name: &'static str,
+    len: usize,
+    digest: &'static str,
+}
+const PUBLISHED: [Published; 2] = [
+    Published {
+        name: zcash_proofs::SAPLING_SPEND_NAME,
+        len: 47_958_396,
+        digest: "8270785a1a0d0bc77196f000ee6d221c9c9894f55307bd9357c3f0105d31ca63991ab91324160d8f53e2bbd3c2633a6eb8bdf5205d822e7f3f73edac51b2b70c",
+    },
+    Published {
+        name: zcash_proofs::SAPLING_OUTPUT_NAME,
+        len: 3_592_860,
+        digest: "657e3d38dbb5cb5e7dd2970e8b03d69b4787dd907285b5a7f0790dcc8072f60bf593b32cc2d1c030e00ff5ae64bf84c5c3beb84ddc841d48264b4a171744d028",
+    },
+];
 
 #[cfg(feature = "runtime-sapling-params")]
 static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
@@ -29,29 +42,22 @@ pub enum SaplingParamFile {
 impl SaplingParamFile {
     pub const ALL: [Self; 2] = [Self::Spend, Self::Output];
 
+    fn published(self) -> &'static Published {
+        &PUBLISHED[self as usize]
+    }
+
     #[must_use]
     pub fn file_name(self) -> &'static str {
-        match self {
-            Self::Spend => zcash_proofs::SAPLING_SPEND_NAME,
-            Self::Output => zcash_proofs::SAPLING_OUTPUT_NAME,
-        }
+        self.published().name
     }
 
     #[must_use]
     pub fn expected_len(self) -> usize {
-        match self {
-            Self::Spend => SPEND_BYTES,
-            Self::Output => OUTPUT_BYTES,
-        }
+        self.published().len
     }
 
-    fn expected_digest(self) -> &'static str {
-        match self {
-            Self::Spend => SPEND_DIGEST,
-            Self::Output => OUTPUT_DIGEST,
-        }
-    }
-
+    // `LocalTxProver::from_bytes` hashes the files again and panics on a
+    // mismatch. This check runs first so a bad file is reported instead.
     pub fn verify(self, bytes: &[u8]) -> Result<(), SaplingParamsError> {
         if bytes.len() != self.expected_len() {
             return Err(SaplingParamsError::Length {
@@ -59,7 +65,13 @@ impl SaplingParamFile {
                 found: bytes.len(),
             });
         }
-        if blake2b_simd::State::new().update(bytes).finalize().to_hex().as_str() != self.expected_digest() {
+        if blake2b_simd::State::new()
+            .update(bytes)
+            .finalize()
+            .to_hex()
+            .as_str()
+            != self.published().digest
+        {
             return Err(SaplingParamsError::Digest { file: self });
         }
         Ok(())
@@ -70,7 +82,10 @@ impl SaplingParamFile {
 #[derive(Debug, thiserror::Error)]
 pub enum SaplingParamsError {
     #[error("{} holds {found} bytes, not {}", .file.file_name(), .file.expected_len())]
-    Length { file: SaplingParamFile, found: usize },
+    Length {
+        file: SaplingParamFile,
+        found: usize,
+    },
     #[error("{} does not match its published BLAKE2b digest", .file.file_name())]
     Digest { file: SaplingParamFile },
     #[cfg(feature = "runtime-sapling-params")]
