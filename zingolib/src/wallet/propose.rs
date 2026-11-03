@@ -385,15 +385,29 @@ impl LightWallet {
         spend_horizon: BlockHeight,
         refetch_nullifier_ranges: &[std::ops::Range<BlockHeight>],
     ) -> bool {
-        note_height >= spend_horizon
-            && refetch_nullifier_ranges.iter().all(|refetch_range| {
-                self.sync_state.scan_ranges().iter().any(|scan_range| {
-                    scan_range.priority() == ScanPriority::Scanned
-                        && scan_range.block_range().contains(&refetch_range.start)
-                        && scan_range.block_range().contains(&(refetch_range.end - 1))
-                })
-            })
+        spends_confirmed(
+            note_height,
+            spend_horizon,
+            refetch_nullifier_ranges,
+            self.sync_state.scan_ranges(),
+        )
     }
+}
+
+pub(crate) fn spends_confirmed(
+    note_height: BlockHeight,
+    spend_horizon: BlockHeight,
+    refetch_nullifier_ranges: &[std::ops::Range<BlockHeight>],
+    scan_ranges: &[ScanRange],
+) -> bool {
+    note_height >= spend_horizon
+        && refetch_nullifier_ranges.iter().all(|refetch_range| {
+            scan_ranges.iter().any(|scan_range| {
+                scan_range.priority() == ScanPriority::Scanned
+                    && scan_range.block_range().contains(&refetch_range.start)
+                    && scan_range.block_range().contains(&(refetch_range.end - 1))
+            })
+        })
 }
 
 /// The amount of the first payment in a proposal's last step.

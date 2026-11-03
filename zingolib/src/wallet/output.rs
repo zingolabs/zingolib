@@ -2,8 +2,8 @@
 
 use std::collections::HashSet;
 
+use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::KeyIdInterface;
-use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
@@ -12,6 +12,7 @@ use zcash_protocol::consensus::BlockHeight;
 use super::LightWallet;
 use super::error::WalletError;
 use super::note_selection;
+use super::propose;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
@@ -237,13 +238,6 @@ impl LightWallet {
         }
     }
 
-    /// Returns all spendable notes of the specified shielded pool and `account` confirmed at or below `anchor_height`.
-    ///
-    /// Any notes with output IDs in `exclude` will not be returned.
-    /// Any notes without a nullifier or commitment tree position will not be returned.
-    /// Any notes that the wallet cannot construct a witness for with the current sync state will not be returned.
-    /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
-    /// cannot guarantee the notes are unspent.
     #[allow(clippy::result_large_err)]
     pub(crate) fn spendable_notes<'a, N: NoteInterface>(
         &'a self,
@@ -252,82 +246,72 @@ impl LightWallet {
         account: zip32::AccountId,
         include_potentially_spent_notes: bool,
     ) -> Result<Vec<&'a N>, WalletError> {
+        Ok(self
+            .judged_notes::<N>(anchor_height, exclude, account)?
+            .into_iter()
+            .filter(|judged| judged.verdict.admits(include_potentially_spent_notes))
+            .map(|judged| judged.note)
+            .collect())
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn judged_notes<'a, N: NoteInterface>(
+        &'a self,
+        anchor_height: BlockHeight,
+        exclude: &HashSet<OutputId>,
+        account: zip32::AccountId,
+    ) -> Result<Vec<Judged<'a, N>>, WalletError> {
         let Some(spend_horizon) = self.spend_horizon(false) else {
             return Err(WalletError::NoSyncData);
         };
-        if self
-            .shard_trees
-            .ironwood
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Ironwood,
-                height: anchor_height,
-            });
+        for shielded_protocol in [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ] {
+            if !self.checkpoint_is_retained(shielded_protocol, anchor_height) {
+                return Err(WalletError::CheckpointNotFound {
+                    shielded_protocol,
+                    height: anchor_height,
+                });
+            }
         }
-        if self
-            .shard_trees
-            .orchard
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Orchard,
-                height: anchor_height,
-            });
-        }
-        if self
-            .shard_trees
-            .sapling
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Sapling,
-                height: anchor_height,
-            });
-        }
-
+        let judgement = Judgement {
+            account,
+            exclude,
+            spend_horizon,
+            scan_ranges: self.sync_state.scan_ranges(),
+        };
+        let judgement = &judgement;
         Ok(self
             .wallet_transactions
             .values()
             .flat_map(|transaction| {
-                if transaction
-                    .status()
-                    .is_confirmed_before_or_at(&anchor_height)
-                {
-                    N::transaction_outputs(transaction)
-                        .iter()
-                        .filter(move |&note| {
-                            note.spending_transaction().is_none()
-                                && note.nullifier().is_some()
-                                && note.position().is_some()
-                                && self.can_build_witness::<N>(
-                                    transaction.status().get_height(),
-                                    anchor_height,
-                                )
-                                && !exclude.contains(&note.output_id())
-                                && note.key_id().account_id() == account
-                                && (include_potentially_spent_notes
-                                    || self.note_spends_confirmed(
-                                        transaction.status().get_height(),
-                                        spend_horizon,
-                                        note.refetch_nullifier_ranges(),
-                                    ))
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                }
+                let confirmation = self.confirmation::<N>(transaction, anchor_height);
+                N::transaction_outputs(transaction)
+                    .iter()
+                    .map(move |note| Judged {
+                        note,
+                        verdict: judgement.judge(note, confirmation),
+                    })
             })
             .collect())
+    }
+
+    pub(crate) fn confirmation<N: NoteInterface>(
+        &self,
+        transaction: &WalletTransaction,
+        anchor_height: BlockHeight,
+    ) -> Confirmation {
+        let status = transaction.status();
+        if !status.is_confirmed_before_or_at(&anchor_height) {
+            return Confirmation::Pending;
+        }
+        let height = status.get_height();
+        Confirmation::Anchored {
+            height,
+            witnessable: self.can_build_witness::<N>(height, anchor_height),
+        }
     }
 
     /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
@@ -403,20 +387,118 @@ impl LightWallet {
             .filter(|output_ref| output_ref.pool_type() == N::POOL_TYPE)
             .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
             .collect::<HashSet<_>>();
-        let certain = self
-            .spendable_notes::<N>(anchor_height, &exclude, account, false)?
-            .into_iter()
-            .map(N::output_id)
-            .collect::<HashSet<_>>();
         Ok(self
-            .spendable_notes::<N>(anchor_height, &exclude, account, true)?
+            .judged_notes::<N>(anchor_height, &exclude, account)?
             .into_iter()
-            .map(|note| note_selection::Candidate {
-                certain: certain.contains(&note.output_id()),
-                reserved: reserved.contains(&note.output_id()),
-                note: note.clone(),
+            .filter_map(|judged| {
+                judged
+                    .verdict
+                    .certainty()
+                    .map(|certain| note_selection::Candidate {
+                        certain,
+                        reserved: reserved.contains(&judged.note.output_id()),
+                        note: judged.note.clone(),
+                    })
             })
             .collect())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Confirmation {
+    Pending,
+    Anchored {
+        height: BlockHeight,
+        witnessable: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    Certain,
+    Uncertain,
+    Pending,
+    ForeignAccount,
+    Excluded,
+    Spent,
+    NoNullifier,
+    NoPosition,
+    NoWitness,
+}
+
+impl Verdict {
+    pub(crate) fn certainty(self) -> Option<bool> {
+        match self {
+            Verdict::Certain => Some(true),
+            Verdict::Uncertain => Some(false),
+            Verdict::Pending
+            | Verdict::ForeignAccount
+            | Verdict::Excluded
+            | Verdict::Spent
+            | Verdict::NoNullifier
+            | Verdict::NoPosition
+            | Verdict::NoWitness => None,
+        }
+    }
+
+    pub(crate) fn admits(self, include_potentially_spent_notes: bool) -> bool {
+        match self.certainty() {
+            Some(true) => true,
+            Some(false) => include_potentially_spent_notes,
+            None => false,
+        }
+    }
+}
+
+pub(crate) struct Judged<'a, N> {
+    pub(crate) note: &'a N,
+    pub(crate) verdict: Verdict,
+}
+
+pub(crate) struct Judgement<'a> {
+    pub(crate) account: zip32::AccountId,
+    pub(crate) exclude: &'a HashSet<OutputId>,
+    pub(crate) spend_horizon: BlockHeight,
+    pub(crate) scan_ranges: &'a [ScanRange],
+}
+
+impl Judgement<'_> {
+    pub(crate) fn judge<N: NoteInterface>(&self, note: &N, confirmation: Confirmation) -> Verdict {
+        let Confirmation::Anchored {
+            height,
+            witnessable,
+        } = confirmation
+        else {
+            return Verdict::Pending;
+        };
+        if note.key_id().account_id() != self.account {
+            return Verdict::ForeignAccount;
+        }
+        if self.exclude.contains(&note.output_id()) {
+            return Verdict::Excluded;
+        }
+        if note.spending_transaction().is_some() {
+            return Verdict::Spent;
+        }
+        if note.nullifier().is_none() {
+            return Verdict::NoNullifier;
+        }
+        if note.position().is_none() {
+            return Verdict::NoPosition;
+        }
+        if !witnessable {
+            return Verdict::NoWitness;
+        }
+        if propose::spends_confirmed(
+            height,
+            self.spend_horizon,
+            note.refetch_nullifier_ranges(),
+            self.scan_ranges,
+        ) {
+            Verdict::Certain
+        } else {
+            Verdict::Uncertain
+        }
     }
 }
 
@@ -595,3 +677,192 @@ pub mod tests {
     }
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeSet, HashSet};
+
+    use pepper_sync::wallet::OrchardNote;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+    const ANCHOR: BlockHeight = BlockHeight::from_u32(20);
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .orchard_note(100_000)
+            .orchard_note(5_000)
+            .build()
+    }
+
+    fn ids<'a>(notes: impl IntoIterator<Item = &'a OrchardNote>) -> BTreeSet<OutputId> {
+        notes.into_iter().map(OutputInterface::output_id).collect()
+    }
+
+    fn candidates(wallet: &LightWallet) -> Vec<note_selection::Candidate<OrchardNote>> {
+        wallet
+            .note_candidates(ANCHOR, ACCOUNT, &[], &HashSet::new())
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn spendable(wallet: &LightWallet, include_potentially_spent: bool) -> Vec<&OrchardNote> {
+        wallet
+            .spendable_notes::<OrchardNote>(
+                ANCHOR,
+                &HashSet::new(),
+                ACCOUNT,
+                include_potentially_spent,
+            )
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn mark_spent(wallet: &mut LightWallet, spent: OutputId) {
+        for transaction in wallet.wallet_transactions.values_mut() {
+            for note in transaction.orchard_notes_mut() {
+                if note.output_id() == spent {
+                    note.set_spending_transaction(Some(spent.txid()));
+                }
+            }
+        }
+    }
+
+    // Tests that the candidates are the lenient spendable walk and the certain ones are the strict walk.
+    #[test]
+    fn candidates_agree_with_the_spendable_walks() {
+        let wallet = funded_wallet();
+        let candidates = candidates(&wallet);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            ids(candidates.iter().map(|candidate| &candidate.note)),
+            ids(spendable(&wallet, true))
+        );
+        assert_eq!(
+            ids(candidates
+                .iter()
+                .filter(|candidate| candidate.certain)
+                .map(|candidate| &candidate.note)),
+            ids(spendable(&wallet, false))
+        );
+    }
+
+    // Tests that a spent note leaves both spendable walks and the candidates.
+    #[test]
+    fn a_spent_note_leaves_the_candidates() {
+        let mut wallet = funded_wallet();
+        let spent = spendable(&wallet, false)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .map(OutputInterface::output_id)
+            .expect("the funded wallet holds a 100_000 orchard note");
+        mark_spent(&mut wallet, spent);
+        assert_eq!(
+            ids(spendable(&wallet, true)),
+            ids(spendable(&wallet, false))
+        );
+        assert!(!ids(spendable(&wallet, true)).contains(&spent));
+        assert!(
+            candidates(&wallet)
+                .iter()
+                .all(|candidate| candidate.note.output_id() != spent)
+        );
+    }
+
+    fn a_note(wallet: &LightWallet) -> &OrchardNote {
+        spendable(wallet, false)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .expect("the funded wallet holds a 100_000 orchard note")
+    }
+
+    fn judgement<'a>(wallet: &'a LightWallet, exclude: &'a HashSet<OutputId>) -> Judgement<'a> {
+        Judgement {
+            account: ACCOUNT,
+            exclude,
+            spend_horizon: wallet
+                .spend_horizon(false)
+                .expect("the synthetic wallet is synced"),
+            scan_ranges: wallet.sync_state.scan_ranges(),
+        }
+    }
+
+    const ANCHORED: Confirmation = Confirmation::Anchored {
+        height: ANCHOR,
+        witnessable: true,
+    };
+
+    // Tests that the single walk judges every note of the pool, and that the funded wallet's notes are all certain.
+    #[test]
+    fn every_note_is_judged_and_the_funded_wallet_is_certain() {
+        let wallet = funded_wallet();
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, &HashSet::new(), ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        assert_eq!(judged.len(), 2);
+        assert!(
+            judged
+                .iter()
+                .all(|judged| judged.verdict == Verdict::Certain)
+        );
+    }
+
+    // Tests the pure judgement fact by fact: each fact it reads has a verdict of its own.
+    #[test]
+    fn judge_names_the_first_failing_fact() {
+        let wallet = funded_wallet();
+        let note = a_note(&wallet);
+        let none = HashSet::new();
+        assert_eq!(
+            judgement(&wallet, &none).judge(note, ANCHORED),
+            Verdict::Certain
+        );
+        assert_eq!(
+            judgement(&wallet, &none).judge(note, Confirmation::Pending),
+            Verdict::Pending
+        );
+        assert_eq!(
+            judgement(&wallet, &none).judge(
+                note,
+                Confirmation::Anchored {
+                    height: ANCHOR,
+                    witnessable: false,
+                }
+            ),
+            Verdict::NoWitness
+        );
+        let excluded = HashSet::from([note.output_id()]);
+        assert_eq!(
+            judgement(&wallet, &excluded).judge(note, ANCHORED),
+            Verdict::Excluded
+        );
+        let foreign = Judgement {
+            account: zip32::AccountId::try_from(1).expect("1 is a valid account id"),
+            ..judgement(&wallet, &none)
+        };
+        assert_eq!(foreign.judge(note, ANCHORED), Verdict::ForeignAccount);
+        let unscanned = Judgement {
+            spend_horizon: ANCHOR + 1,
+            scan_ranges: &[],
+            ..judgement(&wallet, &none)
+        };
+        assert_eq!(unscanned.judge(note, ANCHORED), Verdict::Uncertain);
+    }
+
+    // Tests that a spent note is judged spent rather than dropped from the walk.
+    #[test]
+    fn a_spent_note_is_judged_spent() {
+        let mut wallet = funded_wallet();
+        let spent = a_note(&wallet).output_id();
+        mark_spent(&mut wallet, spent);
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, &HashSet::new(), ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        let verdict = judged
+            .iter()
+            .find(|judged| judged.note.output_id() == spent)
+            .map(|judged| judged.verdict);
+        assert_eq!(verdict, Some(Verdict::Spent));
+    }
+}
