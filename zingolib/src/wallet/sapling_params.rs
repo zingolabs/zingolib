@@ -152,13 +152,29 @@ pub fn set_directory(directory: PathBuf) -> Result<(), SaplingParamsError> {
 }
 
 /// - Reads both parameter files from the set directory.
+/// - Under `testutils`, sets the directory to the build's parameter cache
+///   when none is set.
 #[cfg(feature = "runtime-sapling-params")]
 pub(crate) fn load() -> Result<SaplingParamBytes, SaplingParamsError> {
+    #[cfg(feature = "testutils")]
+    default_to_cache();
     let directory = DIRECTORY.get().ok_or(SaplingParamsError::NoDirectory)?;
     Ok(SaplingParamBytes {
         spend: Cow::Owned(read(directory, SaplingParamFile::Spend)?),
         output: Cow::Owned(read(directory, SaplingParamFile::Output)?),
     })
+}
+
+// The suite proves Sapling from the files the default build downloads into
+// the cache, so a test binary under the feature names no directory of its
+// own. A directory set first, by a test or another thread, stands.
+/// - Sets the process-wide directory to the build's parameter cache when
+///   none is set.
+#[cfg(all(feature = "runtime-sapling-params", feature = "testutils"))]
+fn default_to_cache() {
+    if let Ok(cache) = crate::wallet::utils::get_zcash_params_path() {
+        let _ = DIRECTORY.set(cache);
+    }
 }
 
 /// - Reads `file` from `directory`.
@@ -188,22 +204,36 @@ mod tests {
             .expect("the embedded output parameters are the published file");
     }
 
-    /// HYPOTHESIS: the directory is set once, a repeat naming it is
-    /// accepted, and a read from it reports the missing file by path.
-    /// Falsified if another directory replaces it or the read succeeds.
+    /// HYPOTHESIS: the directory is set once: the build's parameter cache
+    /// is accepted, a repeat naming it is accepted, and another directory
+    /// is refused. Falsified if the cache or the repeat is refused, or the
+    /// other directory replaces it.
     #[cfg(feature = "runtime-sapling-params")]
     #[test]
     fn directory_is_set_once() {
-        const EMPTY_DIRECTORY: &str = "zingolib-sapling-params-unpopulated";
         const OTHER_DIRECTORY: &str = "zingolib-sapling-params-other";
-        let directory = std::env::temp_dir().join(EMPTY_DIRECTORY);
-        set_directory(directory.clone()).expect("no other test sets the directory");
-        set_directory(directory).expect("a repeat names the same directory");
+        let cache = crate::wallet::utils::get_zcash_params_path()
+            .expect("the parameter cache resolves under a home directory");
+        set_directory(cache.clone()).expect("every test names the parameter cache");
+        set_directory(cache).expect("a repeat names the same directory");
         assert!(matches!(
             set_directory(std::env::temp_dir().join(OTHER_DIRECTORY)),
             Err(SaplingParamsError::DirectorySet(_))
         ));
-        assert!(matches!(load(), Err(SaplingParamsError::Read { .. })));
+    }
+
+    /// HYPOTHESIS: a file absent from the directory is reported by its
+    /// path. Falsified if the read succeeds or blames the content.
+    #[cfg(feature = "runtime-sapling-params")]
+    #[test]
+    fn absent_file_is_reported_by_path() {
+        const EMPTY_DIRECTORY: &str = "zingolib-sapling-params-unpopulated";
+        let directory = std::env::temp_dir().join(EMPTY_DIRECTORY);
+        let path = directory.join(SaplingParamFile::Spend.file_name());
+        assert!(matches!(
+            read(&directory, SaplingParamFile::Spend),
+            Err(SaplingParamsError::Read { path: reported, .. }) if reported == path
+        ));
     }
 
     /// HYPOTHESIS: a file one byte short of the published length is refused
