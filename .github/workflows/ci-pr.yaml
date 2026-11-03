@@ -421,3 +421,23 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+  # The `runtime-sapling-params` feature of zingolib reads the Sapling
+  # parameters from a directory at run time in place of the embedded
+  # bytes. cargo-hack compiles the tests gated on it in every feature
+  # subset and runs none of them, so this suite runs zingolib's lib tests
+  # with the feature on, the parameters placed in each shard's cache by
+  # test.yaml. zingolib is the only crate that takes the feature, and its
+  # lib suite alone fills four shards.
+  test-runtime-sapling-params:
+    needs: ensure-image
+    uses: ./.github/workflows/test.yaml
+    with:
+      suite: runtime-sapling-params
+      archive-args: --package zingolib --features runtime-sapling-params --lib
+      sapling-params: true
+      partitions: "[1, 2, 3, 4]"
+      image-tag: ${{ needs.ensure-image.outputs.image-tag }}
+    permissions:
+      contents: read
+      packages: write
