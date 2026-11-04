@@ -122,6 +122,42 @@ fn root_bytes(wire_root: &str, field: &str, round_id: &str) -> Result<Vec<u8>, V
     Ok(bytes)
 }
 
+/// One bounded GET over the direct route, returning the response body on
+/// 2xx and a [`VotingFailure::VoteServer`] otherwise; every config/round
+/// reader goes through this so transport policy lives in one place.
+async fn fetch_json_bytes(route: &DirectRoute, url: &str) -> Result<Vec<u8>, VotingFailure> {
+    let request = RouteRequest {
+        method: http::Method::GET,
+        url,
+        headers: &[],
+        body: Vec::new(),
+        timeout: ROUNDS_FETCH_TIMEOUT,
+        connect_timeout: None,
+        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
+    };
+    let on_dispatch = || {};
+    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
+        .await
+        .map_err(|error| VotingFailure::VoteServer(error.message))?;
+    if !(200..300).contains(&response.status) {
+        return Err(VotingFailure::VoteServer(format!(
+            "{} returned HTTP {}",
+            url, response.status
+        )));
+    }
+    Ok(response.body)
+}
+
+/// Bounded GET plus parse: the one plumbing shape every round reader
+/// shares, so only the URL and the parser differ at call sites.
+async fn fetch_and_parse<T, P>(route: &DirectRoute, url: &str, parse: P) -> Result<T, VotingFailure>
+where
+    P: FnOnce(&[u8]) -> Result<T, VotingFailure>,
+{
+    let bytes = fetch_json_bytes(route, url).await?;
+    parse(&bytes)
+}
+
 fn parse_rounds(bytes: &[u8]) -> Result<Vec<ServerRound>, VotingFailure> {
     let wire: WireRounds = serde_json::from_slice(bytes)
         .map_err(|error| VotingFailure::VoteServer(format!("rounds decode failed: {error}")))?;
@@ -183,26 +219,8 @@ pub async fn fetch_rounds(
 ) -> Result<Vec<ServerRound>, VotingFailure> {
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/shielded-vote/v1/rounds");
-    let request = RouteRequest {
-        method: http::Method::GET,
-        url: &url,
-        headers: &[],
-        body: Vec::new(),
-        timeout: ROUNDS_FETCH_TIMEOUT,
-        connect_timeout: None,
-        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
-    };
-    let on_dispatch = || {};
-    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
-        .await
-        .map_err(|error| VotingFailure::VoteServer(error.message))?;
-    if !(200..300).contains(&response.status) {
-        return Err(VotingFailure::VoteServer(format!(
-            "rounds fetch returned HTTP {}",
-            response.status
-        )));
-    }
-    parse_rounds(&response.body)
+    let bytes = fetch_json_bytes(route, &url).await?;
+    parse_rounds(&bytes)
 }
 
 /// Authenticates one open round against the resolved config.
@@ -322,77 +340,6 @@ mod tests {
     }
 }
 
-/// One `(proposal, decision)` aggregate from the chain's finalized tally.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TallyRow {
-    pub proposal_id: u32,
-    /// Absent in the wire body when the decision is 0.
-    pub decision: u32,
-    /// Aggregate voting weight in zatoshi.
-    pub total_value_zatoshi: u64,
-}
-
-/// Fetches a finalized round's tally from a vote server.
-///
-/// # Errors
-///
-/// [`VotingFailure::VoteServer`] on transport, HTTP, or parse failures; the
-/// chain only serves tallies after the round reaches `FINALIZED`.
-pub async fn tally_results(
-    route: &DirectRoute,
-    base_url: &str,
-    round_id: &str,
-) -> Result<Vec<TallyRow>, VotingFailure> {
-    let base = base_url.trim_end_matches('/');
-    let url = format!("{base}/shielded-vote/v1/tally-results/{round_id}");
-    let request = RouteRequest {
-        method: http::Method::GET,
-        url: &url,
-        headers: &[],
-        body: Vec::new(),
-        timeout: ROUNDS_FETCH_TIMEOUT,
-        connect_timeout: None,
-        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
-    };
-    let on_dispatch = || {};
-    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
-        .await
-        .map_err(|error| VotingFailure::VoteServer(error.message))?;
-    if !(200..300).contains(&response.status) {
-        return Err(VotingFailure::VoteServer(format!(
-            "tally fetch returned HTTP {}",
-            response.status
-        )));
-    }
-    parse_tally(&response.body)
-}
-
-fn parse_tally(body: &[u8]) -> Result<Vec<TallyRow>, VotingFailure> {
-    #[derive(serde::Deserialize)]
-    struct WireTally {
-        #[serde(default)]
-        results: Vec<WireTallyRow>,
-    }
-    #[derive(serde::Deserialize)]
-    struct WireTallyRow {
-        proposal_id: u32,
-        #[serde(default)]
-        vote_decision: Option<u32>,
-        total_value: u64,
-    }
-    let wire: WireTally = serde_json::from_slice(body)
-        .map_err(|error| VotingFailure::VoteServer(format!("tally parse failed: {error}")))?;
-    Ok(wire
-        .results
-        .into_iter()
-        .map(|row| TallyRow {
-            proposal_id: row.proposal_id,
-            decision: row.vote_decision.unwrap_or(0),
-            total_value_zatoshi: row.total_value,
-        })
-        .collect())
-}
-
 /// One question of a finalized round: its title and the finalized weight
 /// of every option, converted to zatoshi.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -422,26 +369,7 @@ pub async fn vote_summary(
 ) -> Result<Vec<ProposalTally>, VotingFailure> {
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/shielded-vote/v1/vote-summary/{round_id}");
-    let request = RouteRequest {
-        method: http::Method::GET,
-        url: &url,
-        headers: &[],
-        body: Vec::new(),
-        timeout: ROUNDS_FETCH_TIMEOUT,
-        connect_timeout: None,
-        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
-    };
-    let on_dispatch = || {};
-    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
-        .await
-        .map_err(|error| VotingFailure::VoteServer(error.message))?;
-    if !(200..300).contains(&response.status) {
-        return Err(VotingFailure::VoteServer(format!(
-            "vote-summary fetch returned HTTP {}",
-            response.status
-        )));
-    }
-    parse_vote_summary(&response.body)
+    fetch_and_parse(route, &url, parse_vote_summary).await
 }
 
 fn parse_vote_summary(body: &[u8]) -> Result<Vec<ProposalTally>, VotingFailure> {
@@ -498,33 +426,20 @@ pub async fn endorsed_round_ids(
 ) -> Result<Option<Vec<String>>, VotingFailure> {
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/shielded-vote/v1/endorsed-rounds/{endorser_id}");
-    let request = RouteRequest {
-        method: http::Method::GET,
-        url: &url,
-        headers: &[],
-        body: Vec::new(),
-        timeout: ROUNDS_FETCH_TIMEOUT,
-        connect_timeout: None,
-        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
+    let bytes = match fetch_json_bytes(route, &url).await {
+        Ok(bytes) => bytes,
+        Err(VotingFailure::VoteServer(message))
+            if message.contains("HTTP 400") || message.contains("HTTP 404") =>
+        {
+            return Ok(None);
+        }
+        Err(other) => return Err(other),
     };
-    let on_dispatch = || {};
-    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
-        .await
-        .map_err(|error| VotingFailure::VoteServer(error.message))?;
-    if response.status == 400 || response.status == 404 {
-        return Ok(None);
-    }
-    if !(200..300).contains(&response.status) {
-        return Err(VotingFailure::VoteServer(format!(
-            "endorsed-rounds fetch returned HTTP {}",
-            response.status
-        )));
-    }
     #[derive(serde::Deserialize)]
     struct WireEndorsed {
         vote_round_ids: Vec<String>,
     }
-    let wire: WireEndorsed = serde_json::from_slice(&response.body).map_err(|error| {
+    let wire: WireEndorsed = serde_json::from_slice(&bytes).map_err(|error| {
         VotingFailure::VoteServer(format!("endorsed-rounds parse failed: {error}"))
     })?;
     let ids = wire
@@ -540,25 +455,7 @@ pub async fn endorsed_round_ids(
 pub async fn endorsers(route: &DirectRoute, base_url: &str) -> Result<Vec<String>, VotingFailure> {
     let base = base_url.trim_end_matches('/');
     let url = format!("{base}/shielded-vote/v1/endorsers");
-    let request = RouteRequest {
-        method: http::Method::GET,
-        url: &url,
-        headers: &[],
-        body: Vec::new(),
-        timeout: ROUNDS_FETCH_TIMEOUT,
-        connect_timeout: None,
-        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
-    };
-    let on_dispatch = || {};
-    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
-        .await
-        .map_err(|error| VotingFailure::VoteServer(error.message))?;
-    if !(200..300).contains(&response.status) {
-        return Err(VotingFailure::VoteServer(format!(
-            "endorsers fetch returned HTTP {}",
-            response.status
-        )));
-    }
+    let bytes = fetch_json_bytes(route, &url).await?;
     #[derive(serde::Deserialize)]
     struct WireEndorser {
         endorser_id: String,
@@ -568,7 +465,7 @@ pub async fn endorsers(route: &DirectRoute, base_url: &str) -> Result<Vec<String
         #[serde(default)]
         endorsers: Vec<WireEndorser>,
     }
-    let wire: WireEndorsers = serde_json::from_slice(&response.body)
+    let wire: WireEndorsers = serde_json::from_slice(&bytes)
         .map_err(|error| VotingFailure::VoteServer(format!("endorsers parse failed: {error}")))?;
     Ok(wire.endorsers.into_iter().map(|e| e.endorser_id).collect())
 }

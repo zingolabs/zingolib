@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use zingolib_voting::{
     DirectRoute, STAGING_STATIC_VOTING_CONFIG_SOURCE, VotingFailure, VotingSessionConfig,
-    authenticate_round, fetch_rounds, resolve_voting_config,
+    authenticate_round, fetch_rounds, now_seconds, resolve_voting_config,
 };
 
 /// Reads back the authenticated open round, or `None` when staging is
@@ -58,13 +58,6 @@ async fn staging_round() -> Option<zingolib_voting::ActiveVotingRound> {
     }
     eprintln!("skip: no staging vote server answered");
     None
-}
-
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or_default()
 }
 
 #[tokio::test]

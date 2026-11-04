@@ -174,17 +174,17 @@ pub struct ActiveRoundSummary {
     pub bundle_count: u32,
 }
 
-fn now_seconds() -> u64 {
+pub fn now_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or_default()
+        .map_or(0, |since| since.as_secs())
 }
 
 impl ArmedVotingSession {
     /// The round this session drives.
     pub fn round_id(&self) -> &str {
-        &self.round.round_id
+        let ArmedVotingSession { round, .. } = self;
+        round.round_id.as_str()
     }
 
     /// A handle to the session's event channel.
@@ -480,6 +480,14 @@ fn sign_request(
     }
 }
 
+/// An `InvalidInput` SDK failure with a lazily built message; the one
+/// constructor all call sites share.
+fn invalid_input(message: impl std::fmt::Display) -> VotingFailure {
+    VotingFailure::Sdk(VotingError::InvalidInput {
+        message: message.to_string(),
+    })
+}
+
 /// The session's snapshot witness rows, by tree position.
 fn witness_for_position(
     witnesses: &[WitnessData],
@@ -741,9 +749,7 @@ fn witness_and_draft(
         .find(|proposal| proposal.id == proposal_id)
         .map(|proposal| proposal.num_options)
         .ok_or_else(|| {
-            VotingFailure::Sdk(VotingError::InvalidInput {
-                message: format!("proposal {proposal_id} is not on the round roster"),
-            })
+            invalid_input(format!("proposal {proposal_id} is not on the round roster"))
         })?;
     let draft = DraftVote {
         proposal_id,
@@ -886,11 +892,9 @@ async fn deliver_shares(
         .confirmed(&session.db)
         .map_err(VotingFailure::Sdk)?
         .ok_or_else(|| {
-            VotingFailure::Sdk(VotingError::InvalidInput {
-                message: format!(
-                    "vote for proposal {proposal_id} is not confirmed; shares wait for confirmation"
-                ),
-            })
+            invalid_input(format!(
+                "vote for proposal {proposal_id} is not confirmed; shares wait for confirmation"
+            ))
         })?;
     let report = confirmed
         .submit_prepared_shares(
@@ -1169,9 +1173,7 @@ pub struct PastBallot {
 pub fn past_ballots(db: &VotingDb) -> Result<Vec<PastBallot>, VotingFailure> {
     let mut ballots = Vec::new();
     for round in db.list_rounds().map_err(VotingFailure::from)? {
-        let votes = db
-            .get_votes(&round.round_id)
-            .unwrap_or_default();
+        let votes = db.get_votes(&round.round_id).unwrap_or_default();
         ballots.push(PastBallot {
             round_id: round.round_id,
             snapshot_height: round.snapshot_height,

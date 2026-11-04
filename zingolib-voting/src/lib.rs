@@ -29,7 +29,7 @@ pub use journal::BallotDecision;
 pub use session::{
     ActiveRoundSummary, ArmedVotingSession, PastBallot, VotingResults, VotingRoundOutcome,
     VotingSessionConfig, VotingSnapshot, arm_session, cast_ballot, list_network_rounds,
-    past_ballots, resolve_active_round, voting_results,
+    now_seconds, past_ballots, resolve_active_round, voting_results,
 };
 pub use vote_server::{
     ActiveVotingRound, ProposalTally, ServerProposal, ServerRound, authenticate_round,
