@@ -149,25 +149,27 @@ impl LightClient {
         Ok(rounds)
     }
 
-    /// A finalized round's network tally: aggregate zatoshi per
-    /// `(proposal, decision)`. Tries the config's vote servers in order.
+    /// A finalized round's question tallies: per-question title and the
+    /// finalized weight of every option, converted to zatoshi. Tries the
+    /// config's vote servers in order.
     pub async fn tally_results(
         &self,
         round_id: &str,
-    ) -> Result<Vec<zingolib_voting::TallyRow>, LightClientError> {
+    ) -> Result<Vec<zingolib_voting::ProposalTally>, LightClientError> {
         let config = self.voting_config()?;
         let route = zingolib_voting::DirectRoute::default();
-        let resolved =
-            zingolib_voting::resolve_voting_config(&route, &config.static_config_source).await?;
+        let resolved = zingolib_voting::resolve_voting_config(&route, &config.static_config_source).await?;
         let mut last_error = None;
         for server in &resolved.vote_servers {
-            match zingolib_voting::tally_results(&route, &server.url, round_id).await {
+            match zingolib_voting::vote_summary(&route, &server.url, round_id).await {
                 Ok(tallies) => return Ok(tallies),
                 Err(error) => last_error = Some(error),
             }
         }
         Err(LightClientError::Voting(last_error.unwrap_or(
-            zingolib_voting::VotingFailure::VoteServer("no vote servers configured".to_string()),
+            zingolib_voting::VotingFailure::VoteServer(
+                "no vote servers configured".to_string(),
+            ),
         )))
     }
 

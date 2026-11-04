@@ -32,8 +32,8 @@ pub use session::{
     past_ballots, resolve_active_round, voting_results,
 };
 pub use vote_server::{
-    ActiveVotingRound, ServerProposal, ServerRound, TallyRow, authenticate_round,
-    endorsed_round_ids, fetch_rounds, tally_results,
+    ActiveVotingRound, ProposalTally, ServerProposal, ServerRound, authenticate_round,
+    endorsed_round_ids, fetch_rounds, vote_summary,
 };
 pub use zcash_voting::DirectRoute;
 pub use zcash_voting::note_bundling::{

@@ -393,6 +393,103 @@ fn parse_tally(body: &[u8]) -> Result<Vec<TallyRow>, VotingFailure> {
         .collect())
 }
 
+/// One question of a finalized round: its title and the finalized weight
+/// of every option, converted to zatoshi.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProposalTally {
+    pub proposal_id: u32,
+    pub title: String,
+    /// (option label, weight in zatoshi), in the chain's option order.
+    pub options: Vec<(String, u64)>,
+}
+
+/// Fetches a finalized round's summary: per-question weights, with the
+/// question titles and option labels the chain stores.
+///
+/// The chain's `total_value` is denominated in 0.125-ZEC quanta, not
+/// zatoshi: the community recount of CDRGP Q3 (openzcash.org
+/// `coinholder_verify.py`, "units of 0.125 ZEC", str4d's 1,140,324.875
+/// non-abstaining figure) divides by 8, so zatoshi = value * 12_500_000.
+/// The `tally-results` gitbook page claiming zatoshi is wrong.
+///
+/// # Errors
+///
+/// [`VotingFailure::VoteServer`] on transport, HTTP, or parse failures.
+pub async fn vote_summary(
+    route: &DirectRoute,
+    base_url: &str,
+    round_id: &str,
+) -> Result<Vec<ProposalTally>, VotingFailure> {
+    let base = base_url.trim_end_matches('/');
+    let url = format!("{base}/shielded-vote/v1/vote-summary/{round_id}");
+    let request = RouteRequest {
+        method: http::Method::GET,
+        url: &url,
+        headers: &[],
+        body: Vec::new(),
+        timeout: ROUNDS_FETCH_TIMEOUT,
+        connect_timeout: None,
+        max_response_bytes: MAX_ROUNDS_RESPONSE_BYTES,
+    };
+    let on_dispatch = || {};
+    let response: RouteResponse = RouteHttp::execute(route, request, &on_dispatch)
+        .await
+        .map_err(|error| VotingFailure::VoteServer(error.message))?;
+    if !(200..300).contains(&response.status) {
+        return Err(VotingFailure::VoteServer(format!(
+            "vote-summary fetch returned HTTP {}",
+            response.status
+        )));
+    }
+    parse_vote_summary(&response.body)
+}
+
+fn parse_vote_summary(body: &[u8]) -> Result<Vec<ProposalTally>, VotingFailure> {
+    #[derive(serde::Deserialize)]
+    struct WireOption {
+        #[serde(default)]
+        label: String,
+        #[serde(default)]
+        total_value: u64,
+    }
+    #[derive(serde::Deserialize)]
+    struct WireProposal {
+        id: u32,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        options: Vec<WireOption>,
+    }
+    #[derive(serde::Deserialize)]
+    struct WireSummary {
+        #[serde(default)]
+        proposals: Vec<WireProposal>,
+    }
+    let wire: WireSummary = serde_json::from_slice(body).map_err(|error| {
+        VotingFailure::VoteServer(format!("vote-summary parse failed: {error}"))
+    })?;
+    Ok(wire
+        .proposals
+        .into_iter()
+        .map(|proposal| ProposalTally {
+            proposal_id: proposal.id,
+            title: proposal.title,
+            options: proposal
+                .options
+                .into_iter()
+                .map(|option| {
+                    (
+                        option.label,
+                        option
+                            .total_value
+                            .saturating_mul(12_500_000), // 0.125 ZEC -> zatoshi
+                    )
+                })
+                .collect(),
+        })
+        .collect())
+}
+
 /// The round ids a wallet vendor has endorsed on the vote chain: the
 /// vendor's curation list. `None` means the chain has no such endorser
 /// configured (HTTP 400/404), which callers treat as "show everything".
