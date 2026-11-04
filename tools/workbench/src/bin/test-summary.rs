@@ -18,7 +18,8 @@
 #![forbid(unsafe_code)]
 
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+
+use workbench::cargo_make;
 
 /// Whether `arg` is a cargo package-selection flag. Mirrors the
 /// `has_package_selection_args` case list in Makefile.toml's base-script.
@@ -33,7 +34,7 @@ fn is_package_selection_arg(arg: &str) -> bool {
 
 /// The phases, in order: the hermetic package tests first, then the live
 /// suites from fastest to slowest. Each entry is (display label, the
-/// `makers test` invocation that selects the phase's TESTS).
+/// `makers test` arguments that select the phase's TESTS).
 ///
 /// Phases select tests with nextest filtersets, never with cargo package
 /// selections. Every phase then shares the front door's `--workspace`
@@ -41,9 +42,9 @@ fn is_package_selection_arg(arg: &str) -> bool {
 /// hierarchy run after the first recompiles nothing. A `-p` phase scope
 /// re-unifies features per selection and compiles (then, after any source
 /// change, recompiles) a distinct variant of zingolib per phase.
-const PHASES: &[(&str, &str)] = &[
-    ("packages", "packages"),
-    ("zingo-cli", "-E 'package(zingo-cli)'"),
+const PHASES: &[(&str, &[&str])] = &[
+    ("packages", &["packages"]),
+    ("zingo-cli", &["-E", "package(zingo-cli)"]),
 ];
 
 /// One nextest run's tallies, zero where the summary line was absent.
@@ -80,30 +81,26 @@ impl Summary {
 /// Run one phase through the `makers test` front door, streaming its combined
 /// output to our stdout while capturing it for parsing. Returns
 /// (exit_code, captured_output).
-fn run_phase(invocation: &str, forwarded_args: &[String]) -> Result<(i32, String), std::io::Error> {
-    // `bash -c '... 2>&1'` merges stderr into stdout so the single captured
+fn run_phase(
+    selection: &[&str],
+    forwarded_args: &[String],
+) -> Result<(i32, String), std::io::Error> {
+    // One pipe takes both of the child's streams, so the single captured
     // stream carries the nextest summary line wherever nextest emits it.
-    let mut shell_command = format!("makers test {invocation}");
-    for arg in forwarded_args {
-        shell_command.push(' ');
-        // Forwarded nextest args are simple flags and filter expressions;
-        // single-quote them so filter syntax survives the shell.
-        shell_command.push_str(&format!("'{}'", arg.replace('\'', r"'\''")));
-    }
-    shell_command.push_str(" 2>&1");
+    let (reader, writer) = std::io::pipe()?;
+    let mut command = cargo_make("test");
+    command
+        .args(selection)
+        .args(forwarded_args)
+        .stdout(writer.try_clone()?)
+        .stderr(writer);
+    let mut child = command.spawn()?;
+    // The command holds the parent's ends of the pipe, and the reader sees
+    // no end of file until they close.
+    drop(command);
 
-    let mut child = Command::new("bash")
-        .arg("-c")
-        .arg(shell_command)
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| std::io::Error::other("the child's stdout was not piped"))?;
     let mut captured = String::new();
-    for line in BufReader::new(stdout).lines() {
+    for line in BufReader::new(reader).lines() {
         let line = line?;
         println!("{line}");
         captured.push_str(&line);
@@ -247,13 +244,13 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut results = Vec::new();
     let mut failed = false;
-    for (phase, invocation) in PHASES {
+    for (phase, selection) in PHASES {
         if failed {
             results.push((*phase, None));
             continue;
         }
         println!(">>> test-summary: running the {phase} phase");
-        let (exit_code, log) = run_phase(invocation, &forwarded_args)?;
+        let (exit_code, log) = run_phase(selection, &forwarded_args)?;
         if exit_code != 0 {
             failed = true;
         }
@@ -357,12 +354,11 @@ mod package_selection_guard {
     /// build scope.
     #[test]
     fn phase_invocations_select_tests_not_packages() {
-        for (_, invocation) in PHASES.iter() {
-            for token in invocation.split_whitespace() {
-                let token = token.trim_matches('\'');
+        for (_, selection) in PHASES.iter() {
+            for arg in selection.iter() {
                 assert!(
-                    !is_package_selection_arg(token),
-                    "phase invocation {invocation:?} carries package-selection arg {token:?}"
+                    !is_package_selection_arg(arg),
+                    "phase selection {selection:?} carries package-selection arg {arg:?}"
                 );
             }
         }
