@@ -480,9 +480,7 @@ fn parse_vote_summary(body: &[u8]) -> Result<Vec<ProposalTally>, VotingFailure> 
                 .map(|option| {
                     (
                         option.label,
-                        option
-                            .total_value
-                            .saturating_mul(12_500_000), // 0.125 ZEC -> zatoshi
+                        option.total_value.saturating_mul(12_500_000), // 0.125 ZEC -> zatoshi
                     )
                 })
                 .collect(),

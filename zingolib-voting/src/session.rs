@@ -481,10 +481,10 @@ fn sign_request(
 }
 
 /// The session's snapshot witness rows, by tree position.
-fn witness_for_position<'a>(
-    witnesses: &'a [WitnessData],
+fn witness_for_position(
+    witnesses: &[WitnessData],
     position: u64,
-) -> Result<&'a WitnessData, VotingFailure> {
+) -> Result<&WitnessData, VotingFailure> {
     witnesses
         .iter()
         .find(|witness| witness.position == position)
@@ -601,7 +601,7 @@ fn delegate_bundle(
         .setup(db, &NoopProgressReporter)
         .map_err(VotingFailure::Sdk)?;
     let request = prepared.signing_request(db).map_err(VotingFailure::Sdk)?;
-    let signature = sign_request(signer, request.clone())?;
+    let signature = sign_request(signer, request)?;
 
     pir.with_failover(|pir_session| prepared.prove(db, pir_session, &NoopProgressReporter))
         .map_err(VotingFailure::Sdk)?;
@@ -623,6 +623,7 @@ fn delegate_bundle(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // plan-executor context: every field is a distinct live handle
 async fn advance_delegation(
     session: &ArmedVotingSession,
     hotkey: &VotingHotkey,
@@ -1007,6 +1008,7 @@ pub async fn cast_ballot(
     Ok(outcome)
 }
 
+#[allow(clippy::too_many_arguments)] // plan-executor context: every field is a distinct live handle
 async fn execute_step(
     session: &ArmedVotingSession,
     hotkey: &VotingHotkey,
@@ -1167,10 +1169,9 @@ pub struct PastBallot {
 pub fn past_ballots(db: &VotingDb) -> Result<Vec<PastBallot>, VotingFailure> {
     let mut ballots = Vec::new();
     for round in db.list_rounds().map_err(VotingFailure::from)? {
-        let votes = match db.get_votes(&round.round_id) {
-            Ok(votes) => votes,
-            Err(_error) => Vec::new(),
-        };
+        let votes = db
+            .get_votes(&round.round_id)
+            .unwrap_or_default();
         ballots.push(PastBallot {
             round_id: round.round_id,
             snapshot_height: round.snapshot_height,

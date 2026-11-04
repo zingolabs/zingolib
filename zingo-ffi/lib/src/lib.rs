@@ -125,6 +125,8 @@ pub enum ZingolibError {
     Mixnet(String),
     #[error("Error: wallet chain mismatch: {0}")]
     WalletChainMismatch(String),
+    #[error("Error: voting: {0}")]
+    Voting(String),
 }
 
 /// The separator between two layers of a rendered cause chain, and the one
@@ -233,6 +235,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         | LightClientError::SyncError(_)
         | LightClientError::SyncModeError(_) => ZingolibError::Sync(text),
         LightClientError::SyncPanicked(panic_message) => ZingolibError::Panic(panic_message),
+        LightClientError::Voting(_) => ZingolibError::Voting(text),
         LightClientError::SendError(inner) => match inner {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
                 ZingolibError::Shield(text)

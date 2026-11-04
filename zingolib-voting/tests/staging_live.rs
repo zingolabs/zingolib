@@ -14,7 +14,7 @@ use zingolib_voting::{
 /// Reads back the authenticated open round, or `None` when staging is
 /// unreachable or holds no open round (printed, not asserted).
 async fn staging_round() -> Option<zingolib_voting::ActiveVotingRound> {
-    let config = VotingSessionConfig::staging(
+    let _config = VotingSessionConfig::staging(
         zingolib_voting::Network::Testnet,
         "https://localhost:9067".to_string(),
     );

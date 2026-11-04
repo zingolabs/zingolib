@@ -158,7 +158,8 @@ impl LightClient {
     ) -> Result<Vec<zingolib_voting::ProposalTally>, LightClientError> {
         let config = self.voting_config()?;
         let route = zingolib_voting::DirectRoute::default();
-        let resolved = zingolib_voting::resolve_voting_config(&route, &config.static_config_source).await?;
+        let resolved =
+            zingolib_voting::resolve_voting_config(&route, &config.static_config_source).await?;
         let mut last_error = None;
         for server in &resolved.vote_servers {
             match zingolib_voting::vote_summary(&route, &server.url, round_id).await {
@@ -167,9 +168,7 @@ impl LightClient {
             }
         }
         Err(LightClientError::Voting(last_error.unwrap_or(
-            zingolib_voting::VotingFailure::VoteServer(
-                "no vote servers configured".to_string(),
-            ),
+            zingolib_voting::VotingFailure::VoteServer("no vote servers configured".to_string()),
         )))
     }
 
@@ -408,7 +407,7 @@ impl LightClient {
                 })?;
             let ask = orchard::keys::SpendAuthorizingKey::from(usk.orchard());
             let randomized = ask.randomize(&alpha);
-            let signature = randomized.sign(&mut crate::utils::system_rng(), &request.sighash);
+            let signature = randomized.sign(crate::utils::system_rng(), &request.sighash);
             Ok((&signature).into())
         };
         Ok(DelegationSigner::Software(Arc::new(signer)))
