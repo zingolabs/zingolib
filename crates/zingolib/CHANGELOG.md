@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zl_common::memo`, whose encoding is the one `zingo-memo` 0.3.0 wrote. A
   consumer that names either type through `zingo-status` or `zingo-price`
   names it through `zingolib` or `zl-common`.
+- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Fixed
 - A transaction the wallet believes failed, whose block later reaches the
