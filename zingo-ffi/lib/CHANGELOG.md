@@ -34,18 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's before opening the wallet.
 - `ZingolibError::WalletChainMismatch`: `init_from_bytes` returns it, in
   place of `Init`, when the wallet bytes were written for another chain.
-- `ZingolibError::InitConnection`, `InitKey`, `InitBirthday` and
-  `InitWalletFile`, in place of `Init`, for the failures the user can act
-  on. `init_new`, `init_from_seed` and `init_from_ufvk` return
-  `InitConnection` when the server could not be reached. `init_from_seed`
-  and `init_from_ufvk` return `InitKey` when the seed or viewing key does
-  not parse or belongs to another network, and `InitBirthday` when the
-  birthday lies before sapling. `init_from_bytes` returns `InitWalletFile`
-  when the wallet bytes do not decode, and keeps that finding when an
-  offline open goes on to try the other chains. `Init` keeps every other
-  failure, a malformed server URI included.
 
 ### Changed
+- **Breaking:** `ZingolibError::InitConnection`, `InitKey`, `InitBirthday`
+  and `InitWalletFile` name, in place of `Init`, the failures the user can
+  act on; a consumer that catches `Init` alone no longer catches them.
+  `init_new`, `init_from_seed` and `init_from_ufvk` return `InitConnection`
+  when the dial fails or the connection breaks under the request.
+  `init_from_seed` and `init_from_ufvk` return `InitKey` when the seed or
+  viewing key does not parse or belongs to another network, and
+  `InitBirthday` when the birthday lies before sapling. `init_from_bytes`
+  returns `InitWalletFile` when the wallet bytes do not decode. `Init`
+  keeps every other failure: a malformed server URI, a status the server
+  itself answered with and a key that parsed but could not derive its
+  addresses included.
+- An offline `init_from_bytes` reads the chain from the wallet header and
+  opens the wallet under that chain alone, in place of trying `main`,
+  `test` and `regtest` in turn, so a wallet that does not decode reports
+  the failure under its own chain.
 - **Breaking:** the bindings come from `#[uniffi::export]` attributes and the
   uniffi derives on uniffi 0.32.2 in place of `zingo.udl`. The UDL, the
   `build.rs` and the crate's `uniffi-bindgen` binary target are gone, and
