@@ -6,7 +6,7 @@ pub enum IndexerChain {
     Test,
 }
 
-pub const MAINNET_DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
+pub const MAINNET_DEFAULT_INDEXER: &str = "https://zec.global:443";
 pub const TESTNET_DEFAULT_INDEXER: &str = "https://testnet.zec.rocks:443";
 
 /// ```
@@ -45,7 +45,7 @@ mod tests {
 
     #[test]
     fn the_mainnet_default_is_https_on_443() {
-        assert_https_on_443(IndexerChain::Main, "mainnet.zainod.zingolabs.dev");
+        assert_https_on_443(IndexerChain::Main, "zec.global");
     }
 
     #[test]
