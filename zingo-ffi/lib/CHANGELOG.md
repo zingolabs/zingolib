@@ -76,6 +76,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three proposing calls now say so.
 
 ### Changed
+- **Breaking:** the four ways to load a wallet (`init_new`, `init_from_seed`,
+  `init_from_ufvk`, `init_from_bytes`) answer the same in the same
+  circumstance. `ZingolibError::InitServer` names a server address that cannot
+  work and a chain without a default server, `InitKey` a seed or viewing key
+  that does not parse or belongs to another network, and `InitWalletFile`
+  wallet bytes that do not decode, in place of `Init`; a consumer that catches
+  `Init` alone no longer catches them. `Init` keeps every other failure.
+- **Breaking:** a server that does not answer no longer stops `init_new`,
+  `init_from_seed` or `init_from_ufvk`, as it already did not stop
+  `init_from_bytes`. The wallet loads without an indexer and `run_sync` dials
+  the URI again. A create whose dial or chain tip request fails starts at the
+  Library Birthday. `init_from_bytes` no longer does this for a URI with an
+  unknown scheme or no authority: that is `InitServer`.
+- An offline `init_from_bytes` reads the chain from the wallet header and opens
+  under that chain alone, in place of trying `main`, `test` and `regtest` in
+  turn, so a wallet that does not decode reports the failure under its own
+  chain.
 - **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
   `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
   `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
