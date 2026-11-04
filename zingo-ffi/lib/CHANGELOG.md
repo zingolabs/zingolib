@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three proposing calls now say so.
 
 ### Changed
+- `default_indexer("mainnet")` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 - **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
   `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
   `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
