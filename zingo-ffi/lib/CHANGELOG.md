@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the URI again. A create whose dial or chain tip request fails starts at the
   Library Birthday. `init_from_bytes` no longer does this for a URI with an
   unknown scheme or no authority: that is `InitServer`.
+- **Breaking:** `run_sync` with no server attached fails as
+  `ZingolibError::Offline`, in place of `Sync`, so a consumer can tell a
+  wallet waiting for its server without reading the message.
 - An offline `init_from_bytes` reads the chain from the wallet header and opens
   under that chain alone, in place of trying `main`, `test` and `regtest` in
   turn, so a wallet that does not decode reports the failure under its own

@@ -1580,6 +1580,14 @@ mod load_contract_tests {
     }
 
     #[test]
+    fn a_sync_with_no_server_attached_is_the_offline_variant() {
+        let _serial = lock_discipline_tests::serialized();
+        offline_wallet("main");
+        let error = run_sync().expect_err("no server to sync from");
+        assert!(matches!(error, ZingolibError::Offline), "{error}");
+    }
+
+    #[test]
     fn a_server_address_that_cannot_work_is_a_server_failure_on_every_load() {
         let _serial = lock_discipline_tests::serialized();
         for server in ["http://an invalid uri with spaces", "httpx://127.0.0.1:1"] {
@@ -2483,6 +2491,7 @@ fn run_sync() -> Result<String, ZingolibError> {
                     Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
                         Ok("Sync task already running.".to_string())
                     }
+                    Err(LightClientError::Offline) => Err(ZingolibError::Offline),
                     Err(e) => Err(ZingolibError::sync(&e)),
                 }
             })
