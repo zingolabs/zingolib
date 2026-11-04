@@ -2,9 +2,9 @@
 //!
 //! This crate owns the voting lifecycle so `LightClient` can expose it with
 //! thin delegating methods. The consumer's shape follows the repo's
-//! progress-handle idiom: [`begin_voting`] hands back a [`VotingProgressHandle`]
+//! progress-handle idiom: `begin_voting` hands back a [`VotingProgressHandle`]
 //! over a typed [`VotingEvent`] channel, and the lifecycle that
-//! [`cast_vote`] drives publishes into it. Logic lives here; the client
+//! `cast_vote` drives publishes into it. Logic lives here; the client
 //! supplies wallet-derived inputs ([`VotingSnapshot`]) and the software
 //! signer inside its seed boundary.
 //!

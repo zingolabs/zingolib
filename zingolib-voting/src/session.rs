@@ -922,7 +922,7 @@ async fn deliver_shares(
 ///
 /// The loop executes at most one durable step per pass and re-plans from
 /// durable state every pass, so any interruption resumes with
-/// [`cast_ballot`] again (or the next [`crate::cast_vote`] on the client).
+/// `cast_ballot` again (or the next `cast_vote` on the client).
 ///
 /// # Errors
 ///

@@ -71,8 +71,8 @@ pub enum VotingEvent {
 
 /// A cloneable handle to the session's typed event channel.
 ///
-/// Grab it from [`crate::begin_voting`](crate::VotingProgressHandle) before
-/// calling [`crate::cast_vote`], subscribe, and read events concurrently.
+/// Grab it from `begin_voting` on the client before
+/// calling `cast_vote`, subscribe, and read events concurrently.
 #[derive(Clone)]
 pub struct VotingProgressHandle {
     events: broadcast::Sender<VotingEvent>,
