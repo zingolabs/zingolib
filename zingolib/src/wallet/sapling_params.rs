@@ -159,6 +159,12 @@ pub(crate) fn load() -> Result<SaplingParamBytes, SaplingParamsError> {
     #[cfg(feature = "testutils")]
     default_to_cache();
     let directory = DIRECTORY.get().ok_or(SaplingParamsError::NoDirectory)?;
+    load_from(directory)
+}
+
+/// - Reads both parameter files from `directory`.
+#[cfg(feature = "runtime-sapling-params")]
+fn load_from(directory: &Path) -> Result<SaplingParamBytes, SaplingParamsError> {
     Ok(SaplingParamBytes {
         spend: Cow::Owned(read(directory, SaplingParamFile::Spend)?),
         output: Cow::Owned(read(directory, SaplingParamFile::Output)?),
@@ -220,6 +226,29 @@ mod tests {
             set_directory(std::env::temp_dir().join(OTHER_DIRECTORY)),
             Err(SaplingParamsError::DirectorySet(_))
         ));
+    }
+
+    /// HYPOTHESIS: a directory the consumer populates, as an app does
+    /// after downloading the two files, loads and parses into a prover.
+    /// Falsified if either file fails to read or verify from that
+    /// directory, or the prover does not build from the bytes.
+    #[cfg(feature = "runtime-sapling-params")]
+    #[test]
+    fn populated_directory_loads_and_parses() {
+        const POPULATED_DIRECTORY: &str = "zingolib-sapling-params-populated";
+        let cache = crate::wallet::utils::get_zcash_params_path()
+            .expect("the parameter cache resolves under a home directory");
+        let directory = std::env::temp_dir().join(POPULATED_DIRECTORY);
+        std::fs::create_dir_all(&directory).expect("the temp directory is writable");
+        for file in SaplingParamFile::ALL {
+            std::fs::copy(
+                cache.join(file.file_name()),
+                directory.join(file.file_name()),
+            )
+            .expect("the default build fills the parameter cache this test copies");
+        }
+        let params = load_from(&directory).expect("the copied files read and verify");
+        zcash_proofs::prover::LocalTxProver::from_bytes(&params.spend, &params.output);
     }
 
     /// HYPOTHESIS: a file absent from the directory is reported by its
