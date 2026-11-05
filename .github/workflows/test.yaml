@@ -32,15 +32,6 @@ on:
         required: false
         type: string
         default: "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]"
-      # True when the archive's zingolib reads the Sapling parameters from
-      # the parameter cache at run time, the `runtime-sapling-params`
-      # feature, in place of embedding them. The archive job then fetches
-      # the two files through the default build script and uploads them,
-      # and every shard places them in its own cache before the run.
-      sapling-params:
-        required: false
-        type: boolean
-        default: false
       # The content-addressed tag of the ci-build image. The caller
       # resolves it once through ensure-image.yaml and passes it to every
       # suite, so two suites in one run never build the same image twice.
@@ -52,7 +43,6 @@ env:
   NEXTEST-FLAGS: ${{ inputs.nextest-flags }}
   NEXTEST_VERSION: "0.9.132"
   ARCHIVE: nextest-archive-${{ inputs.suite }}
-  PARAMS: sapling-params-${{ inputs.suite }}
 
 jobs:
   build-test-artifacts:
@@ -116,24 +106,6 @@ jobs:
           path: ${{ env.ARCHIVE }}.tar.zst
           overwrite: true
 
-      # A check of zingolib's default build runs its build script, which
-      # downloads the parameters into the cache when they are absent, the
-      # same fetch the normal suite's build makes. The archive under the
-      # feature embeds none, so the shards take them from this upload,
-      # kept for this run alone.
-      - name: Fetch the Sapling parameters
-        if: ${{ inputs.sapling-params }}
-        run: cargo check --package zingolib
-
-      - name: Upload the Sapling parameters
-        if: ${{ inputs.sapling-params }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.PARAMS }}
-          path: ~/.zcash-params/sapling-*.params
-          retention-days: 1
-          overwrite: true
-
   run-tests:
     name: Run ${{ inputs.suite }} tests
     runs-on: ubuntu-24.04
@@ -165,15 +137,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ${{ env.ARCHIVE }}
-
-      # The feature reads the two files from the parameter cache, the
-      # directory the default build script fills, so they land there.
-      - name: Place the Sapling parameters in the cache
-        if: ${{ inputs.sapling-params }}
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ env.PARAMS }}
-          path: ~/.zcash-params
 
       # The partition count is the matrix's own size, so the shards and
       # the denominator cannot drift apart.
