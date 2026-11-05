@@ -1626,6 +1626,16 @@ async fn network_command(
                     // Fail closed, as the launch path does: a consent act
                     // whose mixnet never came up leaves no Indexer behind
                     // it, so the session returns to the unconsented posture.
+                    // `go_offline` also vacates the mixnet slot, death report
+                    // included, and that is deliberate: the command loop
+                    // reads any non-Unattached slot as consent, so a slot
+                    // left in the died state would keep the session in
+                    // Online Mode with no Indexer. The failure is reported
+                    // once, here, in this command's own error; a later
+                    // `network status` shows plain off. A session that
+                    // brought its own Indexer keeps everything, including
+                    // the died slot, because nothing of its consent is
+                    // being undone.
                     if bound_here {
                         lightclient.go_offline().await;
                     }
@@ -2402,8 +2412,11 @@ pub(crate) enum CliCommand {
             remembers; without one it binds the chain's Default Indexer, as
             `--online` does at launch. Only then does it bootstrap the
             mixnet (ADR 0026); a session that already holds an indexer keeps
-            it. A deliberate --offline session does not offer this command;
-            relaunch without --offline instead.
+            it. A bootstrap that fails after a fresh bind drops the indexer
+            again and reports the failure once, in this command's output:
+            the session is unconsented afterwards, so `network status` says
+            off without the cause. A deliberate --offline session does not
+            offer this command; relaunch without --offline instead.
 
             `status` reports off, bootstrapping or ready. `on` starts the
             nym-proxy child, taking the binary from the given path, else
