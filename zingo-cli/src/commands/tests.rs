@@ -1924,14 +1924,15 @@ mod posture_surface {
         assert!(report.contains("Network off"), "{report}");
         assert!(report.contains("`--forget-online` erases it"), "{report}");
         assert!(!report.contains("nakednet"), "{report}");
-        assert!(client.indexer_uri().is_none());
+        assert!(!client.is_online());
     }
 
     /// HYPOTHESIS: `network on` binds the Session Indexer before it touches
-    /// the mixnet, so on a chain without a Default Indexer it refuses typed,
-    /// leaves the client Indexerless, and never starts a proxy. The
-    /// synthetic wallet is regtest, the one chain with no Default Indexer,
-    /// so the refusal lands before any traffic.
+    /// the mixnet, so a session that never named an indexer, on a chain
+    /// without a Default Indexer, refuses typed, leaves the client
+    /// Indexerless, and never starts a proxy. The synthetic wallet is
+    /// regtest, which like testnet has no Default Indexer, so the refusal
+    /// lands before any traffic.
     #[cfg(feature = "nym")]
     #[test]
     fn network_on_without_a_default_indexer_refuses_before_the_mixnet() {
@@ -1959,7 +1960,7 @@ mod posture_surface {
             rendered.contains("no Default Indexer exists for"),
             "{rendered}"
         );
-        assert!(client.indexer_uri().is_none());
+        assert!(!client.is_online());
         assert_eq!(
             client.read_mixnet_indicator(),
             zingolib::mixnet::Indicator::Unattached

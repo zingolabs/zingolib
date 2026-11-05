@@ -296,14 +296,17 @@ enum SessionTarget {
 }
 
 impl SessionTarget {
-    fn of(wire: Wire, indexer: zingo_netutils::GrpcIndexer) -> Self {
+    /// - `indexer_uri` is the URI `indexer` was dialed from: the mixnet wire
+    ///   names it to the SOCKS5 client, the nakednet wire uses the link.
+    #[cfg_attr(not(feature = "nym"), allow(unused_variables))]
+    fn of(wire: Wire, indexer: zingo_netutils::GrpcIndexer, indexer_uri: http::Uri) -> Self {
         match wire {
             Wire::Nakednet => SessionTarget::Nakednet(NakednetTarget(indexer)),
             #[cfg(feature = "nym")]
             Wire::Mixnet { shared_socks5 } => {
                 SessionTarget::Mixnet(zingo_netutils::Socks5Indexer::new(
                     shared_socks5,
-                    indexer.uri().clone(),
+                    indexer_uri,
                     DEFAULT_REQUEST_TIMEOUT,
                 ))
             }
@@ -415,7 +418,7 @@ impl LightClient {
         sending_account: zip32::AccountId,
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
         self.preflight_transmit()?;
-        let indexerless = self.indexer.is_none();
+        let indexerless = !self.network.is_online();
         let mut wallet = self.wallet().write().await;
         // An Indexerless calculation cannot trust the wallet's stale chain
         // view for an ordinary tip-plus-delta expiry, so it takes the
@@ -511,7 +514,7 @@ impl LightClient {
     /// [`crate::wallet::expiry::tx_expiry_delta`] blocks past the target:
     /// connected callers are expected to transmit promptly.
     pub async fn calculate_stored_proposal(&mut self) -> Result<NonEmpty<TxId>, LightClientError> {
-        let indexerless = self.indexer.is_none();
+        let indexerless = !self.network.is_online();
         let mut wallet = self.wallet().write().await;
         let opt_proposal = wallet.take_proposal();
         let Some(proposal) = opt_proposal else {
@@ -576,7 +579,7 @@ impl LightClient {
     fn preflight_transmit(&self) -> Result<(), LightClientError> {
         #[cfg(feature = "nym")]
         {
-            resolve_transmit_route(self.indexer.is_some(), self.send_route()).map(|_| ())
+            resolve_transmit_route(self.network.is_online(), self.send_route()).map(|_| ())
         }
         #[cfg(not(feature = "nym"))]
         {
@@ -845,14 +848,17 @@ impl LightClient {
         &mut self,
         calculated_txids: NonEmpty<TxId>,
     ) -> Result<NonEmpty<TransmitReport>, LightClientError> {
-        let indexer = self.indexer.clone();
+        let connected = self
+            .network
+            .connected()
+            .map(|(uri, indexer)| (uri.clone(), indexer.clone()));
 
         // Resolve the send route once for the whole send (ADR 0011), under
         // the session's transmit policy as it stands at this moment.
         // The guard is bound for the whole send, so the conduit counts this
         // transmission as outstanding until the last transaction is delivered.
         #[cfg(feature = "nym")]
-        let transmit_dial = resolve_transmit_route(indexer.is_some(), self.send_route())?;
+        let transmit_dial = resolve_transmit_route(connected.is_some(), self.send_route())?;
         // A test-attached slot pairs its mixnet route with arms that submit
         // over the mock indexer's channel; a live Ready session keeps the
         // SOCKS5 tunnel, and a nakednet-policy send over a test slot
@@ -877,11 +883,11 @@ impl LightClient {
         #[cfg(not(feature = "nym"))]
         let wire = Wire::Nakednet;
         // Every wire reaches the Session Indexer (zingo-adrs zingolib/0063).
-        let indexer = indexer.ok_or(LightClientError::Offline)?;
-        let host = crate::destination::Host::of_uri(indexer.uri());
+        let (indexer_uri, indexer) = connected.ok_or(LightClientError::Offline)?;
+        let host = crate::destination::Host::of_uri(&indexer_uri);
         // One target serves the whole send: the session's live indexer
         // client on nakednet, one SOCKS5 client over the mixnet.
-        let target = SessionTarget::of(wire, indexer);
+        let target = SessionTarget::of(wire, indexer, indexer_uri);
 
         // Narrate the transmission into the side channel; the scope clears it
         // on every exit so no stale line outlives this call.

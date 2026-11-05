@@ -960,7 +960,7 @@ impl LightClient {
         #[cfg(feature = "nym")]
         let wire = {
             use crate::lightclient::send;
-            match send::resolve_transmit_route(self.indexer_uri().is_some(), self.send_route())? {
+            match send::resolve_transmit_route(self.is_online(), self.send_route())? {
                 // The guard travels into the client, which dials on every
                 // submission long after this function returns.
                 Some(dial) => MigrationWire::Mixnet(dial),
@@ -969,7 +969,8 @@ impl LightClient {
         };
         #[cfg(not(feature = "nym"))]
         let wire = MigrationWire::Nakednet;
-        let indexer = self.indexer_uri().ok_or(LightClientError::Offline)?;
+        let (indexer, _link) = self.require_connected()?;
+        let indexer = indexer.clone();
         Ok(transmission_route::RoutedTransmissionClient { wire, indexer })
     }
 

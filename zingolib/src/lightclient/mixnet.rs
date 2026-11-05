@@ -705,7 +705,9 @@ impl LightClient {
         host: impl crate::mixnet::acquire::ProxyHosting,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         let indexer = self
-            .indexer_uri()
+            .network
+            .connected()
+            .map(|(uri, _link)| uri.clone())
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         self.enable_mixnet_from(std::sync::Arc::new(
             crate::mixnet::acquire::Acquirer::Hosted(crate::mixnet::acquire::HostedAcquirer {
@@ -890,7 +892,9 @@ impl LightClient {
         exits: &[crate::mixnet::ExitNodeId],
     ) -> Result<(), crate::mixnet::MixnetProxyError> {
         let indexer = self
-            .indexer_uri()
+            .network
+            .connected()
+            .map(|(uri, _link)| uri.clone())
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         let policy_before = self.transmit_policy();
         self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
@@ -1178,9 +1182,10 @@ impl LightClient {
         // An Indexerless session has nothing to probe, and an indexer outside
         // the exit policy's endpoint shape is refused whether the caller
         // named it or the session holds it, never answered with silence.
-        let indexer = target
-            .or_else(|| self.indexer_uri())
-            .ok_or(crate::lightclient::error::LightClientError::Offline)?;
+        let indexer = match target {
+            Some(target) => target,
+            None => self.require_connected()?.0.clone(),
+        };
         if !crate::mixnet::probe::probe_eligible(&indexer) {
             return Err(
                 crate::lightclient::error::LightClientError::IneligibleProbeTarget(indexer),
