@@ -8,8 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightClient::is_online` reports whether the client holds a live indexer
+  link, the one posture question.
+- `LightClient::go_online` connects to the Session Indexer and returns the
+  URI it bound: the one the consumer named, else the chain's Default Indexer
+  (zingo-adrs zingolib/0063). A chain without a Default Indexer, and no
+  named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
 
 ### Changed
+- BREAKING: `LightClient::indexer_uri` reports the Session Indexer URI the
+  client holds whether or not it is online, where it answered `None` for an
+  offline client. An offline mainnet client now answers the chain's Default
+  Indexer, undialed. Consumers that tested posture with `indexer_uri` read
+  `is_online` instead.
+- `LightClient::go_offline` drops the indexer link but keeps the Session
+  Indexer URI, so `go_online` dials the same indexer again, and
+  `choose_indexer(IndexerChoice::Offline)` is the same act. A failed
+  `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
+  client holds a `zingo_netutils::NetworkAccess`, which owns the URI and
+  the link together.
 
 ### Deprecated
 

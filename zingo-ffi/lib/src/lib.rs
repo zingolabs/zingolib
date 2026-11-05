@@ -1870,7 +1870,7 @@ impl Probe {
                 }
             }
         };
-        let mut indexer = match GrpcIndexer::new(uri).await {
+        let mut indexer = match GrpcIndexer::new(uri.clone()).await {
             Ok(indexer) => indexer,
             Err(cause) if timed_out(&cause) => {
                 return Self::NoAnswer {
@@ -1890,10 +1890,7 @@ impl Probe {
             Ok(info) => Self::Verified {
                 target,
                 latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                info: Box::new(data::ServerInfo::from_lightd_info(
-                    info,
-                    indexer.uri().clone(),
-                )),
+                info: Box::new(data::ServerInfo::from_lightd_info(info, uri)),
             },
             Err(status) if timed_out(&status) => Self::NoAnswer {
                 target,
