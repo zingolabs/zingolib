@@ -2,15 +2,127 @@
 
 The workbench tool `binding-changelog` writes every section below, one per entry
 of `bindings/published.toml`, from the lines that the entry's audited crate changelogs
-gained after the previous entry's commit, named as `Since`, up to the
-entry's commit, which the section heading names, each under the
-headings it sits beneath in its changelog. The check in CI
-regenerates every section and fails when the committed file differs. The
+gained after its `Since` commits, up to the entry's commit, which the
+section heading names, each under the headings it sits beneath in its
+changelog. The `Since` commits of an entry are the earlier entries that
+are ancestors of its commit and of no other such entry (the first entry
+names its own). A release line candidate therefore follows the candidate
+it fixes, not the last entry, and the first entry after the line merges
+back follows both the line's candidate and the last entry of `dev`, with
+the lines that neither had. The check in CI regenerates every section
+and fails when the committed file differs. The
 audited crates of an entry are the two Binding Layer crates and their
 direct dependencies in this repository at the entry's commit, as the
 publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
+
+## 81d799775f11e882896e8710e8af12d6d4d29a41
+
+Since d496bea8c7c476f2dd54f437674f7b4d1cc19b87.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+## d496bea8c7c476f2dd54f437674f7b4d1cc19b87
+
+Since 3fb32d277ef956e75da124c1442526fb4d91d97a.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- The committed `src/exported_surface.snapshot.txt` pins the exported surface: every
+- `preview_send(send_json)`, `preview_send_all(address, memo)` and
+  `preview_shield()` answer exactly what `send`, `send_all` and `shield`
+  answer, without storing a proposal or pausing sync. They are the calls for
+  a screen that shows a fee while the user is still deciding. A proposal
+  made only to show a fee held a continuous sync session paused with nothing
+  to resume it (zingolib#3104). They answer on the read lock.
+- `decline()` drops the proposal `send`, `send_all` or `shield` stored,
+  without transmitting it, and lets sync resume: the counterpart of
+  `confirm`. It succeeds with no proposal stored. A stored proposal holds
+  sync paused until `confirm` or `decline` settles it, and the docs of the
+  three proposing calls now say so.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightClient::preview_send`, `preview_send_all` and `preview_shield` create
+  the proposal the matching `propose_*` would store and return it without
+  storing it or pausing sync, the display-only reads beside `max_send_value`
+  for a consumer that shows a fee while its user is still deciding. A consumer
+  that proposed only to show a fee left the stored proposal's pause on a
+  continuous sync session with nothing to resume it (#3104). The
+  `lightclient::propose` module docs now state the contract: a stored proposal
+  holds sync paused until the consumer settles it, confirming with
+  `send_stored_proposal` or `calculate_stored_proposal`, or declining with
+  `clear_proposal`.
+- `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
+  the aliases `propose_send`, `propose_shield` and the previews return, are
+  public, so a consumer can name them.
+
+## 3fb32d277ef956e75da124c1442526fb4d91d97a
+
+Since 755c3adaea5906cf55357e69ad1b0a27d746cdb8.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
+
+## 755c3adaea5906cf55357e69ad1b0a27d746cdb8
+
+Since 625f617b63070855d1a4b2a2f61d071cb27c6f82.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `ClientConfig::migrated_from` reports the legacy path a wallet file was
+  copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
+
+##### Changed
+- `InputSource::select_spendable_notes` on `LightWallet` selects from the
+  pools the input selector names alone. In 7.0.0 a request those pools could
+  not cover was topped up from Sapling, Orchard and Ironwood in that order,
+  and all-funds selection drew on every pool whatever the request named. The
+  greedy input selector rejects a note from a pool it did not name, so the
+  shortfall now reaches the consumer as insufficient funds.
+
+##### Fixed
+- On Linux and other non-macOS, non-Windows desktops, a wallet left in the
+  legacy default directory `~/.zcash` is found again. The default moved to the
+  user's data directory (`~/.local/share/.zcash`) and nothing carried existing
+  wallets over, so a consumer updating past that change failed to open them
+  with `ENOENT`. `ClientConfigBuilder::build`, when it uses the default
+  directory, copies the named wallet file over from `~/.zcash` (with its chain's
+  subdirectory) when it is only there. Only that file is copied, never the
+  directory, which zcashd also uses. The copy is staged and renamed into place,
+  and the original is kept.
 
 ## 625f617b63070855d1a4b2a2f61d071cb27c6f82
 

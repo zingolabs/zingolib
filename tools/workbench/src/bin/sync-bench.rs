@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
-use workbench::{repo_root, run};
+use workbench::{cargo_make, repo_root, run};
 
 /// Agreeing representations of `zingolib::lightclient::sync`'s minted log
 /// markers, restated because the workbench is deliberately std-only and
@@ -421,17 +421,16 @@ fn build_dir(root: &Path, arm: Arm) -> PathBuf {
     bench_dir(root).join("builds").join(arm.name())
 }
 
-/// The `makers run-cli` invocation the prebuild and every session share.
+/// The `cargo make run-cli` invocation the prebuild and every session share.
 ///
 /// Both go through here so the two cannot drift in profile, features, or
 /// build directory, and the profile is release because an unoptimized
 /// core-second answers nothing about what the mixnet costs a user.
 fn run_cli(root: &Path, arm: Arm) -> Command {
-    let mut command = Command::new("makers");
+    let mut command = cargo_make("run-cli");
     command
         .current_dir(root)
         .env("RUST_LOG", LOG_FILTER)
-        .arg("run-cli")
         .arg("--release")
         .arg("--target-dir")
         .arg(build_dir(root, arm));
@@ -456,7 +455,7 @@ fn prebuild(root: &Path, arm: Arm) -> Result<(), Vec<String>> {
     let status = run_cli(root, arm)
         .arg("--build-only")
         .status()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli --build-only: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli --build-only: {e}")])?;
     if status.success() {
         return Ok(());
     }
@@ -491,7 +490,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut child = command
         .process_group(0)
         .spawn()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli: {e}")])?;
 
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;

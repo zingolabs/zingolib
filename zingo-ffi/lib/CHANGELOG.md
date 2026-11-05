@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `total_outputs`, the session's final output totals. Every other key is
   unchanged; both documents are now rendered by
   `zingolib::perspective::sync_progress`.
-- The committed `src/exported_surface.txt` pins the exported surface: every
+- The committed `src/exported_surface.snapshot.txt` pins the exported surface: every
   uniffi item in the crate's sources, the `uniffi.toml` settings, the locked
   uniffi version and the package name. A test fails when the crate and the
   file differ, and a second test fails when a `macro_rules!` body emits uniffi
@@ -63,8 +63,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's before opening the wallet.
 - `ZingolibError::WalletChainMismatch`: `init_from_bytes` returns it, in
   place of `Init`, when the wallet bytes were written for another chain.
+- `preview_send(send_json)`, `preview_send_all(address, memo)` and
+  `preview_shield()` answer exactly what `send`, `send_all` and `shield`
+  answer, without storing a proposal or pausing sync. They are the calls for
+  a screen that shows a fee while the user is still deciding. A proposal
+  made only to show a fee held a continuous sync session paused with nothing
+  to resume it (zingolib#3104). They answer on the read lock.
+- `decline()` drops the proposal `send`, `send_all` or `shield` stored,
+  without transmitting it, and lets sync resume: the counterpart of
+  `confirm`. It succeeds with no proposal stored. A stored proposal holds
+  sync paused until `confirm` or `decline` settles it, and the docs of the
+  three proposing calls now say so.
 
 ### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
 - Sync is continuous: wallets are created and loaded with
   `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
   the chain tip and never ends on its own. `poll_sync` answers "Sync task is

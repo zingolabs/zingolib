@@ -30,6 +30,15 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
     * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
 * Transparent funds are only spent via explicit shield operations
 
+## Mobile releases
+
+zingolib supports React Native mobile development. A mobile app links the
+Binding Layer, the uniffi-exported wallet and proxy crates with their Kotlin
+and Swift Binding Sets, and consumes it as Prebuilt Bundles published from
+commits of `dev`. [bindings/README.md](bindings/README.md) explains how a
+zingolib developer builds the Binding Layer locally and how a publication
+runs, from the workflow dispatch to the Publication Record.
+
 ## Architecture decision records
 
 Architecture decision records live in

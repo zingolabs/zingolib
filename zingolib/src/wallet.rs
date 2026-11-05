@@ -36,6 +36,7 @@ pub mod disk;
 pub mod keys;
 pub mod locks;
 pub mod migration;
+pub(crate) mod note_selection;
 pub mod output;
 pub mod propose;
 pub mod send;

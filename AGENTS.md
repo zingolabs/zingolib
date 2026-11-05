@@ -48,15 +48,31 @@
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
-  is gone. Never add an entry for a new group, with one exception: a
+  is gone. Never add an entry for a new group, with two exceptions: a
   trait-delegation pair, where one type implements two traits whose
   methods delegate identically and cannot share an impl, takes an entry
-  whose reason names the pair. Otherwise remove the duplication, then run
+  whose reason names the pair; and an FFI export pair, where the same
+  call runs under the write lock storing its result and under the read
+  lock previewing it (`send`/`preview_send`), takes one entry for the
+  functions and one for their lock closures, each naming the pair. The
+  gate erases identifiers, so it cannot tell the two apart (ruled
+  2026-10-28, zingolib#3104). Otherwise remove the duplication, then run
   `dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
   dupes-gate -- <cargo-dupes arguments>`.
+- **A pull request merges into `dev` only when `dev` could be released the
+  moment it lands.** Releases are cut from `dev` with no `stable` branch
+  (zingo-adrs zingolib/0064), so a candidate can be taken on any day. Work
+  that would leave `dev` mid-way through a larger feature or refactor, with
+  a dead code path, a half-migrated type, a disabled test or an unfinished
+  flag, targets an integration branch `integration/<name>` and reaches
+  `dev` when the arc is whole. Every change writes its changelog lines in
+  the same pull request, a dependency moves only to a version on crates.io
+  or a git pin the team accepts shipping, and the `[X.Y.Z]` section of a
+  cut changelog is never edited after the cut. The procedure is
+  `docs/sop/SOP001-release.md`. Ruled 2026-11-02 in zingo-adrs zingolib/0064.
 
 ## Writing & Code Style
 

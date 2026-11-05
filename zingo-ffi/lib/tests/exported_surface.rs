@@ -15,7 +15,9 @@ const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 const SOURCE_DIR: &str = "src";
 
-const CONTRACT_FILE: &str = "src/exported_surface.txt";
+const CONTRACT_FILE: &str = "src/exported_surface.snapshot.txt";
+
+const CONTRACT_COMMENT_PREFIX: &str = "//";
 
 const BINDGEN_CONFIG_FILE: &str = "uniffi.toml";
 
@@ -57,8 +59,9 @@ const TEST: &str = "test";
 
 const EXPANDED_MACROS: [&str; 1] = [WALLET_REPORT];
 
-const SPACING: [(&str, &str); 12] = [
+const SPACING: [(&str, &str); 13] = [
     (" :: ", "::"),
+    ("& ", "&"),
     (" < ", "<"),
     (" > ", ">"),
     (" >", ">"),
@@ -204,7 +207,7 @@ fn signature_line(sig: &Signature, attrs: &[Attribute]) -> String {
                 typed.pat.to_token_stream(),
                 compact(&typed.ty)
             ),
-            FnArg::Receiver(receiver) => receiver.to_token_stream().to_string(),
+            FnArg::Receiver(receiver) => compact(receiver),
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -469,9 +472,31 @@ fn surface_of(sources: &[String]) -> Surface {
         unrendered: BTreeSet::new(),
     };
     for file in &parsed {
-        collect(&file.items, &mut surface, template.as_ref());
+        let mut collected = Surface {
+            lines: BTreeSet::new(),
+            generators: BTreeSet::new(),
+            unrendered: BTreeSet::new(),
+        };
+        collect(&file.items, &mut collected, template.as_ref());
+        let gate = file_gate(file);
+        surface.lines.extend(
+            collected
+                .lines
+                .into_iter()
+                .map(|line| format!("{gate}{line}")),
+        );
+        surface.generators.extend(collected.generators);
+        surface.unrendered.extend(collected.unrendered);
     }
     surface
+}
+
+fn file_gate(file: &syn::File) -> String {
+    file.attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident(CFG))
+        .map(|attr| format!("#[{}] ", compact(&attr.meta)))
+        .collect()
 }
 
 fn surface() -> Surface {
@@ -498,7 +523,10 @@ fn the_library_exports_the_committed_surface() {
     let exported = surface().lines;
     let exported: BTreeSet<&str> = exported.iter().map(String::as_str).collect();
     let contract = read(CONTRACT_FILE);
-    let committed: BTreeSet<&str> = contract.lines().collect();
+    let committed: BTreeSet<&str> = contract
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with(CONTRACT_COMMENT_PREFIX))
+        .collect();
     let missing: Vec<_> = committed.difference(&exported).collect();
     let unlisted: Vec<_> = exported.difference(&committed).collect();
     assert!(
@@ -596,6 +624,28 @@ fn a_test_only_module_contributes_nothing_to_the_surface() {
 }
 
 #[test]
+fn a_file_level_cfg_gate_marks_every_line_the_file_exports() {
+    let source = r#"
+        #![cfg(feature = "unstable")]
+        #[derive(uniffi::Object)]
+        pub struct Gated;
+        #[uniffi::export]
+        impl Gated {
+            pub fn poke(&self) -> u32 { todo!() }
+        }
+    "#;
+    let surface = surface_of(&[source.to_string()]);
+    let expected: BTreeSet<String> = [
+        "#[cfg(feature = \"unstable\")] #[derive(uniffi::Object)] Gated",
+        "#[cfg(feature = \"unstable\")] impl Gated::poke(&self) -> u32",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert_eq!(surface.lines, expected);
+}
+
+#[test]
 fn every_uniffi_attribute_but_a_plain_export_marks_its_item() {
     let source = r#"
         #[derive(uniffi::Object)]
@@ -621,8 +671,8 @@ fn every_uniffi_attribute_but_a_plain_export_marks_its_item() {
     let expected: BTreeSet<String> = [
         "#[derive(uniffi::Object)] Engine { state: u32 }",
         "impl Engine::#[uniffi::constructor] new() -> Arc<Self>",
-        "impl Engine::#[uniffi::method(name = \"renamed\")] report(& self) -> String",
-        "impl Engine::plain(& self) -> u32",
+        "impl Engine::#[uniffi::method(name = \"renamed\")] report(&self) -> String",
+        "impl Engine::plain(&self) -> u32",
         "#[uniffi::remote(Record)] Remote { id: u32 }",
         "#[uniffi::remote(Enum)] Kind = A | B",
         "free(#[uniffi(default = 1)] count: u32) -> u32",
@@ -665,7 +715,7 @@ const WORKFLOW_PATHS_REQUIRED: [&str; 4] = [
     "**/*.rs",
     "**/Cargo.lock",
     "**/uniffi.toml",
-    "zingo-ffi/lib/src/exported_surface.txt",
+    "zingo-ffi/lib/src/exported_surface.snapshot.txt",
 ];
 
 const RETIRED_SPELLINGS: [&str; 3] = ["chainhint", "minconfirmations", "performancetype"];
