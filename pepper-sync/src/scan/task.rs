@@ -471,10 +471,7 @@ where
 
                     let maybe_block = match msg_res {
                         Ok(b) => b,
-                        Err(e)
-                            if e.code() == tonic::Code::DeadlineExceeded
-                                || e.message().contains("Unexpected EOF decoding stream.") =>
-                        {
+                        Err(e) if client::stream_can_resume(&e) => {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
                             block_stream = match open_block_stream(

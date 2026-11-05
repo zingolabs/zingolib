@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- A stream that the indexer resets with the gRPC status `ResourceExhausted`
+  resumes. A block range reopens at the block after the last one received,
+  and the subtree root and transparent address requests ask again within
+  their retry ceiling. In 0.7.0 the status ended the sync with
+  `ServerError::RequestFailed`.
 
 ## [0.7.0] - 2026-10-27
 
