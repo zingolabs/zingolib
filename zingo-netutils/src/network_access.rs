@@ -102,9 +102,10 @@ impl NetworkAccess {
         Ok(uri)
     }
 
-    /// Drops the link and keeps the URI.
-    pub fn go_offline(&mut self) {
-        self.indexer = None;
+    /// Drops the link and keeps the URI. Returns whether a link was held,
+    /// so a caller can tell a teardown from a no-op.
+    pub fn go_offline(&mut self) -> bool {
+        self.indexer.take().is_some()
     }
 
     /// Dials `uri` and, on success, holds it as the Session Indexer in place
