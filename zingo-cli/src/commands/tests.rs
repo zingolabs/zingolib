@@ -1966,6 +1966,119 @@ mod posture_surface {
             zingolib::mixnet::Indicator::Unattached
         );
     }
+
+    /// A proxy path nothing can spawn, so `network on` fails at the
+    /// bootstrap and never at the Indexer bind. The explicit path takes
+    /// precedence over every other proxy source, so no bundled or PATH
+    /// binary can rescue the spawn.
+    #[cfg(feature = "nym")]
+    const UNSPAWNABLE_PROXY: &str = "/nonexistent/zingo-test/nym-proxy";
+
+    /// Runs `network on <UNSPAWNABLE_PROXY>` and returns its rendered
+    /// refusal, which must name the proxy, not the Indexer bind.
+    #[cfg(feature = "nym")]
+    fn network_on_with_an_unspawnable_proxy(
+        client: &mut zingolib::lightclient::LightClient,
+    ) -> String {
+        use super::super::{
+            CommandError, RT, dispatch_parsed, parse_command_tokens, render_error_chain,
+        };
+
+        let tokens: Vec<String> = ["network", "on", UNSPAWNABLE_PROXY]
+            .map(String::from)
+            .into();
+        let error = parse_command_tokens(&tokens)
+            .map_err(|error| CommandError::NotYetTyped(error.into()))
+            .and_then(|parsed| RT.block_on(dispatch_parsed(parsed, client)))
+            .expect_err("an unspawnable proxy fails the bootstrap");
+        let rendered = render_error_chain(&error);
+        assert!(
+            rendered.contains("Mixnet Mode could not start"),
+            "{rendered}"
+        );
+        assert!(rendered.contains(UNSPAWNABLE_PROXY), "{rendered}");
+        assert!(
+            !rendered.contains("no Session Indexer could be bound"),
+            "the failure must be the bootstrap, not the bind:\n{rendered}"
+        );
+        rendered
+    }
+
+    /// HYPOTHESIS: a session that already holds an Indexer keeps it when
+    /// `network on` fails at the mixnet bootstrap: the fail-closed teardown
+    /// is for the Indexer the consent act bound itself, never for one the
+    /// session brought. The lazy Indexer never dials, so this runs offline.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn network_on_keeps_a_held_indexer_when_the_bootstrap_fails() {
+        use zingolib::lightclient::LightClient;
+        use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        use super::super::RT;
+
+        let held: http::Uri = "https://indexer.test:443".parse().unwrap();
+        let mut client = RT.block_on(LightClient::new_for_test(
+            SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+        ));
+        {
+            // The lazy link still needs a runtime to live in.
+            let _runtime = RT.enter();
+            client
+                .set_indexer_uri_lazy(held.clone())
+                .expect("a lazy indexer needs no connection");
+        }
+        assert!(client.is_online());
+
+        network_on_with_an_unspawnable_proxy(&mut client);
+
+        assert!(
+            client.is_online(),
+            "the held Indexer survives the failed bootstrap"
+        );
+        assert_eq!(client.connected_indexer_uri(), Some(held));
+    }
+
+    /// HYPOTHESIS: an Indexer that `network on` bound itself is dropped
+    /// again when the bootstrap fails, so the session returns to the
+    /// unconsented posture: offline, the mixnet slot vacated, and the
+    /// Session Indexer URI still held for the next `network on`. The mock
+    /// indexer accepts the bind, so the failure is the proxy's alone.
+    #[cfg(feature = "nym")]
+    #[test]
+    fn network_on_drops_a_freshly_bound_indexer_when_the_bootstrap_fails() {
+        use zingolib::testutils::mock_indexer::MockNet;
+
+        use super::super::RT;
+
+        let mut net = RT.block_on(MockNet::launch());
+        let mut client =
+            RT.block_on(net.client(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED, None));
+        // The unconsented posture over a reachable indexer: the URI is held,
+        // nothing is dialed, and no mixnet slot is attached.
+        RT.block_on(client.go_offline());
+        assert!(!client.is_online());
+        assert_eq!(client.indexer_uri(), Some(net.indexer_uri()));
+        assert_eq!(
+            client.read_mixnet_indicator(),
+            zingolib::mixnet::Indicator::Unattached
+        );
+
+        network_on_with_an_unspawnable_proxy(&mut client);
+
+        assert!(
+            !client.is_online(),
+            "the Indexer the consent act bound is dropped again"
+        );
+        assert_eq!(
+            client.indexer_uri(),
+            Some(net.indexer_uri()),
+            "the Session Indexer URI outlives the failed consent act"
+        );
+        assert_eq!(
+            client.read_mixnet_indicator(),
+            zingolib::mixnet::Indicator::Unattached
+        );
+    }
 }
 
 #[cfg(all(test, feature = "nym"))]
