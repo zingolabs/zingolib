@@ -1583,11 +1583,7 @@ async fn network_command(
             // Default Indexer as `--online` binds at launch (zingo-adrs
             // zingolib/0063). Only then does it bootstrap the mixnet. A
             // session that already holds an Indexer keeps it.
-            let held = lightclient
-                .is_online()
-                .then(|| lightclient.indexer_uri())
-                .flatten();
-            let (indexer, bound_here) = match held {
+            let (indexer, bound_here) = match lightclient.connected_indexer_uri() {
                 Some(held) => (held, false),
                 None => {
                     let bound = lightclient

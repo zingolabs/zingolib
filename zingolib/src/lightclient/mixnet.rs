@@ -705,9 +705,7 @@ impl LightClient {
         host: impl crate::mixnet::acquire::ProxyHosting,
     ) -> Result<(), crate::mixnet::acquire::TransportError> {
         let indexer = self
-            .network
-            .connected()
-            .map(|(uri, _link)| uri.clone())
+            .connected_indexer_uri()
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         self.enable_mixnet_from(std::sync::Arc::new(
             crate::mixnet::acquire::Acquirer::Hosted(crate::mixnet::acquire::HostedAcquirer {
@@ -892,9 +890,7 @@ impl LightClient {
         exits: &[crate::mixnet::ExitNodeId],
     ) -> Result<(), crate::mixnet::MixnetProxyError> {
         let indexer = self
-            .network
-            .connected()
-            .map(|(uri, _link)| uri.clone())
+            .connected_indexer_uri()
             .ok_or(crate::mixnet::MixnetProxyError::NoSessionIndexer)?;
         let policy_before = self.transmit_policy();
         self.set_transmit_policy(crate::mixnet::TransmitPolicy::Mixnet);
