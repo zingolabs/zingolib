@@ -1255,8 +1255,8 @@ pub enum NetworkCommandError {
     /// the command waited; re-enabling spawns a fresh proxy.
     #[error("the mixnet bootstrap failed: {report}. Re-enable with `network on`.")]
     Bootstrap { report: String },
-    /// The consent act could not bind the Session Indexer: the chain has
-    /// no Default Indexer, or the connection to it failed.
+    /// The consent act could not bind the Session Indexer: no indexer was
+    /// named and the chain has no Default Indexer, or the connection failed.
     #[error("no Session Indexer could be bound")]
     Indexer {
         #[source]
@@ -1271,7 +1271,8 @@ pub(crate) enum NetworkSubCommand {
     #[command(about = "Report the mixnet state: off, bootstrapping, or ready")]
     Status,
     #[command(
-        about = "Bind the chain's Default Indexer, then start the nym-proxy child and route \
+        about = "Bind the Session Indexer (the one named at launch or by `change_server`, else \
+                 the chain's Default Indexer), then start the nym-proxy child and route \
                  transmissions through the mixnet"
     )]
     On {
@@ -1576,26 +1577,24 @@ async fn network_command(
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
-            // session only. It binds the Session Indexer the way `--online`
-            // binds one at launch, the chain's Default Indexer (zingo-adrs
-            // zingolib/0063), and only then bootstraps the mixnet. A session
-            // that already holds an Indexer keeps it.
-            let (indexer, bound_here) = match lightclient.indexer_uri() {
+            // session only. It binds the Session Indexer choice the client
+            // holds: the `--server` named at launch or the last
+            // `change_server`, which `network off` keeps, else the chain's
+            // Default Indexer as `--online` binds at launch (zingo-adrs
+            // zingolib/0063). Only then does it bootstrap the mixnet. A
+            // session that already holds an Indexer keeps it.
+            let held = lightclient
+                .is_online()
+                .then(|| lightclient.indexer_uri())
+                .flatten();
+            let (indexer, bound_here) = match held {
                 Some(held) => (held, false),
                 None => {
-                    let chain = lightclient.chain_type();
-                    let default = zingolib::config::default_indexer_for(&chain)
-                        .ok_or(zingolib::config::NoDefaultIndexer { chain })
-                        .map_err(|source| NetworkCommandError::Indexer {
-                            source: source.into(),
-                        })?;
-                    lightclient
-                        .set_indexer_uri(default.clone())
+                    let bound = lightclient
+                        .go_online()
                         .await
-                        .map_err(|source| NetworkCommandError::Indexer {
-                            source: source.into(),
-                        })?;
-                    (default, true)
+                        .map_err(|source| NetworkCommandError::Indexer { source })?;
+                    (bound, true)
                 }
             };
             // `network on` waits out the standing client's proven birth: the
@@ -1644,8 +1643,9 @@ async fn network_command(
             // consent is untouched (`--forget-online` is the erasure act).
             lightclient.go_offline().await;
             Ok(
-                "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
-                 and in-flight sync is stopped. Nothing network-visible is emitted until \
+                "Network off: the nym proxy is stopped, the Indexer connection is dropped \
+                 (its choice is kept for `network on` to rebind), and in-flight sync is \
+                 stopped. Nothing network-visible is emitted until \
                  `network on` re-consents for this session. The stored Connectivity \
                  Consent record is untouched: a standing consent, if recorded, attaches \
                  the next launch again (`--forget-online` erases it)."
@@ -2401,8 +2401,10 @@ pub(crate) enum CliCommand {
 
             WARNING: in an unconsented offline session, `network on` is itself
             the consent act: it switches the session to ONLINE MODE, for this
-            session only. The session binds the chain's Default Indexer, the
-            one `--online` binds at launch, and only then bootstraps the
+            session only. The session binds the indexer it was given, by
+            `--server` at launch or by `change_server`, which `network off`
+            remembers; without one it binds the chain's Default Indexer, as
+            `--online` does at launch. Only then does it bootstrap the
             mixnet (ADR 0026); a session that already holds an indexer keeps
             it. A deliberate --offline session does not offer this command;
             relaunch without --offline instead.

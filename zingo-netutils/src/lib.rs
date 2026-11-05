@@ -42,6 +42,7 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 pub mod crypto;
 pub mod default_indexer;
 pub mod error;
+pub mod network_access;
 
 pub use crypto::ensure_default_crypto_provider;
 
@@ -67,6 +68,7 @@ pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
+pub use network_access::NetworkAccess;
 pub use tonic::{Status, Streaming, TimeoutExpired};
 
 #[cfg(feature = "globally-public-transparent")]
@@ -320,9 +322,12 @@ pub trait Indexer {
 }
 
 /// gRPC-backed [`Indexer`] that connects to a Zcash chain indexer (server).
+///
+/// A value of this type is connected by construction: it holds the live
+/// client(s) and nothing else. The URI it was dialed from lives beside it in
+/// the [`NetworkAccess`] that owns the session's online state.
 #[derive(Debug, Clone)]
 pub struct GrpcIndexer {
-    uri: http::Uri,
     clear_net_client: CompactTxStreamerClient<Channel>,
 }
 
@@ -350,10 +355,7 @@ impl GrpcIndexer {
         let channel = endpoint.connect_with_connector(indexer_connector()).await?;
         let clear_net_client = CompactTxStreamerClient::new(channel);
 
-        Ok(Self {
-            uri,
-            clear_net_client,
-        })
+        Ok(Self { clear_net_client })
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
@@ -382,15 +384,7 @@ impl GrpcIndexer {
         let channel = endpoint.connect_with_connector_lazy(indexer_connector());
         let clear_net_client = CompactTxStreamerClient::new(channel);
 
-        Ok(Self {
-            uri,
-            clear_net_client,
-        })
-    }
-
-    /// Returns URI the gRPC client(s) are connected to.
-    pub fn uri(&self) -> &http::Uri {
-        &self.uri
+        Ok(Self { clear_net_client })
     }
 
     /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
