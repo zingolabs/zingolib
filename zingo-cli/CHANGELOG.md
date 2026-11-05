@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one it binds the chain's Default Indexer, as `--online` does at launch
   (zingo-adrs zingolib/0063), and a chain without one refuses typed. A
   session that already holds an Indexer keeps it, and a bootstrap that fails
-  after a fresh bind drops the Indexer again.
+  after a fresh bind drops the Indexer again, reporting the failure once in
+  the command's own output; `network status` afterwards says off without
+  the cause, since the session is unconsented again.
 
 ## [0.5.0] - 2026-10-28
 
