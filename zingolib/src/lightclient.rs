@@ -688,11 +688,19 @@ impl LightClient {
 
     /// Points the client at `server` without connecting. As
     /// [`Self::set_indexer_uri`], the URI becomes the Session Indexer.
+    ///
+    /// Call it inside a tokio runtime: the lazy link still needs one to
+    /// live in, and outside one hyper panics with a message that names
+    /// neither this call nor the cure.
     #[cfg(any(test, feature = "testutils"))]
     pub fn set_indexer_uri_lazy(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
+        debug_assert!(
+            tokio::runtime::Handle::try_current().is_ok(),
+            "set_indexer_uri_lazy needs a tokio runtime context"
+        );
         self.network.connect_to_lazy(server)
     }
 
