@@ -1435,11 +1435,7 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
     recovery: &mut SyncRecovery,
     error: &SyncError<E>,
 ) -> bool {
-    let Some(bound) = lightclient
-        .is_online()
-        .then(|| lightclient.indexer_uri())
-        .flatten()
-    else {
+    let Some(bound) = lightclient.connected_indexer_uri() else {
         return false;
     };
     let action = plan_recovery(error.recovery_recommendation(), recovery.attempts_left);
