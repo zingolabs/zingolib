@@ -718,21 +718,13 @@ impl LightClient {
         self.network.indexer().ok_or(LightClientError::Offline)
     }
 
-    /// Returns the indexer beside the URI it was dialed from, or
-    /// `LightClientError::Offline` if none is connected.
-    pub(crate) fn require_connected(
-        &self,
-    ) -> Result<(&http::Uri, &zingo_netutils::GrpcIndexer), LightClientError> {
-        self.network.connected().ok_or(LightClientError::Offline)
-    }
-
     /// Returns the connected server's diagnostics as typed data.
     ///
     /// Failure travels on the error channel. The data channel carries a
     /// [`ServerInfo`]. No caller ever inspects a returned value's content
     /// to learn whether the call succeeded (zingolabs/zingolib#2446).
     pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
-        let (uri, indexer) = self.require_connected()?;
+        let (uri, indexer) = self.network.connected().ok_or(LightClientError::Offline)?;
         let uri = uri.clone();
         let mut indexer = indexer.clone();
         let info = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
