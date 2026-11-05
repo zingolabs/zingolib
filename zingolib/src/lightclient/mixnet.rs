@@ -1178,10 +1178,9 @@ impl LightClient {
         // An Indexerless session has nothing to probe, and an indexer outside
         // the exit policy's endpoint shape is refused whether the caller
         // named it or the session holds it, never answered with silence.
-        let indexer = match target {
-            Some(target) => target,
-            None => self.require_connected()?.0.clone(),
-        };
+        let indexer = target
+            .or_else(|| self.connected_indexer_uri())
+            .ok_or(crate::lightclient::error::LightClientError::Offline)?;
         if !crate::mixnet::probe::probe_eligible(&indexer) {
             return Err(
                 crate::lightclient::error::LightClientError::IneligibleProbeTarget(indexer),
