@@ -613,6 +613,12 @@ impl LightClient {
         self.network.is_online()
     }
 
+    /// Returns the URI of the indexer the client is connected to, or `None`
+    /// while offline: [`Self::indexer_uri`] narrowed to the live link.
+    pub fn connected_indexer_uri(&self) -> Option<http::Uri> {
+        self.network.connected().map(|(uri, _link)| uri.clone())
+    }
+
     /// Connect to an indexer (or switch to a different one).
     ///
     /// Creates a new gRPC connection to the given URI. After this call the client is online and

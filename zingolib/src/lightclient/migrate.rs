@@ -969,8 +969,9 @@ impl LightClient {
         };
         #[cfg(not(feature = "nym"))]
         let wire = MigrationWire::Nakednet;
-        let (indexer, _link) = self.require_connected()?;
-        let indexer = indexer.clone();
+        let indexer = self
+            .connected_indexer_uri()
+            .ok_or(LightClientError::Offline)?;
         Ok(transmission_route::RoutedTransmissionClient { wire, indexer })
     }
 
