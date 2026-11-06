@@ -9,6 +9,7 @@ use zcash_protocol::consensus::BlockHeight;
 
 use super::LightWallet;
 use super::error::WalletError;
+use super::migration;
 use super::note_selection;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
@@ -17,6 +18,7 @@ use pepper_sync::wallet::TransparentCoin;
 use pepper_sync::wallet::WalletTransaction;
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;
+use zcash_client_backend::wallet::OutputRef as LockedOutputRef;
 use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub mod query;
@@ -392,9 +394,10 @@ impl LightWallet {
     pub(crate) fn note_candidates<N: NoteInterface + Clone>(
         &self,
         anchor_height: BlockHeight,
+        target_height: BlockHeight,
         account: zip32::AccountId,
         exclude: &[OutputRef],
-        reserved: &[OutputId],
+        reserved: &[LockedOutputRef],
     ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
         let exclude = exclude
             .iter()
@@ -409,10 +412,24 @@ impl LightWallet {
         Ok(self
             .spendable_notes::<N>(anchor_height, &exclude, account, true)?
             .into_iter()
-            .map(|note| note_selection::Candidate {
-                certain: certain.contains(&note.output_id()),
-                reserved: reserved.contains(&note.output_id()),
-                note: note.clone(),
+            .map(|note| {
+                let output = LockedOutputRef::new(
+                    note.output_id().txid(),
+                    N::POOL_TYPE,
+                    note.output_id().output_index(),
+                );
+                note_selection::Candidate {
+                    certain: certain.contains(&note.output_id()),
+                    lock: self
+                        .output_locks
+                        .owner_at(&output, target_height)
+                        .or_else(|| {
+                            reserved
+                                .contains(&output)
+                                .then_some(migration::RESERVATION_OWNER)
+                        }),
+                    note: note.clone(),
+                }
             })
             .collect())
     }
