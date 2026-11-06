@@ -87,6 +87,12 @@ pub enum ZingolibError {
     Save(String),
     #[error("Error: initializing wallet: {0}")]
     Init(String),
+    #[error("Error: initializing wallet: {0}")]
+    InitServer(String),
+    #[error("Error: initializing wallet: {0}")]
+    InitKey(String),
+    #[error("Error: initializing wallet: {0}")]
+    InitWalletFile(String),
     #[error("Error: sync: {0}")]
     Sync(String),
     #[error("Error: rescan: {0}")]
@@ -185,8 +191,35 @@ fn open_error(error: &LightClientError) -> ZingolibError {
         .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
     if mismatch {
         ZingolibError::WalletChainMismatch(chain_text(error))
+    } else if file_io.is_some() {
+        ZingolibError::InitWalletFile(chain_text(error))
     } else {
-        ZingolibError::init(chain_text(error))
+        load_error(error)
+    }
+}
+
+/// A failure to load a wallet, named by what the user can change about it,
+/// the same for all four entry points. A server that does not answer is not
+/// here: `client_or_pending` carries on without it.
+fn load_error(error: &LightClientError) -> ZingolibError {
+    use netutils::GetClientError;
+    use zingolib::wallet::error::{KeyError, WalletError};
+    let text = chain_text(error);
+    match error {
+        LightClientError::ClientError(
+            GetClientError::InvalidScheme | GetClientError::InvalidAuthority,
+        ) => ZingolibError::InitServer(text),
+        LightClientError::WalletError(
+            WalletError::MnemonicError(_)
+            | WalletError::KeyError(
+                KeyError::InvalidMnemonicPhrase(_)
+                | KeyError::KeyParseError(_)
+                | KeyError::KeyDecodingError
+                | KeyError::NetworkMismatch
+                | KeyError::InvalidFormat,
+            ),
+        ) => ZingolibError::InitKey(text),
+        _ => ZingolibError::Init(text),
     }
 }
 
@@ -801,11 +834,13 @@ fn build_connection_params(
         IndexerChoice::Offline => None,
         IndexerChoice::Default => {
             Some(config::default_indexer_for(&chain_type).ok_or_else(|| {
-                ZingolibError::init(config::NoDefaultIndexer { chain: chain_type }.to_string())
+                ZingolibError::InitServer(
+                    config::NoDefaultIndexer { chain: chain_type }.to_string(),
+                )
             })?)
         }
         IndexerChoice::Named { uri } => Some(construct_indexer_uri(uri).map_err(|e| {
-            ZingolibError::init(format!("Invalid lightwalletd uri: {}", chain_text(&e)))
+            ZingolibError::InitServer(format!("Invalid lightwalletd uri: {}", chain_text(&e)))
         })?),
     };
     let level = performance_level(&connection.sync.performance_level)
@@ -844,25 +879,56 @@ fn build_client_config(
     builder.build().map_err(chained(ZingolibError::Init))
 }
 
-/// The shared spine of the wallet-init FFI functions: tear down any live
+/// Builds the client, and when the server does not answer, builds it without
+/// one and leaves the URI pending for `run_sync` to dial again: a server that
+/// is down never stops a wallet from loading.
+fn client_or_pending(
+    mut params: ConnectionParams,
+    wallet_config: WalletConfig,
+    build: impl Fn(ClientConfig) -> Result<LightClient, LightClientError>,
+    failed: fn(&LightClientError) -> ZingolibError,
+) -> Result<(LightClient, ConnectionParams), ZingolibError> {
+    let config = build_client_config(&params, wallet_config.clone())?;
+    match build(config) {
+        Ok(lightclient) => Ok((lightclient, params)),
+        Err(LightClientError::ClientError(netutils::GetClientError::Transport(_))) => {
+            let pending_uri = params.lightwalletd_uri.take();
+            let config = build_client_config(&params, wallet_config)?;
+            let lightclient = build(config).map_err(|error| failed(&error))?;
+            leave_pending(pending_uri);
+            Ok((lightclient, params))
+        }
+        Err(error) => Err(failed(&error)),
+    }
+}
+
+fn leave_pending(uri: Option<http::Uri>) {
+    if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
+        *pending = uri;
+    }
+}
+
+/// Shared skeleton of the wallet-building init entry points: reset the
 /// client, resolve the connection parameters, build the wallet the caller
 /// describes, store the new client, and report through `finish` (the seed
 /// or the UFVK). Each `init_*` entry point supplies only its
 /// `WalletConfig` and its report.
 fn init_lightclient(
     connection: IndexerConnection,
-    make_wallet_config: impl FnOnce(&ConnectionParams) -> Result<WalletConfig, ZingolibError>
+    make_wallet_config: impl FnOnce(&mut ConnectionParams) -> Result<WalletConfig, ZingolibError>
     + UnwindSafe,
     finish: fn() -> Result<String, ZingolibError>,
 ) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         reset_lightclient();
-        let params = build_connection_params(connection)?;
-        let wallet_config = make_wallet_config(&params)?;
-        let config = build_client_config(&params, wallet_config)?;
-        let lightclient = RT
-            .block_on(LightClient::new(config, false))
-            .map_err(chained(ZingolibError::Init))?;
+        let mut params = build_connection_params(connection)?;
+        let wallet_config = make_wallet_config(&mut params)?;
+        let (lightclient, _) = client_or_pending(
+            params,
+            wallet_config,
+            |config| RT.block_on(LightClient::new(config, false)),
+            load_error,
+        )?;
         let _ = store_client(lightclient);
 
         finish()
@@ -885,33 +951,43 @@ pub fn init_logging() -> Result<String, ZingolibError> {
     })
 }
 
+/// The server's chain tip, or nothing when the server does not answer it.
+fn chain_tip(uri: http::Uri) -> Result<Option<u32>, ZingolibError> {
+    RT.block_on(async move {
+        let mut indexer = match GrpcIndexer::new(uri).await {
+            Ok(indexer) => indexer,
+            Err(netutils::GetClientError::Transport(_)) => return Ok(None),
+            Err(error) => return Err(load_error(&LightClientError::ClientError(error))),
+        };
+        Ok(indexer
+            .get_latest_block(INDEXER_REQUEST_TIMEOUT)
+            .await
+            .ok()
+            .map(|block| block.height as u32))
+    })
+}
+
 #[uniffi::export]
 pub fn init_new(connection: IndexerConnection, birthday: u32) -> Result<String, ZingolibError> {
     init_lightclient(
         connection,
         |params| {
             // Online: ask the Indexer for the chain tip. Offline
-            // (Indexerless): there is no server to query, so fall back to
-            // zingolib's Library Birthday — a per-chain height already mined
-            // when the linked zingolib release was cut, hence always a safe
-            // floor for a newly-generated seed (see zingolib/0007). A
+            // (Indexerless), or with a server that does not answer: fall back
+            // to zingolib's Library Birthday — a per-chain height already
+            // mined when the linked zingolib release was cut, hence always a
+            // safe floor for a newly-generated seed (see zingolib/0007). A
             // caller-supplied `birthday > 0` still wins as an explicit
             // override. Mirrors zingo-cli's offline new-wallet path.
-            let chain_height = match &params.lightwalletd_uri {
-                Some(uri) => {
-                    let uri = uri.clone();
-                    RT.block_on(async move {
-                        let mut indexer =
-                            GrpcIndexer::new(uri).await.map_err(|e| chain_text(&e))?;
-                        indexer
-                            .get_latest_block(INDEXER_REQUEST_TIMEOUT)
-                            .await
-                            .map_err(|e| chain_text(&e))
-                    })
-                    .map_err(ZingolibError::init)?
-                    .height as u32
-                }
+            let tip = match params.lightwalletd_uri.clone() {
+                Some(uri) => chain_tip(uri)?,
+                None => None,
+            };
+            let chain_height = match tip {
+                Some(height) => height,
                 None => {
+                    // One failed dial is enough: the client skips its own.
+                    leave_pending(params.lightwalletd_uri.take());
                     if birthday > 0 {
                         birthday
                     } else {
@@ -977,97 +1053,39 @@ pub fn init_from_bytes(
     with_panic_guard(|| {
         reset_lightclient();
 
-        let decoded_bytes = wallet_bytes;
-
-        // Offline (empty server uri) has no server, so the caller-supplied
-        // `chain_hint` is meaningless — and the wallet already stores its own
-        // chain. Try each chain and keep the one the wallet deserializes under,
-        // so an Offline open works regardless of any residual chain value (a
-        // mainnet wallet opened while settings still say "test", and vice
-        // versa). Online we honor the hint strictly: a chain that disagrees
-        // with the selected server is a genuine mismatch and must error.
-        let chain_hints: Vec<String> = if connection.indexer == IndexerChoice::Offline {
-            vec![
-                "main".to_string(),
-                "test".to_string(),
-                "regtest".to_string(),
-            ]
+        // Offline has no server, so the caller-supplied `chain_hint` is
+        // meaningless, and the wallet stores its own chain: open under the
+        // header's, whatever residual value settings hold. Online we honor
+        // the hint strictly: a chain that disagrees with the selected server
+        // is a genuine mismatch and must error.
+        let chain_hint = if connection.indexer == IndexerChoice::Offline {
+            let chain = wallet::LightWallet::read_chain(&wallet_bytes)
+                .map_err(|io| open_error(&LightClientError::FileError(io)))?;
+            chain_name_short(chain).to_string()
         } else {
-            vec![connection.chain_hint.clone()]
+            connection.chain_hint.clone()
         };
+        let params = build_connection_params(IndexerConnection {
+            chain_hint,
+            ..connection
+        })?;
 
         // `LightClient::from_bytes` deserializes the wallet straight from memory.
         // The native layer (Kotlin/Swift) owns all wallet persistence and ships
         // the bytes across the FFI; nothing here touches the filesystem. It reads
         // (and chain-validates) the wallet BEFORE building the indexer, so a chain
-        // mismatch fails fast and cheaply — no network is ever dialed, which is
-        // what makes trying several chains offline essentially free.
+        // mismatch fails before any network is dialed.
         //
         // (This whole path replaced the previous staging-to-`std::env::temp_dir()`
         // workaround that satisfied v5's `WalletConfig::Read` variant, which failed
         // with `Permission denied (os error 13)` on Android where `TMPDIR` is unset
         // and the app UID cannot write to `/tmp`.)
-        let mut built: Option<(LightClient, ConnectionParams)> = None;
-        let mut last_error = ZingolibError::init("could not read the wallet with any chain");
-        for hint in chain_hints {
-            let params = match build_connection_params(IndexerConnection {
-                chain_hint: hint,
-                ..connection.clone()
-            }) {
-                Ok(p) => p,
-                Err(e) => {
-                    last_error = e;
-                    continue;
-                }
-            };
-            let config = match build_client_config(&params, WalletConfig::Read) {
-                Ok(c) => c,
-                Err(e) => {
-                    last_error = e;
-                    continue;
-                }
-            };
-            match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
-                Ok(l) => {
-                    built = Some((l, params));
-                    break;
-                }
-
-                Err(LightClientError::ClientError(_)) => {
-                    let mut offline_params = params;
-                    let pending_uri = offline_params.lightwalletd_uri.take();
-                    let config = match build_client_config(&offline_params, WalletConfig::Read) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            last_error = e;
-                            continue;
-                        }
-                    };
-                    match RT.block_on(LightClient::from_bytes(decoded_bytes.clone(), config)) {
-                        Ok(l) => {
-                            if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
-                                *pending = pending_uri;
-                            }
-                            built = Some((l, offline_params));
-                            break;
-                        }
-                        Err(e) => {
-                            last_error = open_error(&e);
-                            continue;
-                        }
-                    }
-                }
-                Err(e) => {
-                    last_error = open_error(&e);
-                    continue;
-                }
-            }
-        }
-
-        let (lightclient, params) = match built {
-            Some(v) => v,
-            None => return Err(last_error),
-        };
+        let (lightclient, params) = client_or_pending(
+            params,
+            WalletConfig::Read,
+            |config| RT.block_on(LightClient::from_bytes(wallet_bytes.clone(), config)),
+            open_error,
+        )?;
 
         // Override the wallet's settings with the caller-supplied ones, since the
         // serialized wallet carries whatever settings it was last saved with.
@@ -1182,7 +1200,10 @@ mod cause_chain_tests {
             std::io::ErrorKind::InvalidData,
             "invalid account id",
         ));
-        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+        assert!(matches!(
+            open_error(&other),
+            ZingolibError::InitWalletFile(_)
+        ));
     }
 
     #[test]
@@ -1389,8 +1410,8 @@ mod init_error_channel_tests {
         )
         .expect_err("an invalid lightwalletd uri must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
+            matches!(error, ZingolibError::InitServer(_)),
+            "the failure must be the typed InitServer variant: {error}"
         );
     }
 
@@ -1444,13 +1465,206 @@ mod init_error_channel_tests {
         )
         .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
+            matches!(error, ZingolibError::InitWalletFile(_)),
+            "the failure must be the typed InitWalletFile variant: {error}"
         );
         assert!(
             !error.to_string().contains("not-a-wallet"),
             "the failure must not embed the payload it could not read: {error}"
         );
+    }
+}
+
+/// One contract for the four ways to load a wallet: the same circumstance
+/// answers the same in each, and a server that does not answer never stops
+/// one. Creating takes no key, and only opening reads wallet bytes.
+#[cfg(test)]
+mod load_contract_tests {
+    use super::*;
+
+    const SEED: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
+                        abandon abandon abandon abandon abandon abandon abandon abandon \
+                        abandon abandon abandon abandon abandon abandon abandon art";
+    const CLOSED_PORT: &str = "http://127.0.0.1:1";
+
+    fn offline_wallet(chain_hint: &str) {
+        init_from_seed(
+            SEED.to_string(),
+            2_000_000,
+            test_connection("", chain_hint, "Medium"),
+        )
+        .expect("offline init from seed");
+    }
+
+    fn saved_wallet() -> Vec<u8> {
+        offline_wallet("main");
+        save_wallet_bytes()
+            .expect("save after init")
+            .expect("an initialized wallet always yields bytes")
+    }
+
+    fn a_viewing_key(chain_hint: &str) -> String {
+        offline_wallet(chain_hint);
+        let report = json::parse(&get_ufvk().expect("the wallet has a viewing key"))
+            .expect("the report is json");
+        report["ufvk"].as_str().expect("a ufvk field").to_string()
+    }
+
+    fn the_four_loads(server: &str) -> [(&'static str, Result<String, ZingolibError>); 4] {
+        let bytes = saved_wallet();
+        let ufvk = a_viewing_key("main");
+        let connection = || test_connection(server, "main", "Medium");
+        [
+            ("create", init_new(connection(), 0)),
+            (
+                "seed",
+                init_from_seed(SEED.to_string(), 2_000_000, connection()),
+            ),
+            ("ufvk", init_from_ufvk(ufvk, 2_000_000, connection())),
+            ("open", init_from_bytes(bytes, connection())),
+        ]
+    }
+
+    fn pending_uri() -> Option<http::Uri> {
+        PENDING_INDEXER_URI
+            .read()
+            .expect("pending uri lock")
+            .clone()
+    }
+
+    #[test]
+    fn a_server_that_is_down_never_stops_a_load() {
+        let _serial = lock_discipline_tests::serialized();
+        let bytes = saved_wallet();
+        let ufvk = a_viewing_key("main");
+        let connection = || test_connection(CLOSED_PORT, "main", "Medium");
+        let pending = Some(http::Uri::from_static(CLOSED_PORT));
+
+        init_new(connection(), 0).expect("create carries on");
+        assert_eq!(pending_uri(), pending);
+        init_from_seed(SEED.to_string(), 2_000_000, connection()).expect("seed carries on");
+        assert_eq!(pending_uri(), pending);
+        init_from_ufvk(ufvk, 2_000_000, connection()).expect("ufvk carries on");
+        assert_eq!(pending_uri(), pending);
+        init_from_bytes(bytes, connection()).expect("open carries on");
+        assert_eq!(pending_uri(), pending);
+    }
+
+    #[test]
+    fn a_create_with_the_server_down_starts_where_an_offline_create_does() {
+        let _serial = lock_discipline_tests::serialized();
+        let birthday = |server| {
+            let report =
+                init_new(test_connection(server, "main", "Medium"), 0).expect("create carries on");
+            json::parse(&report).expect("the report is json")["birthday"].as_u32()
+        };
+        assert_eq!(birthday(CLOSED_PORT), birthday(""));
+    }
+
+    #[test]
+    fn a_server_that_drops_the_connection_never_stops_a_create() {
+        let _serial = lock_discipline_tests::serialized();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a local listener");
+        let port = listener.local_addr().expect("a local address").port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                drop(stream);
+            }
+        });
+        init_new(
+            test_connection(&format!("http://127.0.0.1:{port}"), "main", "Medium"),
+            0,
+        )
+        .expect("create carries on");
+        assert!(pending_uri().is_some(), "the URI waits for the next sync");
+    }
+
+    #[test]
+    fn a_sync_with_no_server_attached_is_the_offline_variant() {
+        let _serial = lock_discipline_tests::serialized();
+        offline_wallet("main");
+        let error = run_sync().expect_err("no server to sync from");
+        assert!(matches!(error, ZingolibError::Offline), "{error}");
+    }
+
+    #[test]
+    fn a_server_address_that_cannot_work_is_a_server_failure_on_every_load() {
+        let _serial = lock_discipline_tests::serialized();
+        for server in ["http://an invalid uri with spaces", "httpx://127.0.0.1:1"] {
+            for (load, result) in the_four_loads(server) {
+                assert!(
+                    matches!(result, Err(ZingolibError::InitServer(_))),
+                    "{load} against {server} must be InitServer: {result:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_key_that_cannot_be_used_is_a_key_failure_on_both_restores() {
+        let _serial = lock_discipline_tests::serialized();
+        let other_network = a_viewing_key("test");
+        let connection = || test_connection("", "main", "Medium");
+        let cases = [
+            (
+                "seed",
+                init_from_seed("not a seed phrase".to_string(), 2_000_000, connection()),
+            ),
+            (
+                "ufvk",
+                init_from_ufvk("uview1notakey".to_string(), 2_000_000, connection()),
+            ),
+            (
+                "ufvk of another network",
+                init_from_ufvk(other_network, 2_000_000, connection()),
+            ),
+        ];
+        for (load, result) in cases {
+            assert!(
+                matches!(result, Err(ZingolibError::InitKey(_))),
+                "{load} must be InitKey: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_derivation_failure_is_not_blamed_on_the_key() {
+        use zingolib::wallet::error::{KeyError, WalletError};
+        let error = load_error(&LightClientError::WalletError(WalletError::KeyError(
+            KeyError::GapError,
+        )));
+        assert!(matches!(error, ZingolibError::Init(_)), "{error}");
+    }
+
+    #[test]
+    fn an_offline_open_goes_by_the_header_whatever_the_hint() {
+        let _serial = lock_discipline_tests::serialized();
+        let bytes = saved_wallet();
+        init_from_bytes(bytes, test_connection("", "test", "Medium"))
+            .expect("the header names main, so a residual test hint does not matter offline");
+    }
+
+    #[test]
+    fn a_truncated_wallet_is_a_file_failure_under_its_own_chain() {
+        let _serial = lock_discipline_tests::serialized();
+        let mut bytes = 41u64.to_le_bytes().to_vec();
+        bytes.push(0);
+        let error = init_from_bytes(bytes, test_connection("", "main", "Medium"))
+            .expect_err("a truncated wallet does not open");
+        assert!(matches!(error, ZingolibError::InitWalletFile(_)), "{error}");
+    }
+
+    #[test]
+    fn an_online_open_under_another_chain_is_a_mismatch_before_any_dial() {
+        let _serial = lock_discipline_tests::serialized();
+        let bytes = saved_wallet();
+        let error = init_from_bytes(bytes, test_connection(CLOSED_PORT, "test", "Medium"))
+            .expect_err("the hint disagrees with the header");
+        assert!(
+            matches!(error, ZingolibError::WalletChainMismatch(_)),
+            "{error}"
+        );
+        assert_eq!(pending_uri(), None);
     }
 }
 
@@ -2277,6 +2491,7 @@ fn run_sync() -> Result<String, ZingolibError> {
                     Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
                         Ok("Sync task already running.".to_string())
                     }
+                    Err(LightClientError::Offline) => Err(ZingolibError::Offline),
                     Err(e) => Err(ZingolibError::sync(&e)),
                 }
             })
@@ -2517,12 +2732,7 @@ wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey::of));
 pub fn read_wallet_chain(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
     let chain = zingolib::wallet::LightWallet::read_chain(&wallet_bytes)
         .map_err(chained(ZingolibError::Read))?;
-    Ok(match chain {
-        ChainType::Mainnet => "main",
-        ChainType::Testnet => "test",
-        ChainType::Regtest(_) => "regtest",
-    }
-    .to_string())
+    Ok(chain_name_short(chain).to_string())
 }
 
 /// Salvages seed phrase, birthday, and account count from the stable prefix
