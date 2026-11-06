@@ -226,6 +226,7 @@ impl ZingolibError {
 /// fails compilation here instead of degrading to prose in the data channel.
 fn ffi_error(e: LightClientError) -> ZingolibError {
     use zingolib::lightclient::error::MigrationError;
+    use zingolib::mixnet::fetch::MixnetFetchError;
     let text = chain_text(&e);
     match e {
         LightClientError::SyncLaunchError
@@ -262,6 +263,12 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
         LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
+        LightClientError::MixnetFetch(inner) => match inner {
+            MixnetFetchError::Ineligible(_) => ZingolibError::InvalidInput(text),
+            MixnetFetchError::Speed(_)
+            | MixnetFetchError::Request(_)
+            | MixnetFetchError::NoResponse => ZingolibError::Mixnet(text),
+        },
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -2958,6 +2965,33 @@ pub fn zec_price() -> Result<String, ZingolibError> {
         })
     })?;
     Ok(object! { "current_price" => usd }.pretty(2))
+}
+
+/// GET `url` over the mixnet and report its body as text, with the local
+/// SOCKS5 endpoint it traveled through and the round trip in milliseconds.
+/// The fetch rides the fetch exit, never the Standing Client's, so a
+/// consumer's third-party lookups stay unlinked from wallet traffic. `url`
+/// must be `https` on port 443; `timeout_ms` bounds the whole request.
+/// Refuses while Mixnet Mode is not ready, with no nakednet leg.
+#[uniffi::export]
+pub fn mixnet_fetch(url: String, timeout_ms: u64) -> Result<String, ZingolibError> {
+    let fetch = with_initialized_lightclient_read(|lightclient| {
+        let url = url
+            .parse::<http::Uri>()
+            .map_err(|error| ZingolibError::InvalidInput(format!("url: {error}")))?;
+        RT.block_on(async move {
+            lightclient
+                .fetch_over_mixnet(url, std::time::Duration::from_millis(timeout_ms))
+                .await
+                .map_err(ffi_error)
+        })
+    })?;
+    Ok(object! {
+        "body" => fetch.body,
+        "via_socks5" => fetch.via_socks5,
+        "rtt_ms" => u64::try_from(fetch.round_trip.as_millis()).unwrap_or(u64::MAX),
+    }
+    .pretty(2))
 }
 
 #[derive(Debug)]
