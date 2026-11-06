@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Deprecated
 
