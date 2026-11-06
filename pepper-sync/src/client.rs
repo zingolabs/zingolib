@@ -34,8 +34,16 @@ use zingo_netutils::lightwallet_protocol::SubtreeRoot;
 pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
+const STREAM_EOF_MESSAGE: &str = "Unexpected EOF decoding stream.";
 
 use zingo_netutils::time::STREAM_MSG_TIMEOUT;
+
+pub(crate) fn stream_can_resume(status: &tonic::Status) -> bool {
+    matches!(
+        status.code(),
+        tonic::Code::DeadlineExceeded | tonic::Code::ResourceExhausted
+    ) || status.message().contains(STREAM_EOF_MESSAGE)
+}
 
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,
@@ -262,11 +270,7 @@ pub(crate) async fn get_subtree_roots(
         while let Some(subtree_root) =
             match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
                 Ok(s) => s,
-                Err(e)
-                    if (e.code() == tonic::Code::DeadlineExceeded
-                        || e.message().contains("Unexpected EOF decoding stream."))
-                        && retry_count < MAX_RETRIES =>
-                {
+                Err(e) if stream_can_resume(&e) && retry_count < MAX_RETRIES => {
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     retry_count += 1;
                     continue 'retry;
@@ -440,11 +444,7 @@ pub(crate) async fn get_transparent_address_transactions(
         while let Some(raw_tx) =
             match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
                 Ok(s) => s,
-                Err(e)
-                    if (e.code() == tonic::Code::DeadlineExceeded
-                        || e.message().contains("Unexpected EOF decoding stream."))
-                        && retry_count < MAX_RETRIES =>
-                {
+                Err(e) if stream_can_resume(&e) && retry_count < MAX_RETRIES => {
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     retry_count += 1;
                     raw_transactions.clear();
@@ -707,6 +707,22 @@ mod tests {
                 supported,
                 "{version}"
             );
+        }
+    }
+
+    #[test]
+    fn a_stream_resumes_after_a_deadline_a_load_reset_or_an_eof() {
+        for (status, resumes) in [
+            (
+                tonic::Status::deadline_exceeded("stream message timeout"),
+                true,
+            ),
+            (tonic::Status::resource_exhausted("excessive load"), true),
+            (tonic::Status::unavailable(STREAM_EOF_MESSAGE), true),
+            (tonic::Status::unavailable("outage"), false),
+            (tonic::Status::not_found("no block"), false),
+        ] {
+            assert_eq!(stream_can_resume(&status), resumes, "{status}");
         }
     }
 }

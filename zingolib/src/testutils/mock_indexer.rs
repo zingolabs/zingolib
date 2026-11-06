@@ -87,6 +87,7 @@ const ZAINO_SEND_ERROR_PREFIX: &str = "unhandled rpc-specific zaino_fetch::jsonr
 const ZAINO_DUPLICATE_CODE: i32 = -1;
 const ZAINO_REJECTION_CODE: i32 = -26;
 const STREAM_EOF_MESSAGE: &str = "Unexpected EOF decoding stream.";
+const STREAM_RESET_MESSAGE: &str = "mock stream reset";
 const MEMPOOL_RAW_TRANSACTION_HEIGHT: u64 = 0;
 const BLOCK_TIME_BASE: u32 = 1_700_000_000;
 const OP_SMALL_INTEGER_BASE: u8 = 0x50;
@@ -440,6 +441,10 @@ pub enum Fault {
     TruncateStream {
         /// The number of items streamed before the error.
         after: usize,
+    },
+    ResetStream {
+        after: usize,
+        code: Code,
     },
     /// A stream that ends cleanly after this many items.
     EndStream {
@@ -1885,18 +1890,22 @@ fn compact_transaction(index: u64, transaction: &Transaction) -> CompactTx {
 type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
 
 fn stream_with_fault<T: Send + 'static>(items: Vec<T>, fault: Option<Fault>) -> ResponseStream<T> {
-    let items: Vec<Result<T, Status>> = match fault {
-        Some(Fault::TruncateStream { after }) => items
-            .into_iter()
-            .take(after)
-            .map(Ok)
-            .chain(std::iter::once(Err(Status::unavailable(
-                STREAM_EOF_MESSAGE,
-            ))))
-            .collect(),
-        Some(Fault::EndStream { after }) => items.into_iter().take(after).map(Ok).collect(),
-        _ => items.into_iter().map(Ok).collect(),
+    let (served, ending) = match fault {
+        Some(Fault::TruncateStream { after }) => {
+            (after, Some(Status::unavailable(STREAM_EOF_MESSAGE)))
+        }
+        Some(Fault::ResetStream { after, code }) => {
+            (after, Some(Status::new(code, STREAM_RESET_MESSAGE)))
+        }
+        Some(Fault::EndStream { after }) => (after, None),
+        _ => (items.len(), None),
     };
+    let items: Vec<Result<T, Status>> = items
+        .into_iter()
+        .take(served)
+        .map(Ok)
+        .chain(ending.map(Err))
+        .collect();
     Box::pin(tokio_stream::iter(items))
 }
 
