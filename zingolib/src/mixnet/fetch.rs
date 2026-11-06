@@ -2,9 +2,9 @@
 //! needs third-party data (a forex table, a fee estimate) without a
 //! nakednet leg and without sharing the Standing Client's exit.
 //!
-//! The price fetch is one use of the same run: [`FetchRun`] contains the
+//! The price fetch is one use of the same run: `FetchRun` contains the
 //! exit acquisition, the disposal, and the narration that every fetch on
-//! the fetch exit shares, and [`FetchTargets`] supplies what one fetch
+//! the fetch exit shares, and `FetchTargets` supplies what one fetch
 //! races and how it reads the responses.
 
 #![forbid(unsafe_code)]
@@ -86,7 +86,7 @@ impl<F: FetchTargets> SpeedPrioritized for FetchRun<F> {
     }
 
     fn settled(&self, responses: &[Self::Outcome]) -> bool {
-        self.targets.answered(responses)
+        SpeedPrioritized::answered(self, responses)
     }
 
     fn answered(&self, responses: &[Self::Outcome]) -> bool {
@@ -114,6 +114,11 @@ impl<F: FetchTargets> SpeedPrioritized for FetchRun<F> {
     }
 
     fn abandon(&self, dead: Member) {
+        tracing::warn!(
+            "{}: exit {:?} abandoned, no target answered",
+            self.targets.log_label(),
+            dead.node()
+        );
         self.retire(dead, ExitNodeHealthVerdict::Failed);
     }
 

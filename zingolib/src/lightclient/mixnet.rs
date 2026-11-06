@@ -1185,7 +1185,7 @@ impl LightClient {
 
     /// Update and return the current ZEC price in USD by racing the price
     /// sources through the tunnel and taking the first answer. Mixnet-only
-    /// (ADR 0011, amendment 2026-09-11), on the terms of [`Self::run_fetch`].
+    /// (ADR 0011, amendment 2026-09-11), on the terms of `run_fetch`.
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let dispatched = std::time::Instant::now();
         let (responses, via_socks5) = self
@@ -1204,7 +1204,7 @@ impl LightClient {
     }
 
     /// GET `url` over the mixnet and return its body as text, on the terms
-    /// of [`Self::run_fetch`]: the fetch exit carries it, consecutive
+    /// of `run_fetch`: the fetch exit carries it, consecutive
     /// fetches never share a client, and no nakednet leg exists. `url`
     /// must be `https` on port 443, the one shape the exit policy admits;
     /// any other shape refuses before the route is resolved. `timeout`
