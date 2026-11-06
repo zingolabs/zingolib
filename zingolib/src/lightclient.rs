@@ -51,6 +51,7 @@ pub mod save;
 pub mod send;
 pub mod sync;
 pub(crate) mod transmit;
+pub mod voting;
 
 pub use save::SaveShutdown;
 pub use transmit::TransmitProgressHandle;
@@ -221,6 +222,9 @@ pub struct LightClient {
     /// consent revoked mid-birth is never raced by an untracked task.
     #[cfg(feature = "nym")]
     proof_acquisition: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The voting session [`Self::begin_voting`] armed, consumed by the
+    /// next [`Self::cast_vote`]. `None` while no round is armed.
+    voting: Option<zingolib_voting::ArmedVotingSession>,
 }
 
 #[cfg(feature = "nym")]
@@ -320,6 +324,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
+            voting: None,
         })
     }
 
@@ -370,6 +375,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
+            voting: None,
         }
     }
 
@@ -451,6 +457,7 @@ impl LightClient {
             #[cfg(feature = "nym")]
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
+            voting: None,
         })
     }
 
