@@ -52,8 +52,8 @@ use zingolib::data::proposal::{ProportionalFeeProposal, ProportionalFeeShieldPro
 use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient;
-use zingolib::lightclient::LightClient;
 use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::lightclient::{LightClient, SyncModeRequest};
 use zingolib::netutils::{self, GrpcIndexer, Indexer, time};
 use zingolib::perspective::sync_progress;
 use zingolib::utils;
@@ -2260,7 +2260,7 @@ fn run_sync() -> Result<String, ZingolibError> {
             // resume_sync can race: sync_mode() was Paused a moment ago but the
             // task may have advanced before we got here. Return the error typed
             // instead of `expect` — panicking would poison LIGHTCLIENT.
-            match lightclient.resume_sync() {
+            match lightclient.request_sync_mode(SyncModeRequest::Resume) {
                 Ok(_) => Ok("Resuming sync task...".to_string()),
                 Err(e) => Err(ZingolibError::sync(&e)),
             }
@@ -2286,9 +2286,11 @@ fn run_sync() -> Result<String, ZingolibError> {
 
 #[uniffi::export]
 pub fn pause_sync() -> Result<String, ZingolibError> {
-    with_initialized_lightclient(|lightclient| match lightclient.pause_sync() {
-        Ok(_) => Ok("Pausing sync task...".to_string()),
-        Err(e) => Err(ZingolibError::sync(&e)),
+    with_initialized_lightclient(|lightclient| {
+        match lightclient.request_sync_mode(SyncModeRequest::Pause) {
+            Ok(_) => Ok("Pausing sync task...".to_string()),
+            Err(e) => Err(ZingolibError::sync(&e)),
+        }
     })
 }
 

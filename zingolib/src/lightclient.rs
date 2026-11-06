@@ -4,10 +4,7 @@ use std::{
     fs::File,
     io::{BufReader, Cursor, Read},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8},
-    },
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use json::JsonValue;
@@ -22,7 +19,7 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::TransparentAddressId,
     sync::{SyncResult, SyncStatus},
-    wallet::SyncMode,
+    wallet::SyncModeHandle,
 };
 use zingo_netutils::Indexer as _;
 
@@ -53,6 +50,7 @@ pub mod sync;
 pub(crate) mod transmit;
 
 pub use save::SaveShutdown;
+pub use sync::SyncModeRequest;
 pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
@@ -142,7 +140,7 @@ pub enum ChooseIndexerError {
 /// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
 /// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
 ///
-/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
+/// `sync_mode` is the [`pepper_sync::wallet::SyncMode`] shared with the sync engine.
 ///
 /// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
 /// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
@@ -150,7 +148,7 @@ pub enum ChooseIndexerError {
 pub struct LightClient {
     indexer: Option<zingo_netutils::GrpcIndexer>,
     wallet: WalletMeta,
-    sync_mode: Arc<AtomicU8>,
+    sync_mode: SyncModeHandle,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     /// The receiving end of the sync engine's progress channel, answering status queries without the wallet lock.
     sync_progress: tokio::sync::watch::Receiver<Option<SyncStatus>>,
@@ -291,7 +289,7 @@ impl LightClient {
         Ok(LightClient {
             indexer,
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_mode: SyncModeHandle::default(),
             sync_handle: None,
             sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -339,7 +337,7 @@ impl LightClient {
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
             ),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_mode: SyncModeHandle::default(),
             sync_handle: None,
             sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
@@ -422,7 +420,7 @@ impl LightClient {
         Ok(LightClient {
             indexer,
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_mode: SyncModeHandle::default(),
             sync_handle: None,
             sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),
