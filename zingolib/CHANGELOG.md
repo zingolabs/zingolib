@@ -8,8 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The `runtime-sapling-params` feature reads the Sapling proving parameters
+  from a directory the consumer names with `wallet::sapling_params::set_directory`
+  and checks each file's length and BLAKE2b digest. A mobile build ships
+  without the 51 MB of parameters and its build makes no network fetch. The
+  consumer fetches the files: `SaplingParamFile::ALL` lists them, `file_name`
+  names each and `verify` checks downloaded bytes before they are written.
+  `proves_sapling` tells the consumer whether a proposal needs the parameters,
+  to fetch them before it signs. A send that spends, pays or changes to
+  Sapling loads them first and reports a missing or altered file as
+  `CalculateTransactionError::SaplingParams`, which carries a
+  `SaplingParamsError`.
 
 ### Changed
+- **Breaking:** `CalculateTransactionError::SaplingParams` carries a
+  `wallet::sapling_params::SaplingParamsError` in place of a `String`.
 
 ### Deprecated
 
@@ -74,7 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
   the aliases `propose_send`, `propose_shield` and the previews return, are
   public, so a consumer can name them.
-
 ### Changed
 - **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
   pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their

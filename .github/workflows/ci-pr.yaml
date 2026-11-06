@@ -421,3 +421,61 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+  # The `runtime-sapling-params` feature of zingolib reads the Sapling
+  # parameters from a directory at run time in place of the embedded
+  # bytes. cargo-hack compiles the tests gated on it in every feature
+  # subset and runs none of them, so this job runs them with the feature
+  # on. Unlike the nym suite, it is filtered: the feature gates a single
+  # module, `wallet::sapling_params`, which owns the directory and every
+  # test gated on the feature, so the filter names that module and one
+  # mock-chain test that proves a Sapling spend through the runtime load.
+  # The whole lib suite under the feature re-ran hundreds of tests the
+  # feature cannot reach, across four shards fed an artifact of the
+  # parameters (ruled 2026-11-04, #3112). A check of the default build
+  # runs the build script, which fills the parameter cache the tests
+  # read, so the job needs no artifact and no shards.
+  test-runtime-sapling-params:
+    name: Run runtime-sapling-params tests
+    needs: ensure-image
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --security-opt seccomp=unconfined
+    permissions:
+      contents: read
+      packages: read
+    env:
+      RUSTFLAGS: -D warnings
+      NEXTEST_VERSION: "0.9.132"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          key: runtime-sapling-params
+
+      - name: Install nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@${{ env.NEXTEST_VERSION }}
+
+      - name: Install system deps
+        run: |
+          apt-get update
+          apt-get install -y libsqlite3-dev pkg-config
+
+      - name: Fetch the Sapling parameters
+        run: cargo check --package zingolib
+
+      - name: Run the runtime-sapling-params tests
+        run: |
+          cargo nextest run --verbose --profile ci --retries 0 \
+            --package zingolib --features runtime-sapling-params --lib \
+            -E 'test(sapling_params) | test(faucet_recipient_default_in_one_chain)'
