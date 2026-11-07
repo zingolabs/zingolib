@@ -1931,7 +1931,7 @@ mod posture_surface {
     /// the mixnet, so a session that never named an indexer, on a chain
     /// without a Default Indexer, refuses typed, leaves the client
     /// Indexerless, and never starts a proxy. The synthetic wallet is
-    /// regtest, which like testnet has no Default Indexer, so the refusal
+    /// regtest, the one chain with no Default Indexer, so the refusal
     /// lands before any traffic.
     #[cfg(feature = "nym")]
     #[test]

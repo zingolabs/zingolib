@@ -11,17 +11,24 @@ mod test {
     };
 
     async fn create_offline_client() -> LightClient {
+        create_offline_client_for(crate::config::ChainType::Mainnet).await
+    }
+
+    async fn create_offline_client_for(chain: crate::config::ChainType) -> LightClient {
         let config = ClientConfig::builder()
+            .set_chain_type(chain)
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
+                no_of_accounts: 1.try_into().expect("one is a non-zero account count"),
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
             // no .set_indexer_uri() → offline mode
             .build()
-            .unwrap();
-        LightClient::new(config, true).await.unwrap()
+            .expect("a mnemonic config with one account builds on every chain");
+        LightClient::new(config, true)
+            .await
+            .expect("a client whose config names no indexer dials nothing")
     }
 
     #[tokio::test]
@@ -35,12 +42,13 @@ mod test {
     #[tokio::test]
     async fn offline_client_holds_the_default_indexer_undialed() {
         let lc = create_offline_client().await;
+        assert_holds_the_default_undialed(&lc, &crate::config::ChainType::Mainnet);
+    }
+
+    fn assert_holds_the_default_undialed(lc: &LightClient, chain: &crate::config::ChainType) {
         assert!(!lc.is_online());
-        assert_eq!(
-            lc.indexer_uri(),
-            crate::config::default_indexer_for(&crate::config::ChainType::Mainnet)
-        );
-        assert!(lc.indexer_uri().is_some(), "mainnet has a Default Indexer");
+        assert_eq!(lc.indexer_uri(), crate::config::default_indexer_for(chain));
+        assert!(lc.indexer_uri().is_some(), "{chain} has a Default Indexer");
     }
 
     /// HYPOTHESIS: `go_offline` drops the link and keeps the Session
@@ -63,33 +71,14 @@ mod test {
         assert_eq!(lc.indexer_uri(), Some(named));
     }
 
-    /// HYPOTHESIS: a config that names no indexer on a chain without a
-    /// Default Indexer builds a client that holds no URI, and `go_online`
-    /// refuses typed. Testnet has no Default until a zingolabs host exists
-    /// (zingo-adrs zingolib/0063).
+    /// HYPOTHESIS: a config that names no indexer on testnet builds a client
+    /// that holds testnet's Default Indexer, the zec.rocks host, undialed
+    /// for `go_online` to dial (zingo-adrs zingolib/0063, testnet default
+    /// allowed 2026-11-06).
     #[tokio::test]
-    async fn offline_testnet_client_holds_no_indexer_uri() {
-        use crate::config::ChainType;
-        use crate::lightclient::ChooseIndexerError;
-
-        let config = ClientConfig::builder()
-            .set_chain_type(ChainType::Testnet)
-            .set_wallet_config(WalletConfig::MnemonicPhrase {
-                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
-                birthday: 419200,
-                wallet_settings: default_test_wallet_settings(),
-            })
-            .build()
-            .unwrap();
-        let mut lc = LightClient::new(config, true).await.unwrap();
-        assert!(!lc.is_online());
-        assert_eq!(lc.indexer_uri(), None);
-        assert!(matches!(
-            lc.go_online().await,
-            Err(ChooseIndexerError::NoDefaultIndexer(_))
-        ));
-        assert!(!lc.is_online());
+    async fn offline_testnet_client_holds_the_default_indexer_undialed() {
+        let lc = create_offline_client_for(crate::config::ChainType::Testnet).await;
+        assert_holds_the_default_undialed(&lc, &crate::config::ChainType::Testnet);
     }
 
     /// HYPOTHESIS: a client that never named an indexer goes online to the

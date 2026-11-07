@@ -338,11 +338,15 @@ pub struct NoDefaultIndexer {
 
 impl IndexerChoice {
     /// ```
+    /// use zingo_common_components::protocol::ActivationHeights;
     /// use zingolib::config::{ChainType, IndexerChoice};
     ///
     /// let mainnet = IndexerChoice::Default.resolve(&ChainType::Mainnet).expect("mainnet has a Default Indexer");
     /// assert_eq!(mainnet.and_then(|uri| uri.port_u16()), Some(443));
-    /// assert!(IndexerChoice::Default.resolve(&ChainType::Testnet).is_err());
+    /// let testnet = IndexerChoice::Default.resolve(&ChainType::Testnet).expect("testnet has a Default Indexer");
+    /// assert_eq!(testnet.and_then(|uri| uri.host().map(str::to_owned)), Some("testnet.zec.rocks".to_owned()));
+    /// let regtest = ChainType::Regtest(ActivationHeights::default());
+    /// assert!(IndexerChoice::Default.resolve(&regtest).is_err());
     /// assert_eq!(IndexerChoice::Offline.resolve(&ChainType::Testnet).expect("Offline needs no Default Indexer"), None);
     /// ```
     pub fn resolve(self, chain: &ChainType) -> Result<Option<http::Uri>, NoDefaultIndexer> {
@@ -361,8 +365,8 @@ pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
     use zingo_netutils::default_indexer::IndexerChain;
 
     match chain {
-        ChainType::Mainnet => default_indexer::default_indexer(IndexerChain::Main),
-        ChainType::Testnet => default_indexer::default_indexer(IndexerChain::Test),
+        ChainType::Mainnet => Some(default_indexer::default_indexer(IndexerChain::Main)),
+        ChainType::Testnet => Some(default_indexer::default_indexer(IndexerChain::Test)),
         ChainType::Regtest(_) => None,
     }
 }
