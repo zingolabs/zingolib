@@ -761,9 +761,9 @@ mod performance_level_tests {
 struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
-    /// `None` in Offline mode: no Indexer is ever configured and the client
-    /// stays Indexerless (zingolib/0001). `Some(uri)` when a real server
-    /// was selected.
+    /// `None` in Offline mode: no Indexer is dialed, so the client starts
+    /// offline (zingolib/0001), holding the chain's Default Indexer undialed
+    /// for a later `go_online`. `Some(uri)` when a real server was selected.
     lightwalletd_uri: Option<http::Uri>,
 }
 
@@ -793,7 +793,7 @@ fn build_connection_params(
 ) -> Result<ConnectionParams, ZingolibError> {
     let chain_type = chain_type_from_hint(&connection.chain_hint)?;
 
-    // Offline → no Indexer is ever configured; the client stays Indexerless
+    // Offline → no Indexer is dialed; the client starts offline
     // (zingolib/0001), and `require_indexer()` gates sync/send with
     // `Offline`. Default resolves to the chain's Default Indexer, and a chain
     // without one (testnet today) is a typed Init failure (zingolib/0063).
@@ -1870,7 +1870,7 @@ impl Probe {
                 }
             }
         };
-        let mut indexer = match GrpcIndexer::new(uri).await {
+        let mut indexer = match GrpcIndexer::new(uri.clone()).await {
             Ok(indexer) => indexer,
             Err(cause) if timed_out(&cause) => {
                 return Self::NoAnswer {
@@ -1890,10 +1890,7 @@ impl Probe {
             Ok(info) => Self::Verified {
                 target,
                 latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                info: Box::new(data::ServerInfo::from_lightd_info(
-                    info,
-                    indexer.uri().clone(),
-                )),
+                info: Box::new(data::ServerInfo::from_lightd_info(info, uri)),
             },
             Err(status) if timed_out(&status) => Self::NoAnswer {
                 target,

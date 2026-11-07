@@ -5,7 +5,7 @@ mod test {
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::{ClientConfig, WalletConfig},
+        config::{ClientConfig, IndexerChoice, WalletConfig},
         lightclient::{LightClient, error::LightClientError},
         testutils::default_test_wallet_settings,
     };
@@ -29,10 +29,89 @@ mod test {
         let _lc = create_offline_client().await;
     }
 
+    /// HYPOTHESIS: an offline mainnet client holds the chain's Default
+    /// Indexer undialed, the endpoint it proposes once the consumer consents
+    /// (zingo-adrs zingolib/0063), and holding it is not being online.
     #[tokio::test]
-    async fn offline_indexer_uri_is_none() {
+    async fn offline_client_holds_the_default_indexer_undialed() {
         let lc = create_offline_client().await;
-        assert!(lc.indexer_uri().is_none());
+        assert!(!lc.is_online());
+        assert_eq!(
+            lc.indexer_uri(),
+            crate::config::default_indexer_for(&crate::config::ChainType::Mainnet)
+        );
+        assert!(lc.indexer_uri().is_some(), "mainnet has a Default Indexer");
+    }
+
+    /// HYPOTHESIS: `go_offline` drops `indexer` and keeps the Session
+    /// Indexer URI, so the consumer's named indexer survives for
+    /// `go_online` to dial again; choosing `Offline` is the same act.
+    #[tokio::test]
+    async fn go_offline_keeps_the_indexer_uri() {
+        let named: http::Uri = "https://indexer.test:443".parse().unwrap();
+        let mut lc = create_offline_client().await;
+        lc.set_indexer_uri_lazy(named.clone()).unwrap();
+        assert!(lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named.clone()));
+
+        lc.go_offline().await;
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named.clone()));
+
+        lc.choose_indexer(IndexerChoice::Offline).await.unwrap();
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named));
+    }
+
+    /// HYPOTHESIS: a config that names no indexer on a chain without a
+    /// Default Indexer builds a client that holds no URI, and `go_online`
+    /// refuses typed. Testnet has no Default until a zingolabs host exists
+    /// (zingo-adrs zingolib/0063).
+    #[tokio::test]
+    async fn offline_testnet_client_holds_no_indexer_uri() {
+        use crate::config::ChainType;
+        use crate::lightclient::ChooseIndexerError;
+
+        let config = ClientConfig::builder()
+            .set_chain_type(ChainType::Testnet)
+            .set_wallet_config(WalletConfig::MnemonicPhrase {
+                mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
+                no_of_accounts: 1.try_into().unwrap(),
+                birthday: 419200,
+                wallet_settings: default_test_wallet_settings(),
+            })
+            .build()
+            .unwrap();
+        let mut lc = LightClient::new(config, true).await.unwrap();
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), None);
+        assert!(matches!(
+            lc.go_online().await,
+            Err(ChooseIndexerError::NoDefaultIndexer(_))
+        ));
+        assert!(!lc.is_online());
+    }
+
+    /// HYPOTHESIS: a client that never named an indexer goes online to the
+    /// chain's Default Indexer, so on a chain without one it holds no URI,
+    /// `go_online` refuses typed, and it stays offline. The synthetic
+    /// wallet is regtest.
+    #[tokio::test]
+    async fn go_online_without_a_named_indexer_needs_a_default() {
+        use crate::lightclient::ChooseIndexerError;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        let mut lc = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        assert_eq!(lc.indexer_uri(), None);
+        assert!(matches!(
+            lc.go_online().await,
+            Err(ChooseIndexerError::NoDefaultIndexer(_))
+        ));
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), None);
     }
 
     #[tokio::test]
@@ -216,7 +295,7 @@ mod test {
                 .build()
                 .unwrap();
             let lc = LightClient::new(config, false).await.unwrap();
-            assert!(lc.indexer_uri().is_none(), "reload should be offline");
+            assert!(!lc.is_online(), "reload should be offline");
             assert_eq!(
                 lc.chain_type(),
                 crate::config::ChainType::Mainnet,

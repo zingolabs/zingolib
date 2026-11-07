@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- `network on` binds the Session Indexer before it bootstraps the mixnet,
+  where 0.5.0 consented without binding one, so the session stayed
+  Indexerless. It rebinds the indexer the session was given, by `--server`
+  at launch or by `change_server`, which `network off` now keeps; without
+  one it binds the chain's Default Indexer, as `--online` does at launch
+  (zingo-adrs zingolib/0063), and a chain without one refuses typed. A
+  session that already holds an Indexer keeps it, and a bootstrap that fails
+  after a fresh bind drops the Indexer again, reporting the failure once in
+  the command's own output; `network status` afterwards says off without
+  the cause, since the session is unconsented again.
 
 ## [0.5.0] - 2026-10-28
 
@@ -55,11 +65,8 @@ contract and the server binding replaced what 0.4.0 shipped.
   the `network` family stays offered there, and `help` reflects the live
   posture in every session.
 - The `network` family. `network status` reports the mixnet state, off,
-  bootstrapping or ready. `network on` consents to go online: it binds the
-  chain's Default Indexer, as `--online` does at launch (zingo-adrs
-  zingolib/0063), then starts the `nym-proxy` child and routes transmissions
-  through the mixnet; a session that already holds an Indexer keeps it, and
-  a bootstrap that fails after a fresh bind drops the Indexer again. `network
+  bootstrapping or ready. `network on` consents to go online, starts the
+  `nym-proxy` child and routes transmissions through the mixnet. `network
   off` is a zero-emission teardown, not a mixnet toggle (ADR 0032): it stops
   the nym proxy, drops the Indexer connection, stops an in-flight sync
   between batches and waits for it, and returns only when teardown
