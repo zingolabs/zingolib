@@ -2005,7 +2005,7 @@ mod posture_surface {
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
         ));
         {
-            // The lazy link still needs a runtime to live in.
+            // The lazy `indexer` still needs a runtime to live in.
             let _runtime = RT.enter();
             client
                 .set_indexer_uri_lazy(held.clone())
