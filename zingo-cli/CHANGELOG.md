@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- `--online --chain testnet`, and `network on` in a testnet session, bind
+  `https://testnet.zec.rocks:443`, testnet's Default Indexer, when no
+  `--server` or `change_server` named one. Before, testnet consent without
+  a named server refused.
 
 ### Deprecated
 

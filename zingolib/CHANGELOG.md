@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
 
 ### Changed
+- Testnet has a Default Indexer, `https://testnet.zec.rocks:443`, so
+  `IndexerChoice::Default` resolves on testnet and an offline testnet client
+  that named no indexer holds it undialed for `go_online`.
+  `ChooseIndexerError::NoDefaultIndexer` is now reachable only on regtest.
 - BREAKING: `LightClient::indexer_uri` reports the Session Indexer URI the
   client holds whether or not it is online, where it answered `None` for an
   offline client. An offline mainnet client now answers the chain's Default
