@@ -18,8 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change only together, and a failed dial changes nothing.
 - `GetClientError::NoIndexerUri`, the refusal when a `NetworkAccess` that
   holds no URI is asked to go online.
+- `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
+  Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
+  exists (zingo-adrs zingolib/0063, amended 2026-11-06).
 
 ### Changed
+- BREAKING: `default_indexer` returns `http::Uri` in place of
+  `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so
   `GrpcIndexer::uri` is removed. The value is connected by construction and
   holds the live client alone; the URI lives in the `NetworkAccess` beside

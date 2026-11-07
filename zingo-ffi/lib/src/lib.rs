@@ -796,7 +796,7 @@ fn build_connection_params(
     // Offline → no Indexer is dialed; the client starts offline
     // (zingolib/0001), and `require_indexer()` gates sync/send with
     // `Offline`. Default resolves to the chain's Default Indexer, and a chain
-    // without one (testnet today) is a typed Init failure (zingolib/0063).
+    // without one (regtest) is a typed Init failure (zingolib/0063).
     let lightwalletd_uri = match connection.indexer {
         IndexerChoice::Offline => None,
         IndexerChoice::Default => {
