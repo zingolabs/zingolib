@@ -144,16 +144,16 @@ pub enum ChooseIndexerError {
 ///
 /// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
 ///
-/// While the Session Indexer holds no link the client is in offline mode: balance, address,
+/// While `network` holds no `indexer` the client is in offline mode: balance, address,
 /// history and proposal operations work normally, but sync and transmission return
 /// [`error::LightClientError::Offline`]. Call [`Self::go_online`] to connect to the held
 /// indexer, or [`Self::choose_indexer`] to choose and connect in one act.
 pub struct LightClient {
     /// The wallet's access to the network: the Session Indexer URI
     /// (zingo-adrs zingolib/0063), held whether or not the session is online,
-    /// and the live link while it is. The URI is the one the consumer named,
-    /// else the chain's Default Indexer, else none; its presence says nothing
-    /// about posture, the link's does.
+    /// and the live `indexer` while it is. The URI is the one the consumer
+    /// named, else the chain's Default Indexer, else none; its presence says
+    /// nothing about posture, the presence of `indexer` does.
     network: zingo_netutils::NetworkAccess,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
@@ -608,15 +608,15 @@ impl LightClient {
         self.network.indexer_uri().cloned()
     }
 
-    /// Whether the client holds a live indexer link.
+    /// Whether `network` holds a live `indexer`.
     pub fn is_online(&self) -> bool {
         self.network.is_online()
     }
 
     /// Returns the URI of the indexer the client is connected to, or `None`
-    /// while offline: [`Self::indexer_uri`] narrowed to the live link.
+    /// while offline: [`Self::indexer_uri`] narrowed to the live `indexer`.
     pub fn connected_indexer_uri(&self) -> Option<http::Uri> {
-        self.network.connected().map(|(uri, _link)| uri.clone())
+        self.network.connected().map(|(uri, _indexer)| uri.clone())
     }
 
     /// Connect to an indexer (or switch to a different one).
@@ -689,7 +689,7 @@ impl LightClient {
     /// Points the client at `server` without connecting. As
     /// [`Self::set_indexer_uri`], the URI becomes the Session Indexer.
     ///
-    /// Call it inside a tokio runtime: the lazy link still needs one to
+    /// Call it inside a tokio runtime: the lazy `indexer` still needs one to
     /// live in, and outside one hyper panics with a message that names
     /// neither this call nor the cure.
     #[cfg(any(test, feature = "testutils"))]

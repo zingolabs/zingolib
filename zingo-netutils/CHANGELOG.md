@@ -10,12 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `NetworkAccess`, the wallet's access to the network as a type: the
   Session Indexer URI (zingo-adrs zingolib/0063) a session attaches to
-  beside the live `GrpcIndexer` link, which is `Some` only while online. `offline(uri)` holds a URI without
-  dialing, `online(uri)` dials it, `go_online` dials the held URI and
-  returns it, `go_offline` drops the link and keeps the URI, `connect_to`
-  and `connect_to_lazy` replace both together, and `is_online`,
-  `indexer_uri`, `indexer` and `connected` read them. The URI and the link
-  change only together, and a failed dial changes nothing.
+  as `indexer_uri`, beside `indexer`, the live `GrpcIndexer`, which is
+  `Some` only while online. `offline(uri)` holds a URI without dialing,
+  `online(uri)` dials it, `go_online` dials the held `indexer_uri` and
+  returns it, `go_offline` drops `indexer` and keeps `indexer_uri`,
+  `connect_to` and `connect_to_lazy` replace both together, and
+  `is_online`, `indexer_uri`, `indexer` and `connected` read them.
+  `indexer_uri` and `indexer` change only together, and a failed dial
+  changes nothing.
 - `GetClientError::NoIndexerUri`, the refusal when a `NetworkAccess` that
   holds no URI is asked to go online.
 

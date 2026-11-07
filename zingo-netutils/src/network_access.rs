@@ -6,30 +6,32 @@ use http::Uri;
 
 use crate::{GetClientError, GrpcIndexer};
 
-/// The wallet's access to the network: the Session Indexer URI the session
-/// attaches to, and the live link to it while the session is online.
+/// The wallet's access to the network: `indexer_uri`, the Session Indexer
+/// URI the session attaches to, and `indexer`, the live `GrpcIndexer`
+/// dialed from it while the session is online.
 ///
-/// The URI and the link change only together, through this type's methods,
-/// so a `Some` link was always dialed from the URI held beside it. The
-/// link's presence is the online indicator: [`Self::go_offline`] drops the
-/// link and keeps the URI, and [`Self::go_online`] dials the URI again. A
-/// consumer that holds no URI (a chain without a Default Indexer, and none
-/// named) cannot go online until [`Self::connect_to`] names one.
+/// `indexer_uri` and `indexer` change only together, through this type's
+/// methods, so a `Some` `indexer` was always dialed from the `indexer_uri`
+/// held beside it. The presence of `indexer` is the online indicator:
+/// [`Self::go_offline`] drops `indexer` and keeps `indexer_uri`, and
+/// [`Self::go_online`] dials `indexer_uri` again. A consumer that holds no
+/// `indexer_uri` (a chain without a Default Indexer, and none named) cannot
+/// go online until [`Self::connect_to`] names one.
 ///
-/// A failed dial changes nothing: whatever URI and link were held before
-/// the call are held after it.
+/// A failed dial changes nothing: whatever `indexer_uri` and `indexer` were
+/// held before the call are held after it.
 ///
 /// ```
 /// use zingo_netutils::{GetClientError, NetworkAccess};
 ///
-/// // The lazy link still needs a runtime to live in.
+/// // The lazy `indexer` still needs a runtime to live in.
 /// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
 /// let named: http::Uri = "https://indexer.test:443".parse().unwrap();
 /// let mut session = NetworkAccess::offline(Some(named.clone()));
 /// assert!(!session.is_online());
 /// assert_eq!(session.indexer_uri(), Some(&named));
 ///
-/// // The lazy connect builds the link without dialing.
+/// // The lazy connect builds `indexer` without dialing.
 /// session.connect_to_lazy(named.clone()).unwrap();
 /// assert!(session.is_online());
 ///
@@ -69,7 +71,7 @@ impl NetworkAccess {
         Ok(session)
     }
 
-    /// Whether a live link is held.
+    /// Whether a live `indexer` is held.
     pub fn is_online(&self) -> bool {
         self.indexer.is_some()
     }
@@ -79,20 +81,20 @@ impl NetworkAccess {
         self.indexer_uri.as_ref()
     }
 
-    /// The live link, `Some` only while online.
+    /// The live `indexer`, `Some` only while online.
     pub fn indexer(&self) -> Option<&GrpcIndexer> {
         self.indexer.as_ref()
     }
 
-    /// The live link beside the URI it was dialed from, `Some` only while
-    /// online.
+    /// The live `indexer` beside the `indexer_uri` it was dialed from, `Some`
+    /// only while online.
     pub fn connected(&self) -> Option<(&Uri, &GrpcIndexer)> {
         self.indexer_uri.as_ref().zip(self.indexer.as_ref())
     }
 
-    /// Dials the held URI and returns it. A session already online dials
-    /// it again and replaces the link. A session that holds no URI refuses
-    /// with [`GetClientError::NoIndexerUri`].
+    /// Dials the held `indexer_uri` and returns it. A session already online
+    /// dials it again and replaces `indexer`. A session that holds no
+    /// `indexer_uri` refuses with [`GetClientError::NoIndexerUri`].
     pub async fn go_online(&mut self) -> Result<Uri, GetClientError> {
         let uri = self
             .indexer_uri
@@ -102,8 +104,8 @@ impl NetworkAccess {
         Ok(uri)
     }
 
-    /// Drops the link and keeps the URI. Returns whether a link was held,
-    /// so a caller can tell a teardown from a no-op.
+    /// Drops `indexer` and keeps `indexer_uri`. Returns whether an `indexer`
+    /// was held, so a caller can tell a teardown from a no-op.
     pub fn go_offline(&mut self) -> bool {
         self.indexer.take().is_some()
     }
@@ -117,7 +119,7 @@ impl NetworkAccess {
         Ok(())
     }
 
-    /// As [`Self::connect_to`], but the link connects on first use instead
+    /// As [`Self::connect_to`], but `indexer` connects on first use instead
     /// of eagerly, as [`GrpcIndexer::new_lazy`] does.
     pub fn connect_to_lazy(&mut self, uri: Uri) -> Result<(), GetClientError> {
         let indexer = GrpcIndexer::new_lazy(uri.clone())?;
@@ -147,14 +149,14 @@ mod tests {
         assert!(session.connected().is_none());
     }
 
-    // The lazy link still needs a runtime to live in, hence tokio tests.
+    // The lazy `indexer` still needs a runtime to live in, hence tokio tests.
     #[tokio::test]
-    async fn connect_to_lazy_sets_the_uri_and_the_link_together() {
+    async fn connect_to_lazy_sets_the_uri_and_the_indexer_together() {
         let mut session = NetworkAccess::offline(Some(uri("https://first.test:443")));
         session
             .connect_to_lazy(uri("https://second.test:443"))
             .unwrap();
-        let (held, _link) = session.connected().expect("online");
+        let (held, _indexer) = session.connected().expect("online");
         assert_eq!(held, &uri("https://second.test:443"));
         assert!(session.is_online());
     }
@@ -186,7 +188,7 @@ mod tests {
             session.connect_to(uri("ftp://bad.test:21")).await,
             Err(GetClientError::InvalidScheme)
         ));
-        assert!(session.is_online(), "the previous link survives");
+        assert!(session.is_online(), "the previous `indexer` survives");
         assert_eq!(session.indexer_uri(), Some(&uri("https://named.test:443")));
     }
 }

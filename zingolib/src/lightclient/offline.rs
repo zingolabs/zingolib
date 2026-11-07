@@ -43,7 +43,7 @@ mod test {
         assert!(lc.indexer_uri().is_some(), "mainnet has a Default Indexer");
     }
 
-    /// HYPOTHESIS: `go_offline` drops the link and keeps the Session
+    /// HYPOTHESIS: `go_offline` drops `indexer` and keeps the Session
     /// Indexer URI, so the consumer's named indexer survives for
     /// `go_online` to dial again; choosing `Offline` is the same act.
     #[tokio::test]
