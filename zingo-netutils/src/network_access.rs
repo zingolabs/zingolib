@@ -5,14 +5,14 @@ use crate::{GetClientError, GrpcIndexer};
 /// ```
 /// use zingo_netutils::{GetClientError, NetworkAccess};
 ///
-/// // The lazy GrpcIndexer still needs a runtime to live in.
+/// // The lazy `indexer` still needs a runtime to live in.
 /// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
 /// let named: http::Uri = "https://indexer.test:443".parse().unwrap();
 /// let mut session = NetworkAccess::offline(Some(named.clone()));
 /// assert!(!session.is_online());
 /// assert_eq!(session.indexer_uri(), Some(&named));
 ///
-/// // The lazy connect builds the GrpcIndexer without dialing.
+/// // The lazy connect builds `indexer` without dialing.
 /// session.connect_to_lazy(named.clone()).unwrap();
 /// assert!(session.is_online());
 ///
@@ -114,14 +114,14 @@ mod tests {
         assert!(session.connected().is_none());
     }
 
-    // The lazy GrpcIndexer still needs a runtime to live in, hence tokio tests.
+    // The lazy `indexer` still needs a runtime to live in, hence tokio tests.
     #[tokio::test]
-    async fn connect_to_lazy_sets_the_uri_and_the_link_together() {
+    async fn connect_to_lazy_sets_the_uri_and_the_indexer_together() {
         let mut session = NetworkAccess::offline(Some(uri("https://first.test:443")));
         session
             .connect_to_lazy(uri("https://second.test:443"))
             .unwrap();
-        let (held, _link) = session.connected().expect("online");
+        let (held, _indexer) = session.connected().expect("online");
         assert_eq!(held, &uri("https://second.test:443"));
         assert!(session.is_online());
     }
@@ -153,7 +153,7 @@ mod tests {
             session.connect_to(uri("ftp://bad.test:21")).await,
             Err(GetClientError::InvalidScheme)
         ));
-        assert!(session.is_online(), "the previous GrpcIndexer survives");
+        assert!(session.is_online(), "the previous `indexer` survives");
         assert_eq!(session.indexer_uri(), Some(&uri("https://named.test:443")));
     }
 }

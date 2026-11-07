@@ -593,7 +593,7 @@ impl LightClient {
     }
 
     pub fn connected_indexer_uri(&self) -> Option<http::Uri> {
-        self.network.connected().map(|(uri, _link)| uri.clone())
+        self.network.connected().map(|(uri, _indexer)| uri.clone())
     }
 
     pub async fn set_indexer_uri(

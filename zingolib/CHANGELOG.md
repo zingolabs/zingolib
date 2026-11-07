@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `LightClient::is_online` reports whether the client holds a live indexer
-  link, the one posture question.
+- `LightClient::is_online` reports whether the client's `NetworkAccess`
+  holds a live `indexer`, the one posture question.
 - `LightClient::connected_indexer_uri` reports the URI of the indexer the
   client is connected to, or `None` while offline: what `indexer_uri`
   answered before this release.
@@ -28,12 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offline client. An offline mainnet client now answers the chain's Default
   Indexer, undialed. Consumers that tested posture with `indexer_uri` read
   `is_online` instead.
-- `LightClient::go_offline` drops the indexer link but keeps the Session
+- `LightClient::go_offline` drops `indexer` but keeps the Session
   Indexer URI, so `go_online` dials the same indexer again, and
   `choose_indexer(IndexerChoice::Offline)` is the same act. A failed
   `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
-  client holds a `zingo_netutils::NetworkAccess`, which owns the URI and
-  the link together.
+  client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
+  and `indexer` together.
 
 ### Deprecated
 
