@@ -761,9 +761,6 @@ mod performance_level_tests {
 struct ConnectionParams {
     chain_type: ChainType,
     wallet_settings: WalletSettings,
-    /// `None` in Offline mode: no Indexer is dialed, so the client starts
-    /// offline (zingolib/0001), holding the chain's Default Indexer undialed
-    /// for a later `go_online`. `Some(uri)` when a real server was selected.
     lightwalletd_uri: Option<http::Uri>,
 }
 

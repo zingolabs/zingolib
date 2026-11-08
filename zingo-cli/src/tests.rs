@@ -1128,9 +1128,6 @@ mod config_template {
             );
         }
 
-        /// Testnet's Default Indexer is the zec.rocks host, so consent on
-        /// testnet that names no server resolves as mainnet's does
-        /// (zingo-adrs zingolib/0063, testnet default allowed 2026-11-06).
         #[cfg(feature = "nym")]
         #[test]
         fn online_without_server_on_testnet_binds_the_default_indexer() {

@@ -36,9 +36,6 @@ mod test {
         let _lc = create_offline_client().await;
     }
 
-    /// HYPOTHESIS: an offline mainnet client holds the chain's Default
-    /// Indexer undialed, the endpoint it proposes once the consumer consents
-    /// (zingo-adrs zingolib/0063), and holding it is not being online.
     #[tokio::test]
     async fn offline_client_holds_the_default_indexer_undialed() {
         let lc = create_offline_client().await;
@@ -51,9 +48,6 @@ mod test {
         assert!(lc.indexer_uri().is_some(), "{chain} has a Default Indexer");
     }
 
-    /// HYPOTHESIS: `go_offline` drops the link and keeps the Session
-    /// Indexer URI, so the consumer's named indexer survives for
-    /// `go_online` to dial again; choosing `Offline` is the same act.
     #[tokio::test]
     async fn go_offline_keeps_the_indexer_uri() {
         let named: http::Uri = "https://indexer.test:443".parse().unwrap();
@@ -71,20 +65,12 @@ mod test {
         assert_eq!(lc.indexer_uri(), Some(named));
     }
 
-    /// HYPOTHESIS: a config that names no indexer on testnet builds a client
-    /// that holds testnet's Default Indexer, the zec.rocks host, undialed
-    /// for `go_online` to dial (zingo-adrs zingolib/0063, testnet default
-    /// allowed 2026-11-06).
     #[tokio::test]
     async fn offline_testnet_client_holds_the_default_indexer_undialed() {
         let lc = create_offline_client_for(crate::config::ChainType::Testnet).await;
         assert_holds_the_default_undialed(&lc, &crate::config::ChainType::Testnet);
     }
 
-    /// HYPOTHESIS: a client that never named an indexer goes online to the
-    /// chain's Default Indexer, so on a chain without one it holds no URI,
-    /// `go_online` refuses typed, and it stays offline. The synthetic
-    /// wallet is regtest.
     #[tokio::test]
     async fn go_online_without_a_named_indexer_needs_a_default() {
         use crate::lightclient::ChooseIndexerError;
