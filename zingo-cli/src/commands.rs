@@ -1255,8 +1255,6 @@ pub enum NetworkCommandError {
     /// the command waited; re-enabling spawns a fresh proxy.
     #[error("the mixnet bootstrap failed: {report}. Re-enable with `network on`.")]
     Bootstrap { report: String },
-    /// The consent act could not bind the Session Indexer: no indexer was
-    /// named and the chain has no Default Indexer, or the connection failed.
     #[error("no Session Indexer could be bound")]
     Indexer {
         #[source]

@@ -469,6 +469,7 @@ impl ClientConfigBuilder {
     }
 
     /// ```
+    /// use zingo_common_components::protocol::ActivationHeights;
     /// use zingolib::config::{ChainType, ClientConfig, ClientConfigError, IndexerChoice};
     ///
     /// let mainnet = ClientConfig::builder()
@@ -481,8 +482,18 @@ impl ClientConfigBuilder {
     /// let testnet = ClientConfig::builder()
     ///     .set_chain_type(ChainType::Testnet)
     ///     .set_indexer_choice(IndexerChoice::Default)
+    ///     .build()
+    ///     .expect("testnet has a Default Indexer");
+    /// assert_eq!(
+    ///     testnet.indexer_uri().and_then(|uri| uri.host().map(str::to_owned)),
+    ///     Some("testnet.zec.rocks".to_owned())
+    /// );
+    ///
+    /// let regtest = ClientConfig::builder()
+    ///     .set_chain_type(ChainType::Regtest(ActivationHeights::default()))
+    ///     .set_indexer_choice(IndexerChoice::Default)
     ///     .build();
-    /// assert!(matches!(testnet, Err(ClientConfigError::NoDefaultIndexer(_))));
+    /// assert!(matches!(regtest, Err(ClientConfigError::NoDefaultIndexer(_))));
     /// ```
     pub fn set_indexer_choice(mut self, choice: IndexerChoice) -> Self {
         self.indexer_choice = choice;

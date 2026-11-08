@@ -211,10 +211,6 @@ async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
     .unwrap_or(0)
 }
 
-/// HYPOTHESIS: a session built against a named indexer that goes offline
-/// and online again rebinds that same indexer, never the chain's Default,
-/// and the rebound connection serves sync: the funding block mined while
-/// offline scans to a confirmed balance after `go_online`.
 #[tokio::test]
 async fn go_online_rebinds_the_named_indexer_after_go_offline() {
     let mut net = MockNet::launch().await;
