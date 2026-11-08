@@ -51,6 +51,10 @@ pub enum LightClientError {
     /// No indexer configured. Call set_indexer_uri() to connect before calling network operations.
     #[error("Offline: no indexer configured. Call set_indexer_uri() to connect.")]
     Offline,
+    /// The typed voting failure from the session: config resolution, round
+    /// authentication, journaling, or one lifecycle step.
+    #[error(transparent)]
+    Voting(#[from] zingolib_voting::VotingFailure),
     /// Price fetch error. Exists only in nym builds: the fetch compiles
     /// only with the mixnet stack, so other builds have no fetch to fail.
     #[cfg(feature = "nym")]

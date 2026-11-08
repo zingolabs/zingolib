@@ -1,0 +1,23 @@
+[package]
+name = "zingolib-voting"
+description = "Crate for shielded voting on governance rounds."
+authors = ["<zingo@zingolabs.org>"]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[dependencies]
+zcash_voting = { version = "=5.2.0-rc.2", default-features = false, features = ["lrz"] }
+base64 = "0.22"
+http = "1"
+prost = "0.14"
+rusqlite = { version = "=0.32.1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

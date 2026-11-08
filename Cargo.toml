@@ -13,6 +13,7 @@ members = [
   "zingo-netutils/nym-proxy-ffi",
   "zingo-ffi/lib",
   "zingo-ffi/uniffi-bindgen",
+  "zingolib-voting",
 ]
 # zingo-netutils, its verifier shim, and the proxy crate are members since
 # PR #3037. The nym-sdk stack once needed `crypto-common ^0.2` while
@@ -207,3 +208,6 @@ opt-level = "z"
 # crate.
 [patch.crates-io]
 rustls-platform-verifier = { path = "zingo-netutils/webpki-verifier-shim" }
+# The voting integration resolves zcash_voting from the port branch of the
+# zingolabs fork (PR #1). Everything else resolves from the registry.
+zcash_voting = { git = "https://github.com/zingolabs/zcash_voting", branch = "feat/lrz-librustzcash-0-31-port" }
