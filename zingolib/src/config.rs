@@ -283,7 +283,7 @@ pub const DEFAULT_INDEXER_SCHEME: &str = "https";
 /// use zingolib::config::{construct_indexer_uri, HTTPS_DEFAULT_PORT, HTTP_DEFAULT_PORT};
 ///
 /// // A bare host completes to https on the scheme's default port.
-/// let bare = construct_indexer_uri("mainnet.zainod.zingolabs.dev".to_string())?;
+/// let bare = construct_indexer_uri("zec.global".to_string())?;
 /// assert_eq!(bare.scheme_str(), Some("https"));
 /// assert_eq!(bare.port_u16(), Some(HTTPS_DEFAULT_PORT));
 ///

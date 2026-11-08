@@ -6,7 +6,7 @@ pub enum IndexerChain {
     Test,
 }
 
-pub const MAINNET_DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
+pub const MAINNET_DEFAULT_INDEXER: &str = "https://zec.global:443";
 
 /// ```
 /// use zingo_netutils::default_indexer::{IndexerChain, MAINNET_DEFAULT_INDEXER, default_indexer};
@@ -36,6 +36,6 @@ mod tests {
         let uri = default_indexer(IndexerChain::Main).expect("mainnet has a Default Indexer");
         assert_eq!(uri.scheme_str(), Some("https"));
         assert_eq!(uri.port_u16(), Some(443));
-        assert_eq!(uri.host(), Some("mainnet.zainod.zingolabs.dev"));
+        assert_eq!(uri.host(), Some("zec.global"));
     }
 }

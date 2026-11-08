@@ -237,7 +237,7 @@
 
 **Session Indexer** — The one indexer a session holds, which serves every operation on every transport: sync, every Transmission, migration parts, and the boot health round trip. The consumer sets it, replaces it, or clears it, and that is the only indexer choice a session offers; one party therefore observes all of a session's indexer traffic, which is accepted. Ruled 2026-10-13, pending review. _Avoid_: sync indexer (names one job of several), Destination Indexer, bare Indexer (the netutils trait).
 
-**Default Indexer** — The zingolabs endpoint for a chain, which becomes the Session Indexer when a consumer goes online without naming one. Mainnet's is `https://mainnet.zainod.zingolabs.dev:443`; testnet has none until a zingolabs testnet host exists, so a testnet consumer names a URI or gets a typed refusal. The library attaches to no other operator's endpoint unless the consumer names it. Ruled 2026-10-13, pending review. _Avoid_: default server, census, registry, curated list.
+**Default Indexer** — The zingolabs endpoint for a chain, which becomes the Session Indexer when a consumer goes online without naming one. Mainnet's is `https://zec.global:443`; testnet has none until a zingolabs testnet host exists, so a testnet consumer names a URI or gets a typed refusal. The library attaches to no other operator's endpoint unless the consumer names it. Ruled 2026-10-13, pending review. _Avoid_: default server, census, registry, curated list.
 
 **Destination Selection** — Retired 2026-10-13: named the random draw that chose a Transmission's Destination under the sync-operator exclusion. The Session Indexer receives every Transmission, so no draw remains. _Avoid_: the term for any live mechanism.
 

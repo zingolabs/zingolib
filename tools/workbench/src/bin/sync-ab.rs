@@ -144,7 +144,7 @@ const GUARD_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon ab
 /// The indexer every arm pins, when `--server` names no other: mainnet's
 /// Default Indexer, the one an online zingolib 8 session attaches to
 /// without `--server`.
-const DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:443";
+const DEFAULT_INDEXER: &str = "https://zec.global:443";
 
 /// Measured runs per arm, when `--runs` names no other count.
 const DEFAULT_RUNS: usize = 3;
