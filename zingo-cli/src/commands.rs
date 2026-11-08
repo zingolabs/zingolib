@@ -30,7 +30,7 @@ use zingolib::lightclient::migrate::{
     ImmediateMigrationPhase, ImmediateMigrationStatus, PartSendResult, SplitOutcome, SplitPhase,
     SplitStatus, SplitStep,
 };
-use zingolib::lightclient::{LightClient, SaveShutdown, TransmitProgressHandle};
+use zingolib::lightclient::{LightClient, SaveShutdown, SyncModeRequest, TransmitProgressHandle};
 use zingolib::perspective::sync_progress;
 use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
@@ -878,7 +878,9 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
     match sub {
         SyncSubCommand::Run => {
             if lightclient.sync_mode() == SyncMode::Paused {
-                lightclient.resume_sync().expect("sync should be paused");
+                lightclient
+                    .request_sync_mode(SyncModeRequest::Resume)
+                    .expect("sync should be paused");
                 Ok("Resuming sync task...".to_string())
             } else {
                 match lightclient.sync().await {
@@ -890,7 +892,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
                 }
             }
         }
-        SyncSubCommand::Pause => match lightclient.pause_sync() {
+        SyncSubCommand::Pause => match lightclient.request_sync_mode(SyncModeRequest::Pause) {
             Ok(()) => Ok("Pausing sync task...".to_string()),
             Err(e) => Err(not_yet_typed(e)),
         },

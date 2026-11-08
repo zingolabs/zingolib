@@ -4,13 +4,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::future::Future;
 use std::ops::{Bound, Range};
-use std::sync::atomic::{self, AtomicBool, AtomicU8, AtomicU32};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+use std::sync::atomic::{self, AtomicU32};
 use std::time::{Duration, Instant, SystemTime};
 
 use shardtree::ShardTree;
 use shardtree::store::memory::MemoryShardStore;
 use tokio::sync::{RwLock, mpsc, watch};
+use tokio_util::sync::CancellationToken;
 
 use incrementalmerkletree::{Marking, Retention};
 use orchard::tree::MerkleHashOrchard;
@@ -33,7 +34,7 @@ use crate::error::{
 };
 use crate::keys::transparent::TransparentAddressId;
 use crate::scan::ScanResults;
-use crate::scan::task::{ScanLoad, Scanner, ScannerState, TaskId};
+use crate::scan::task::{ScanLoad, Scanner, ScannerState, TaskId, WorkerResults};
 use crate::scan::transactions::scan_transaction;
 use crate::shardtree_ext::{RollbackOutcome, ShardTreeExt};
 use crate::sync::state::{ScanResultsStanding, VerifyEnd};
@@ -42,7 +43,7 @@ use crate::wallet::traits::{
 };
 use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
-    ScanTarget, SyncMode, SyncState, WalletBlock, WalletTransaction,
+    ScanTarget, SyncMode, SyncModeHandle, SyncState, WalletBlock, WalletTransaction,
 };
 use crate::witness::{ANCHOR_RETENTION_INTERVALS, LocatedTreeData};
 
@@ -378,47 +379,23 @@ enum MempoolMessage {
     NewBlockMined,
 }
 
-/// Sets `shutdown_mempool` when dropped, so the mempool monitor stops on every exit from [`sync`]: a return, an error
-/// or a cancelled future.
-struct MempoolShutdownGuard(Arc<AtomicBool>);
-
-impl Drop for MempoolShutdownGuard {
-    fn drop(&mut self) {
-        self.0.store(true, atomic::Ordering::Release);
-    }
-}
-
-/// How often a session-start request checks the sync mode for a shutdown request.
-const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
 /// Awaits `request` unless `sync_mode` is set to `Shutdown` first, in which case `request` is dropped and `None` is
 /// returned.
-async fn unless_shutdown<F>(
-    sync_mode: &AtomicU8,
-    request: F,
-) -> Result<Option<F::Output>, SyncModeError>
+async fn unless_shutdown<F>(sync_mode: &SyncModeHandle, request: F) -> Option<F::Output>
 where
     F: Future,
 {
-    let mut interval = tokio::time::interval(SHUTDOWN_POLL_INTERVAL);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    tokio::pin!(request);
-    loop {
-        tokio::select! {
-            output = &mut request => return Ok(Some(output)),
-            _ = interval.tick() => {
-                if SyncMode::from_atomic_u8(sync_mode)? == SyncMode::Shutdown {
-                    return Ok(None);
-                }
-            }
-        }
+    let mut sync_mode = sync_mode.subscribe();
+    tokio::select! {
+        output = request => Some(output),
+        _shutdown = sync_mode.wait_for(|mode| *mode == SyncMode::Shutdown) => None,
     }
 }
 
 /// Syncs a wallet to the latest state of the blockchain.
 ///
-/// `sync_mode` is intended to be stored in a struct that owns the wallet(s) (i.e. lightclient) and has a non-atomic
-/// counterpart [`crate::wallet::SyncMode`]. The sync engine will set the `sync_mode` to `Running` at the start of sync.
+/// `sync_mode` is a clone of the handle held by the struct that owns the wallet(s) (i.e. lightclient). The sync
+/// engine will set the `sync_mode` to `Running` at the start of sync.
 /// However, the consumer is required to set the `sync_mode` back to `NotRunning` when sync is succussful or returns an
 /// error. This allows more flexibility and safety with sync task handles etc.
 /// `sync_mode` may also be set to `Paused` externally to pause scanning so the wallet lock can be acquired multiple
@@ -433,7 +410,7 @@ pub async fn sync<C, P, W>(
     client: C,
     consensus_parameters: &P,
     wallet: Arc<RwLock<W>>,
-    sync_mode: Arc<AtomicU8>,
+    sync_mode: SyncModeHandle,
     progress: watch::Sender<Option<SyncStatus>>,
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
@@ -448,11 +425,7 @@ where
         + SyncShardTrees
         + Send,
 {
-    let mut sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
-    if sync_mode_enum == SyncMode::NotRunning {
-        sync_mode_enum = SyncMode::Running;
-        sync_mode.store(sync_mode_enum as u8, atomic::Ordering::Release);
-    } else {
+    if sync_mode.transition(SyncMode::NotRunning, SyncMode::Running) != SyncMode::NotRunning {
         return Err(SyncModeError::SyncAlreadyRunning.into());
     }
 
@@ -472,20 +445,20 @@ where
 
     // create channel for receiving mempool transactions and launch mempool monitor
     let (mempool_transaction_sender, mut mempool_transaction_receiver) = mpsc::channel(100);
-    let shutdown_mempool = Arc::new(AtomicBool::new(false));
-    let _mempool_shutdown_guard = MempoolShutdownGuard(shutdown_mempool.clone());
+    let shutdown_mempool = CancellationToken::new();
+    let _mempool_shutdown_guard = shutdown_mempool.clone().drop_guard();
     let shutdown_mempool_clone = shutdown_mempool.clone();
     let unprocessed_mempool_transactions_count = Arc::new(AtomicU32::new(0));
     let unprocessed_mempool_transactions_count_clone =
         unprocessed_mempool_transactions_count.clone();
-    let mempool_stream_connected_at = Arc::new(OnceLock::new());
-    let mempool_stream_connected_at_clone = mempool_stream_connected_at.clone();
+    let (mempool_stream_connected_at_sender, mut mempool_stream_connected_at) =
+        watch::channel(None);
     let mempool_handle = tokio::spawn(async move {
         mempool_monitor(
             client,
             mempool_transaction_sender,
             unprocessed_mempool_transactions_count_clone,
-            mempool_stream_connected_at_clone,
+            mempool_stream_connected_at_sender,
             shutdown_mempool_clone,
         )
         .await
@@ -522,8 +495,7 @@ where
     let mut continuous_sync_interval =
         tokio::time::interval(Duration::from_secs(CHECK_NEW_BLOCKS_INTERVAL));
     continuous_sync_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut interval = tokio::time::interval(Duration::from_millis(50));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut sync_mode_changes = sync_mode.subscribe();
     'continuous_sync: loop {
         continuous_sync_interval.reset();
         let mut reorg_occured = false;
@@ -534,7 +506,7 @@ where
             &sync_mode,
             client::get_chain_height(fetch_request_sender.clone()),
         )
-        .await?
+        .await
         else {
             break 'continuous_sync;
         };
@@ -572,7 +544,7 @@ where
                     tree_bounds_source,
                 ),
             )
-            .await?
+            .await
             else {
                 break 'continuous_sync;
             };
@@ -620,7 +592,7 @@ where
                     &sync_mode,
                     client::get_compact_block(fetch_request_sender.clone(), chain_height),
                 )
-                .await?
+                .await
                 else {
                     break 'continuous_sync;
                 };
@@ -665,7 +637,7 @@ where
                             tree_bounds_source,
                         ),
                     )
-                    .await?
+                    .await
                     else {
                         break 'continuous_sync;
                     };
@@ -732,7 +704,7 @@ where
                 &sync_mode,
                 fetch_subtree_roots(fetch_request_sender.clone(), fetch_start),
             )
-            .await?
+            .await
             else {
                 break 'continuous_sync;
             };
@@ -758,7 +730,7 @@ where
                             birthday,
                         ),
                     )
-                    .await?
+                    .await
                     else {
                         break 'continuous_sync;
                     };
@@ -787,9 +759,56 @@ where
         publish_sync_status(&*wallet.read().await, &progress).await?;
 
         'scan: loop {
+            let sync_mode_enum = *sync_mode_changes
+                .wait_for(|mode| *mode != SyncMode::Paused)
+                .await
+                .expect("the engine holds a sync mode handle");
+            match sync_mode_enum {
+                SyncMode::Shutdown => {
+                    match settled_mempool_drain(
+                        &shutdown_mempool,
+                        &unprocessed_mempool_transactions_count,
+                        *mempool_shutdown_timer.get_or_insert_with(Instant::now),
+                        &mut mempool_stream_connected_at,
+                    )
+                    .await
+                    {
+                        MempoolDrain::Complete => break 'continuous_sync,
+                        MempoolDrain::Pending => (),
+                    }
+                }
+                SyncMode::Running => {
+                    if check_for_new_blocks && scanner.is_verified() {
+                        check_for_new_blocks = false;
+                        first_verification_complete = true;
+                        continue 'continuous_sync;
+                    }
+
+                    scanner
+                        .update(&mut *wallet.write().await, nullifier_map_limit_exceeded)
+                        .await?;
+
+                    if check_for_new_blocks && scanner.is_verified() {
+                        continue 'scan;
+                    }
+
+                    if matches!(scanner.state, ScannerState::Complete)
+                        && config.shutdown_on_completion
+                    {
+                        let _ignore_mode_before_completion =
+                            sync_mode.apply(SyncMode::on_completion);
+                    }
+                }
+                SyncMode::NotRunning => {
+                    panic!("sync mode should not be manually set to NotRunning!");
+                }
+                SyncMode::Paused => unreachable!("a pause is waited out above"),
+            }
+
             tokio::select! {
-                Some((load, scan_results)) = scan_results_receiver.recv() => {
-                    for (load, scan_results) in scanner.admit_scan_results(load, scan_results) {
+                Some(WorkerResults { worker, load, results }) = scan_results_receiver.recv() => {
+                    scanner.release_worker(worker);
+                    for (load, scan_results) in scanner.admit_scan_results(load, results) {
                         let mut wallet_guard = wallet.write().await;
                         let ProcessedScanResults {
                             new_transparent_inuse_addresses,
@@ -865,48 +884,12 @@ where
                     }
                 }
 
-                _update_scanner = interval.tick() => {
-                    sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
-                    match sync_mode_enum {
-                        SyncMode::Paused => {
-                            let mut pause_interval = tokio::time::interval(Duration::from_secs(1));
-                            pause_interval.tick().await;
-                            while sync_mode_enum == SyncMode::Paused {
-                                pause_interval.tick().await;
-                                sync_mode_enum = SyncMode::from_atomic_u8(&sync_mode)?;
-                            }
-                        },
-                        SyncMode::Shutdown => {
-                            match mempool_drain_verdict(
-                                shutdown_mempool.clone(),
-                                unprocessed_mempool_transactions_count.clone(), mempool_shutdown_timer.get_or_insert_with(Instant::now).elapsed(),
-                                mempool_stream_connected_at.get().map(|at| at.elapsed())
-                            ).await {
-                                MempoolDrainVerdict::NotShutdown | MempoolDrainVerdict::ShutdownNotDrained => {
-                                    continue 'scan;
-                                }
-                                MempoolDrainVerdict::ShutdownAndDrainComplete => {
-                                    break 'continuous_sync;
-                                }
-                            }
-                        }
-                        SyncMode::Running => (),
-                        SyncMode::NotRunning => {
-                            panic!("sync mode should not be manually set to NotRunning!");
-                        },
-                    }
+                loader_event = scanner.loader_event(), if scanner.loader_running() => {
+                    scanner.apply_loader_event(loader_event)?;
+                }
 
-                    if check_for_new_blocks && scanner.is_verified() {
-                        check_for_new_blocks = false;
-                        first_verification_complete = true;
-                        continue 'continuous_sync;
-                    }
-
-                    scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
-
-                    if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
-                        let _ignore_mode_before_completion = SyncMode::apply(&sync_mode, SyncMode::on_completion)?;
-                    }
+                changed = sync_mode_changes.changed() => {
+                    changed.expect("the engine holds a sync mode handle");
                 }
 
                 _check_new_block_mined = continuous_sync_interval.tick() => {
@@ -954,7 +937,7 @@ where
     drop(fetch_request_sender);
 
     // a session shut down before scanning began has not asked the mempool monitor to stop.
-    shutdown_mempool.store(true, atomic::Ordering::Release);
+    shutdown_mempool.cancel();
     match mempool_handle.await.expect("task panicked") {
         Ok(()) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
@@ -1449,8 +1432,8 @@ enum MempoolDrainVerdict {
 }
 
 async fn mempool_drain_verdict(
-    shutdown_mempool: Arc<AtomicBool>,
-    unprocessed_mempool_transactions_count: Arc<AtomicU32>,
+    shutdown_mempool: &CancellationToken,
+    unprocessed_mempool_transactions_count: &AtomicU32,
     mempool_shutdown_timer: Duration,
     mempool_stream_connection_timer: Option<Duration>,
 ) -> MempoolDrainVerdict {
@@ -1468,7 +1451,7 @@ async fn mempool_drain_verdict(
     }
 
     // shutdown mempool monitor
-    shutdown_mempool.store(true, atomic::Ordering::Release);
+    shutdown_mempool.cancel();
 
     // continue scanning if mempool transaction have been received but haven't finished being preocessed
     if unprocessed_mempool_transactions_count.load(atomic::Ordering::Acquire) > 0 {
@@ -1476,6 +1459,56 @@ async fn mempool_drain_verdict(
     }
 
     MempoolDrainVerdict::ShutdownAndDrainComplete
+}
+
+/// The state of the mempool drain after a shutdown request is evaluated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MempoolDrain {
+    /// The mempool monitor is shut down and every received mempool transaction is processed.
+    Complete,
+    /// The mempool monitor is shut down and received mempool transactions remain to process.
+    Pending,
+}
+
+/// Evaluates the mempool drain for a shutdown request. While the mempool stream has not connected and the drain
+/// ceiling has not passed, waits for either and evaluates again.
+async fn settled_mempool_drain(
+    shutdown_mempool: &CancellationToken,
+    unprocessed_mempool_transactions_count: &AtomicU32,
+    mempool_shutdown_timer: Instant,
+    mempool_stream_connected_at: &mut watch::Receiver<Option<Instant>>,
+) -> MempoolDrain {
+    use zingo_netutils::time::MEMPOOL_DRAIN_CEILING;
+
+    loop {
+        let mempool_stream_connection_timer =
+            mempool_stream_connected_at.borrow().map(|at| at.elapsed());
+        match mempool_drain_verdict(
+            shutdown_mempool,
+            unprocessed_mempool_transactions_count,
+            mempool_shutdown_timer.elapsed(),
+            mempool_stream_connection_timer,
+        )
+        .await
+        {
+            MempoolDrainVerdict::ShutdownAndDrainComplete => return MempoolDrain::Complete,
+            MempoolDrainVerdict::ShutdownNotDrained => return MempoolDrain::Pending,
+            MempoolDrainVerdict::NotShutdown => (),
+        }
+        let ceiling_remaining =
+            MEMPOOL_DRAIN_CEILING.saturating_sub(mempool_shutdown_timer.elapsed());
+        let monitor_exited = matches!(
+            tokio::time::timeout(
+                ceiling_remaining,
+                mempool_stream_connected_at.wait_for(Option::is_some),
+            )
+            .await,
+            Ok(Err(_))
+        );
+        if monitor_exited {
+            tokio::time::sleep(ceiling_remaining).await;
+        }
+    }
 }
 
 /// Wallet updates from [`process_scan_results`] that must also be applied to the [`Scanner`].
@@ -2940,30 +2973,25 @@ where
 ///
 /// If there is some raw transaction, send to be scanned.
 /// If the mempool stream message is `None` (a block was mined) or the request failed, setup a new mempool stream.
-/// Returns once `shutdown_mempool` is set.
+/// Returns once `shutdown_mempool` is cancelled. The cancellation ends a pending stream request, a wait on the
+/// stream and a retry back-off.
 async fn mempool_monitor<C>(
     mut client: C,
     mempool_transaction_sender: mpsc::Sender<MempoolMessage>,
     unprocessed_transactions_count: Arc<AtomicU32>,
-    stream_connected_at: Arc<std::sync::OnceLock<std::time::Instant>>,
-    shutdown_mempool: Arc<AtomicBool>,
+    stream_connected_at: watch::Sender<Option<Instant>>,
+    shutdown_mempool: CancellationToken,
 ) -> Result<(), MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    // The tick only bounds how quickly the monitor notices the shutdown
-    // flag; sync() joins this task at session end, so the tick interval
-    // is paid on the critical path of every sync session.
-    let mut interval = tokio::time::interval(Duration::from_millis(50));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     'main: loop {
         // checked before every stream request so a refused request is only retried while the sync session is running.
-        if shutdown_mempool.load(atomic::Ordering::Acquire) {
+        if shutdown_mempool.is_cancelled() {
             break 'main;
         }
 
-        let response =
-            client::get_mempool_transaction_stream(&mut client, shutdown_mempool.clone()).await;
+        let response = client::get_mempool_transaction_stream(&mut client, &shutdown_mempool).await;
 
         match response {
             Ok(mut mempool_stream) => {
@@ -2971,8 +2999,13 @@ where
                 // grace window keys on this instant. Deliberately not
                 // reset on reconnect, since any successful connect
                 // proves the indexer serves the stream.
-                let _already_set = stream_connected_at.set(std::time::Instant::now());
-                interval.reset();
+                stream_connected_at.send_if_modified(|connected_at| {
+                    if connected_at.is_some() {
+                        return false;
+                    }
+                    *connected_at = Some(Instant::now());
+                    true
+                });
                 loop {
                     tokio::select! {
                         mempool_stream_message = mempool_stream.message() => {
@@ -2987,7 +3020,7 @@ where
                                             Ok(_) => (),
                                             Err(_) => {
                                                 unprocessed_transactions_count.store(0, atomic::Ordering::Release);
-                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                shutdown_mempool.cancel();
                                                 break 'main;
                                             }
                                         }
@@ -3001,7 +3034,7 @@ where
                                             }
                                             Err(_) => {
                                                 unprocessed_transactions_count.store(0, atomic::Ordering::Release);
-                                                shutdown_mempool.store(true, atomic::Ordering::Release);
+                                                shutdown_mempool.cancel();
                                                 break 'main;
                                             }
                                         }
@@ -3014,11 +3047,7 @@ where
 
                         }
 
-                        _ = interval.tick() => {
-                            if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                                break 'main;
-                            }
-                        }
+                        () = shutdown_mempool.cancelled() => break 'main,
                     }
                 }
             }
@@ -3028,7 +3057,10 @@ where
                     "Mempool stream request failed! Status: {}.\nRetrying...",
                     crate::error::cause_chain_text(&e)
                 );
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                tokio::select! {
+                    () = tokio::time::sleep(Duration::from_secs(3)) => (),
+                    () = shutdown_mempool.cancelled() => break 'main,
+                }
             }
         }
     }
@@ -3948,11 +3980,9 @@ mod test {
         }
     }
 
-    /// The mode a completed scan leaves behind, exercised as a table on the pure step and once through the atomic.
+    /// The mode a completed scan leaves behind, exercised as a table on the pure step and once through the handle.
     mod on_completion {
-        use std::sync::atomic::AtomicU8;
-
-        use crate::wallet::SyncMode;
+        use crate::wallet::{SyncMode, SyncModeHandle};
 
         #[test]
         fn running_sync_is_shutdown() {
@@ -3976,43 +4006,46 @@ mod test {
 
         #[test]
         fn apply_stores_the_step_and_returns_the_mode_it_replaced() {
-            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+            let sync_mode = SyncModeHandle::new(SyncMode::Running);
 
-            let before = SyncMode::apply(&sync_mode, SyncMode::on_completion).unwrap();
+            let before = sync_mode.apply(SyncMode::on_completion);
 
             assert_eq!(before, SyncMode::Running);
-            assert_eq!(
-                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
-                SyncMode::Shutdown
-            );
+            assert_eq!(sync_mode.get(), SyncMode::Shutdown);
         }
 
         #[test]
         fn transition_leaves_another_mode_in_place_and_reports_it() {
-            let sync_mode = AtomicU8::new(SyncMode::Paused as u8);
+            let sync_mode = SyncModeHandle::new(SyncMode::Paused);
 
-            let before =
-                SyncMode::transition(&sync_mode, SyncMode::Running, SyncMode::Shutdown).unwrap();
+            let before = sync_mode.transition(SyncMode::Running, SyncMode::Shutdown);
 
             assert_eq!(before, SyncMode::Paused);
-            assert_eq!(
-                SyncMode::from_atomic_u8(&sync_mode).unwrap(),
-                SyncMode::Paused
-            );
+            assert_eq!(sync_mode.get(), SyncMode::Paused);
+        }
+
+        /// A change of mode notifies a subscriber. A step that leaves the mode in place does not.
+        #[tokio::test]
+        async fn a_subscriber_is_woken_by_a_change_alone() {
+            use futures::FutureExt as _;
+
+            let sync_mode = SyncModeHandle::new(SyncMode::Paused);
+            let mut changes = sync_mode.subscribe();
+
+            sync_mode.apply(SyncMode::on_completion);
+            assert!(changes.changed().now_or_never().is_none());
+
+            sync_mode.set(SyncMode::Running);
+            assert!(changes.changed().now_or_never().is_some());
         }
     }
 
     /// The drain policy for scanner shutdown, exercised as a table:
     /// pure inputs, no runtime, no clocks.
     mod drain_verdict {
-        use std::{
-            sync::{
-                Arc,
-                atomic::{AtomicBool, AtomicU32},
-            },
-            time::Duration,
-        };
+        use std::{sync::atomic::AtomicU32, time::Duration};
 
+        use tokio_util::sync::CancellationToken;
         use zingo_netutils::time::MEMPOOL_DRAIN_CEILING;
 
         use crate::sync::{MempoolDrainVerdict, mempool_drain_verdict};
@@ -4020,8 +4053,8 @@ mod test {
         /// One row of the drain-policy table:
         /// (workers, unprocessed, connected_for, poll_elapsed, verdict, label).
         type DrainCase = (
-            Arc<AtomicBool>,
-            Arc<AtomicU32>,
+            CancellationToken,
+            AtomicU32,
             Duration,
             Option<Duration>,
             MempoolDrainVerdict,
@@ -4035,8 +4068,8 @@ mod test {
                 // synced chain, stream not yet connected. Hold the
                 // session open instead of closing it instantly.
                 (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(0)),
+                    CancellationToken::new(),
+                    AtomicU32::new(0),
                     Duration::from_millis(0),
                     None,
                     MempoolDrainVerdict::NotShutdown,
@@ -4044,8 +4077,8 @@ mod test {
                 ),
                 // Connected but inside the settle window: waits before checking whether there is work to process.
                 (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(0)),
+                    CancellationToken::new(),
+                    AtomicU32::new(0),
                     Duration::from_millis(100),
                     Some(Duration::from_millis(50)),
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
@@ -4054,8 +4087,8 @@ mod test {
                 // The typical session: stream connected long ago,
                 // scanner drained. Immediate shutdown, no added cost.
                 (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(0)),
+                    CancellationToken::new(),
+                    AtomicU32::new(0),
                     Duration::from_millis(0),
                     Some(Duration::from_millis(1_400)),
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
@@ -4065,8 +4098,8 @@ mod test {
                 // loop, whatever the stream state. No deadline caps
                 // the processing itself.
                 (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(3)),
+                    CancellationToken::new(),
+                    AtomicU32::new(3),
                     Duration::from_millis(3_000),
                     Some(Duration::from_millis(1_400)),
                     MempoolDrainVerdict::ShutdownNotDrained,
@@ -4079,8 +4112,8 @@ mod test {
                 // one value of it stops testing the ceiling the moment the
                 // constant moves.
                 (
-                    Arc::new(AtomicBool::new(false)),
-                    Arc::new(AtomicU32::new(0)),
+                    CancellationToken::new(),
+                    AtomicU32::new(0),
                     MEMPOOL_DRAIN_CEILING,
                     None,
                     MempoolDrainVerdict::ShutdownAndDrainComplete,
@@ -4090,8 +4123,8 @@ mod test {
             for (shutdown_mempool, unprocessed, connected_ms, elapsed_ms, expected, name) in cases {
                 assert_eq!(
                     mempool_drain_verdict(
-                        shutdown_mempool.clone(),
-                        unprocessed.clone(),
+                        shutdown_mempool,
+                        unprocessed,
                         *connected_ms,
                         *elapsed_ms,
                     )
@@ -6705,28 +6738,27 @@ mod test {
 
     /// A session-start request is abandoned when shutdown is requested while it is pending.
     mod unless_shutdown {
-        use std::sync::atomic::{AtomicU8, Ordering};
         use std::time::Duration;
 
-        use crate::sync::{SHUTDOWN_POLL_INTERVAL, unless_shutdown};
-        use crate::wallet::SyncMode;
+        use crate::sync::unless_shutdown;
+        use crate::wallet::{SyncMode, SyncModeHandle};
 
         #[tokio::test]
         async fn a_request_that_completes_while_running_is_served() {
-            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+            let sync_mode = SyncModeHandle::new(SyncMode::Running);
 
-            let outcome = unless_shutdown(&sync_mode, async { 7 }).await.unwrap();
+            let outcome = unless_shutdown(&sync_mode, async { 7 }).await;
 
             assert_eq!(outcome, Some(7));
         }
 
         #[tokio::test]
         async fn a_pending_request_is_abandoned_when_shutdown_is_requested() {
-            let sync_mode = AtomicU8::new(SyncMode::Running as u8);
+            let sync_mode = SyncModeHandle::new(SyncMode::Running);
             let request = std::future::pending::<()>();
             let stop = async {
-                tokio::time::sleep(SHUTDOWN_POLL_INTERVAL / 2).await;
-                sync_mode.store(SyncMode::Shutdown as u8, Ordering::Release);
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                sync_mode.set(SyncMode::Shutdown);
             };
 
             let (outcome, ()) = tokio::time::timeout(
@@ -6734,22 +6766,32 @@ mod test {
                 futures::future::join(unless_shutdown(&sync_mode, request), stop),
             )
             .await
-            .expect("the request is abandoned within the poll interval");
+            .expect("the request is abandoned as shutdown is requested");
 
-            assert_eq!(outcome.unwrap(), None);
+            assert_eq!(outcome, None);
         }
 
         #[tokio::test]
         async fn a_request_pending_under_pause_is_kept() {
-            let sync_mode = AtomicU8::new(SyncMode::Paused as u8);
+            let sync_mode = SyncModeHandle::new(SyncMode::Paused);
             let request = async {
-                tokio::time::sleep(SHUTDOWN_POLL_INTERVAL * 3).await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
                 "served"
             };
 
-            let outcome = unless_shutdown(&sync_mode, request).await.unwrap();
+            let outcome = unless_shutdown(&sync_mode, request).await;
 
             assert_eq!(outcome, Some("served"));
+        }
+
+        /// A request made under a shutdown already requested is abandoned at once.
+        #[tokio::test]
+        async fn a_request_under_a_requested_shutdown_is_abandoned_at_once() {
+            let sync_mode = SyncModeHandle::new(SyncMode::Shutdown);
+
+            let outcome = unless_shutdown(&sync_mode, std::future::pending::<()>()).await;
+
+            assert_eq!(outcome, None);
         }
     }
 }

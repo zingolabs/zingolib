@@ -1,15 +1,9 @@
 //! Module for handling all connections to the server
 
-use std::{
-    ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicBool},
-    },
-    time::Duration,
-};
+use std::{ops::Range, time::Duration};
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
@@ -481,30 +475,21 @@ pub(crate) async fn get_transparent_address_transactions(
 
 /// Gets stream of mempool transactions until the next block is mined.
 ///
-/// Checks at intervals if `shutdown_mempool` is set to prevent hanging on awating mempool monitor handle.
+/// The one request is held until the server answers it. It is abandoned when `shutdown_mempool` is cancelled first.
 pub(crate) async fn get_mempool_transaction_stream<C>(
     client: &mut C,
-    shutdown_mempool: Arc<AtomicBool>,
+    shutdown_mempool: &CancellationToken,
 ) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     tracing::debug!("Fetching mempool stream");
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    interval.tick().await;
-    loop {
-        tokio::select! {
-            mempool_stream_response = fetch::get_mempool_stream(client) => {
-                return mempool_stream_response.map_err(|e| MempoolError::ServerError(ServerError::RequestFailed(e)));
-            }
-
-            _ = interval.tick() => {
-                if shutdown_mempool.load(atomic::Ordering::Acquire) {
-                    return Err(MempoolError::ShutdownWithoutStream);
-                }
-            }
+    tokio::select! {
+        mempool_stream_response = fetch::get_mempool_stream(client) => {
+            mempool_stream_response.map_err(|e| MempoolError::ServerError(ServerError::RequestFailed(e)))
         }
+
+        () = shutdown_mempool.cancelled() => Err(MempoolError::ShutdownWithoutStream),
     }
 }
 
