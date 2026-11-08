@@ -321,11 +321,6 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
-/// gRPC-backed [`Indexer`] that connects to a Zcash chain indexer (server).
-///
-/// A value of this type is connected by construction: it holds the live
-/// client(s) and nothing else. The URI it was dialed from lives beside it in
-/// the [`NetworkAccess`] that owns the session's online state.
 #[derive(Debug, Clone)]
 pub struct GrpcIndexer {
     clear_net_client: CompactTxStreamerClient<Channel>,

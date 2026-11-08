@@ -1927,12 +1927,6 @@ mod posture_surface {
         assert!(!client.is_online());
     }
 
-    /// HYPOTHESIS: `network on` binds the Session Indexer before it touches
-    /// the mixnet, so a session that never named an indexer, on a chain
-    /// without a Default Indexer, refuses typed, leaves the client
-    /// Indexerless, and never starts a proxy. The synthetic wallet is
-    /// regtest, the one chain with no Default Indexer, so the refusal
-    /// lands before any traffic.
     #[cfg(feature = "nym")]
     #[test]
     fn network_on_without_a_default_indexer_refuses_before_the_mixnet() {
@@ -1967,15 +1961,9 @@ mod posture_surface {
         );
     }
 
-    /// A proxy path nothing can spawn, so `network on` fails at the
-    /// bootstrap and never at the Indexer bind. The explicit path takes
-    /// precedence over every other proxy source, so no bundled or PATH
-    /// binary can rescue the spawn.
     #[cfg(feature = "nym")]
     const UNSPAWNABLE_PROXY: &str = "/nonexistent/zingo-test/nym-proxy";
 
-    /// Runs `network on <UNSPAWNABLE_PROXY>` and returns its rendered
-    /// refusal, which must name the proxy, not the Indexer bind.
     #[cfg(feature = "nym")]
     fn network_on_with_an_unspawnable_proxy(
         client: &mut zingolib::lightclient::LightClient,
@@ -2004,10 +1992,6 @@ mod posture_surface {
         rendered
     }
 
-    /// HYPOTHESIS: a session that already holds an Indexer keeps it when
-    /// `network on` fails at the mixnet bootstrap: the fail-closed teardown
-    /// is for the Indexer the consent act bound itself, never for one the
-    /// session brought. The lazy Indexer never dials, so this runs offline.
     #[cfg(feature = "nym")]
     #[test]
     fn network_on_keeps_a_held_indexer_when_the_bootstrap_fails() {
@@ -2038,11 +2022,6 @@ mod posture_surface {
         assert_eq!(client.connected_indexer_uri(), Some(held));
     }
 
-    /// HYPOTHESIS: an Indexer that `network on` bound itself is dropped
-    /// again when the bootstrap fails, so the session returns to the
-    /// unconsented posture: offline, the mixnet slot vacated, and the
-    /// Session Indexer URI still held for the next `network on`. The mock
-    /// indexer accepts the bind, so the failure is the proxy's alone.
     #[cfg(feature = "nym")]
     #[test]
     fn network_on_drops_a_freshly_bound_indexer_when_the_bootstrap_fails() {

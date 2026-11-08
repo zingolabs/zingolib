@@ -296,8 +296,6 @@ enum SessionTarget {
 }
 
 impl SessionTarget {
-    /// - `indexer_uri` is the URI `indexer` was dialed from: the mixnet wire
-    ///   names it to the SOCKS5 client, the nakednet wire uses the link.
     #[cfg_attr(not(feature = "nym"), allow(unused_variables))]
     fn of(wire: Wire, indexer: zingo_netutils::GrpcIndexer, indexer_uri: http::Uri) -> Self {
         match wire {

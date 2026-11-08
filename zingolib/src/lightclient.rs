@@ -139,21 +139,7 @@ pub enum ChooseIndexerError {
     Connect(#[from] zingo_netutils::GetClientError),
 }
 
-/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
-/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
-///
-/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
-///
-/// While the Session Indexer holds no link the client is in offline mode: balance, address,
-/// history and proposal operations work normally, but sync and transmission return
-/// [`error::LightClientError::Offline`]. Call [`Self::go_online`] to connect to the held
-/// indexer, or [`Self::choose_indexer`] to choose and connect in one act.
 pub struct LightClient {
-    /// The wallet's access to the network: the Session Indexer URI
-    /// (zingo-adrs zingolib/0063), held whether or not the session is online,
-    /// and the live link while it is. The URI is the one the consumer named,
-    /// else the chain's Default Indexer, else none; its presence says nothing
-    /// about posture, the link's does.
     network: zingo_netutils::NetworkAccess,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
@@ -587,9 +573,6 @@ impl LightClient {
         &self.wallet.wallet_data
     }
 
-    /// Builds the network access a config describes: a named or Default URI
-    /// is dialed; no URI starts offline holding the chain's Default Indexer,
-    /// if the chain has one, for [`Self::go_online`] to dial later.
     async fn network_access_from(
         config: &ClientConfig,
     ) -> Result<zingo_netutils::NetworkAccess, zingo_netutils::GetClientError> {
@@ -601,30 +584,18 @@ impl LightClient {
         }
     }
 
-    /// Returns the URI of the Session Indexer, held whether or not the client
-    /// is online: the one the consumer named, else the chain's Default
-    /// Indexer, else `None`. Posture is [`Self::is_online`]'s question.
     pub fn indexer_uri(&self) -> Option<http::Uri> {
         self.network.indexer_uri().cloned()
     }
 
-    /// Whether the client holds a live indexer link.
     pub fn is_online(&self) -> bool {
         self.network.is_online()
     }
 
-    /// Returns the URI of the indexer the client is connected to, or `None`
-    /// while offline: [`Self::indexer_uri`] narrowed to the live link.
     pub fn connected_indexer_uri(&self) -> Option<http::Uri> {
         self.network.connected().map(|(uri, _link)| uri.clone())
     }
 
-    /// Connect to an indexer (or switch to a different one).
-    ///
-    /// Creates a new gRPC connection to the given URI. After this call the client is online and
-    /// network operations such as [`Self::sync`] become available. The URI becomes the Session
-    /// Indexer, which [`Self::go_offline`] keeps and [`Self::go_online`] dials again. A failed
-    /// connection leaves the client as it was.
     pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
@@ -632,11 +603,6 @@ impl LightClient {
         self.network.connect_to(server).await
     }
 
-    /// Applies an [`IndexerChoice`](crate::config::IndexerChoice) to the session.
-    ///
-    /// - Offline tears every network capability down, as [`Self::go_offline`] does, and keeps
-    ///   the Session Indexer URI for [`Self::go_online`].
-    /// - Default and Named replace the Session Indexer and connect to it.
     pub async fn choose_indexer(
         &mut self,
         choice: crate::config::IndexerChoice,
@@ -650,14 +616,6 @@ impl LightClient {
         }
     }
 
-    /// Connects to the Session Indexer and returns the URI it bound.
-    ///
-    /// The Session Indexer is the URI the consumer named, else the chain's
-    /// Default Indexer, as zingo-adrs zingolib/0063 rules for a consumer
-    /// that goes online without naming one. A chain without a Default
-    /// Indexer, and no named URI, refuses typed. A client that is already
-    /// online dials the same URI again.
-    ///
     /// ```
     /// use zingolib::lightclient::{ChooseIndexerError, LightClient};
     /// use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -686,12 +644,6 @@ impl LightClient {
         })
     }
 
-    /// Points the client at `server` without connecting. As
-    /// [`Self::set_indexer_uri`], the URI becomes the Session Indexer.
-    ///
-    /// Call it inside a tokio runtime: the lazy link still needs one to
-    /// live in, and outside one hyper panics with a message that names
-    /// neither this call nor the cure.
     #[cfg(any(test, feature = "testutils"))]
     pub fn set_indexer_uri_lazy(
         &mut self,
@@ -704,13 +656,6 @@ impl LightClient {
         self.network.connect_to_lazy(server)
     }
 
-    /// Disconnects every network capability of the client, returning only
-    /// when teardown is complete. The Session Indexer URI is kept, so
-    /// [`Self::go_online`] dials the same indexer again.
-    ///
-    /// An in-flight Sync Session is stopped as [`Self::stop_sync`] stops it
-    /// and awaited, so this returns after the engine has processed its
-    /// current batch.
     pub async fn go_offline(&mut self) {
         self.shutdown_sync().await;
         #[cfg(feature = "nym")]
@@ -721,7 +666,6 @@ impl LightClient {
         self.network.go_offline();
     }
 
-    /// Returns a reference to the indexer, or `LightClientError::Offline` if none is connected.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
         self.network.indexer().ok_or(LightClientError::Offline)
     }
