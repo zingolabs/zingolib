@@ -65,6 +65,10 @@ pub enum LightClientError {
     #[cfg(feature = "nym")]
     #[error("probe targets must be https on port 443; got '{0}'")]
     IneligibleProbeTarget(http::Uri),
+    /// A consumer's fetch over the mixnet returned no body.
+    #[cfg(feature = "nym")]
+    #[error("Mixnet fetch error.")]
+    MixnetFetch(#[from] crate::mixnet::fetch::MixnetFetchError),
 }
 
 /// Errors from the Orchard→Ironwood migration entry points

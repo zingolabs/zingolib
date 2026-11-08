@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `mixnet_fetch(url, timeout_ms)` GETs one `https` URL on port 443 over the
+  mixnet and answers `{ body, via_socks5, rtt_ms }`. The fetch rides the
+  fetch exit, never the Standing Client's, so a consumer's third-party
+  lookups stay unlinked from wallet traffic. A URL outside that shape is an
+  `InvalidInput` error; a transport that is not ready or a failed leg is a
+  `Mixnet` error. No nakednet leg exists.
 - `stop_sync()` asks the running session to stop after its next batch, without
   waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
   runs answers "Sync already stopped." rather than failing.

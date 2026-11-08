@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
+  port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
+  body as text, the local SOCKS5 endpoint it traveled through, and the round
+  trip. It rides the fetch exit the price fetch uses, creates a client per
+  run after boot's conduit is spent, and refuses in every mixnet state but
+  ready, with no nakednet leg. A consumer fetches its own third-party data
+  (a forex table) through it instead of asking this crate for more
+  currencies.
+- `mixnet::fetch::MixnetFetchError` and `LightClientError::MixnetFetch` type
+  the fetch's failures: `Ineligible` for a URL outside the exit policy's
+  shape, `Speed` for a run that reached no exit, `Request` for a leg that
+  failed at a typed stage.
 
 ### Changed
 

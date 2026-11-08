@@ -103,6 +103,7 @@ enable_mixnet(proxy_path: String) -> Result<String, ZingolibError>
 disable_mixnet() -> Result<String, ZingolibError>
 mixnet_indicator() -> Result<String, ZingolibError>
 mixnet_bootstrap_detail() -> Result<String, ZingolibError>
+mixnet_fetch(url: String, timeout_ms: u64) -> Result<String, ZingolibError>
 uniffi::setup_scaffolding!()
 uniffi.toml: [bindings.kotlin]
 uniffi.toml: cdylib_name = "uniffi_zingo"
