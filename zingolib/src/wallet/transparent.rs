@@ -63,6 +63,45 @@ impl OpReturnData {
     }
 }
 
+pub const OP_RETURN: u8 = 0x6a;
+const MAX_DIRECT_PUSH: u8 = 0x4b;
+pub(crate) const OP_PUSHDATA1: u8 = 0x4c;
+const OP_PUSHDATA2: u8 = 0x4d;
+
+pub(crate) fn null_data_payload(script: &[u8]) -> Option<Vec<u8>> {
+    let Some((&OP_RETURN, mut rest)) = script.split_first() else {
+        return None;
+    };
+    let mut payload = Vec::new();
+    while let Some((&opcode, tail)) = rest.split_first() {
+        let (length, tail) = match opcode {
+            0..=MAX_DIRECT_PUSH => (usize::from(opcode), tail),
+            OP_PUSHDATA1 => {
+                let (&length, tail) = tail.split_first()?;
+                (usize::from(length), tail)
+            }
+            OP_PUSHDATA2 => {
+                let (length, tail) = tail.split_first_chunk()?;
+                (usize::from(u16::from_le_bytes(*length)), tail)
+            }
+            _ => return None,
+        };
+        payload.extend_from_slice(tail.get(..length)?);
+        rest = tail.get(length..)?;
+    }
+    Some(payload)
+}
+
+pub(crate) fn op_return_texts(transaction: &Transaction) -> Vec<String> {
+    transaction
+        .transparent_bundle()
+        .into_iter()
+        .flat_map(|bundle| bundle.vout.iter())
+        .filter_map(|out| null_data_payload(out.script_pubkey().0.0.as_slice()))
+        .filter_map(|payload| String::from_utf8(payload).ok())
+        .collect()
+}
+
 /// Error constructing an [`OpReturnData`].
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum OpReturnDataError {
@@ -317,6 +356,51 @@ mod tests {
     const TIP: u32 = 20;
     /// A payload under the 80-byte limit.
     const PAYLOAD: &[u8] = b"zingolib op_return payload";
+
+    const SWAP_MEMO: &[u8] =
+        b"OUT:3D67564CCA60B96A6A00D4D2CD81E1EA4AD052F3D7118CCBD2C9294A9D0C3B8A";
+    const OP_DUP: u8 = 0x76;
+
+    fn script(opcodes: &[u8], payload: &[u8]) -> Vec<u8> {
+        [&[OP_RETURN], opcodes, payload].concat()
+    }
+
+    #[test]
+    fn null_data_payload_reads_a_direct_push() {
+        let length = u8::try_from(PAYLOAD.len()).expect("PAYLOAD is under MAX_DIRECT_PUSH");
+        assert_eq!(
+            null_data_payload(&script(&[length], PAYLOAD)),
+            Some(PAYLOAD.to_vec())
+        );
+    }
+
+    #[test]
+    fn null_data_payload_reads_pushdata1_and_pushdata2() {
+        let length =
+            u16::try_from(SWAP_MEMO.len()).expect("SWAP_MEMO is under MAX_OP_RETURN_BYTES");
+        let [low, high] = length.to_le_bytes();
+        assert_eq!(
+            null_data_payload(&script(&[OP_PUSHDATA1, low], SWAP_MEMO)),
+            Some(SWAP_MEMO.to_vec())
+        );
+        assert_eq!(
+            null_data_payload(&script(&[OP_PUSHDATA2, low, high], SWAP_MEMO)),
+            Some(SWAP_MEMO.to_vec())
+        );
+    }
+
+    #[test]
+    fn null_data_payload_reads_an_empty_op_return() {
+        assert_eq!(null_data_payload(&[OP_RETURN]), Some(Vec::new()));
+    }
+
+    #[test]
+    fn null_data_payload_refuses_other_scripts_and_short_pushes() {
+        let length = u8::try_from(PAYLOAD.len()).expect("PAYLOAD is under MAX_DIRECT_PUSH");
+        assert_eq!(null_data_payload(&[OP_DUP]), None);
+        assert_eq!(null_data_payload(&script(&[length], &PAYLOAD[1..])), None);
+        assert_eq!(null_data_payload(&[]), None);
+    }
 
     #[test]
     fn accepts_payload_at_the_limit() {

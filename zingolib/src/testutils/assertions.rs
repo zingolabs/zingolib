@@ -96,8 +96,7 @@ pub async fn for_each_proposed_transaction<N, Res>(
     step_results
 }
 
-/// The null-data opcode that opens an OP_RETURN script.
-pub const OP_RETURN: u8 = 0x6a;
+pub use crate::wallet::transparent::OP_RETURN;
 
 /// - Panics unless `bundle` is the one-input, two-output shape of an OP_RETURN send whose zero-value
 ///   output's script opens with OP_RETURN and carries `payload` verbatim.

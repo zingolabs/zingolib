@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
+  carry the UTF-8 text of each OP_RETURN output of the transaction, in output
+  order, and their JSON carries it as `op_return_data`. A Maya or THORChain
+  payout to a transparent address arrives with `OUT:<inbound hash>` there, and
+  a refund with `REFUND:<inbound hash>`.
 
 ### Changed
 
