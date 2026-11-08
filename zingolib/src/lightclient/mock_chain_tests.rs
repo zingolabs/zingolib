@@ -3235,8 +3235,7 @@ mod strict_chain {
         assert!(matches!(sent.status, ConfirmationStatus::Confirmed(_)));
     }
 
-    #[tokio::test]
-    async fn sync_recovers_from_a_truncated_block_stream() {
+    async fn sync_recovers_from_a_block_stream_fault(fault: Fault) {
         let mut net = MockNet::launch().await;
         let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
         let recipient_ua =
@@ -3246,11 +3245,27 @@ mod strict_chain {
             .write()
             .await
             .faults
-            .inject(Rpc::BlockRange, Fault::TruncateStream { after: 1 });
+            .inject(Rpc::BlockRange, fault);
 
-        recipient.sync_and_await().await.unwrap();
+        recipient.sync_and_await().await.expect(
+            "the scanner reopens the block stream at the block after the last one it received",
+        );
         assert_eq!(net.chain.read().await.faults.pending(Rpc::BlockRange), 0);
         check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn sync_recovers_from_a_truncated_block_stream() {
+        sync_recovers_from_a_block_stream_fault(Fault::TruncateStream { after: 1 }).await;
+    }
+
+    #[tokio::test]
+    async fn sync_recovers_from_a_block_stream_reset_as_resource_exhausted() {
+        sync_recovers_from_a_block_stream_fault(Fault::ResetStream {
+            after: 1,
+            code: Code::ResourceExhausted,
+        })
+        .await;
     }
 
     #[tokio::test]
