@@ -1,5 +1,43 @@
 //! Times sync inside a real `run-cli --online` session, mixnet boot included.
 //!
+//! # Running it
+//!
+//! Three scenarios cover what this tool measures. Each one requires
+//! `--birthday <height>`, takes `--runs <n>` for the sessions per arm, and
+//! stamps its report with `--label <text>`.
+//!
+//! The mixnet arm alone, which is the default because the mixnet is a
+//! default capability (ADR 0026):
+//!
+//! ```text
+//! makers sync-bench --birthday 3500000 --runs 3 --label baseline
+//! ```
+//!
+//! The clearnet arm alone, which is the same session with the mixnet left
+//! out of the build:
+//!
+//! ```text
+//! makers sync-bench --clearnet --birthday 3500000 --runs 3 --label baseline
+//! ```
+//!
+//! Both arms alternated round by round, which is how a difference is
+//! attributed to the mixnet rather than to the hour the run fell in:
+//!
+//! ```text
+//! makers sync-bench --compare --birthday 3500000 --runs 3 --label baseline
+//! ```
+//!
+//! Three constraints catch a first run. The birthday is required, and both
+//! arms of a comparison scan from the one value, so name a height near the
+//! tip; a session that has not synced within fifteen minutes counts as
+//! failed. The `--clearnet` and `--compare` flags contradict each other,
+//! and the tool refuses the pair rather than guessing which one was meant.
+//! Each arm builds into its own directory under `target/sync-bench/builds`,
+//! so alternating the arms costs no rebuild, at the price of two release
+//! builds on disk.
+//!
+//! # What it measures
+//!
 //! An in-process harness measures the sync engine alone, which answers
 //! nothing about a session where four proven exits bootstrap beside the
 //! scan. This drives the CLI the way a user does: `makers run-cli --online`
