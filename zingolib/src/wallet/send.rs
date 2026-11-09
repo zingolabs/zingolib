@@ -188,6 +188,52 @@ impl LightWallet {
     }
 }
 
+/// ZIP 203: `nExpiryHeight` values at or above this threshold are
+/// interpreted as a block time rather than a block height, so a
+/// transaction's expiry height must stay strictly below it.
+/// (`zcash_primitives` does not export the constant.)
+pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
+
+/// Lifts a stored proposal's target height to the last height of the
+/// consensus-branch epoch the wallet believes it is in, for offline signing.
+///
+/// The transaction built from a proposal expires at its target height plus
+/// the delta of [`crate::wallet::expiry::tx_expiry_delta`], so the lift gives
+/// it the longest expiry the epoch permits: it stays transmittable until the
+/// next scheduled network upgrade. That is the outer limit for any pre-signed Zcash transaction:
+/// the signature commits to the epoch's consensus branch ID, so no expiry
+/// height can carry it past the upgrade. When the params schedule no
+/// upgrade above the stored target, the cap is instead the highest target
+/// whose expiry ZIP 203 can encode as a height.
+///
+/// The steps and their anchors are copied untouched, and the stored target
+/// is never lowered.
+pub(crate) fn retarget_for_offline_signing<NoteRef: Clone>(
+    proposal: &Proposal<zip317::FeeRule, NoteRef>,
+    chain_type: &crate::config::ChainType,
+) -> Result<Proposal<zip317::FeeRule, NoteRef>, zcash_client_backend::proposal::ProposalError> {
+    let stored_target = proposal.min_target_height();
+    let epoch = zcash_protocol::consensus::BranchId::for_height(chain_type, stored_target.into());
+    let cap = match epoch.height_bounds(chain_type) {
+        Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
+        _ => {
+            let highest_encodable = ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1;
+            highest_encodable
+                - crate::wallet::expiry::tx_expiry_delta(
+                    chain_type,
+                    BlockHeight::from_u32(highest_encodable),
+                )
+        }
+    };
+    let lifted_target = cap.max(u32::from(stored_target));
+    Proposal::multi_step(
+        proposal.fee_rule().clone(),
+        zcash_client_backend::data_api::wallet::TargetHeight::from(lifted_target),
+        proposal.confirmations_policy(),
+        proposal.steps().clone(),
+    )
+}
+
 fn check_note_shards_are_scanned(
     note_height: Option<BlockHeight>,
     anchor_height: BlockHeight,

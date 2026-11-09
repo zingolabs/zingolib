@@ -38,6 +38,7 @@ pub mod locks;
 pub mod migration;
 pub(crate) mod note_selection;
 pub mod output;
+pub mod pczt;
 pub mod propose;
 pub mod send;
 pub mod summary;
@@ -99,6 +100,8 @@ impl std::fmt::Display for RecoveryInfo {
 /// Base data required to construct a new [`crate::wallet::LightWallet`].
 pub(crate) struct WalletBase {
     pub(crate) unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+    pub(crate) account_derivations:
+        BTreeMap<zip32::AccountId, zcash_client_backend::data_api::Zip32Derivation>,
     pub(crate) mnemonic: Option<Mnemonic>,
     pub(crate) birthday: BlockHeight,
     pub(crate) wallet_settings: WalletSettings,
@@ -129,6 +132,11 @@ pub struct LightWallet {
     birthday_adjusted_from: Option<BlockHeight>,
     /// Unified key store
     pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+    /// The ZIP 32 derivation each account's keys come from, when known.
+    /// Held beside the key store because the derivation exists for a view
+    /// account too, which carries no spending key to attach it to.
+    pub account_derivations:
+        BTreeMap<zip32::AccountId, zcash_client_backend::data_api::Zip32Derivation>,
     /// `Unified_addresses`
     unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     /// Transparent addresses
@@ -159,6 +167,13 @@ pub struct LightWallet {
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
+    /// An external-signature session awaits: a built PCZT holds the
+    /// account's selected inputs and only `finish_pczt` or `abandon_pczt`
+    /// ends it. Process-lifetime beside the output locks, never written to
+    /// the wallet file: a crash between create and finish leaves no
+    /// reservation, and the session's transaction expires within the
+    /// ordinary window.
+    pczt_session: bool,
     /// Advisory output locks reserving an in-flight proposal's inputs. Process
     /// -lifetime state beside `send_proposal`, never written to the wallet file.
     output_locks: locks::OutputLocks,
@@ -188,18 +203,25 @@ impl LightWallet {
     ) -> Result<Self, WalletError> {
         let WalletBase {
             unified_key_store,
+            account_derivations,
             mnemonic,
             birthday,
             wallet_settings,
         } = wallet_base;
 
+        // One signer account per wallet file, so the first account is the
+        // wallet's; the first-address derivation below serves it.
+        let &account_id = unified_key_store
+            .keys()
+            .next()
+            .expect("a wallet base always holds at least one account");
         let unified_key = unified_key_store
-            .get(&zip32::AccountId::ZERO)
-            .expect("account 0 must exist");
+            .get(&account_id)
+            .expect("the first account's key exists");
         let mut unified_addresses = BTreeMap::new();
         if let Some(receivers) = unified_key.default_receivers() {
             let unified_address_id = UnifiedAddressId {
-                account_id: zip32::AccountId::ZERO,
+                account_id,
                 address_index: 0,
             };
             let first_unified_address = unified_key
@@ -209,7 +231,7 @@ impl LightWallet {
 
         let mut transparent_addresses = BTreeMap::new();
         let transparent_address_id = TransparentAddressId::new(
-            zip32::AccountId::ZERO,
+            account_id,
             TransparentScope::External,
             NonHardenedChildIndex::ZERO,
         );
@@ -235,6 +257,7 @@ impl LightWallet {
             birthday: BlockHeight::from_u32(birthday.into()),
             birthday_adjusted_from: None,
             unified_key_store,
+            account_derivations,
             unified_addresses,
             transparent_addresses,
             wallet_blocks: BTreeMap::new(),
@@ -248,6 +271,7 @@ impl LightWallet {
             migration: None,
             save_required: true,
             send_proposal: None,
+            pczt_session: false,
             output_locks: locks::OutputLocks::default(),
         };
         wallet.raise_birthday_to_sapling_activation();
@@ -297,6 +321,14 @@ impl LightWallet {
     #[must_use]
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
+    }
+
+    #[must_use]
+    pub fn account_derivation(
+        &self,
+        account: zip32::AccountId,
+    ) -> Option<zcash_client_backend::data_api::Zip32Derivation> {
+        self.account_derivations.get(&account).cloned()
     }
 
     /// Returns the wallet's mnemonic for internal operations.

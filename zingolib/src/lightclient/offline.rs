@@ -207,7 +207,7 @@ mod test {
                 // ZIP 203 can encode, and expiry lands at threshold − 1.
                 assert_eq!(
                     u32::from(transaction.transaction().expiry_height()),
-                    crate::lightclient::send::ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1,
+                    crate::wallet::send::ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1,
                     "an Indexerless calculation must retarget expiry to the \
                      top of the wallet's consensus-branch epoch"
                 );

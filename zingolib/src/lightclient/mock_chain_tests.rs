@@ -3761,7 +3761,7 @@ mod strict_chain {
         let wallet = sender.wallet().read().await;
         assert!(
             wallet
-                .get_locked_outputs(zip32::AccountId::ZERO)
+                .get_locked_outputs(zip32::AccountId::ZERO.into())
                 .unwrap()
                 .is_empty()
         );

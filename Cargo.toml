@@ -76,6 +76,14 @@ zcash_client_backend = { version = "=0.25.0", features = [
   "transparent-inputs",
 ] }
 zcash_encoding = "0.5.0"
+pczt = { version = "0.10", default-features = false, features = [
+  "zcp-builder",
+  "io-finalizer",
+  "prover",
+  "signer",
+  "spend-finalizer",
+  "tx-extractor",
+] }
 zcash_keys = { version = "=0.17.0", features = [
   "transparent-inputs",
   "sapling",

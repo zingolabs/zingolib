@@ -17,6 +17,7 @@ zcash_protocol = { workspace = true }
 zcash_client_backend = { workspace = true, features = ["lightwalletd-tonic"] }
 zcash_transparent = { workspace = true }
 zingo_common_components = { workspace = true }
+nonempty = { workspace = true }
 
 http = { workspace = true }
 json = { workspace = true }

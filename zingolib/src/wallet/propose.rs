@@ -101,7 +101,7 @@ impl LightWallet {
         >(
             self,
             &chain_type,
-            account_id,
+            account_id.into(),
             &input_selector,
             &change_strategy,
             request,
@@ -184,7 +184,7 @@ impl LightWallet {
         >(
             self,
             &chain_type,
-            account_id,
+            account_id.into(),
             &[
                 ShieldedPool::Ironwood,
                 ShieldedPool::Orchard,
@@ -250,7 +250,7 @@ impl LightWallet {
             &change_strategy,
             Zatoshis::const_from_u64(10_000),
             &transparent_addresses,
-            account_id,
+            account_id.into(),
             // TODO: replace wallet min_confirmations field with confirmation policy to unify for all proposals
             ConfirmationsPolicy::new_symmetrical(self.wallet_settings.min_confirmations, false),
             zcash_client_backend::data_api::CoinbaseFilter::AllTransparentOutputs,

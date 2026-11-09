@@ -5,16 +5,13 @@ use std::future::Future;
 
 use nonempty::NonEmpty;
 
-use zcash_client_backend::data_api::wallet::TargetHeight;
-use zcash_client_backend::proposal::{Proposal, ProposalError};
+use zcash_client_backend::proposal::Proposal;
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
-use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zingo_netutils::Indexer as _;
 use zingo_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
 use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
 use crate::lightclient::indexer_history::{
@@ -25,6 +22,7 @@ use crate::lightclient::transmit::{
     TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
     resilient_transmit,
 };
+use crate::wallet::send::retarget_for_offline_signing;
 
 /// Records one finished send attempt against `host` into the cross-session
 /// history: route, elapsed time, and the sanitized failure category when it
@@ -113,52 +111,6 @@ pub enum TransmitRoute {
         /// The local SOCKS5 endpoint of the mixnet tunnel.
         via_socks5: String,
     },
-}
-
-/// ZIP 203: `nExpiryHeight` values at or above this threshold are
-/// interpreted as a block time rather than a block height, so a
-/// transaction's expiry height must stay strictly below it.
-/// (`zcash_primitives` does not export the constant.)
-pub(crate) const ZIP_203_EXPIRY_HEIGHT_THRESHOLD: u32 = 500_000_000;
-
-/// Lifts a stored proposal's target height to the last height of the
-/// consensus-branch epoch the wallet believes it is in, for offline signing.
-///
-/// The transaction built from a proposal expires at its target height plus
-/// the delta of [`crate::wallet::expiry::tx_expiry_delta`], so the lift gives
-/// it the longest expiry the epoch permits: it stays transmittable until the
-/// next scheduled network upgrade. That is the outer limit for any pre-signed Zcash transaction:
-/// the signature commits to the epoch's consensus branch ID, so no expiry
-/// height can carry it past the upgrade. When the params schedule no
-/// upgrade above the stored target, the cap is instead the highest target
-/// whose expiry ZIP 203 can encode as a height.
-///
-/// The steps and their anchors are copied untouched, and the stored target
-/// is never lowered.
-fn retarget_for_offline_signing<NoteRef: Clone>(
-    proposal: &Proposal<zip317::FeeRule, NoteRef>,
-    chain_type: &ChainType,
-) -> Result<Proposal<zip317::FeeRule, NoteRef>, ProposalError> {
-    let stored_target = proposal.min_target_height();
-    let epoch = BranchId::for_height(chain_type, stored_target.into());
-    let cap = match epoch.height_bounds(chain_type) {
-        Some((_, Some(next_activation))) => u32::from(next_activation) - 1,
-        _ => {
-            let highest_encodable = ZIP_203_EXPIRY_HEIGHT_THRESHOLD - 1;
-            highest_encodable
-                - crate::wallet::expiry::tx_expiry_delta(
-                    chain_type,
-                    BlockHeight::from_u32(highest_encodable),
-                )
-        }
-    };
-    let lifted_target = cap.max(u32::from(stored_target));
-    Proposal::multi_step(
-        proposal.fee_rule().clone(),
-        TargetHeight::from(lifted_target),
-        proposal.confirmations_policy(),
-        proposal.steps().clone(),
-    )
 }
 
 /// A gRPC indexer as a [`TransmitTarget`].
@@ -566,6 +518,19 @@ impl LightClient {
         // has nothing left to guard; the engine returns to its prior mode.
         self.release_proposal_pause(true);
         result.map_err(LightClientError::from)
+    }
+
+    /// - Consumes the stored proposal and releases its pause, on every exit path.
+    /// - Builds at the proposal's ordinary expiry, so a signing session
+    ///   abandoned before broadcast lapses and releases its inputs.
+    pub async fn pczt_from_stored_proposal(
+        &mut self,
+    ) -> Result<crate::wallet::pczt::Pczt, LightClientError> {
+        let mut wallet = self.wallet().write().await;
+        let result = wallet.create_pczt_from_stored_proposal();
+        drop(wallet);
+        self.release_proposal_pause(true);
+        result.map_err(|failure| SendError::Pczt(failure).into())
     }
 
     /// Pre-flights the transmission route without transmitting, so a route
@@ -1129,7 +1094,8 @@ mod transmit_error_seam {
 #[cfg(test)]
 mod built_transaction_shape {
     use zcash_protocol::PoolType;
-    use zcash_protocol::consensus::{BlockHeight, BranchId};
+    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::consensus::BranchId;
     use zingo_common_components::protocol::ActivationHeights;
     use zingo_status::confirmation_status::ConfirmationStatus;
 

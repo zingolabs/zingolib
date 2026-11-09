@@ -1,6 +1,7 @@
 use bip0039::Mnemonic;
+use byteorder::{LittleEndian, WriteBytesExt};
 use secrecy::ExposeSecret;
-
+use std::io::Write;
 use zcash_keys::keys::Era;
 use zcash_protocol::{PoolType, ShieldedPool};
 
@@ -361,6 +362,62 @@ async fn wallet_round_trips_migration_state_at_current_version() {
     assert_eq!(recovered.migration, Some(state));
 }
 
+/// What a version 45 file is relative to version 46: the identical bytes
+/// with the derivation section's trailing empty-vector byte removed and the
+/// version word lowered. Reading it must succeed with no derivations, which
+/// is the migration a pre-signer wallet file takes.
+#[tokio::test]
+async fn wallet_reads_version_45_as_derivation_free() {
+    use crate::wallet::LightWallet;
+
+    let expected = current_version_wallet_bytes().await;
+    let mut bytes = expected.bytes.clone();
+    assert_eq!(
+        bytes.last(),
+        Some(&0u8),
+        "the fixture carries no derivations, so version 46 appended only the empty vector's length byte"
+    );
+    bytes.pop();
+    bytes[..8].copy_from_slice(&45u64.to_le_bytes());
+
+    let recovered = LightWallet::read(bytes.as_slice(), expected.chain_type)
+        .expect("a version 45 file must read at 46");
+    assert_eq!(recovered.recovery_info().unwrap(), expected.recovery_info);
+    assert!(recovered.account_derivations.is_empty());
+}
+
+#[tokio::test]
+async fn wallet_round_trips_derivation_state_at_current_version() {
+    use crate::wallet::LightWallet;
+    use zcash_client_backend::data_api::Zip32Derivation;
+    use zip32::fingerprint::SeedFingerprint;
+
+    let client = NetworkSeedVersion::Regtest(RegtestSeedVersion::AbandonAbandon(
+        AbandonAbandonVersion::V26,
+    ))
+    .load_example_wallet()
+    .await;
+    let mut wallet = client.wallet().write().await;
+    assert!(wallet.account_derivations.is_empty());
+
+    let derivation = Zip32Derivation::new(
+        SeedFingerprint::from_seed(&wallet.mnemonic().unwrap().to_seed(""))
+            .expect("a 64-byte seed always fingerprints"),
+        zip32::AccountId::ZERO,
+    );
+    wallet
+        .account_derivations
+        .insert(zip32::AccountId::ZERO, derivation.clone());
+    wallet.save_required = true;
+
+    let bytes = wallet.save().unwrap().expect("save required");
+    let recovered = LightWallet::read(bytes.as_slice(), wallet.chain_type()).unwrap();
+    assert_eq!(
+        recovered.account_derivation(zip32::AccountId::ZERO),
+        Some(derivation)
+    );
+}
+
 /// What the orphaned-layout tests below assert against: the wallet's chain
 /// type, its recovery info, the serialized tail (price list plus optional
 /// migration section), and the whole file saved at the current version.
@@ -387,7 +444,7 @@ impl CurrentVersionWallet {
     /// expectation. `PriceList` has no `PartialEq`, so the round trip is
     /// checked through the encoding, which is the property under test.
     fn assert_tail_matches(&self, wallet: &crate::wallet::LightWallet, context: &str) {
-        use zcash_encoding::Optional;
+        use zcash_encoding::{Optional, Vector};
 
         let mut recovered_tail = Vec::new();
         wallet.price_list.write(&mut recovered_tail).unwrap();
@@ -397,10 +454,20 @@ impl CurrentVersionWallet {
             crate::wallet::migration::store::write,
         )
         .unwrap();
+        Vector::write(
+            &mut recovered_tail,
+            &wallet.account_derivations.iter().collect::<Vec<_>>(),
+            |w, (account_id, derivation)| {
+                w.write_u32::<LittleEndian>(u32::from(**account_id))?;
+                w.write_all(derivation.seed_fingerprint().to_bytes().as_slice())?;
+                Ok(())
+            },
+        )
+        .unwrap();
 
         assert_eq!(
             recovered_tail, self.tail,
-            "{context}: the price list and migration section must survive the read"
+            "{context}: the price list, migration and derivation sections must survive the read"
         );
     }
 }
@@ -460,6 +527,16 @@ async fn current_version_wallet_bytes() -> CurrentVersionWallet {
     Optional::write(&mut tail, wallet.migration.as_ref(), |w, migration| {
         crate::wallet::migration::store::write(w, migration)
     })
+    .unwrap();
+    zcash_encoding::Vector::write(
+        &mut tail,
+        &wallet.account_derivations.iter().collect::<Vec<_>>(),
+        |w, (account_id, derivation)| {
+            w.write_u32::<LittleEndian>(u32::from(**account_id))?;
+            w.write_all(derivation.seed_fingerprint().to_bytes().as_slice())?;
+            Ok(())
+        },
+    )
     .unwrap();
 
     CurrentVersionWallet {

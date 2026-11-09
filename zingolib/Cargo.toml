@@ -62,7 +62,9 @@ zcash_client_backend = { workspace = true, features = [
     "unstable",
     "unstable-serialization",
     "unstable-spanning-tree",
+    "pczt",
 ] }
+pczt = { workspace = true }
 zcash_encoding = { workspace = true }
 zcash_keys = { workspace = true }
 zcash_primitives = { workspace = true }
