@@ -15,6 +15,10 @@ default = []
 # stands without it.
 perspective = []
 nym = ["zingo-netutils/socks5-transmit", "zingo-price/socks5-fetch"]
+# Reads the Sapling parameters at runtime from the directory the consumer sets
+# with `wallet::sapling_params::set_directory`. The build embeds and downloads
+# no parameters. The consumer fetches the files.
+runtime-sapling-params = []
 testutils = [
     "perspective",
     "zingo-netutils/testutils",
