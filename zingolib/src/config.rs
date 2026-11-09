@@ -170,6 +170,16 @@ pub enum WalletConfig {
         birthday: u32,
         wallet_settings: WalletSettings,
     },
+    /// Generate a wallet from an encoded unified full viewing key whose
+    /// spends a hardware signer authorizes, carrying the ZIP 32 seed
+    /// fingerprint and account index the signer derives its keys at.
+    UfvkWithDerivation {
+        ufvk: String,
+        birthday: u32,
+        seed_fingerprint: [u8; 32],
+        account_id: u32,
+        wallet_settings: WalletSettings,
+    },
     /// Generate a wallet from a unified spending key.
     // TODO: take concrete USK type
     Usk {
@@ -227,6 +237,7 @@ impl WalletConfig {
                     .collect::<Result<BTreeMap<_, _>, KeyError>>()?;
                 Ok(WalletBase {
                     unified_key_store,
+                    account_derivations: BTreeMap::new(),
                     mnemonic: Some(mnemonic),
                     birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,
@@ -244,6 +255,37 @@ impl WalletConfig {
                 );
                 Ok(WalletBase {
                     unified_key_store,
+                    account_derivations: BTreeMap::new(),
+                    mnemonic: None,
+                    birthday: BlockHeight::from_u32(birthday),
+                    wallet_settings,
+                })
+            }
+            WalletConfig::UfvkWithDerivation {
+                ufvk,
+                birthday,
+                seed_fingerprint,
+                account_id,
+                wallet_settings,
+            } => {
+                let account_id =
+                    zip32::AccountId::try_from(account_id).map_err(|_| KeyError::InvalidFormat)?;
+                let mut unified_key_store = BTreeMap::new();
+                unified_key_store.insert(
+                    account_id,
+                    UnifiedKeyStore::new_from_ufvk(chain_type, ufvk)?,
+                );
+                let mut account_derivations = BTreeMap::new();
+                account_derivations.insert(
+                    account_id,
+                    zcash_client_backend::data_api::Zip32Derivation::new(
+                        zip32::fingerprint::SeedFingerprint::from_bytes(seed_fingerprint),
+                        account_id,
+                    ),
+                );
+                Ok(WalletBase {
+                    unified_key_store,
+                    account_derivations,
                     mnemonic: None,
                     birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,
@@ -261,6 +303,7 @@ impl WalletConfig {
                 );
                 Ok(WalletBase {
                     unified_key_store,
+                    account_derivations: BTreeMap::new(),
                     mnemonic: None,
                     birthday: BlockHeight::from_u32(birthday),
                     wallet_settings,

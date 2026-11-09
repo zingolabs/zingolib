@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Hardware-signer (PCZT, ZIP 374) support: an account imported with a ZIP 32
+  seed fingerprint and account index (`WalletConfig::UfvkWithDerivation`,
+  `WalletKind::ExternalSigner`) builds the PCZT of its stored send proposal
+  through `LightWallet::create_pczt_from_stored_proposal` (or
+  `LightClient::pczt_from_stored_proposal`, which also releases the
+  proposal's sync pause), hands a redacted copy to the signer via
+  `wallet::pczt::signer_view`, proves it with `wallet::pczt::prove`, applies
+  the returned signatures with `wallet::pczt::apply_signatures`, and stores
+  the transaction through `LightWallet::finish_pczt` for
+  `LightClient::transmit_calculated`. The wallet file carries the derivation
+  per account (version 46; older files read with no derivations).
+  The built transaction expires within the proposal's ordinary window, so a
+  session abandoned before broadcast lapses and frees its inputs. A session
+  pending between build and store refuses further `create_pczt` calls and
+  ends through `LightWallet::abandon_pczt`, which releases the reserved
+  inputs. A signer must support every pool the transaction uses, Sapling
+  included; the app knows the recipient it chose and should explain a
+  signer's pool limits itself.
 - `LightClient::is_online` reports whether the client's `NetworkAccess`
   holds a live `indexer`, the one posture question.
 - `LightClient::connected_indexer_uri` reports the URI of the indexer the

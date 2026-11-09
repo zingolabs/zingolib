@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Hardware-signer (PCZT, ZIP 374) bindings: `init_from_ufvk_with_derivation`
+  opens a wallet whose spends an external signer authorizes, and the
+  `pczt_from_stored_proposal`, `pczt_signer_view`, `pczt_prove`,
+  `pczt_apply_signatures`, `pczt_finish_and_store`, `pczt_abandon` and
+  `transmit_calculated` calls carry the proposal from `send` to broadcast.
+  `wallet_kind` reports `ExternalSigner` for such an account.
 - `stop_sync()` asks the running session to stop after its next batch, without
   waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
   runs answers "Sync already stopped." rather than failing.

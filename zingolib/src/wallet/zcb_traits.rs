@@ -4,11 +4,11 @@ use secrecy::SecretVec;
 use shardtree::{ShardTree, error::ShardTreeError, store::ShardStore};
 use zcash_client_backend::{
     data_api::{
-        Account, AccountBirthday, AccountPurpose, Balance, BlockMetadata, CoinbaseFilter,
-        InputSource, NullifierQuery, ORCHARD_SHARD_HEIGHT, OutputLockStore, ReceivedNotes,
-        ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue, TransactionDataRequest,
-        TransparentKeyOrigin, WalletCommitmentTrees, WalletRead, WalletSummary, WalletWrite,
-        Zip32Derivation,
+        Account, AccountBirthday, AccountPurpose, AccountSource, Balance, BlockMetadata,
+        CoinbaseFilter, InputSource, NullifierQuery, ORCHARD_SHARD_HEIGHT, OutputLockStore,
+        ReceivedNotes, ReceivedTransactionOutput, SAPLING_SHARD_HEIGHT, TargetValue,
+        TransactionDataRequest, TransparentKeyOrigin, WalletCommitmentTrees, WalletRead,
+        WalletSummary, WalletWrite, Zip32Derivation,
         chain::{ChainState, CommitmentTreeRoot},
         error::FindAccountForAddressError,
         locking::{LockError, LockFilter, LockOwner},
@@ -48,13 +48,97 @@ use pepper_sync::{
 };
 use zingo_status::confirmation_status::ConfirmationStatus;
 
-pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
+/// The wallet account id as the backend's data-api traits see it. A newtype
+/// over [`zip32::AccountId`] because the PCZT metadata encoding demands
+/// `serde` support that `zip32` does not provide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ZcbAccountId(zip32::AccountId);
+
+impl From<zip32::AccountId> for ZcbAccountId {
+    fn from(id: zip32::AccountId) -> Self {
+        Self(id)
+    }
+}
+
+impl From<ZcbAccountId> for zip32::AccountId {
+    fn from(id: ZcbAccountId) -> Self {
+        id.0
+    }
+}
+
+impl serde::Serialize for ZcbAccountId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u32(u32::from(self.0))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ZcbAccountId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = u32::deserialize(deserializer)?;
+        zip32::AccountId::try_from(raw)
+            .map(Self)
+            .map_err(|_| serde::de::Error::custom(format!("invalid ZIP 32 account id {raw}")))
+    }
+}
+
+pub struct ZingoAccount {
+    id: ZcbAccountId,
+    ufvk: UnifiedFullViewingKey,
+    birthday: BlockHeight,
+    source: AccountSource,
+}
+
+impl ZingoAccount {
+    fn for_wallet(wallet: &LightWallet, id: zip32::AccountId) -> Result<Option<Self>, WalletError> {
+        let Some(unified_key) = wallet.unified_key_store.get(&id) else {
+            return Ok(None);
+        };
+        let ufvk = UnifiedFullViewingKey::try_from(unified_key)?;
+        let source = match wallet.account_derivation(id) {
+            Some(derivation) => AccountSource::Imported {
+                purpose: AccountPurpose::Spending {
+                    derivation: Some(derivation),
+                },
+                key_source: None,
+            },
+            None if unified_key.is_spending_key() => {
+                let derivation = wallet
+                    .mnemonic()
+                    .map(|mnemonic| {
+                        Zip32Derivation::new(
+                            zip32::fingerprint::SeedFingerprint::from_seed(&mnemonic.to_seed(""))
+                                .expect("a 64-byte seed always fingerprints"),
+                            id,
+                        )
+                    })
+                    .map(|derivation| AccountSource::Derived {
+                        derivation,
+                        key_source: None,
+                    });
+                derivation.unwrap_or(AccountSource::Imported {
+                    purpose: AccountPurpose::Spending { derivation: None },
+                    key_source: None,
+                })
+            }
+            None => AccountSource::Imported {
+                purpose: AccountPurpose::ViewOnly,
+                key_source: None,
+            },
+        };
+        Ok(Some(Self {
+            id: id.into(),
+            ufvk,
+            birthday: wallet.birthday(),
+            source,
+        }))
+    }
+}
 
 impl Account for ZingoAccount {
-    type AccountId = zip32::AccountId;
+    type AccountId = ZcbAccountId;
 
     fn id(&self) -> Self::AccountId {
-        self.0
+        self.id
     }
 
     fn name(&self) -> Option<&str> {
@@ -62,36 +146,44 @@ impl Account for ZingoAccount {
     }
 
     fn birthday_height(&self) -> BlockHeight {
-        unimplemented!()
+        self.birthday
     }
 
     fn source(&self) -> &zcash_client_backend::data_api::AccountSource {
-        unimplemented!()
+        let Self { source, .. } = self;
+        source
     }
 
     fn ufvk(&self) -> Option<&UnifiedFullViewingKey> {
-        Some(&self.1)
+        Some(&self.ufvk)
     }
 
     fn uivk(&self) -> zcash_keys::keys::UnifiedIncomingViewingKey {
-        unimplemented!()
+        Account::ufvk(self)
+            .expect("a ZingoAccount always carries its ufvk")
+            .to_unified_incoming_viewing_key()
     }
 }
 
 impl WalletRead for LightWallet {
     type Error = WalletError;
-    type AccountId = zip32::AccountId;
+    type AccountId = ZcbAccountId;
     type Account = ZingoAccount;
 
     fn get_account_ids(&self) -> Result<Vec<Self::AccountId>, Self::Error> {
-        Ok(self.unified_key_store.keys().copied().collect())
+        Ok(self
+            .unified_key_store
+            .keys()
+            .copied()
+            .map(Into::into)
+            .collect())
     }
 
     fn get_account(
         &self,
-        _account_id: Self::AccountId,
+        account_id: Self::AccountId,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        unimplemented!()
+        ZingoAccount::for_wallet(self, account_id.into())
     }
 
     fn get_derived_account(
@@ -120,16 +212,19 @@ impl WalletRead for LightWallet {
         &self,
         ufvk: &UnifiedFullViewingKey,
     ) -> Result<Option<Self::Account>, Self::Error> {
-        let Some((account_id, unified_key)) =
-            self.unified_key_store.iter().find(|(_, unified_key)| {
+        let Some(account_id) = self
+            .unified_key_store
+            .iter()
+            .find(|(_, unified_key)| {
                 UnifiedFullViewingKey::try_from(*unified_key)
                     .is_ok_and(|account_ufvk| account_ufvk.is_equivalent_to(ufvk))
             })
+            .map(|(account_id, _)| *account_id)
         else {
             return Ok(None);
         };
 
-        Ok(Some(ZingoAccount(*account_id, unified_key.try_into()?)))
+        self.get_account(account_id.into())
     }
 
     fn list_addresses(
@@ -147,12 +242,14 @@ impl WalletRead for LightWallet {
         unimplemented!()
     }
 
-    fn get_account_birthday(&self, _account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
-        unimplemented!()
+    fn get_account_birthday(&self, account: Self::AccountId) -> Result<BlockHeight, Self::Error> {
+        self.get_account(account)?
+            .map(|account| account.birthday_height())
+            .ok_or(crate::wallet::error::KeyError::NoAccountKeys.into())
     }
 
     fn get_wallet_birthday(&self) -> Result<Option<BlockHeight>, Self::Error> {
-        unimplemented!()
+        Ok(Some(self.birthday))
     }
 
     fn get_wallet_summary(
@@ -237,7 +334,14 @@ impl WalletRead for LightWallet {
     fn get_unified_full_viewing_keys(
         &self,
     ) -> Result<HashMap<Self::AccountId, UnifiedFullViewingKey>, Self::Error> {
-        unimplemented!()
+        self.unified_key_store
+            .iter()
+            .map(|(account_id, unified_key)| {
+                UnifiedFullViewingKey::try_from(unified_key)
+                    .map(|ufvk| ((*account_id).into(), ufvk))
+                    .map_err(WalletError::from)
+            })
+            .collect()
     }
 
     fn get_memo(&self, _note_id: NoteId) -> Result<Option<Memo>, Self::Error> {
@@ -276,6 +380,7 @@ impl WalletRead for LightWallet {
         _include_change: bool,
         _include_standalone_receivers: bool,
     ) -> Result<HashMap<TransparentAddress, TransparentAddressMetadata>, Self::Error> {
+        let account: zip32::AccountId = account.into();
         self.transparent_addresses
             .iter()
             .filter(|(address_id, _)| {
@@ -304,6 +409,7 @@ impl WalletRead for LightWallet {
         _exposure_depth: u32,
         _exclude_used: bool,
     ) -> Result<HashMap<TransparentAddress, TransparentAddressMetadata>, Self::Error> {
+        let account: zip32::AccountId = account.into();
         self.transparent_addresses
             .iter()
             .filter(|(address_id, _)| {
@@ -441,7 +547,7 @@ impl LightWallet {
 
 impl OutputLockStore for LightWallet {
     type Error = WalletError;
-    type AccountId = zip32::AccountId;
+    type AccountId = ZcbAccountId;
 
     fn lock_outputs(
         &mut self,
@@ -473,6 +579,7 @@ impl OutputLockStore for LightWallet {
     }
 
     fn clear_locked_outputs(&mut self, account: Self::AccountId) -> Result<usize, Self::Error> {
+        let account: zip32::AccountId = account.into();
         let held: Vec<LockedOutputRef> = self
             .output_locks
             .iter()
@@ -493,7 +600,7 @@ impl OutputLockStore for LightWallet {
             .sync_state
             .last_known_chain_height()
             .map_or_else(|| BlockHeight::from_u32(0), |tip| tip + 1);
-        Ok(self.locked_outputs_of(account, target_height))
+        Ok(self.locked_outputs_of(account.into(), target_height))
     }
 }
 
@@ -706,7 +813,7 @@ impl WalletWrite for LightWallet {
     ) -> Result<Vec<(TransparentAddress, TransparentAddressMetadata)>, <Self as WalletRead>::Error>
     {
         Ok(self
-            .generate_refund_addresses(n, account_id)?
+            .generate_refund_addresses(n, account_id.into())?
             .into_iter()
             .map(|(address_id, address)| {
                 (
@@ -903,7 +1010,7 @@ impl LightWallet {
 
 impl InputSource for LightWallet {
     type Error = WalletError;
-    type AccountId = zip32::AccountId;
+    type AccountId = ZcbAccountId;
     type NoteRef = OutputRef;
 
     fn anchor_computable(
@@ -953,6 +1060,7 @@ impl InputSource for LightWallet {
             .as_ref()
             .map(migration::MigrationState::reserved_output_ids)
             .unwrap_or_default();
+        let account: zip32::AccountId = account.into();
         let candidates = note_selection::Candidates {
             sapling: self.note_candidates(anchor_height, account, exclude, &[])?,
             orchard: self.note_candidates(anchor_height, account, exclude, &reserved)?,
@@ -993,7 +1101,7 @@ impl InputSource for LightWallet {
     ) -> Result<zcash_client_backend::data_api::ChangeReceivers, Self::Error> {
         let unified_key_store = self
             .unified_key_store
-            .get(&account)
+            .get(&account.into())
             .ok_or(super::error::KeyError::NoAccountKeys)?;
         let ufvk = UnifiedFullViewingKey::try_from(unified_key_store)?;
         Ok(zcash_client_backend::data_api::ChangeReceivers::from_uivk(
@@ -1153,7 +1261,7 @@ mod tests {
         mode: MaxSpendMode,
     ) -> Result<ReceivedNotes<OutputRef>, WalletError> {
         wallet.select_spendable_notes(
-            zip32::AccountId::ZERO,
+            zip32::AccountId::ZERO.into(),
             TargetValue::AllFunds(mode),
             &[
                 ShieldedPool::Ironwood,
@@ -1272,7 +1380,7 @@ mod tests {
     fn at_least_selection_stays_in_the_requested_pools_when_they_fall_short() {
         let notes = funded_wallet()
             .select_spendable_notes(
-                zip32::AccountId::ZERO,
+                zip32::AccountId::ZERO.into(),
                 TargetValue::AtLeast(Zatoshis::const_from_u64(200_000)),
                 &[ShieldedPool::Ironwood, ShieldedPool::Orchard],
                 TargetHeight::from(21),
@@ -1294,7 +1402,7 @@ mod tests {
     fn all_funds_selection_gathers_only_the_requested_pools() {
         let notes = funded_wallet()
             .select_spendable_notes(
-                zip32::AccountId::ZERO,
+                zip32::AccountId::ZERO.into(),
                 TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
                 &[ShieldedPool::Orchard],
                 TargetHeight::from(21),
@@ -1349,7 +1457,7 @@ mod tests {
         // the note is returned in.
         let selected = wallet
             .select_spendable_notes(
-                zip32::AccountId::ZERO,
+                zip32::AccountId::ZERO.into(),
                 TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
                 &sources,
                 target_height,
@@ -1383,7 +1491,7 @@ mod tests {
         // into the wrong bucket and the same notes would come back.
         let reselected = wallet
             .select_spendable_notes(
-                zip32::AccountId::ZERO,
+                zip32::AccountId::ZERO.into(),
                 TargetValue::AtLeast(Zatoshis::const_from_u64(150_000)),
                 &sources,
                 target_height,
@@ -1396,6 +1504,71 @@ mod tests {
             reselected.ironwood().is_empty(),
             "excluded ironwood refs must not be re-selected; re-selection \
              means the exclude split routed them to the wrong pool bucket"
+        );
+    }
+
+    /// A seed wallet reports its account as `Derived` with the derivation
+    /// the seed fingerprints to, and an account carrying stored signer
+    /// derivation reports it through `source`, which is what puts the ZIP 32
+    /// paths into a PCZT.
+    #[test]
+    fn the_data_api_reports_account_sources_and_derivations() {
+        use zcash_client_backend::data_api::{AccountPurpose, AccountSource};
+        use zip32::fingerprint::SeedFingerprint;
+
+        let seed_wallet = funded_wallet();
+        let seed_derivation = Zip32Derivation::new(
+            SeedFingerprint::from_seed(&seed_wallet.mnemonic().unwrap().to_seed(""))
+                .expect("a 64-byte seed always fingerprints"),
+            zip32::AccountId::ZERO,
+        );
+
+        let account = seed_wallet
+            .get_account(zip32::AccountId::ZERO.into())
+            .expect("reading account zero cannot fail")
+            .expect("a seed wallet holds account zero");
+        assert_eq!(
+            account.source(),
+            &AccountSource::Derived {
+                derivation: seed_derivation.clone(),
+                key_source: None,
+            }
+        );
+        assert_eq!(account.birthday_height(), seed_wallet.birthday());
+
+        let mut signer_wallet = funded_wallet();
+        signer_wallet
+            .account_derivations
+            .insert(zip32::AccountId::ZERO, seed_derivation.clone());
+        let account = signer_wallet
+            .get_account(zip32::AccountId::ZERO.into())
+            .expect("reading account zero cannot fail")
+            .expect("a signer wallet holds account zero");
+        assert_eq!(
+            account.source(),
+            &AccountSource::Imported {
+                purpose: AccountPurpose::Spending {
+                    derivation: Some(seed_derivation.clone()),
+                },
+                key_source: None,
+            }
+        );
+
+        let ufvks = zcash_client_backend::data_api::WalletRead::get_unified_full_viewing_keys(
+            &signer_wallet,
+        )
+        .expect("reading the viewing keys cannot fail");
+        let (account_id, stored_ufvk) = ufvks
+            .iter()
+            .next()
+            .expect("a wallet with one account lists one viewing key");
+        assert_eq!(*account_id, ZcbAccountId::from(zip32::AccountId::ZERO));
+        let encoded = |ufvk: &UnifiedFullViewingKey| {
+            crate::wallet::keys::unified::encode_ufvk(ufvk, &signer_wallet.chain_type())
+        };
+        assert_eq!(
+            encoded(account.ufvk().expect("an account always carries its ufvk")),
+            encoded(stored_ufvk)
         );
     }
 }

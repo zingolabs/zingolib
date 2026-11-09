@@ -108,6 +108,16 @@ impl LazySaplingProver {
             )
         })
     }
+
+    /// - Parses the embedded Sapling parameters on this adapter's first call.
+    pub(crate) fn verifying_keys(
+        &self,
+    ) -> (
+        sapling_circuit::SpendVerifyingKey,
+        sapling_circuit::OutputVerifyingKey,
+    ) {
+        self.prover().verifying_keys()
+    }
 }
 
 impl sapling_prover::SpendProver for LazySaplingProver {

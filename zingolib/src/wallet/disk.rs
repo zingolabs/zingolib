@@ -11,6 +11,7 @@ use log::info;
 
 use bip0039::Mnemonic;
 use zip32::AccountId;
+use zip32::fingerprint::SeedFingerprint;
 
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_keys::keys::UnifiedSpendingKey;
@@ -203,11 +204,17 @@ impl LightWallet {
     /// reads version 45 refuses a newer embedded layout by itself, so a change
     /// to an embedded type's serialized version takes no new Wallet Version.
     ///
+    /// Changes in version 46:
+    /// A ZIP 32 derivation section appended after the migration section: one
+    /// entry per externally-signable account, holding the account id and the
+    /// 32-byte seed fingerprint its ZIP 32 paths come from. Files up to 45
+    /// read at 46 with no derivations.
+    ///
     /// Landing in dev ships a format: every layout that has landed in dev
     /// must remain readable, and the wallet writable, forever after.
     #[must_use]
     pub const fn serialized_version() -> u64 {
-        45
+        46
     }
 
     /// Upper bound on the version word [`Self::read_recovery_info`] accepts:
@@ -296,7 +303,15 @@ impl LightWallet {
         self.price_list.write(&mut writer)?;
         Optional::write(&mut writer, self.migration.as_ref(), |w, migration| {
             crate::wallet::migration::store::write(w, migration)
-        })
+        })?;
+        Vector::write(
+            &mut writer,
+            &self.account_derivations.iter().collect::<Vec<_>>(),
+            |w, (account_id, derivation)| {
+                w.write_u32::<LittleEndian>(u32::from(**account_id))?;
+                w.write_all(derivation.seed_fingerprint().to_bytes().as_slice())
+            },
+        )
     }
 
     /// Deserialize into `reader`
@@ -308,7 +323,7 @@ impl LightWallet {
             ..32 => Self::read_v0(reader, chain_type, version),
             // 43 is a burned version number with the final 42 layout; see
             // the `serialized_version` docs and ADR 0015.
-            32..=45 => Self::read_v32(reader, chain_type, version),
+            32..=46 => Self::read_v32(reader, chain_type, version),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -341,7 +356,7 @@ impl LightWallet {
                     format!("wallet version {version} parses under no chain"),
                 )
             }),
-            32..=45 => {
+            32..=46 => {
                 if version >= 41 {
                     chain_type_from_tag(reader.read_u8()?)
                 } else if version == 40 {
@@ -568,6 +583,7 @@ impl LightWallet {
             birthday,
             birthday_adjusted_from: None,
             unified_key_store,
+            account_derivations: BTreeMap::new(),
             price_list: PriceList::new(),
             wallet_blocks: BTreeMap::new(),
             wallet_transactions: HashMap::new(),
@@ -580,6 +596,7 @@ impl LightWallet {
             chain_type,
             migration: None,
             send_proposal: None,
+            pczt_session: false,
             output_locks: crate::wallet::locks::OutputLocks::default(),
             save_required: false,
             wallet_settings: WalletSettings {
@@ -851,6 +868,25 @@ impl LightWallet {
             (price_list, migration)
         };
 
+        let account_derivations = if version >= 46 {
+            Vector::read(&mut reader, |r| {
+                let account_id = read_account_id(r)?;
+                let mut fingerprint = [0u8; 32];
+                r.read_exact(&mut fingerprint)?;
+                Ok((
+                    account_id,
+                    zcash_client_backend::data_api::Zip32Derivation::new(
+                        SeedFingerprint::from_bytes(fingerprint),
+                        account_id,
+                    ),
+                ))
+            })?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+        } else {
+            BTreeMap::new()
+        };
+
         Ok(Self {
             current_version: LightWallet::serialized_version(),
             read_version: version,
@@ -859,6 +895,7 @@ impl LightWallet {
             birthday,
             birthday_adjusted_from: None,
             unified_key_store,
+            account_derivations,
             unified_addresses,
             transparent_addresses,
             wallet_blocks,
@@ -871,6 +908,7 @@ impl LightWallet {
             price_list,
             migration,
             send_proposal: None,
+            pczt_session: false,
             output_locks: crate::wallet::locks::OutputLocks::default(),
             save_required: false,
         })

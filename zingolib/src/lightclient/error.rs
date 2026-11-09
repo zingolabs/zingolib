@@ -154,6 +154,9 @@ pub enum SendError {
     /// No proposal found in the wallet.
     #[error("No proposal found in the wallet.")]
     NoStoredProposal,
+    /// PCZT error.
+    #[error("PCZT error. {0}")]
+    Pczt(#[from] crate::wallet::pczt::PcztError),
     /// Transmission error.
     #[error("Transmission error.")]
     TransmissionError(#[from] TransmissionError),

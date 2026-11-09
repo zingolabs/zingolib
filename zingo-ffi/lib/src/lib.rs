@@ -30,6 +30,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
+use nonempty::NonEmpty;
 use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 use pepper_sync::error::SyncModeError;
 use pepper_sync::keys::transparent;
@@ -252,6 +253,7 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             SendError::OpReturnAfterDeshield { .. } | SendError::OpReturnResumePending { .. } => {
                 ZingolibError::SendAfterDeshield(text)
             }
+            SendError::Pczt(_) => ZingolibError::Send(text),
         },
         LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
             ZingolibError::Indexer(text)
@@ -959,6 +961,38 @@ pub fn init_from_ufvk(
             Ok(WalletConfig::Ufvk {
                 ufvk,
                 birthday,
+                wallet_settings: params.wallet_settings.clone(),
+            })
+        },
+        get_ufvk,
+    )
+}
+
+/// Opens a wallet whose spends an external hardware signer authorizes: the
+/// wallet holds only the viewing key plus the ZIP 32 seed fingerprint and
+/// account index the signer derives at, which ride every built PCZT so the
+/// signer can recognize its own spends.
+#[uniffi::export]
+pub fn init_from_ufvk_with_derivation(
+    ufvk: String,
+    birthday: u32,
+    seed_fingerprint: Vec<u8>,
+    account_id: u32,
+    connection: IndexerConnection,
+) -> Result<String, ZingolibError> {
+    init_lightclient(
+        connection,
+        move |params| {
+            let Ok(seed_fingerprint) = <[u8; 32]>::try_from(seed_fingerprint) else {
+                return Err(ZingolibError::InvalidInput(
+                    "the seed fingerprint must be 32 bytes".to_string(),
+                ));
+            };
+            Ok(WalletConfig::UfvkWithDerivation {
+                ufvk,
+                birthday,
+                seed_fingerprint,
+                account_id,
                 wallet_settings: params.wallet_settings.clone(),
             })
         },
@@ -2717,6 +2751,16 @@ impl Report for keys::WalletKind {
                 sapling,
                 orchard,
             ),
+            Self::ExternalSigner {
+                transparent,
+                sapling,
+                orchard,
+            } => (
+                "Loaded from unified full viewing key with external signer derivation",
+                transparent,
+                sapling,
+                orchard,
+            ),
             Self::NoKeys => ("No keys found", false, false, false),
         };
         Ok(object! {
@@ -3693,6 +3737,121 @@ pub fn decline() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(lightclient.clear_proposal());
         Ok("Proposal declined.".to_string())
+    })
+}
+
+fn pczt_error(failure: wallet::pczt::PcztError) -> ZingolibError {
+    ZingolibError::Send(chain_text(&failure))
+}
+
+/// Builds the PCZT (ZIP 374) of the stored proposal for an external signer,
+/// the hardware-signing counterpart of `confirm`'s calculate step. The
+/// stored proposal is consumed; the sync pause it held is released.
+///
+/// Returns the authoritative PCZT bytes. Keep them: the signatures the
+/// signer returns are applied to this copy, and `pczt_finish_and_store`
+/// consumes it.
+#[uniffi::export]
+pub fn pczt_from_stored_proposal() -> Result<Vec<u8>, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let pczt = lightclient
+                .pczt_from_stored_proposal()
+                .await
+                .map_err(ffi_error)?;
+            wallet::pczt::encode(pczt).map_err(pczt_error)
+        })
+    })
+}
+
+/// The redacted copy of an authoritative PCZT handed to the signer, keeping
+/// everything a general-purpose hardware signer may need to review and
+/// authorize.
+#[uniffi::export]
+pub fn pczt_signer_view(pczt: Vec<u8>) -> Result<Vec<u8>, ZingolibError> {
+    let view = wallet::pczt::signer_view(&wallet::pczt::decode(&pczt).map_err(pczt_error)?);
+    wallet::pczt::encode(view).map_err(pczt_error)
+}
+
+/// Creates the shielded proofs a signer view carries none of.
+#[uniffi::export]
+pub fn pczt_prove(pczt: Vec<u8>) -> Result<Vec<u8>, ZingolibError> {
+    let proven = wallet::pczt::prove(wallet::pczt::decode(&pczt).map_err(pczt_error)?)
+        .map_err(pczt_error)?;
+    wallet::pczt::encode(proven).map_err(pczt_error)
+}
+
+/// Applies the signer's signatures, each verified against its action's
+/// randomized verification key, to the authoritative proven PCZT.
+#[uniffi::export]
+pub fn pczt_apply_signatures(
+    proven: Vec<u8>,
+    signed_view: Vec<u8>,
+) -> Result<Vec<u8>, ZingolibError> {
+    let authorized = wallet::pczt::apply_signatures(
+        wallet::pczt::decode(&proven).map_err(pczt_error)?,
+        wallet::pczt::decode(&signed_view).map_err(pczt_error)?,
+    )
+    .map_err(pczt_error)?;
+    wallet::pczt::encode(authorized).map_err(pczt_error)
+}
+
+/// Verifies the fully signed PCZT, extracts the transaction from it, and
+/// stores it with `Calculated` status. Broadcast the returned txid with
+/// `transmit_calculated`. Ends the signature session.
+#[uniffi::export]
+pub fn pczt_finish_and_store(pczt: Vec<u8>) -> Result<String, ZingolibError> {
+    let parsed = wallet::pczt::decode(&pczt).map_err(pczt_error)?;
+    let txids = with_wallet_mut(|wallet| wallet.finish_pczt(parsed))
+        .map_err(|e| ZingolibError::read(&e))?
+        .map_err(pczt_error)?;
+    Ok(
+        object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+            .pretty(2),
+    )
+}
+
+/// Ends the signature session without a transaction: the signer declined,
+/// or the user gave up. Releases the account's reserved inputs, so a fresh
+/// `send` can select them again.
+#[uniffi::export]
+pub fn pczt_abandon() -> Result<String, ZingolibError> {
+    with_wallet_mut(|wallet| {
+        let account = wallet
+            .unified_key_store
+            .keys()
+            .next()
+            .copied()
+            .ok_or(zingolib::wallet::error::KeyError::NoAccountKeys)?;
+        wallet.abandon_pczt(account)
+    })?
+    .map(|released| object! { "released_locks" => released }.pretty(2))
+    .map_err(|e| ZingolibError::read(&e))
+}
+
+/// Transmits previously calculated transactions, the send half of both
+/// offline-signing flows: the Indexerless `calculate_stored_proposal` path
+/// and the hardware-signer `pczt_finish_and_store` path.
+#[uniffi::export]
+pub fn transmit_calculated(txids: Vec<String>) -> Result<String, ZingolibError> {
+    with_initialized_lightclient(|lightclient| {
+        RT.block_on(async move {
+            let parsed = txids
+                .iter()
+                .map(|txid| txid_from_hex_encoded_str(txid))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(in_context(ZingolibError::InvalidInput, "invalid txid"))?;
+            let txids = NonEmpty::from_vec(parsed)
+                .ok_or_else(|| ZingolibError::InvalidInput("no txids given".to_string()))?;
+            let txids = lightclient
+                .transmit_calculated(txids)
+                .await
+                .map_err(ffi_error)?;
+            Ok(
+                object! { "txids" => txids.iter().map(|txid| txid.to_string()).collect::<Vec<_>>() }
+                    .pretty(2),
+            )
+        })
     })
 }
 

@@ -74,26 +74,49 @@ pub enum WalletKind {
         sapling: bool,
         orchard: bool,
     },
+    ExternalSigner {
+        transparent: bool,
+        sapling: bool,
+        orchard: bool,
+    },
     NoKeys,
 }
 
 impl LightWallet {
+    // One signer account per wallet file, so the first account is the
+    // signer's; a multi-account wallet would report its first account here.
     pub fn kind(&self) -> Result<WalletKind, KeyError> {
         if self.mnemonic_phrase().is_some() {
             return Ok(WalletKind::Mnemonic);
         }
-        let kind = match self
+        let &account_id = self
             .unified_key_store
-            .get(&zip32::AccountId::ZERO)
-            .ok_or(KeyError::NoAccountKeys)?
-        {
-            UnifiedKeyStore::Spend(_) => WalletKind::SpendingKey,
-            UnifiedKeyStore::View(ufvk) => WalletKind::ViewingKey {
-                transparent: ufvk.p2pkh().is_some(),
-                sapling: ufvk.sapling().is_some(),
-                orchard: ufvk.orchard().is_some(),
-            },
-            UnifiedKeyStore::Empty => WalletKind::NoKeys,
+            .keys()
+            .next()
+            .ok_or(KeyError::NoAccountKeys)?;
+        let kind = match self.unified_key_store.get(&account_id) {
+            Some(UnifiedKeyStore::Spend(_)) => WalletKind::SpendingKey,
+            Some(UnifiedKeyStore::View(ufvk)) => {
+                let (transparent, sapling, orchard) = (
+                    ufvk.p2pkh().is_some(),
+                    ufvk.sapling().is_some(),
+                    ufvk.orchard().is_some(),
+                );
+                if self.account_derivations.contains_key(&account_id) {
+                    WalletKind::ExternalSigner {
+                        transparent,
+                        sapling,
+                        orchard,
+                    }
+                } else {
+                    WalletKind::ViewingKey {
+                        transparent,
+                        sapling,
+                        orchard,
+                    }
+                }
+            }
+            _ => WalletKind::NoKeys,
         };
         Ok(kind)
     }
