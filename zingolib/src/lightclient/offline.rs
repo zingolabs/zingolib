@@ -50,9 +50,12 @@ mod test {
 
     #[tokio::test]
     async fn go_offline_keeps_the_indexer_uri() {
-        let named: http::Uri = "https://indexer.test:443".parse().unwrap();
+        let named: http::Uri = "https://indexer.test:443"
+            .parse()
+            .expect("the literal is a well-formed https URI");
         let mut lc = create_offline_client().await;
-        lc.set_indexer_uri_lazy(named.clone()).unwrap();
+        lc.set_indexer_uri_lazy(named.clone())
+            .expect("a lazy connect to an https URI dials nothing");
         assert!(lc.is_online());
         assert_eq!(lc.indexer_uri(), Some(named.clone()));
 
@@ -60,7 +63,9 @@ mod test {
         assert!(!lc.is_online());
         assert_eq!(lc.indexer_uri(), Some(named.clone()));
 
-        lc.choose_indexer(IndexerChoice::Offline).await.unwrap();
+        lc.choose_indexer(IndexerChoice::Offline)
+            .await
+            .expect("choosing Offline resolves on every chain and dials nothing");
         assert!(!lc.is_online());
         assert_eq!(lc.indexer_uri(), Some(named));
     }

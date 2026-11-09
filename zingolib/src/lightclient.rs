@@ -620,7 +620,7 @@ impl LightClient {
     /// use zingolib::lightclient::{ChooseIndexerError, LightClient};
     /// use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
     ///
-    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// # tokio::runtime::Runtime::new().expect("a tokio runtime builds in a doc-test").block_on(async {
     /// // The synthetic wallet is regtest, which has no Default Indexer.
     /// let mut client = LightClient::new_for_test(
     ///     SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
