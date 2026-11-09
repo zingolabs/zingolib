@@ -239,7 +239,10 @@ async fn go_online_rebinds_the_named_indexer_after_go_offline() {
     assert_eq!(bound, named);
     assert!(recipient.is_online());
     assert_eq!(recipient.indexer_uri(), Some(named));
-    recipient.sync_and_await().await.unwrap();
+    recipient
+        .sync_and_await()
+        .await
+        .expect("the rebound mock indexer serves the sync");
     check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
 }
 

@@ -6,14 +6,14 @@ use crate::{GetClientError, GrpcIndexer};
 /// use zingo_netutils::{GetClientError, NetworkAccess};
 ///
 /// // The lazy `indexer` still needs a runtime to live in.
-/// # tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-/// let named: http::Uri = "https://indexer.test:443".parse().unwrap();
+/// # tokio::runtime::Builder::new_current_thread().enable_all().build().expect("a current-thread runtime builds in a doc-test").block_on(async {
+/// let named: http::Uri = "https://indexer.test:443".parse().expect("the literal is a well-formed https URI");
 /// let mut session = NetworkAccess::offline(Some(named.clone()));
 /// assert!(!session.is_online());
 /// assert_eq!(session.indexer_uri(), Some(&named));
 ///
 /// // The lazy connect builds `indexer` without dialing.
-/// session.connect_to_lazy(named.clone()).unwrap();
+/// session.connect_to_lazy(named.clone()).expect("a lazy connect to an https URI dials nothing");
 /// assert!(session.is_online());
 ///
 /// session.go_offline();
@@ -23,7 +23,7 @@ use crate::{GetClientError, GrpcIndexer};
 /// // Nothing to attach to refuses typed.
 /// let mut bare = NetworkAccess::offline(None);
 /// assert!(matches!(
-///     bare.connect_to_lazy("ftp://indexer.test:21".parse().unwrap()),
+///     bare.connect_to_lazy("ftp://indexer.test:21".parse().expect("the literal is a well-formed URI")),
 ///     Err(GetClientError::InvalidScheme)
 /// ));
 /// assert!(!bare.is_online());
@@ -120,7 +120,7 @@ mod tests {
         let mut session = NetworkAccess::offline(Some(uri("https://first.test:443")));
         session
             .connect_to_lazy(uri("https://second.test:443"))
-            .unwrap();
+            .expect("a lazy connect to an https URI dials nothing");
         let (held, _indexer) = session.connected().expect("online");
         assert_eq!(held, &uri("https://second.test:443"));
         assert!(session.is_online());
@@ -131,7 +131,7 @@ mod tests {
         let mut session = NetworkAccess::offline(None);
         session
             .connect_to_lazy(uri("https://named.test:443"))
-            .unwrap();
+            .expect("a lazy connect to an https URI dials nothing");
         session.go_offline();
         assert!(!session.is_online());
         assert!(session.indexer().is_none());
@@ -143,7 +143,7 @@ mod tests {
         let mut session = NetworkAccess::offline(None);
         session
             .connect_to_lazy(uri("https://named.test:443"))
-            .unwrap();
+            .expect("a lazy connect to an https URI dials nothing");
 
         assert!(matches!(
             session.connect_to_lazy(uri("ftp://bad.test:21")),

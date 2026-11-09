@@ -2000,7 +2000,9 @@ mod posture_surface {
 
         use super::super::RT;
 
-        let held: http::Uri = "https://indexer.test:443".parse().unwrap();
+        let held: http::Uri = "https://indexer.test:443"
+            .parse()
+            .expect("the literal is a well-formed https URI");
         let mut client = RT.block_on(LightClient::new_for_test(
             SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
         ));

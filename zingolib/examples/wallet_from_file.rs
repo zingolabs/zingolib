@@ -138,7 +138,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // Omitting set_indexer_uri() starts the client in offline mode. All
     // local operations (balance, addresses, proposals) are available
-    // immediately; call set_indexer_uri() when network access is needed.
+    // immediately. When network access is needed, call go_online() to dial
+    // the chain's Default Indexer or set_indexer_uri() to name another.
     let load_config = ClientConfig::builder()
         .set_wallet_dir(wallet_dir.clone())
         .set_wallet_config(WalletConfig::Read)
@@ -148,7 +149,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reloaded = LightClient::new(load_config, false).await?;
 
     println!("\nWallet reloaded from file.");
-    println!("  Indexer URI: {:?}", reloaded.indexer_uri()); // None, offline
+    println!("  Online     : {}", reloaded.is_online()); // false, nothing dialed
+    // The chain's Default Indexer, held undialed until go_online().
+    println!("  Indexer URI: {:?}", reloaded.indexer_uri());
     println!("  Chain type : {:?}", reloaded.chain_type());
     println!("  Birthday   : {}", reloaded.birthday());
 
