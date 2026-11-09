@@ -35,7 +35,7 @@ tokio-stream = { workspace = true, optional = true }
 # releases of its sibling crates removed aliases it still needs, so a caret
 # requirement on any one of them lets `cargo update` break the build.
 nym-sdk = { version = "=1.21.6", optional = true }
-nym-http-api-client = { version = "=1.21.6", optional = true }
+nym-http-api-client = { version = "=1.22.2", optional = true }
 nym-validator-client = { version = "=1.21.6", optional = true, default-features = false, features = [
     "http-client",
 ] }

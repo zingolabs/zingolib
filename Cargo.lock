@@ -5239,10 +5239,11 @@ dependencies = [
 
 [[package]]
 name = "nym-http-api-client"
-version = "1.21.6"
+version = "1.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e96f9349ef7b82f14a79745336613c8111a32eb8e97a0f37207132e88e6606"
+checksum = "949ff2ad798df4c0ac200c01b84f72d50f3ca60a4c98155e63fa134390e3c536"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "bincode",
  "bytes",
@@ -5271,6 +5272,7 @@ dependencies = [
  "tracing",
  "url",
  "wasmtimer",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
