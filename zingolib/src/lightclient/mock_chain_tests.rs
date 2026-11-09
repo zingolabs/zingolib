@@ -211,6 +211,38 @@ async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
     .unwrap_or(0)
 }
 
+#[tokio::test]
+async fn go_online_rebinds_the_named_indexer_after_go_offline() {
+    let mut net = MockNet::launch().await;
+    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
+    let named = net.indexer_uri();
+    assert!(recipient.is_online());
+    assert_eq!(recipient.indexer_uri(), Some(named.clone()));
+
+    recipient.go_offline().await;
+    assert!(!recipient.is_online());
+    assert_eq!(
+        recipient.indexer_uri(),
+        Some(named.clone()),
+        "going offline keeps the URI"
+    );
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, 100_000)], 1).await;
+    assert!(matches!(
+        recipient.sync_and_await().await,
+        Err(crate::lightclient::error::LightClientError::Offline)
+    ));
+
+    let bound = recipient
+        .go_online()
+        .await
+        .expect("the mock indexer accepts the connection");
+    assert_eq!(bound, named);
+    assert!(recipient.is_online());
+    assert_eq!(recipient.indexer_uri(), Some(named));
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, i: 100_000 o: 0 s: 0 t: 0);
+}
+
 /// The mock-net proof: a funding block scans to a confirmed balance,
 /// a real quick_send round-trips through the mock's mempool into the
 /// next block, and the post-confirmation balance carries the exact

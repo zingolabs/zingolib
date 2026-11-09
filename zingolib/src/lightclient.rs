@@ -139,16 +139,8 @@ pub enum ChooseIndexerError {
     Connect(#[from] zingo_netutils::GetClientError),
 }
 
-/// Struct which owns and manages the [`crate::wallet::LightWallet`]. Responsible for network operations such as
-/// storing the indexer URI, creating gRPC clients and syncing the wallet to the blockchain.
-///
-/// `sync_mode` is an atomic representation of [`pepper_sync::wallet::SyncMode`].
-///
-/// When `indexer` is `None` the client is in offline mode: balance, address, history and proposal
-/// operations work normally, but sync and transmission return [`error::LightClientError::Offline`].
-/// Call [`Self::set_indexer_uri`] to connect.
 pub struct LightClient {
-    indexer: Option<zingo_netutils::GrpcIndexer>,
+    network: zingo_netutils::NetworkAccess,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -282,14 +274,10 @@ impl LightClient {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
         zingo_netutils::ensure_default_crypto_provider();
 
-        // No configured URI means the client starts offline; set_indexer_uri() connects later.
-        let indexer = match config.indexer_uri() {
-            Some(uri) => Some(zingo_netutils::GrpcIndexer::new(uri).await?),
-            None => None,
-        };
+        let network = Self::network_access_from(&config).await?;
 
         Ok(LightClient {
-            indexer,
+            network,
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -334,7 +322,9 @@ impl LightClient {
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
         LightClient {
-            indexer: None,
+            network: zingo_netutils::NetworkAccess::offline(crate::config::default_indexer_for(
+                &wallet.chain_type(),
+            )),
             wallet: WalletMeta::new(
                 std::env::temp_dir().join("zingolib-synthetic-wallet"),
                 wallet,
@@ -413,14 +403,10 @@ impl LightClient {
         let wallet = LightWallet::read(BufReader::new(reader), config.chain_type())
             .map_err(LightClientError::FileError)?;
 
-        let indexer = if let Some(uri) = config.indexer_uri() {
-            Some(zingo_netutils::GrpcIndexer::new(uri).await?)
-        } else {
-            None
-        };
+        let network = Self::network_access_from(&config).await?;
 
         Ok(LightClient {
-            indexer,
+            network,
             wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
@@ -587,25 +573,36 @@ impl LightClient {
         &self.wallet.wallet_data
     }
 
-    /// Returns URI of the connected indexer, or `None` when in offline mode.
-    pub fn indexer_uri(&self) -> Option<http::Uri> {
-        self.indexer.as_ref().map(|i| i.uri().clone())
+    async fn network_access_from(
+        config: &ClientConfig,
+    ) -> Result<zingo_netutils::NetworkAccess, zingo_netutils::GetClientError> {
+        match config.indexer_uri() {
+            Some(uri) => zingo_netutils::NetworkAccess::online(uri).await,
+            None => Ok(zingo_netutils::NetworkAccess::offline(
+                crate::config::default_indexer_for(&config.chain_type()),
+            )),
+        }
     }
 
-    /// Connect to an indexer (or switch to a different one).
-    ///
-    /// Creates a new gRPC connection to the given URI. After this call the client is online and
-    /// network operations such as [`Self::sync`] become available.
+    pub fn indexer_uri(&self) -> Option<http::Uri> {
+        self.network.indexer_uri().cloned()
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.network.is_online()
+    }
+
+    pub fn connected_indexer_uri(&self) -> Option<http::Uri> {
+        self.network.connected().map(|(uri, _indexer)| uri.clone())
+    }
+
     pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
-        self.indexer = Some(zingo_netutils::GrpcIndexer::new(server).await?);
-        Ok(())
+        self.network.connect_to(server).await
     }
 
-    /// - Offline tears every network capability down, as [`Self::go_offline`] does.
-    /// - Default and Named replace the session's indexer connection.
     pub async fn choose_indexer(
         &mut self,
         choice: crate::config::IndexerChoice,
@@ -619,22 +616,46 @@ impl LightClient {
         }
     }
 
-    /// Points the client at `server` without connecting.
+    /// ```
+    /// use zingolib::lightclient::{ChooseIndexerError, LightClient};
+    /// use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// // The synthetic wallet is regtest, which has no Default Indexer.
+    /// let mut client = LightClient::new_for_test(
+    ///     SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED).build(),
+    /// ).await;
+    /// assert_eq!(client.indexer_uri(), None);
+    /// assert!(matches!(
+    ///     client.go_online().await,
+    ///     Err(ChooseIndexerError::NoDefaultIndexer(_))
+    /// ));
+    /// assert!(!client.is_online());
+    /// # });
+    /// ```
+    pub async fn go_online(&mut self) -> Result<http::Uri, ChooseIndexerError> {
+        self.network.go_online().await.map_err(|error| match error {
+            zingo_netutils::GetClientError::NoIndexerUri => {
+                ChooseIndexerError::NoDefaultIndexer(crate::config::NoDefaultIndexer {
+                    chain: self.chain_type(),
+                })
+            }
+            connect => ChooseIndexerError::Connect(connect),
+        })
+    }
+
     #[cfg(any(test, feature = "testutils"))]
     pub fn set_indexer_uri_lazy(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
-        self.indexer = Some(zingo_netutils::GrpcIndexer::new_lazy(server)?);
-        Ok(())
+        debug_assert!(
+            tokio::runtime::Handle::try_current().is_ok(),
+            "set_indexer_uri_lazy needs a tokio runtime context"
+        );
+        self.network.connect_to_lazy(server)
     }
 
-    /// Disconnects every network capability of the client, returning only
-    /// when teardown is complete.
-    ///
-    /// An in-flight Sync Session is stopped as [`Self::stop_sync`] stops it
-    /// and awaited, so this returns after the engine has processed its
-    /// current batch.
     pub async fn go_offline(&mut self) {
         self.shutdown_sync().await;
         #[cfg(feature = "nym")]
@@ -642,12 +663,11 @@ impl LightClient {
             self.vacate_mixnet_slot().await;
             self.publish_mixnet_slot_state();
         }
-        self.indexer = None;
+        self.network.go_offline();
     }
 
-    /// Returns a reference to the indexer, or `LightClientError::Offline` if none is configured.
     fn require_indexer(&self) -> Result<&zingo_netutils::GrpcIndexer, LightClientError> {
-        self.indexer.as_ref().ok_or(LightClientError::Offline)
+        self.network.indexer().ok_or(LightClientError::Offline)
     }
 
     /// Returns the connected server's diagnostics as typed data.
@@ -656,9 +676,11 @@ impl LightClient {
     /// [`ServerInfo`]. No caller ever inspects a returned value's content
     /// to learn whether the call succeeded (zingolabs/zingolib#2446).
     pub async fn info(&mut self) -> Result<ServerInfo, LightClientError> {
-        let mut indexer = self.require_indexer()?.clone();
+        let (uri, indexer) = self.network.connected().ok_or(LightClientError::Offline)?;
+        let uri = uri.clone();
+        let mut indexer = indexer.clone();
         let info = indexer.get_lightd_info(DEFAULT_REQUEST_TIMEOUT).await?;
-        Ok(ServerInfo::from_lightd_info(info, indexer.uri().clone()))
+        Ok(ServerInfo::from_lightd_info(info, uri))
     }
 
     /// Wrapper for [`crate::wallet::LightWallet::generate_unified_address`].
@@ -801,7 +823,7 @@ impl LightClient {
 impl std::fmt::Debug for LightClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LightClient")
-            .field("indexer", &self.indexer)
+            .field("network", &self.network)
             .field("wallet_meta", &self.wallet)
             .field("sync_mode", &self.sync_mode())
             .field(
