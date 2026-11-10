@@ -18,6 +18,7 @@ thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
 lightwallet-protocol.workspace = true
+lwd-uri-util.workspace = true
 tokio-stream = { workspace = true, optional = true }
 
 # Nym mixnet transport (zingo-adrs zingolib/0011), optional. The stack
