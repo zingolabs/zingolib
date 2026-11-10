@@ -56,8 +56,11 @@ jobs:
     # in parallel, so the job runs on the Linux runner that the
     # CI_LINUX_RUNNER repository variable names, falling back to WarpBuild's
     # sixteen-core label. Measured on 2026-10-16: 10.8 minutes on four cores,
-    # 3.1 on sixteen. The shards stay on the standard runner.
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+    # 3.1 on sixteen. The shards stay on the standard runner. A fork has no
+    # WarpBuild labels, so outside the zingolabs org the fallback is the
+    # standard runner: slower, but a job on a label the owner lacks queues
+    # forever.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || (github.repository_owner == 'zingolabs' && 'warp-ubuntu-2404-x64-16x' || 'ubuntu-24.04') }}
     timeout-minutes: 60
     env:
       RUSTFLAGS: -D warnings

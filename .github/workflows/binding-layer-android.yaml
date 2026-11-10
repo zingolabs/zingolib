@@ -21,7 +21,9 @@ on:
         type: string
       # The runner of the per-ABI build job: the Linux runner that the
       # CI_LINUX_RUNNER repository variable names, falling back to
-      # WarpBuild's sixteen-core label. Each ABI compiles the wallet, the
+      # WarpBuild's sixteen-core label inside the zingolabs org and to the
+      # standard runner elsewhere, where a WarpBuild label never picks up
+      # the job. Each ABI compiles the wallet, the
       # proxy and the bindgen for its target, all under the mobile profile.
       # cargo compiles independent crates in parallel. The profile sets
       # codegen-units to 1, which keeps each crate's own codegen serial.
@@ -33,7 +35,7 @@ on:
       runner:
         required: false
         type: string
-        default: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+        default: ${{ vars.CI_LINUX_RUNNER || (github.repository_owner == 'zingolabs' && 'warp-ubuntu-2404-x64-16x' || 'ubuntu-24.04') }}
       # The commit to build. The publish workflow passes the commit it was
       # dispatched at, which its relay makes the commit that triggered it.
       ref:

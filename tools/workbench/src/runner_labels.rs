@@ -5,6 +5,11 @@ pub const WORKFLOWS_DIR: &str = ".github/workflows";
 
 pub const PAID_LABEL_PREFIX: &str = "warp-";
 
+/// The organisation whose WarpBuild App resolves the paid labels. A fork
+/// has no runner for them, so a paid site falls back to a standard label
+/// outside it.
+pub const PAID_LABEL_OWNER: &str = "zingolabs";
+
 const WORKFLOW_EXTENSIONS: [&str; 2] = ["yaml", "yml"];
 const RUNS_ON_KEY: &str = "runs-on:";
 const DEFAULT_KEY: &str = "default:";
@@ -13,8 +18,21 @@ const COMMENT_MARK: char = '#';
 const EXPRESSION_OPEN: &str = "${{";
 const EXPRESSION_CLOSE: &str = "}}";
 const VARS_CONTEXT: &str = "vars.";
+const OWNER_CONTEXT: &str = "github.repository_owner";
+const EQUALS_OPERATOR: &str = "==";
+const AND_OPERATOR: &str = "&&";
 const FALLBACK_OPERATOR: &str = "||";
+const GROUP_OPEN: char = '(';
+const GROUP_CLOSE: char = ')';
 const LABEL_QUOTE: char = '\'';
+
+fn quoted(text: &str) -> Option<&str> {
+    let inner = text
+        .trim()
+        .strip_prefix(LABEL_QUOTE)?
+        .strip_suffix(LABEL_QUOTE)?;
+    (!inner.is_empty()).then_some(inner)
+}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct RunnerSite {
@@ -28,7 +46,10 @@ impl RunnerSite {
         self.value.contains(PAID_LABEL_PREFIX)
     }
 
-    pub fn variable_fallback(&self) -> Option<(&str, &str)> {
+    /// The shape a paid site must take:
+    /// `${{ vars.NAME || (github.repository_owner == 'zingolabs' && 'paid' || 'standard') }}`.
+    /// Returns the variable, the paid label and the standard label.
+    pub fn variable_fallback(&self) -> Option<(&str, &str, &str)> {
         let expression = self
             .value
             .trim()
@@ -36,15 +57,23 @@ impl RunnerSite {
             .strip_suffix(EXPRESSION_CLOSE)?;
         let (variable, fallback) = expression.split_once(FALLBACK_OPERATOR)?;
         let variable = variable.trim().strip_prefix(VARS_CONTEXT)?;
-        let label = fallback
-            .trim()
-            .strip_prefix(LABEL_QUOTE)?
-            .strip_suffix(LABEL_QUOTE)?;
         let is_variable_name = !variable.is_empty()
             && variable
                 .chars()
                 .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
-        (is_variable_name && !label.is_empty()).then_some((variable, label))
+        let group = fallback
+            .trim()
+            .strip_prefix(GROUP_OPEN)?
+            .strip_suffix(GROUP_CLOSE)?;
+        let (condition, labels) = group.split_once(AND_OPERATOR)?;
+        let (context, owner) = condition.split_once(EQUALS_OPERATOR)?;
+        let is_owner_test = context.trim() == OWNER_CONTEXT && quoted(owner)? == PAID_LABEL_OWNER;
+        let (paid, standard) = labels.split_once(FALLBACK_OPERATOR)?;
+        let (paid, standard) = (quoted(paid)?, quoted(standard)?);
+        let is_paid_then_standard =
+            paid.starts_with(PAID_LABEL_PREFIX) && !standard.starts_with(PAID_LABEL_PREFIX);
+        (is_variable_name && is_owner_test && is_paid_then_standard)
+            .then_some((variable, paid, standard))
     }
 
     pub fn location(&self) -> String {
@@ -120,14 +149,14 @@ pub fn paid_sites_without_override(root: &Path) -> Result<Vec<String>, Vec<Strin
                 continue;
             }
             match site.variable_fallback() {
-                Some((variable, label)) => {
+                Some((variable, label, _)) => {
                     variables_by_label
                         .entry(label.to_string())
                         .or_default()
                         .insert(variable.to_string());
                 }
                 None => diagnostics.push(format!(
-                    "{} pins the paid runner {:?} with no repository-variable override",
+                    "{} names the paid runner {:?} without a repository-variable override and a standard-runner fallback outside the {PAID_LABEL_OWNER} org",
                     site.location(),
                     site.value
                 )),
@@ -159,7 +188,7 @@ mod tests {
 
     fn fallback_expression() -> String {
         format!(
-            "{EXPRESSION_OPEN} vars.{VARIABLE} {FALLBACK_OPERATOR} '{LABEL}' {EXPRESSION_CLOSE}"
+            "{EXPRESSION_OPEN} vars.{VARIABLE} {FALLBACK_OPERATOR} {GROUP_OPEN}{OWNER_CONTEXT} {EQUALS_OPERATOR} '{PAID_LABEL_OWNER}' {AND_OPERATOR} '{LABEL}' {FALLBACK_OPERATOR} '{STANDARD_LABEL}'{GROUP_CLOSE} {EXPRESSION_CLOSE}"
         )
     }
 
@@ -172,9 +201,12 @@ mod tests {
     }
 
     #[test]
-    fn a_variable_with_a_quoted_fallback_parses() {
+    fn a_variable_with_an_owner_gated_fallback_parses() {
         let site = site(&fallback_expression());
-        assert_eq!(site.variable_fallback(), Some((VARIABLE, LABEL)));
+        assert_eq!(
+            site.variable_fallback(),
+            Some((VARIABLE, LABEL, STANDARD_LABEL))
+        );
         assert!(site.names_paid_label());
     }
 
@@ -183,6 +215,18 @@ mod tests {
         assert_eq!(site(LABEL).variable_fallback(), None);
         assert_eq!(site(STANDARD_LABEL).variable_fallback(), None);
         assert!(!site(STANDARD_LABEL).names_paid_label());
+    }
+
+    #[test]
+    fn a_paid_fallback_without_the_owner_test_is_refused() {
+        let ungated = format!(
+            "{EXPRESSION_OPEN} vars.{VARIABLE} {FALLBACK_OPERATOR} '{LABEL}' {EXPRESSION_CLOSE}"
+        );
+        assert_eq!(site(&ungated).variable_fallback(), None);
+        let other_owner = fallback_expression().replace(PAID_LABEL_OWNER, "someone-else");
+        assert_eq!(site(&other_owner).variable_fallback(), None);
+        let paid_outside = fallback_expression().replace(STANDARD_LABEL, LABEL);
+        assert_eq!(site(&paid_outside).variable_fallback(), None);
     }
 
     #[test]

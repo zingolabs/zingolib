@@ -336,7 +336,7 @@ jobs:
     # under the nym features. On four cores the job took 8.3 minutes, longer
     # than the archive and its shards; on the sixteen-core runner that the
     # CI_LINUX_RUNNER repository variable names it took 2.5 (2026-10-16).
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || (github.repository_owner == 'zingolabs' && 'warp-ubuntu-2404-x64-16x' || 'ubuntu-24.04') }}
     timeout-minutes: 20
     env:
       RUSTFLAGS: -D warnings
@@ -438,7 +438,7 @@ jobs:
   test-runtime-sapling-params:
     name: Run runtime-sapling-params tests
     needs: ensure-image
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'warp-ubuntu-2404-x64-16x' }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || (github.repository_owner == 'zingolabs' && 'warp-ubuntu-2404-x64-16x' || 'ubuntu-24.04') }}
     timeout-minutes: 60
     container:
       image: ghcr.io/zingolabs/ci-build:${{ needs.ensure-image.outputs.image-tag }}

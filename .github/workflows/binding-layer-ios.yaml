@@ -8,11 +8,13 @@ on:
     inputs:
       # The CI_IOS_RUNNER repository variable sets the runner label. The
       # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
-      # machine. The stock macos-15 label has three cores.
+      # machine. The stock macos-15 label has three cores; it is the
+      # fallback outside the zingolabs org, where no WarpBuild label picks
+      # up the job.
       runner:
         required: false
         type: string
-        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
+        default: ${{ vars.CI_IOS_RUNNER || (github.repository_owner == 'zingolabs' && 'warp-macos-15-arm64-12x' || 'macos-15') }}
       # The commit to build. The publish workflow passes the commit it was
       # dispatched at, which its relay makes the commit that triggered it.
       ref:
