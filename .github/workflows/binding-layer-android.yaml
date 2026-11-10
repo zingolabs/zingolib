@@ -130,8 +130,8 @@ jobs:
           retention-days: 3
           overwrite: true
 
-  # A push to dev or stable reruns ci-pr on the merge commit whose pull
-  # request already packaged the layout, so the push skips this job. The
+  # A push to dev or a release line reruns ci-pr on the merge commit whose
+  # pull request already packaged the layout, so the push skips this job. The
   # build job still runs on a push: its cargo cache lands on the base
   # branch, which is the cache every pull request restores from.
   package:

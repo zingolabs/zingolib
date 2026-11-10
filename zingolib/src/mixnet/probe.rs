@@ -78,9 +78,9 @@ pub struct MixnetProbe {
 /// the staged probe separates those phases where the distinction matters.
 fn get_client_stage(error: &GetClientError) -> NetOpStage {
     match error {
-        GetClientError::InvalidScheme | GetClientError::InvalidAuthority => {
-            NetOpStage::RouteResolution
-        }
+        GetClientError::InvalidScheme
+        | GetClientError::InvalidAuthority
+        | GetClientError::NoIndexerUri => NetOpStage::RouteResolution,
         GetClientError::Transport(_) => NetOpStage::RemoteConnect,
     }
 }

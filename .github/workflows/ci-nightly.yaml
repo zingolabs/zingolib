@@ -78,12 +78,18 @@ jobs:
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now && vars.BENCHER_PROJECT != '' }}
         uses: bencherdev/bencher@v0.6.13
 
+      # The measurement is the job; a Bencher outage or an expired key
+      # loses the night's upload, not the night's report, so the step may
+      # fail without failing the job. The CLI reads the key from its
+      # environment, so the secret never appears in a command line.
       - name: Publish both arms to Bencher
         if: ${{ steps.arms.outputs.before != steps.arms.outputs.now && vars.BENCHER_PROJECT != '' }}
+        continue-on-error: true
+        env:
+          BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
         run: |
           bencher run \
             --project "${{ vars.BENCHER_PROJECT }}" \
-            --key "${{ secrets.BENCHER_API_KEY }}" \
             --branch "zingolib/${{ github.ref_name }}" \
             --hash "${{ steps.arms.outputs.now }}" \
             --testbed ubuntu-24.04 \
