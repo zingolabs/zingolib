@@ -722,11 +722,15 @@ pub(crate) fn command_loop(
             // snapshot: `network on` may have granted consent mid-session,
             // and `network off` may have torn the session down to the
             // unconsented posture. A deliberate `--offline` never lifts.
-            // Consent shows as a configured Indexer or a non-Unattached
-            // mixnet slot, since a mixnet-only session binds no Indexer.
+            // Consent shows as a live Indexer connection, never as the
+            // held Session Indexer URI, which `network off` keeps for
+            // `network on` to dial again. The non-Unattached mixnet slot arm is
+            // defensive: `network on` binds the Indexer before the mixnet
+            // and drops it again if the bootstrap fails, so a slot without
+            // an Indexer is not a posture the CLI reaches.
             let live_mode = match communications {
                 Communications::DeliberateOffline => Communications::DeliberateOffline,
-                _ if lightclient.indexer_uri().is_some() => Communications::Online,
+                _ if lightclient.is_online() => Communications::Online,
                 #[cfg(feature = "nym")]
                 _ if lightclient.read_mixnet_indicator()
                     != zingolib::mixnet::Indicator::Unattached =>
@@ -1431,7 +1435,7 @@ async fn attempt_sync_recovery<E: std::fmt::Debug + std::fmt::Display>(
     recovery: &mut SyncRecovery,
     error: &SyncError<E>,
 ) -> bool {
-    let Some(bound) = lightclient.indexer_uri() else {
+    let Some(bound) = lightclient.connected_indexer_uri() else {
         return false;
     };
     let action = plan_recovery(error.recovery_recommendation(), recovery.attempts_left);
