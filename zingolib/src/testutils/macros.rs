@@ -91,7 +91,7 @@ macro_rules! check_client_balances {
         );
         {
             let invariant_wallet = $client.wallet().read().await;
-            $crate::testutils::invariants::assert_wallet_invariants(&invariant_wallet);
+            $crate::wallet::invariants::assert_wallet_invariants(&invariant_wallet);
         }
     };
 }

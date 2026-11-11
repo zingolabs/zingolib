@@ -3,7 +3,6 @@ use zaino_proto::tonic::Code;
 use zcash_protocol::{PoolType, ShieldedPool};
 
 use super::*;
-use crate::testutils::invariants::wallet_invariant_violations;
 use crate::testutils::lightclient::from_inputs;
 use crate::testutils::mock_indexer::{Fault, Rpc};
 use crate::testutils::synthetic_wallet;
@@ -113,7 +112,7 @@ async fn run_case(steps: &[Step]) -> Result<(), String> {
 /// The invariants hold and the wallet holds no more value than was issued.
 async fn check(client: &LightClient, issued: u64) -> Result<(), String> {
     let wallet = client.wallet().read().await;
-    let violations = wallet_invariant_violations(&wallet);
+    let violations = wallet.invariant_violations();
     if !violations.is_empty() {
         return Err(violations.join("\n"));
     }
@@ -136,7 +135,7 @@ async fn check(client: &LightClient, issued: u64) -> Result<(), String> {
 /// minus what the sent transactions took.
 async fn check_settled(client: &LightClient, issued: u64) -> Result<(), String> {
     let wallet = client.wallet().read().await;
-    let violations = wallet_invariant_violations(&wallet);
+    let violations = wallet.invariant_violations();
     if !violations.is_empty() {
         return Err(violations.join("\n"));
     }

@@ -1198,6 +1198,12 @@ mod offline_contract {
         }
 
         #[test]
+        fn doctor() {
+            let output = assert_works_offline(&mut funded_offline_client(), "doctor", &[]);
+            assert_eq!(output, "no violations");
+        }
+
+        #[test]
         fn spendable_balance() {
             let output =
                 assert_works_offline(&mut funded_offline_client(), "spendable_balance", &[]);

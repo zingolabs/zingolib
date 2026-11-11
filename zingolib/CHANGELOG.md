@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LightWallet::invariant_violations` reports every violated wallet
+  invariant: outputs stored under foreign txids, spends recorded on
+  transactions that do not carry the input, spends released by failed
+  transactions, and balance lines that disagree with the raw notes. The
+  zingo-cli `doctor` command prints the list and its remedy.
 - `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
   carry the UTF-8 text of each OP_RETURN output of the transaction, in output
   order, and their JSON carries it as `op_return_data`. A Maya or THORChain
