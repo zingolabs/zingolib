@@ -24,7 +24,7 @@ use orchard::bundle::BundleVersion;
 use zcash_primitives::transaction::TxId;
 
 use super::params::MigrationParams;
-use super::split::{MigrationOutputs, bundle_actions, side_budget, zip317_fee};
+use super::split::{FeeRule, MigrationOutputs, bundle_actions, side_budget, zip317_fee};
 use crate::wallet::error::WalletError;
 
 /// The ZIP-317 conventional fee of a immediate migration transaction with `n_in` Orchard
@@ -37,8 +37,9 @@ use crate::wallet::error::WalletError;
 /// Unlike [`super::split::note_split_fee`] this is era-independent: the Orchard
 /// bundle has no outputs, so whether `orchard_v3` permits a spend and an output
 /// to share an action makes no difference to the count (pinned by test).
-fn immediate_migration_fee(n_in: usize) -> u64 {
+fn immediate_migration_fee(rule: &FeeRule, n_in: usize) -> u64 {
     zip317_fee(
+        rule,
         bundle_actions(BundleVersion::orchard_v3(), n_in, 0),
         bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
     )
@@ -104,6 +105,7 @@ impl ImmediateMigrationPlan {
 /// left whole as residual, so an immediate migration never manufactures a note the policy refuses to
 /// spend.
 pub(crate) fn plan_immediate_migration(
+    rule: &FeeRule,
     note_values: &[u64],
     params: &MigrationParams,
 ) -> ImmediateMigrationPlan {
@@ -116,7 +118,7 @@ pub(crate) fn plan_immediate_migration(
 
     for chunk in spendable.chunks(side_budget(params)) {
         let total: u64 = chunk.iter().sum();
-        let fee = immediate_migration_fee(chunk.len());
+        let fee = immediate_migration_fee(rule, chunk.len());
         match total.checked_sub(fee) {
             Some(output) if output > sweep_min => {
                 plan.migrated += output;
@@ -153,6 +155,7 @@ impl crate::wallet::LightWallet {
         account: zip32::AccountId,
     ) -> Result<ImmediateMigrationPlan, WalletError> {
         Ok(plan_immediate_migration(
+            &self.effective_fee_rule(),
             &self.migration_note_values(account)?,
             &MigrationParams::provisional(self.chain_type()),
         ))
@@ -189,6 +192,13 @@ mod tests {
         MigrationParams::provisional(ChainType::Mainnet)
     }
 
+    /// The standard rule every test plans under, what
+    /// [`crate::wallet::LightWallet::effective_fee_rule`] answers before any
+    /// node fee is reported.
+    fn rule() -> FeeRule {
+        FeeRule::standard()
+    }
+
     /// An immediate migration's Orchard bundle has no outputs, so `orchard_v3`'s ban on
     /// cross-address transfers cannot change its action count. That is what
     /// lets `immediate_migration_fee` ignore the activation era that `note_split_fee` has to
@@ -208,11 +218,11 @@ mod tests {
     /// padding. The two fee models must agree, or one of them is wrong.
     #[test]
     fn single_input_immediate_tx_costs_a_canonical_part_fee() {
-        assert_eq!(immediate_migration_fee(1), CANONICAL_PART_FEE);
-        assert_eq!(immediate_migration_fee(2), CANONICAL_PART_FEE);
+        assert_eq!(immediate_migration_fee(&rule(), 1), CANONICAL_PART_FEE);
+        assert_eq!(immediate_migration_fee(&rule(), 2), CANONICAL_PART_FEE);
         // Beyond the bundle minimum each extra spend costs one marginal fee.
         assert_eq!(
-            immediate_migration_fee(3),
+            immediate_migration_fee(&rule(), 3),
             CANONICAL_PART_FEE + MARGINAL_FEE
         );
     }
@@ -229,7 +239,7 @@ mod tests {
             &[1, 2, 3],
         ];
         for note_values in cases {
-            let plan = plan_immediate_migration(note_values, &params());
+            let plan = plan_immediate_migration(&rule(), note_values, &params());
             let total: u64 = note_values.iter().sum();
             assert_eq!(
                 plan.migrated + plan.fee + plan.residual,
@@ -239,7 +249,7 @@ mod tests {
             for transaction in &plan.transactions {
                 assert_eq!(
                     transaction.fee(),
-                    immediate_migration_fee(transaction.inputs.len())
+                    immediate_migration_fee(&rule(), transaction.inputs.len())
                 );
             }
         }
@@ -258,7 +268,7 @@ mod tests {
             (max * 2 + 1, 3),
         ] {
             let note_values = vec![1_000_000u64; note_count];
-            let plan = plan_immediate_migration(&note_values, &params);
+            let plan = plan_immediate_migration(&rule(), &note_values, &params);
             assert_eq!(
                 plan.transactions.len(),
                 expected_txs,
@@ -277,7 +287,7 @@ mod tests {
     #[test]
     fn all_dust_leaves_everything_residual() {
         let note_values = vec![SWEEP_MIN, SWEEP_MIN - 1, 1];
-        let plan = plan_immediate_migration(&note_values, &params());
+        let plan = plan_immediate_migration(&rule(), &note_values, &params());
 
         assert!(plan.is_empty());
         assert_eq!(plan.migrated, 0);
@@ -294,7 +304,7 @@ mod tests {
         let mut note_values = dust.to_vec();
         note_values.extend([SWEEP_MIN + 1, 1_000_000]);
 
-        let plan = plan_immediate_migration(&note_values, &params());
+        let plan = plan_immediate_migration(&rule(), &note_values, &params());
         assert_eq!(plan.residual, dust.iter().sum::<u64>());
         for transaction in &plan.transactions {
             for &input in &transaction.inputs {
@@ -325,19 +335,19 @@ mod tests {
     fn output_at_or_below_sweep_min_leaves_the_chunk_residual() {
         // One 25_000-zatoshi note: the fee is 20_000, so the output would be
         // 5_000, at most the sweep minimum.
-        let plan = plan_immediate_migration(&[25_000], &params());
+        let plan = plan_immediate_migration(&rule(), &[25_000], &params());
         assert!(plan.is_empty());
         assert_eq!(plan.residual, 25_000);
         assert_eq!(plan.fee, 0);
 
         // An output of exactly `sweep_min` still leaves its chunk as residual.
-        let boundary = immediate_migration_fee(1) + SWEEP_MIN;
-        let plan = plan_immediate_migration(&[boundary], &params());
+        let boundary = immediate_migration_fee(&rule(), 1) + SWEEP_MIN;
+        let plan = plan_immediate_migration(&rule(), &[boundary], &params());
         assert!(plan.is_empty());
         assert_eq!(plan.residual, boundary);
 
         // One zatoshi above the boundary migrates.
-        let plan = plan_immediate_migration(&[boundary + 1], &params());
+        let plan = plan_immediate_migration(&rule(), &[boundary + 1], &params());
         assert_eq!(plan.transactions.len(), 1);
         assert_eq!(plan.transactions[0].output, SWEEP_MIN + 1);
         assert_eq!(plan.residual, 0);
@@ -350,7 +360,7 @@ mod tests {
         #[test]
         fn immediate_migration_inputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {            let plan = plan_immediate_migration(&note_values, &params());
+        ) {            let plan = plan_immediate_migration(&rule(), &note_values, &params());
             for transaction in &plan.transactions {
                 for &input in &transaction.inputs {
                     proptest::prop_assert!(input > SWEEP_MIN);
@@ -364,7 +374,7 @@ mod tests {
         #[test]
         fn immediate_migration_outputs_always_exceed_sweep_min(
             note_values in proptest::collection::vec(1u64..=10_000_000_000, 0..300)
-        ) {            let plan = plan_immediate_migration(&note_values, &params());
+        ) {            let plan = plan_immediate_migration(&rule(), &note_values, &params());
             for transaction in &plan.transactions {
                 proptest::prop_assert!(transaction.output > SWEEP_MIN);
             }
@@ -377,11 +387,11 @@ mod tests {
     #[test]
     fn replanning_covers_only_the_remaining_notes() {
         let all = vec![1_000_000u64, 2_000_000, 3_000_000, 4_000_000];
-        let full = plan_immediate_migration(&all, &params());
+        let full = plan_immediate_migration(&rule(), &all, &params());
 
         // The first two notes were spent by an immediate migration that did transmit.
         let remaining = &all[2..];
-        let replan = plan_immediate_migration(remaining, &params());
+        let replan = plan_immediate_migration(&rule(), remaining, &params());
 
         assert_eq!(replan.transactions.len(), 1);
         assert_eq!(replan.transactions[0].inputs, remaining.to_vec());

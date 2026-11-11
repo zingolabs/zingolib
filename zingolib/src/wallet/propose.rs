@@ -82,7 +82,7 @@ impl LightWallet {
                     zcash_client_backend::data_api::error::Error::ScanRequired,
                 ))?;
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            self.effective_fee_rule(),
             Some(memo),
             payment_pool(&self.chain_type, chain_height),
             DustOutputPolicy::new(DustAction::AllowDustChange, None),
@@ -190,7 +190,7 @@ impl LightWallet {
                 ShieldedPool::Orchard,
                 ShieldedPool::Sapling,
             ],
-            &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            &self.effective_fee_rule(),
             address,
             memo,
             MaxSpendMode::MaxSpendable,
@@ -215,7 +215,7 @@ impl LightWallet {
     ) -> Result<crate::data::proposal::ProportionalFeeShieldProposal, ProposeShieldError> {
         let input_selector = GreedyInputSelector::new();
         let change_strategy = zcash_client_backend::fees::zip317::SingleOutputChangeStrategy::new(
-            zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            self.effective_fee_rule(),
             None,
             ShieldedPool::Orchard,
             DustOutputPolicy::new(DustAction::AllowDustChange, None),

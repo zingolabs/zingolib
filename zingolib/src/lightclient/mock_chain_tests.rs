@@ -11,11 +11,12 @@ use zingo_common_components::protocol::ActivationHeights;
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
-use crate::testutils::mock_indexer::MockNet;
 #[cfg(feature = "nym")]
 use crate::testutils::mock_indexer::faucet_funding_transaction_on;
+use crate::testutils::mock_indexer::{Fault, MockNet, Rpc};
 use crate::testutils::synthetic_wallet;
 use crate::wallet::error::ProposeSendError;
+use crate::wallet::fees::StandardFeeReport;
 use crate::wallet::keys::unified::ReceiverSelection;
 
 mod twins;
@@ -2022,6 +2023,92 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
             SyncRecoveryObservables::ServerUnavailable
         );
     }
+}
+
+/// The report fetched at first contact drives the effective fee rule. A
+/// backend reporting a marginal fee above the ZIP 317 standard raises the
+/// rule to it; the mock chain's ZIP 317 mempool policy still accepts only
+/// transactions that pay it.
+#[tokio::test]
+async fn a_backend_fee_above_standard_raises_the_effective_rule() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.standard_fee = StandardFeeReport {
+        fee_zat: 7_000,
+        estimator_version: 0,
+    };
+    let client = net.client(HOSPITAL_MUSEUM, None).await;
+
+    assert_eq!(
+        client.standard_fee().await,
+        Some(StandardFeeReport {
+            fee_zat: 7_000,
+            estimator_version: 0,
+        })
+    );
+    let rule = client.wallet().read().await.effective_fee_rule();
+    assert_eq!(rule.marginal_fee().into_u64(), 7_000);
+    assert_eq!(
+        rule.grace_actions(),
+        zcash_primitives::transaction::fees::zip317::GRACE_ACTIONS
+    );
+}
+
+/// A backend reporting the ZIP 317 standard marginal fee, or less, leaves
+/// the standard rule standing.
+#[tokio::test]
+async fn a_backend_fee_at_or_below_standard_keeps_the_standard_rule() {
+    for fee_zat in [5_000, 1_000] {
+        let mut net = MockNet::launch().await;
+        net.chain.write().await.standard_fee = StandardFeeReport {
+            fee_zat,
+            estimator_version: 0,
+        };
+        let client = net.client(HOSPITAL_MUSEUM, None).await;
+
+        let rule = client.wallet().read().await.effective_fee_rule();
+        assert_eq!(rule.marginal_fee().into_u64(), 5_000);
+    }
+}
+
+/// An old backend answers `Unimplemented`: the connect still succeeds, no
+/// report is cached, and the standard rule prices every proposal.
+#[tokio::test]
+async fn an_unimplemented_standard_fee_keeps_the_standard_rule() {
+    use zaino_proto::tonic::Code;
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.faults.inject(
+        Rpc::StandardFee,
+        Fault::Fail(Code::Unimplemented, "unknown method".to_string()),
+    );
+    let client = net.client(HOSPITAL_MUSEUM, None).await;
+
+    assert_eq!(client.standard_fee().await, None);
+    let rule = client.wallet().read().await.effective_fee_rule();
+    assert_eq!(rule.marginal_fee().into_u64(), 5_000);
+}
+
+/// A report the wallet cannot interpret — an estimator version whose
+/// semantics it does not know — is cached as the backend's answer but never
+/// priced: the standard rule stands.
+#[tokio::test]
+async fn an_unknown_estimator_version_is_never_priced() {
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.standard_fee = StandardFeeReport {
+        fee_zat: 7_000,
+        estimator_version: 1,
+    };
+    let client = net.client(HOSPITAL_MUSEUM, None).await;
+
+    assert_eq!(
+        client.standard_fee().await,
+        Some(StandardFeeReport {
+            fee_zat: 7_000,
+            estimator_version: 1,
+        })
+    );
+    let rule = client.wallet().read().await.effective_fee_rule();
+    assert_eq!(rule.marginal_fee().into_u64(), 5_000);
 }
 
 /// Funds the client's transparent address during a continuous sync session

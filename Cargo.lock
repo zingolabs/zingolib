@@ -4216,9 +4216,8 @@ dependencies = [
 
 [[package]]
 name = "lightwallet-protocol"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45cca626469584c9868b342372f7410a959a44aaaca08989e5d2a284c5f9b432"
+version = "0.5.0"
+source = "git+https://github.com/zingolabs/lightwallet-protocol-rust?rev=d4de13e88b648a2119efbf7343f6e39bb3de1b8e#d4de13e88b648a2119efbf7343f6e39bb3de1b8e"
 dependencies = [
  "prost 0.14.4",
  "tonic",

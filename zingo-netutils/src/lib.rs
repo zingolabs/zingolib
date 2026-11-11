@@ -32,8 +32,8 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
-    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, SubtreeRoot, TreeState,
-    TxFilter,
+    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
+    TreeState, TxFilter,
 };
 
 #[cfg(feature = "ping-very-insecure")]
@@ -174,6 +174,17 @@ pub trait Indexer {
         &mut self,
         timeout: Duration,
     ) -> impl Future<Output = Result<LightdInfo, tonic::Status>> + Send;
+
+    /// Return the backend's standard fee report.
+    ///
+    /// The [`StandardFee`] carries the ZIP 317 marginal fee, zatoshis per
+    /// logical action, the backend's `getstandardfee` RPC reports, and the
+    /// fee-estimator version (0 is the static ZIP 317 marginal fee).
+    /// Backends predating the RPC answer `Unimplemented`.
+    fn get_standard_fee(
+        &mut self,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<StandardFee, tonic::Status>> + Send;
 
     /// Return the height and hash of the chain tip.
     ///
@@ -478,6 +489,16 @@ impl Indexer for GrpcIndexer {
         Ok(self
             .clear_net_client
             .get_lightd_info(request)
+            .await?
+            .into_inner())
+    }
+
+    async fn get_standard_fee(&mut self, timeout: Duration) -> Result<StandardFee, tonic::Status> {
+        let mut request = Request::new(Empty {});
+        request.set_timeout(timeout);
+        Ok(self
+            .clear_net_client
+            .get_standard_fee(request)
             .await?
             .into_inner())
     }
