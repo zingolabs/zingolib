@@ -1,5 +1,6 @@
-//! The wallet's effective fee rule: ZIP 317, raised to whatever the
-//! connected indexer's backend reports.
+//! The wallet's effective fee rule: ZIP 317, with the marginal fee raised to
+//! whatever the connected indexer's backend reports, capped at the weight
+//! ratio over the standard past which extra fee buys no inclusion.
 
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::value::Zatoshis;
@@ -10,6 +11,15 @@ use zingo_netutils::lightwallet_protocol::StandardFee;
 /// one, the only semantics the wallet can interpret. Any other version's
 /// reports are ignored wholesale.
 const STATIC_ZIP317_ESTIMATOR: u32 = 0;
+
+/// The ZIP 317 weight-ratio cap, Revision 1: the block-template lottery
+/// reads any fee above this multiple of the conventional fee as exactly
+/// this multiple, so a marginal fee beyond it buys no inclusion probability
+/// (<https://zips.z.cash/zip-0317#recommended-algorithm-for-block-template-construction>).
+/// A report past the cap is honored at the cap: a lie costs at most the
+/// cap's overcharge on one transaction, and a genuine demand above the cap
+/// is indistinguishable on the network from the cap itself.
+const WEIGHT_RATIO_CAP: u64 = 4;
 
 /// A backend's `GetStandardFee` report, cached in wallet state at first
 /// contact. Copyable and proto-free, so an event can carry it unchanged
@@ -42,10 +52,11 @@ impl Default for StandardFeeReport {
 }
 
 /// The fee rule every proposal, shield, OP_RETURN send, and migration
-/// prices with: the standard ZIP 317 rule whose marginal fee is the MAXIMUM
-/// of the node's reported standard fee and the ZIP 317 standard marginal
-/// fee. The wallet never pays below the standard, whatever the node
-/// reports, and reports it cannot interpret (an unknown estimator version)
+/// prices with: the standard ZIP 317 rule whose marginal fee is the node's
+/// reported standard fee clamped between the ZIP 317 standard marginal fee
+/// and the weight-ratio cap over it. The wallet never pays below the
+/// standard, and never pays past the point where extra fee stops buying
+/// inclusion. Reports it cannot interpret (an unknown estimator version)
 /// or never received (an old backend answers `Unimplemented`, any transport
 /// failure) leave the standard rule standing.
 pub(crate) fn effective_fee_rule(reported: Option<StandardFeeReport>) -> zip317::FeeRule {
@@ -55,14 +66,17 @@ pub(crate) fn effective_fee_rule(reported: Option<StandardFeeReport>) -> zip317:
     else {
         return standard;
     };
-    let marginal_fee = reported.fee_zat.max(zip317::MARGINAL_FEE.into_u64());
-    if marginal_fee == zip317::MARGINAL_FEE.into_u64() {
+    let standard_marginal = zip317::MARGINAL_FEE.into_u64();
+    let marginal_fee = reported
+        .fee_zat
+        .clamp(standard_marginal, WEIGHT_RATIO_CAP * standard_marginal);
+    if marginal_fee == standard_marginal {
         return standard;
     }
-    // `non_standard` refuses only zero P2PKH sizes, and the standard sizes
-    // are nonzero. A marginal fee beyond Zatoshis' range (a nonsense report)
-    // falls back with it, so a broken report degrades to the standard rule
-    // rather than a panic.
+    // The clamp bounds the fee at the cap, well inside Zatoshis' range, and
+    // `non_standard` refuses only zero P2PKH sizes, which the standard sizes
+    // are not. The standard rule is the safe answer in both impossible
+    // branches.
     zip317::FeeRule::non_standard(
         Zatoshis::from_u64(marginal_fee).unwrap_or(zip317::MARGINAL_FEE),
         zip317::GRACE_ACTIONS,
@@ -139,6 +153,17 @@ mod tests {
     }
 
     #[test]
+    fn a_node_fee_past_the_weight_ratio_cap_is_honored_at_the_cap() {
+        let rule = effective_fee_rule(report(100_000, STATIC_ZIP317_ESTIMATOR));
+
+        assert_eq!(
+            rule.marginal_fee(),
+            Zatoshis::const_from_u64(WEIGHT_RATIO_CAP * 5_000),
+            "a report past the cap buys nothing past it, so the wallet pays the cap"
+        );
+    }
+
+    #[test]
     fn no_report_keeps_the_standard_rule() {
         assert_is_standard(&effective_fee_rule(None));
     }
@@ -149,10 +174,12 @@ mod tests {
     }
 
     #[test]
-    fn a_nonsense_fee_report_degrades_to_the_standard_rule() {
-        assert_is_standard(&effective_fee_rule(report(
-            u64::MAX,
-            STATIC_ZIP317_ESTIMATOR,
-        )));
+    fn a_nonsense_fee_report_is_honored_at_the_cap() {
+        let rule = effective_fee_rule(report(u64::MAX, STATIC_ZIP317_ESTIMATOR));
+
+        assert_eq!(
+            rule.marginal_fee(),
+            Zatoshis::const_from_u64(WEIGHT_RATIO_CAP * 5_000)
+        );
     }
 }

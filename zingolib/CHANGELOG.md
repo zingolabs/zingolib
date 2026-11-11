@@ -28,17 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wallet state, and `LightClient::standard_fee` reads the report back, or
   `None` before first contact. Every proposal, shield, OP_RETURN send, and
   migration now prices with the effective fee rule, whose marginal fee is
-  the MAXIMUM of the backend's reported standard fee and the ZIP 317
-  standard marginal fee of 5,000 zatoshi per logical action, so the wallet
-  never pays below the ZIP 317 standard whatever the backend reports. A
-  report whose fee-estimator version is not the static one is cached but
-  never priced, and where 8.0.0 priced every transaction by the standard
-  rule alone this release keeps that rule whenever the backend does not
-  answer `GetStandardFee` (an old lightwalletd answers `Unimplemented`) or
-  any fetch fails: the connect itself never fails on the fee, and there is
-  no retry loop, the next connect fetches again. Where 8.0.0 priced by
-  `FeeRule::standard()`, a backend reporting above 5,000 now raises the
-  marginal fee to its report.
+  the backend's reported standard fee clamped between the ZIP 317 standard
+  marginal fee of 5,000 zatoshi per logical action and the weight-ratio cap
+  over it (4 × 5,000 = 20,000), so the wallet never pays below the ZIP 317
+  standard and never pays past the point where extra fee stops buying
+  inclusion. A report whose fee-estimator version is not the static one is
+  cached but never priced, and where 8.0.0 priced every transaction by the
+  standard rule alone this release keeps that rule whenever the backend
+  does not answer `GetStandardFee` (an old lightwalletd answers
+  `Unimplemented`) or any fetch fails: the connect itself never fails on
+  the fee, and there is no retry loop, the next connect fetches again.
+  Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
+  5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
 - Testnet has a Default Indexer, `https://testnet.zec.rocks:443`, so
