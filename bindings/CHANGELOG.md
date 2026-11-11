@@ -17,6 +17,93 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## bb4b42def2f9be982f4bed4e231b8dd1148b2cd3
+
+Since 81d799775f11e882896e8710e8af12d6d4d29a41.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `get_value_transfers` answers each value transfer with `op_return_data`, the
+  UTF-8 text of its transaction's OP_RETURN outputs.
+
+##### Changed
+- Testnet has a Default Indexer, `https://testnet.zec.rocks:443`.
+  `default_indexer` answers it for a testnet hint, where it answered nothing,
+  and `IndexerChoice::Default` on testnet attaches to it, where the four
+  `init_*` calls failed `Init` and `change_server` failed `InvalidInput`.
+  Regtest is the one chain left without a Default Indexer.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
+  carry the UTF-8 text of each OP_RETURN output of the transaction, in output
+  order, and their JSON carries it as `op_return_data`. A Maya or THORChain
+  payout to a transparent address arrives with `OUT:<inbound hash>` there, and
+  a refund with `REFUND:<inbound hash>`.
+- `LightClient::is_online` reports whether the client's `NetworkAccess`
+  holds a live `indexer`, the one posture question.
+- `LightClient::connected_indexer_uri` reports the URI of the indexer the
+  client is connected to, or `None` while offline: what `indexer_uri`
+  answered before this release.
+- `LightClient::go_online` connects to the Session Indexer and returns the
+  URI it bound: the one the consumer named, else the chain's Default Indexer
+  (zingo-adrs zingolib/0063). A chain without a Default Indexer, and no
+  named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
+
+##### Changed
+- Testnet has a Default Indexer, `https://testnet.zec.rocks:443`, so
+  `IndexerChoice::Default` resolves on testnet and an offline testnet client
+  that named no indexer holds it undialed for `go_online`.
+  `ChooseIndexerError::NoDefaultIndexer` is now reachable only on regtest.
+- BREAKING: `LightClient::indexer_uri` reports the Session Indexer URI the
+  client holds whether or not it is online, where it answered `None` for an
+  offline client. An offline mainnet client now answers the chain's Default
+  Indexer, undialed. Consumers that tested posture with `indexer_uri` read
+  `is_online` instead.
+- `LightClient::go_offline` drops `indexer` but keeps the Session
+  Indexer URI, so `go_online` dials the same indexer again, and
+  `choose_indexer(IndexerChoice::Offline)` is the same act. A failed
+  `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
+  client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
+  and `indexer` together.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Added
+- `NetworkAccess`, the wallet's access to the network as a type: the
+  Session Indexer URI (zingo-adrs zingolib/0063) a session attaches to
+  as `indexer_uri`, beside `indexer`, the live `GrpcIndexer`, which is
+  `Some` only while online. `offline(uri)` holds a URI without dialing,
+  `online(uri)` dials it, `go_online` dials the held `indexer_uri` and
+  returns it, `go_offline` drops `indexer` and keeps `indexer_uri`,
+  `connect_to` and `connect_to_lazy` replace both together, and
+  `is_online`, `indexer_uri`, `indexer` and `connected` read them.
+  `indexer_uri` and `indexer` change only together, and a failed dial
+  changes nothing.
+- `GetClientError::NoIndexerUri`, the refusal when a `NetworkAccess` that
+  holds no URI is asked to go online.
+- `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
+  Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
+  exists (zingo-adrs zingolib/0063, amended 2026-11-06).
+
+##### Changed
+- BREAKING: `default_indexer` returns `http::Uri` in place of
+  `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
+- BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so
+  `GrpcIndexer::uri` is removed. The value is connected by construction and
+  holds the live client alone; the URI lives in the `NetworkAccess` beside
+  it.
+
 ## 81d799775f11e882896e8710e8af12d6d4d29a41
 
 Since d496bea8c7c476f2dd54f437674f7b4d1cc19b87.
