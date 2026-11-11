@@ -1255,6 +1255,11 @@ pub enum NetworkCommandError {
     /// the command waited; re-enabling spawns a fresh proxy.
     #[error("the mixnet bootstrap failed: {report}. Re-enable with `network on`.")]
     Bootstrap { report: String },
+    #[error("no Session Indexer could be bound")]
+    Indexer {
+        #[source]
+        source: zingolib::lightclient::ChooseIndexerError,
+    },
 }
 
 /// A parsed `network` command, its arguments parsed completely at the clap
@@ -1263,7 +1268,11 @@ pub enum NetworkCommandError {
 pub(crate) enum NetworkSubCommand {
     #[command(about = "Report the mixnet state: off, bootstrapping, or ready")]
     Status,
-    #[command(about = "Start the nym-proxy child and route transmissions through the mixnet")]
+    #[command(
+        about = "Bind the Session Indexer (the one named at launch or by `change_server`, else \
+                 the chain's Default Indexer), then start the nym-proxy child and route \
+                 transmissions through the mixnet"
+    )]
     On {
         #[arg(value_name = "proxy_path")]
         path: Option<String>,
@@ -1566,35 +1575,71 @@ async fn network_command(
             // In an offline session, `network on` is itself the
             // Connectivity Consent act (ADR 0026, amending ADR 0025's
             // act list): the session switches to Online Mode for this
-            // session only by bootstrapping the mixnet. It engages no
-            // nakednet indexer link.
+            // session only. It binds the Session Indexer choice the client
+            // holds: the `--server` named at launch or the last
+            // `change_server`, which `network off` keeps, else the chain's
+            // Default Indexer as `--online` binds at launch (zingo-adrs
+            // zingolib/0063). Only then does it bootstrap the mixnet. A
+            // session that already holds an Indexer keeps it.
+            let (indexer, bound_here) = match lightclient.connected_indexer_uri() {
+                Some(held) => (held, false),
+                None => {
+                    let bound = lightclient
+                        .go_online()
+                        .await
+                        .map_err(|source| NetworkCommandError::Indexer { source })?;
+                    (bound, true)
+                }
+            };
             // `network on` waits out the standing client's proven birth: the
             // command returns with a client whose exit carried a round trip.
-            let started = lightclient
-                .start_mixnet_session(
-                    zingolib::mixnet::ProvisionStrategy::Spawn(spawn_hints(path.as_deref())),
-                    zingolib::mixnet::MixnetStartPolicy::ForcedOn,
-                )
-                .await
-                .map_err(|source| NetworkCommandError::ProxyStart { source })?;
-            let resolution = spawned_resolution(started)?;
             // The enable itself waited out the proven birth — the six-birth
             // budget bounds the wait, the supervisor's lifecycle timeout
             // bounds each bootstrap inside it, and the dispatch seam's
             // progress heartbeat narrates it — so the session channel holds
             // the settled outcome and reading it does not block.
-            let outcome = await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await;
-            let readiness = match outcome {
-                BootstrapOutcome::Ready { exits } => format!(
-                    "Mixnet Mode ready; the nym proxy at {resolution} serves send and \
-                     price-fetch over the mixnet.{}",
-                    render_exit_nodes(&exits)
-                ),
-                BootstrapOutcome::Failed { report } => {
-                    return Err(NetworkCommandError::Bootstrap { report });
+            let bootstrap = async {
+                let started = lightclient
+                    .start_mixnet_session(
+                        zingolib::mixnet::ProvisionStrategy::Spawn(spawn_hints(path.as_deref())),
+                        zingolib::mixnet::MixnetStartPolicy::ForcedOn,
+                    )
+                    .await
+                    .map_err(|source| NetworkCommandError::ProxyStart { source })?;
+                let resolution = spawned_resolution(started)?;
+                match await_bootstrap_outcome(lightclient.subscribe_mixnet_status()).await {
+                    BootstrapOutcome::Ready { exits } => Ok((resolution, exits)),
+                    BootstrapOutcome::Failed { report } => {
+                        Err(NetworkCommandError::Bootstrap { report })
+                    }
                 }
             };
-            Ok(readiness)
+            match bootstrap.await {
+                Ok((resolution, exits)) => Ok(format!(
+                    "Session Indexer {indexer}. Mixnet Mode ready; the nym proxy at \
+                     {resolution} serves send and price-fetch over the mixnet.{}",
+                    render_exit_nodes(&exits)
+                )),
+                Err(error) => {
+                    // Fail closed, as the launch path does: a consent act
+                    // whose mixnet never came up leaves no Indexer behind
+                    // it, so the session returns to the unconsented posture.
+                    // `go_offline` also vacates the mixnet slot, death report
+                    // included, and that is deliberate: the command loop
+                    // reads any non-Unattached slot as consent, so a slot
+                    // left in the died state would keep the session in
+                    // Online Mode with no Indexer. The failure is reported
+                    // once, here, in this command's own error; a later
+                    // `network status` shows plain off. A session that
+                    // brought its own Indexer keeps everything, including
+                    // the died slot, because nothing of its consent is
+                    // being undone.
+                    if bound_here {
+                        lightclient.go_offline().await;
+                    }
+                    Err(error)
+                }
+            }
         }
         NetworkSubCommand::Off => {
             // Zero-emission teardown: the session drops to the unconsented
@@ -1602,8 +1647,9 @@ async fn network_command(
             // consent is untouched (`--forget-online` is the erasure act).
             lightclient.go_offline().await;
             Ok(
-                "Network off: the nym proxy is stopped, the Indexer connection is dropped, \
-                 and in-flight sync is stopped. Nothing network-visible is emitted until \
+                "Network off: the nym proxy is stopped, the Indexer connection is dropped \
+                 (its choice is kept for `network on` to rebind), and in-flight sync is \
+                 stopped. Nothing network-visible is emitted until \
                  `network on` re-consents for this session. The stored Connectivity \
                  Consent record is untouched: a standing consent, if recorded, attaches \
                  the next launch again (`--forget-online` erases it)."
@@ -2359,9 +2405,15 @@ pub(crate) enum CliCommand {
 
             WARNING: in an unconsented offline session, `network on` is itself
             the consent act: it switches the session to ONLINE MODE, for this
-            session only. The session selects an indexer over the same curated
-            ranking that `--online` uses at launch, and only then bootstraps
-            the mixnet (ADR 0026). A deliberate --offline session does not
+            session only. The session binds the indexer it was given, by
+            `--server` at launch or by `change_server`, which `network off`
+            remembers; without one it binds the chain's Default Indexer, as
+            `--online` does at launch. Only then does it bootstrap the
+            mixnet (ADR 0026); a session that already holds an indexer keeps
+            it. A bootstrap that fails after a fresh bind drops the indexer
+            again and reports the failure once, in this command's output:
+            the session is unconsented afterwards, so `network status` says
+            off without the cause. A deliberate --offline session does not
             offer this command; relaunch without --offline instead.
 
             `status` reports off, bootstrapping or ready. `on` starts the
