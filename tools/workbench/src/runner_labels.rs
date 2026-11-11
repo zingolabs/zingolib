@@ -5,9 +5,9 @@ pub const WORKFLOWS_DIR: &str = ".github/workflows";
 
 pub const PAID_LABEL_PREFIX: &str = "warp-";
 
-/// The organisation whose WarpBuild App resolves the paid labels. A fork
-/// has no runner for them, so a paid site falls back to a standard label
-/// outside it.
+// The organisation whose WarpBuild App resolves the paid labels. A fork
+// has no runner for them, so a paid site falls back to a standard label
+// outside it.
 pub const PAID_LABEL_OWNER: &str = "zingolabs";
 
 const WORKFLOW_EXTENSIONS: [&str; 2] = ["yaml", "yml"];
@@ -46,9 +46,8 @@ impl RunnerSite {
         self.value.contains(PAID_LABEL_PREFIX)
     }
 
-    /// The shape a paid site must take:
-    /// `${{ vars.NAME || (github.repository_owner == 'zingolabs' && 'paid' || 'standard') }}`.
-    /// Returns the variable, the paid label and the standard label.
+    // The shape a paid site must take:
+    // `${{ vars.NAME || (github.repository_owner == 'zingolabs' && 'paid' || 'standard') }}`.
     pub fn variable_fallback(&self) -> Option<(&str, &str, &str)> {
         let expression = self
             .value
@@ -141,6 +140,7 @@ pub fn workflow_files(root: &Path) -> Result<Vec<PathBuf>, Vec<String>> {
 pub fn paid_sites_without_override(root: &Path) -> Result<Vec<String>, Vec<String>> {
     let mut diagnostics = Vec::new();
     let mut variables_by_label: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut standards_by_label: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for file in workflow_files(root)? {
         let text = crate::read(&file)?;
         let workflow = crate::display_relative(root, &file);
@@ -149,11 +149,15 @@ pub fn paid_sites_without_override(root: &Path) -> Result<Vec<String>, Vec<Strin
                 continue;
             }
             match site.variable_fallback() {
-                Some((variable, label, _)) => {
+                Some((variable, label, standard)) => {
                     variables_by_label
                         .entry(label.to_string())
                         .or_default()
                         .insert(variable.to_string());
+                    standards_by_label
+                        .entry(label.to_string())
+                        .or_default()
+                        .insert(standard.to_string());
                 }
                 None => diagnostics.push(format!(
                     "{} names the paid runner {:?} without a repository-variable override and a standard-runner fallback outside the {PAID_LABEL_OWNER} org",
@@ -168,6 +172,16 @@ pub fn paid_sites_without_override(root: &Path) -> Result<Vec<String>, Vec<Strin
             let names: Vec<&str> = variables.iter().map(String::as_str).collect();
             diagnostics.push(format!(
                 "the paid runner {label:?} is overridden by {} variables: {}",
+                names.len(),
+                names.join(crate::LIST_SEPARATOR)
+            ));
+        }
+    }
+    for (label, standards) in standards_by_label {
+        if standards.len() > 1 {
+            let names: Vec<&str> = standards.iter().map(String::as_str).collect();
+            diagnostics.push(format!(
+                "the paid runner {label:?} falls back to {} standard runners outside the {PAID_LABEL_OWNER} org: {}",
                 names.len(),
                 names.join(crate::LIST_SEPARATOR)
             ));
