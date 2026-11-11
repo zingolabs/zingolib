@@ -5,23 +5,30 @@ mod test {
     use zingo_test_vectors::seeds;
 
     use crate::{
-        config::{ClientConfig, WalletConfig},
+        config::{ClientConfig, IndexerChoice, WalletConfig},
         lightclient::{LightClient, error::LightClientError},
         testutils::default_test_wallet_settings,
     };
 
     async fn create_offline_client() -> LightClient {
+        create_offline_client_for(crate::config::ChainType::Mainnet).await
+    }
+
+    async fn create_offline_client_for(chain: crate::config::ChainType) -> LightClient {
         let config = ClientConfig::builder()
+            .set_chain_type(chain)
             .set_wallet_config(WalletConfig::MnemonicPhrase {
                 mnemonic_phrase: seeds::HOSPITAL_MUSEUM_SEED.to_string(),
-                no_of_accounts: 1.try_into().unwrap(),
+                no_of_accounts: 1.try_into().expect("one is a non-zero account count"),
                 birthday: 419200,
                 wallet_settings: default_test_wallet_settings(),
             })
             // no .set_indexer_uri() → offline mode
             .build()
-            .unwrap();
-        LightClient::new(config, true).await.unwrap()
+            .expect("a mnemonic config with one account builds on every chain");
+        LightClient::new(config, true)
+            .await
+            .expect("a client whose config names no indexer dials nothing")
     }
 
     #[tokio::test]
@@ -30,9 +37,61 @@ mod test {
     }
 
     #[tokio::test]
-    async fn offline_indexer_uri_is_none() {
+    async fn offline_client_holds_the_default_indexer_undialed() {
         let lc = create_offline_client().await;
-        assert!(lc.indexer_uri().is_none());
+        assert_holds_the_default_undialed(&lc, &crate::config::ChainType::Mainnet);
+    }
+
+    fn assert_holds_the_default_undialed(lc: &LightClient, chain: &crate::config::ChainType) {
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), crate::config::default_indexer_for(chain));
+        assert!(lc.indexer_uri().is_some(), "{chain} has a Default Indexer");
+    }
+
+    #[tokio::test]
+    async fn go_offline_keeps_the_indexer_uri() {
+        let named: http::Uri = "https://indexer.test:443"
+            .parse()
+            .expect("the literal is a well-formed https URI");
+        let mut lc = create_offline_client().await;
+        lc.set_indexer_uri_lazy(named.clone())
+            .expect("a lazy connect to an https URI dials nothing");
+        assert!(lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named.clone()));
+
+        lc.go_offline().await;
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named.clone()));
+
+        lc.choose_indexer(IndexerChoice::Offline)
+            .await
+            .expect("choosing Offline resolves on every chain and dials nothing");
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), Some(named));
+    }
+
+    #[tokio::test]
+    async fn offline_testnet_client_holds_the_default_indexer_undialed() {
+        let lc = create_offline_client_for(crate::config::ChainType::Testnet).await;
+        assert_holds_the_default_undialed(&lc, &crate::config::ChainType::Testnet);
+    }
+
+    #[tokio::test]
+    async fn go_online_without_a_named_indexer_needs_a_default() {
+        use crate::lightclient::ChooseIndexerError;
+        use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+
+        let mut lc = LightClient::new_for_test(
+            SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED).build(),
+        )
+        .await;
+        assert_eq!(lc.indexer_uri(), None);
+        assert!(matches!(
+            lc.go_online().await,
+            Err(ChooseIndexerError::NoDefaultIndexer(_))
+        ));
+        assert!(!lc.is_online());
+        assert_eq!(lc.indexer_uri(), None);
     }
 
     #[tokio::test]
@@ -216,7 +275,7 @@ mod test {
                 .build()
                 .unwrap();
             let lc = LightClient::new(config, false).await.unwrap();
-            assert!(lc.indexer_uri().is_none(), "reload should be offline");
+            assert!(!lc.is_online(), "reload should be offline");
             assert_eq!(
                 lc.chain_type(),
                 crate::config::ChainType::Mainnet,

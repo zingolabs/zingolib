@@ -1128,14 +1128,15 @@ mod config_template {
             );
         }
 
-        /// A chain without a Default Indexer refuses consent that names no
-        /// server, with the chain in the error (zingo-adrs zingolib/0063).
         #[cfg(feature = "nym")]
         #[test]
-        fn online_without_server_on_testnet_refuses() {
-            let err = fill(&[examples::BIN_NAME, "--online", "--chain", "testnet"])
-                .expect_err("testnet has no Default Indexer, so consent alone refuses");
-            assert!(err.contains("Default Indexer"), "{err}");
+        fn online_without_server_on_testnet_binds_the_default_indexer() {
+            let config = fill(&[examples::BIN_NAME, "--online", "--chain", "testnet"])
+                .expect("testnet has a Default Indexer, so consent alone resolves");
+            assert_eq!(
+                config.server,
+                zingolib::config::default_indexer_for(&ChainType::Testnet)
+            );
         }
     }
 

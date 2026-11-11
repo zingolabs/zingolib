@@ -1,12 +1,6 @@
 //! Error types for the [`Indexer`](super::Indexer) and
 //! `TransparentIndexer` traits.
 //!
-/// Callers can depend on:
-/// - `InvalidScheme` and `InvalidAuthority` are deterministic — retrying
-///   with the same URI will always fail.
-/// - `Transport` wraps a [`tonic::transport::Error`] and may be transient
-///   (e.g. DNS resolution, TCP connect timeout). Retrying may succeed.
-///
 /// ```
 /// use zingo_netutils::GetClientError;
 ///
@@ -26,6 +20,9 @@ pub enum GetClientError {
 
     #[error("bad uri: invalid authority")]
     InvalidAuthority,
+
+    #[error("no indexer uri: nothing to attach to")]
+    NoIndexerUri,
 
     #[error(transparent)]
     Transport(#[from] tonic::transport::Error),
