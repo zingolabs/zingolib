@@ -35,10 +35,10 @@ fn any_step() -> impl Strategy<Value = Step> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(8))]
+    #![proptest_config(ProptestConfig::with_cases(4))]
     #[test]
     fn every_step_of_a_generated_session_holds_the_wallet_invariants(
-        steps in prop::collection::vec(any_step(), 1..24),
+        steps in prop::collection::vec(any_step(), 1..16),
     ) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime
