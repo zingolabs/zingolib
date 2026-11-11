@@ -1,5 +1,7 @@
 //! All things needed to create, manaage, and use notes
 
+use std::collections::HashMap;
+
 use pepper_sync::wallet::KeyIdInterface;
 use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
@@ -136,7 +138,11 @@ impl LightWallet {
     }
 
     /// Returns [`self::SpendStatus`] for the given `output`.
-    pub fn output_spend_status(&self, output: &impl OutputInterface) -> SpendStatus {
+    pub fn output_spend_status(
+        &self,
+        output: &impl OutputInterface,
+        pending_spends: &HashMap<OutputId, TxId>,
+    ) -> SpendStatus {
         if let Some(txid) = output.spending_transaction() {
             match self
                 .wallet_transactions
@@ -149,6 +155,18 @@ impl LightWallet {
                 ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
                 ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
                 ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
+            }
+        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
+            match self
+                .wallet_transactions
+                .get(txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(*txid),
+                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(*txid),
+                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(*txid),
+                _ => SpendStatus::Unspent,
             }
         } else {
             SpendStatus::Unspent
@@ -167,10 +185,15 @@ impl LightWallet {
     /// Sum the values of all outputs in the wallet which match the given `query`.
     #[must_use]
     pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         self.wallet_transactions
             .values()
             .fold(0, |acc, transaction| {
-                acc + self.sum_queried_transaction_output_values(transaction, query)
+                acc + self.sum_queried_transaction_output_values(
+                    transaction,
+                    query,
+                    &pending_spends,
+                )
             })
     }
 
@@ -180,32 +203,33 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
         query: OutputQuery,
+        pending_spends: &HashMap<OutputId, TxId>,
     ) -> u64 {
         let mut sum = 0;
         if query.transparent() {
             for output in transaction.transparent_coins() {
-                if self.query_output_spend_status(query.spend_status, output) {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
                     sum += output.value();
                 }
             }
         }
         if query.sapling() {
             for output in transaction.sapling_notes() {
-                if self.query_output_spend_status(query.spend_status, output) {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
                     sum += output.value();
                 }
             }
         }
         if query.orchard() {
             for output in transaction.orchard_notes() {
-                if self.query_output_spend_status(query.spend_status, output) {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
                     sum += output.value();
                 }
             }
         }
         if query.ironwood() {
             for output in transaction.ironwood_notes() {
-                if self.query_output_spend_status(query.spend_status, output) {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
                     sum += output.value();
                 }
             }
@@ -218,11 +242,23 @@ impl LightWallet {
         &self,
         query: OutputSpendStatusQuery,
         output: &impl OutputInterface,
+        pending_spends: &HashMap<OutputId, TxId>,
     ) -> bool {
         if let Some(txid) = output.spending_transaction() {
             match self
                 .wallet_transactions
                 .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Confirmed(_) => query.spent,
+                _confirmation_pending if query.pending_spent => true,
+                _ => false,
+            }
+        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
+            match self
+                .wallet_transactions
+                .get(txid)
                 .expect("transaction should exist in the wallet")
                 .status()
             {
@@ -293,6 +329,7 @@ impl LightWallet {
             });
         }
 
+        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
         Ok(self
             .wallet_transactions
             .values()
@@ -305,6 +342,7 @@ impl LightWallet {
                         .iter()
                         .filter(move |&note| {
                             note.spending_transaction().is_none()
+                                && !pending_spends.contains_key(&note.output_id())
                                 && note.nullifier().is_some()
                                 && note.position().is_some()
                                 && self.can_build_witness::<N>(
@@ -348,6 +386,7 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon(true) else {
             return Vec::new();
         };
+        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
 
         self.wallet_transactions
             .values()
@@ -371,13 +410,14 @@ impl LightWallet {
                         .iter()
                         .filter(move |&coin| {
                             coin.spending_transaction().is_none()
+                                && !pending_spends.contains_key(&coin.output_id())
                                 && if include_potentially_spent_coins {
-                                    true
-                                } else {
                                     // checks all ranges with `FoundNote` priority or higher above the coin height are
                                     // scanned as all relevant transactions containing transparent spends are known and
                                     // targetted before scanning begins.
                                     transaction.status().get_height() >= spend_horizon
+                                } else {
+                                    true
                                 }
                         })
                         .collect()

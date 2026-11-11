@@ -1,7 +1,6 @@
 //! Module for reading and updating wallet data related to spending
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::{Hashable, Position};
@@ -36,11 +35,6 @@ pub(super) struct ShieldedSpendScanTargets {
 }
 
 impl ShieldedSpendScanTargets {
-    /// Whether every pool is without a spend.
-    pub(super) fn is_empty(&self) -> bool {
-        self.scan_targets().next().is_none()
-    }
-
     /// Moves the spend scan targets of each pool in `other` into the same pool here.
     fn append(&mut self, other: &mut Self) {
         self.sapling.append(&mut other.sapling);
@@ -407,6 +401,91 @@ fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
             )
             .expect("infallible");
     }
+}
+
+pub(super) fn collect_transaction_spends(
+    transaction: &WalletTransaction,
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+) -> Vec<(OutputId, TxId)> {
+    let txid = transaction.txid();
+    let transaction = transaction.transaction();
+
+    let mut sapling_nullifiers = BTreeSet::new();
+    let mut orchard_nullifiers = BTreeSet::new();
+    let mut ironwood_nullifiers = BTreeSet::new();
+    let mut outpoints = BTreeSet::new();
+    if let Some(bundle) = transaction.sapling_bundle() {
+        for spend in bundle.shielded_spends() {
+            sapling_nullifiers.insert(*spend.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.orchard_bundle() {
+        for action in bundle.actions() {
+            orchard_nullifiers.insert(*action.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.ironwood_bundle() {
+        for action in bundle.actions() {
+            ironwood_nullifiers.insert(*action.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.transparent_bundle() {
+        for input in &bundle.vin {
+            outpoints.insert(OutputId::from(input.prevout()));
+        }
+    }
+
+    wallet_transactions
+        .values()
+        .flat_map(|wallet_transaction| {
+            matched_note_ids(wallet_transaction.sapling_notes(), &sapling_nullifiers)
+                .into_iter()
+                .chain(matched_note_ids(
+                    wallet_transaction.orchard_notes(),
+                    &orchard_nullifiers,
+                ))
+                .chain(matched_note_ids(
+                    wallet_transaction.ironwood_notes(),
+                    &ironwood_nullifiers,
+                ))
+                .chain(
+                    wallet_transaction
+                        .transparent_coins()
+                        .iter()
+                        .filter(|coin| outpoints.contains(&coin.output_id))
+                        .map(|coin| coin.output_id),
+                )
+                .map(move |output_id| (output_id, txid))
+        })
+        .collect()
+}
+
+/// The ids of the wallet notes whose nullifiers are in `targets`.
+fn matched_note_ids<N: NoteInterface>(
+    notes: &[N],
+    targets: &BTreeSet<N::Nullifier>,
+) -> Vec<OutputId> {
+    notes
+        .iter()
+        .filter(|note| {
+            note.nullifier()
+                .is_some_and(|nullifier| targets.contains(&nullifier))
+        })
+        .map(|note| note.output_id())
+        .collect()
+}
+
+/// The wallet's outputs its pending transactions spend, with the spending txid.
+pub fn pending_spends(
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+) -> HashMap<OutputId, TxId> {
+    let mut spends = HashMap::new();
+    for transaction in wallet_transactions.values() {
+        if transaction.status().is_pending() {
+            spends.extend(collect_transaction_spends(transaction, wallet_transactions));
+        }
+    }
+    spends
 }
 
 /// Locates the spends of the wallet's coins for [`apply_transparent_spends`] to record in the wallet.

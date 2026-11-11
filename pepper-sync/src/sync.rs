@@ -1244,14 +1244,14 @@ where
         panic!("this fn is for unconfirmed transactions only");
     }
 
-    let mut pending_transaction_nullifiers = NullifierMap::new();
-    let mut pending_transaction_outpoints = BTreeMap::new();
     let transparent_addresses: HashMap<String, TransparentAddressId> = wallet
         .get_transparent_addresses()
         .map_err(SyncError::WalletError)?
         .iter()
         .map(|(id, address)| (address.clone(), *id))
         .collect();
+    let mut pending_transaction_nullifiers = NullifierMap::new();
+    let mut pending_transaction_outpoints = BTreeMap::new();
     let pending_transaction = scan_transaction(
         consensus_parameters,
         ufvks,
@@ -1268,20 +1268,10 @@ where
     let wallet_transactions = wallet
         .get_wallet_transactions()
         .map_err(SyncError::WalletError)?;
-    let transparent_output_ids =
-        spend::collect_transparent_output_ids(wallet_transactions.values());
-    let transparent_spend_scan_targets =
-        spend::detect_spends(&pending_transaction_outpoints, &transparent_output_ids);
-    let (sapling_derived_nullifiers, orchard_derived_nullifiers, ironwood_derived_nullifiers) =
-        spend::collect_derived_nullifiers(wallet_transactions.values());
-    let shielded_spend_scan_targets = spend::detect_shielded_spends(
-        &pending_transaction_nullifiers,
-        &sapling_derived_nullifiers,
-        &orchard_derived_nullifiers,
-        &ironwood_derived_nullifiers,
-    );
 
     // return if transaction is not relevant to the wallet
+    let spends_wallet_outputs =
+        !spend::collect_transaction_spends(&pending_transaction, wallet_transactions).is_empty();
     if pending_transaction.transparent_coins().is_empty()
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
@@ -1289,22 +1279,13 @@ where
         && pending_transaction.outgoing_sapling_notes().is_empty()
         && pending_transaction.outgoing_orchard_notes().is_empty()
         && pending_transaction.outgoing_ironwood_notes().is_empty()
-        && transparent_spend_scan_targets.is_empty()
-        && shielded_spend_scan_targets.is_empty()
+        && !spends_wallet_outputs
     {
         return Ok(());
     }
 
     wallet
         .insert_wallet_transaction(pending_transaction)
-        .map_err(SyncError::WalletError)?;
-    spend::update_spent_coins(
-        wallet
-            .get_wallet_transactions_mut()
-            .map_err(SyncError::WalletError)?,
-        transparent_spend_scan_targets,
-    );
-    spend::update_spent_notes(wallet, shielded_spend_scan_targets, false)
         .map_err(SyncError::WalletError)?;
 
     Ok(())
@@ -1381,8 +1362,6 @@ pub fn reset_spends(
 }
 
 /// Sets transactions associated with list of `failed_txids` in `wallet_transactions` to `Failed` status.
-///
-/// Sets the `spending_transaction` fields of any outputs spent in these transactions to `None`.
 ///
 /// Transactions with `Confirmed` status are skipped with a warning. A mined transaction
 /// cannot fail, since only a reorg can un-mine it, and reorgs are handled by truncation, which
@@ -2240,8 +2219,7 @@ where
         .get_mut(&transaction.txid())
     {
         // a `Failed` transaction observed in the mempool is demonstrably not failed. fall through
-        // to re-scan it, restoring its status and re-marking its spends which were reset when it
-        // was marked failed.
+        // to re-scan it, restoring its status.
         if !tx.status().is_failed() {
             tx.update_status(
                 ConfirmationStatus::Mempool(mempool_height),

@@ -39,12 +39,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
   client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
   and `indexer` together.
+- A pending transaction's spends of the wallet's notes derive from the
+  transaction's inputs each time they are read (`pepper_sync::pending_spends`),
+  and `spending_transaction` on a note records only a spend the scanner saw
+  in a scanned block. Balances, note selection, and the spend-status listings
+  read the two together, so a pending send shows its inputs spent until the
+  transaction confirms or fails, where 8.0.0 stored the pending spend on the
+  notes and every failure path erased it again.
+
+### Fixed
+- A transaction the wallet believes failed, whose block later reaches the
+  wallet, lands as a spent note with no phantom unspent copy beside it: the
+  failure releases the input by status alone and the scan that sees the block
+  records the spend once. 8.0.0 reset the recorded spend on failure, so a
+  send mined at a height the wallet had already scanned (its block invisible
+  to a forward scan after a fork) left the spent note standing in the balance
+  as spendable.
 
 ### Deprecated
 
 ### Removed
-
-### Fixed
 
 ## [8.0.0] - 2026-10-28
 
