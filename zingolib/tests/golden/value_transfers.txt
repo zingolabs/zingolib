@@ -12,6 +12,7 @@
     pools_sent_from: 
     pools_received: 
     memos: 
+    op_return_data: []
 }
 {
     txid: 0606060606060606060606060606060606060606060606060606060606060606
@@ -26,6 +27,7 @@
     pools_sent_from: 
     pools_received: Ironwood
     memos: 
+    op_return_data: []
 }
 {
     txid: 0505050505050505050505050505050505050505050505050505050505050505
@@ -40,6 +42,7 @@
     pools_sent_from: 
     pools_received: Ironwood
     memos: 
+    op_return_data: []
 }
 {
     txid: 0404040404040404040404040404040404040404040404040404040404040404
@@ -55,6 +58,7 @@
     pools_received: Ironwood
     memos: 
 	memo 1: second memo to Bob
+    op_return_data: []
 }
 {
     txid: 0404040404040404040404040404040404040404040404040404040404040404
@@ -70,6 +74,7 @@
     pools_received: Ironwood
     memos: 
 	memo 1: note to my future self
+    op_return_data: []
 }
 {
     txid: 0303030303030303030303030303030303030303030303030303030303030303
@@ -85,6 +90,7 @@
     pools_received: Ironwood
     memos: 
 	memo 1: hi Bob
+    op_return_data: []
 }
 {
     txid: 0202020202020202020202020202020202020202020202020202020202020202
@@ -99,6 +105,7 @@
     pools_sent_from: 
     pools_received: Ironwood
     memos: 
+    op_return_data: []
 }
 {
     txid: 0101010101010101010101010101010101010101010101010101010101010101
@@ -114,4 +121,5 @@
     pools_received: Ironwood
     memos: 
 	memo 1: Hello Alice
+    op_return_data: []
 }

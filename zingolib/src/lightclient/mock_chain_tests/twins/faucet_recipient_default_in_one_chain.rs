@@ -498,6 +498,29 @@ async fn propose_and_send_with_op_return_confirms_on_chain(
             .any(|out| out.value() == OP_RETURN_PAYMENT),
         "a recipient output pays the amount"
     );
+
+    faucet
+        .sync_and_await()
+        .await
+        .expect("the faucet syncs the OP_RETURN payment");
+    let payload = std::str::from_utf8(PAYLOAD).expect("PAYLOAD is ASCII");
+    let transfers = faucet
+        .value_transfers(true)
+        .await
+        .expect("a synced wallet lists its value transfers");
+    let received = transfers
+        .iter()
+        .find(|vt| vt.txid == op_return_txid && vt.kind == ValueTransferKind::Received)
+        .expect("the faucet owns the OP_RETURN send's recipient output");
+    assert_eq!(
+        received.op_return_data,
+        [payload],
+        "the received value transfer carries the OP_RETURN text"
+    );
+    assert!(
+        received.memos.is_empty(),
+        "the OP_RETURN text is not a memo"
+    );
 }
 
 /// - Mints a Sapling coinbase and four Ironwood coinbases to the faucet, then mines blocks on demand.

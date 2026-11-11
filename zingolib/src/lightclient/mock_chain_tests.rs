@@ -551,6 +551,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
 
     // Send to external sapling, mined at height 3.
@@ -594,6 +595,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             scope: SummaryScope::from(zip32::Scope::External),
         }],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
 
     // Send to external transparent, left in the mempool: Transmitted,
@@ -622,6 +624,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
     from_inputs::quick_send(
         &mut recipient,
@@ -709,6 +712,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
 
     // Second wave of external sends: transparent and sapling mined into
@@ -752,6 +756,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
     let summary_external_sapling_2 = TransactionSummary {
         txid: placeholder_txid,
@@ -784,6 +789,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
             scope: SummaryScope::from(zip32::Scope::External),
         }],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
 
     // Third external transparent, mined at height 7.
@@ -819,6 +825,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         outgoing_orchard_notes: vec![],
         outgoing_sapling_notes: vec![],
         outgoing_transparent_coins: vec![],
+        op_return_data: vec![],
     };
 
     assert_transaction_summary_equality(

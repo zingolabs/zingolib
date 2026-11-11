@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `get_value_transfers` answers each value transfer with `op_return_data`, the
+  UTF-8 text of its transaction's OP_RETURN outputs.
 - `stop_sync()` asks the running session to stop after its next batch, without
   waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
   runs answers "Sync already stopped." rather than failing.

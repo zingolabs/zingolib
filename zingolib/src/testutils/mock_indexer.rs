@@ -68,13 +68,13 @@ use zingo_common_components::protocol::ActivationHeights;
 
 use crate::config::{ChainType, ClientConfig, ClientConfigBuilder, WalletConfig};
 use crate::lightclient::LightClient;
-use crate::testutils::assertions::OP_RETURN;
 use crate::testutils::chain_generics::conduct_chain::ConductChain;
 use crate::testutils::default_test_wallet_settings;
 use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
+use crate::wallet::transparent::{MAX_OP_RETURN_BYTES, null_data_payload};
 
 type SaplingTree =
     CommitmentTree<sapling_crypto::Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>;
@@ -1726,17 +1726,14 @@ fn verify_orchard_bundle(
     }
 }
 
-const OP_PUSHDATA1: u8 = 0x4c;
 const OP_DUP: u8 = 0x76;
 const OP_EQUAL: u8 = 0x87;
 const OP_EQUALVERIFY: u8 = 0x88;
 const OP_HASH160: u8 = 0xa9;
 const OP_CHECKSIG: u8 = 0xac;
 const HASH160_PUSH: u8 = 20;
-const MAX_DIRECT_PUSH: u8 = 75;
 const P2PKH_SCRIPT_LEN: usize = 25;
 const P2SH_SCRIPT_LEN: usize = 23;
-const MAX_NULL_DATA_PAYLOAD: usize = 80;
 
 fn is_p2pkh(script: &[u8]) -> bool {
     script.len() == P2PKH_SCRIPT_LEN
@@ -1754,26 +1751,6 @@ fn is_p2sh(script: &[u8]) -> bool {
         && script[22] == OP_EQUAL
 }
 
-fn null_data_payload(script: &[u8]) -> Option<usize> {
-    let Some((&OP_RETURN, mut rest)) = script.split_first() else {
-        return None;
-    };
-    let mut payload = 0;
-    while let Some((&opcode, tail)) = rest.split_first() {
-        let (length, tail) = match opcode {
-            0..=MAX_DIRECT_PUSH => (usize::from(opcode), tail),
-            OP_PUSHDATA1 => {
-                let (&length, tail) = tail.split_first()?;
-                (usize::from(length), tail)
-            }
-            _ => return None,
-        };
-        rest = tail.get(length..)?;
-        payload += length;
-    }
-    Some(payload)
-}
-
 fn check_standard_scripts(transaction: &Transaction) -> Result<(), Rejection> {
     let Some(bundle) = transaction.transparent_bundle() else {
         return Ok(());
@@ -1785,7 +1762,7 @@ fn check_standard_scripts(transaction: &Transaction) -> Result<(), Rejection> {
             continue;
         }
         match null_data_payload(script) {
-            Some(payload) if payload <= MAX_NULL_DATA_PAYLOAD => null_data_outputs += 1,
+            Some(payload) if payload.len() <= MAX_OP_RETURN_BYTES => null_data_outputs += 1,
             _ => return Err(Rejection::NonStandardScript { index }),
         }
     }
@@ -2779,6 +2756,7 @@ pub async fn shielded_coinbase_transaction(
 mod tests {
     use super::*;
     use crate::testutils::synthetic_wallet;
+    use crate::wallet::transparent::{OP_PUSHDATA1, OP_RETURN};
     use tokio_stream::StreamExt as _;
 
     const REWARD: Zatoshis = Zatoshis::const_from_u64(1_000_000);
@@ -3469,14 +3447,14 @@ mod tests {
     #[test]
     fn null_data_output_within_the_payload_limit_is_standard() {
         let chain = only_standard_scripts();
-        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD]);
+        let bytes = null_data_transaction(&chain, &[MAX_OP_RETURN_BYTES]);
         assert!(chain.validate(&bytes).is_ok());
     }
 
     #[test]
     fn null_data_output_above_the_payload_limit_is_rejected() {
         let chain = only_standard_scripts();
-        let bytes = null_data_transaction(&chain, &[MAX_NULL_DATA_PAYLOAD + 1]);
+        let bytes = null_data_transaction(&chain, &[MAX_OP_RETURN_BYTES + 1]);
         let rejection = chain
             .validate(&bytes)
             .expect_err("an oversized null-data output is non-standard");
