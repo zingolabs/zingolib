@@ -515,6 +515,35 @@ mod tests {
         assert!(matches!(pick.budget, Budget::Unbounded));
     }
 
+    fn twin_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .orchard_note(30_000)
+            .orchard_note(30_000)
+            .build()
+    }
+
+    fn taken_ids<N: OutputInterface>(notes: &[N]) -> Vec<OutputId> {
+        notes.iter().map(OutputInterface::output_id).collect()
+    }
+
+    #[test]
+    fn equal_values_are_taken_one_each_by_rising_output_id() {
+        let candidates = candidates_of(&twin_wallet()).orchard;
+        let by_id: Vec<OutputId> = candidate_ids(&candidates).into_iter().collect();
+        assert_eq!(by_id.len(), 2);
+
+        let unbounded = pick(candidates, Budget::Unbounded, Stage::AnyReserved);
+        assert_eq!(taken_ids(&unbounded.taken), by_id);
+        assert!(unbounded.left.is_empty());
+
+        let candidates = candidates_of(&twin_wallet()).orchard;
+        let budgeted = pick(candidates, Budget::toward(20_000), Stage::AnyReserved);
+        assert_eq!(taken_ids(&budgeted.taken), by_id[..1]);
+        assert_eq!(candidate_ids(&budgeted.left), BTreeSet::from([by_id[1]]));
+        assert!(matches!(budgeted.budget, Budget::Covered));
+    }
+
     #[test]
     fn no_selected_note_sits_at_or_below_the_dust_line() {
         let dust = MARGINAL_FEE.into_u64();
