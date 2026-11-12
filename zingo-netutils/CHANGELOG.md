@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
   Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
   exists (zingo-adrs zingolib/0063, amended 2026-11-06).
+- `Indexer::get_standard_fee` and `Socks5Indexer::get_standard_fee`, the
+  `GetStandardFee` RPC beside `get_lightd_info` on both transport routes.
+  It returns the backend's `StandardFee`: the ZIP 317 marginal fee,
+  zatoshis per logical action, the backend's `getstandardfee` RPC reports,
+  with the fee-estimator version. Backends predating the RPC answer
+  `Unimplemented`. The trait method is new and required, so out-of-tree
+  `Indexer` implementors must add it.
 
 ### Changed
 - BREAKING: `default_indexer` returns `http::Uri` in place of

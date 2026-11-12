@@ -158,7 +158,11 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
   "logging",
   "tls12",
 ] }
-lightwallet-protocol = "0.4.0"
+# Pin pending lightwallet-protocol 0.5.0 on crates.io (PR
+# zingolabs/lightwallet-protocol-rust#8, subtree pull of upstream v0.6.0,
+# whose regenerated proto adds GetStandardFee/StandardFee). Convert to
+# `= "0.5.0"` the moment the crate publishes.
+lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "554197558c1fac19554c8c38d01479d2b82b9a38" }
 hyper-rustls = { version = "0.27", default-features = false, features = [
   "aws-lc-rs",
   "http1",

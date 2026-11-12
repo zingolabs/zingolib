@@ -11,6 +11,8 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
+use zingo_netutils::lightwallet_protocol::StandardFee;
+
 use pepper_sync::keys::transparent::{TransparentScope, encode_address};
 use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};
 use pepper_sync::{
@@ -33,6 +35,7 @@ pub mod utils;
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
 pub mod disk;
+pub mod fees;
 pub mod keys;
 pub mod locks;
 pub mod migration;
@@ -159,6 +162,11 @@ pub struct LightWallet {
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
+    /// The connected indexer's `GetStandardFee` report, fetched once at
+    /// first contact and read back by [`Self::effective_fee_rule`].
+    /// Process-lifetime state beside the proposal locks, never written to
+    /// the wallet file, so an event can carry it (zingolabs/zingolib#2820).
+    standard_fee: Option<fees::StandardFeeReport>,
     /// Advisory output locks reserving an in-flight proposal's inputs. Process
     /// -lifetime state beside `send_proposal`, never written to the wallet file.
     output_locks: locks::OutputLocks,
@@ -248,6 +256,7 @@ impl LightWallet {
             migration: None,
             save_required: true,
             send_proposal: None,
+            standard_fee: None,
             output_locks: locks::OutputLocks::default(),
         };
         wallet.raise_birthday_to_sapling_activation();
@@ -297,6 +306,35 @@ impl LightWallet {
     #[must_use]
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
+    }
+
+    /// Caches the connected indexer's `GetStandardFee` report, `None` for a
+    /// fetch that failed (an old backend answers `Unimplemented`). Each
+    /// connect overwrites the previous indexer's report.
+    pub(crate) fn record_standard_fee(&mut self, fetched: Option<StandardFee>) {
+        self.standard_fee = fetched.map(fees::StandardFeeReport::from);
+    }
+
+    /// Returns the cached `GetStandardFee` report of the indexer this
+    /// session last connected to.
+    #[must_use]
+    pub(crate) fn standard_fee(&self) -> Option<fees::StandardFeeReport> {
+        self.standard_fee
+    }
+
+    /// The fee rule every proposal, shield, OP_RETURN send, and migration
+    /// prices with: ZIP 317 with the marginal fee raised to the node's
+    /// reported standard fee, under the revision in force at the expected
+    /// mining height. The single production definition; see
+    /// [`fees::effective_fee_rule`].
+    pub(crate) fn effective_fee_rule(
+        &self,
+    ) -> zcash_primitives::transaction::fees::zip317::FeeRule {
+        fees::effective_fee_rule(
+            self.standard_fee,
+            &self.chain_type,
+            self.sync_state.last_known_chain_height(),
+        )
     }
 
     /// Returns the wallet's mnemonic for internal operations.

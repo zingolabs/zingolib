@@ -1597,6 +1597,7 @@ impl LightClient {
                 let (parts_total, value_total) = match &state.phase {
                     MigrationPhase::Planned | MigrationPhase::NoteSplitting { .. } => {
                         let plan = crate::wallet::migration::plan_migration(
+                            &wallet.effective_fee_rule(),
                             &wallet.live_v2_note_values(state.account),
                             wallet.splits_confirm_post_activation(),
                             &state.params,
@@ -2298,6 +2299,7 @@ impl crate::wallet::LightWallet {
     ) -> Result<MigrationPlan, crate::wallet::error::WalletError> {
         let params = MigrationParams::provisional(self.chain_type());
         Ok(plan_migration(
+            &self.effective_fee_rule(),
             &self.migration_note_values(account)?,
             self.splits_confirm_post_activation(),
             &params,
@@ -3413,6 +3415,7 @@ mod tests {
         );
         let params = MigrationParams::provisional(wallet.chain_type());
         let expected = crate::wallet::migration::plan_migration(
+            &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             &[600_000_000, 600_000_000],
             wallet.splits_confirm_post_activation(),
             &params,

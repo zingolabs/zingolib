@@ -39,7 +39,7 @@ use zingo_netutils::lightwallet_protocol::{
     CompactTxStreamer, CompactTxStreamerServer, Duration as ProtoDuration, Empty,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, GetMempoolTxRequest,
     GetSubtreeRootsArg, LightdInfo, PingResponse, PoolType as ProtoPoolType, RawTransaction,
-    SendResponse, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
+    SendResponse, StandardFee, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
     TxOut as CompactTxOut,
 };
 
@@ -74,6 +74,7 @@ use crate::testutils::fee_tables;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
 use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use crate::wallet::WalletSettings;
+use crate::wallet::fees::StandardFeeReport;
 use crate::wallet::transparent::{MAX_OP_RETURN_BYTES, null_data_payload};
 
 type SaplingTree =
@@ -421,6 +422,8 @@ pub enum Rpc {
     MempoolStream,
     /// `GetLightdInfo`.
     LightdInfo,
+    /// `GetStandardFee`.
+    StandardFee,
     /// `GetTaddressBalance` and its stream variant.
     TaddressBalance,
     /// `GetAddressUtxos` and its stream variant.
@@ -561,6 +564,11 @@ pub struct MockChain {
     /// The `lightwalletProtocolVersion` reported by `GetLightdInfo`. Defaults to v0.5.0, the minimum version sync
     /// accepts. Set it lower, or empty for a server pre-dating the field, to exercise the rejection of old servers.
     pub lightwallet_protocol_version: String,
+    /// The `StandardFee` `GetStandardFee` serves. Defaults to the ZIP 317
+    /// standard marginal fee, estimator version 0, so every test prices by
+    /// the standard rule unless it sets this to a backend the wallet must
+    /// pay more than standard.
+    pub standard_fee: StandardFeeReport,
     /// Bumped by [`MockChain::reorg_to`]. Folded into the hashes of
     /// blocks mined afterwards so a re-mined branch is distinguishable
     /// from the branch it replaced. A wallet detects the reorg by hash
@@ -992,6 +1000,7 @@ impl MockChain {
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
             lightwallet_protocol_version: "v0.5.0".to_string(),
+            standard_fee: StandardFeeReport::default(),
             branch_seed: 0,
         }
     }
@@ -2293,6 +2302,18 @@ impl CompactTxStreamer for MockIndexerService {
             estimated_height: u64::from(tip),
             lightwallet_protocol_version: chain.lightwallet_protocol_version.clone(),
             ..Default::default()
+        }))
+    }
+
+    async fn get_standard_fee(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<StandardFee>, Status> {
+        self.fault_for(Rpc::StandardFee).await?;
+        let chain = self.chain.read().await;
+        Ok(Response::new(StandardFee {
+            fee_zat: chain.standard_fee.fee_zat,
+            estimator_version: chain.standard_fee.estimator_version,
         }))
     }
 

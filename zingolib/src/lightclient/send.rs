@@ -1180,6 +1180,9 @@ mod built_transaction_shape {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(100_000)
             .tip(tip)
+            // The NU7 expiry delta under test needs the NU7-active
+            // schedule, which the builder default defers.
+            .activation_heights(crate::testutils::mock_activation_heights())
             .build();
         let chain = wallet.chain_type();
 

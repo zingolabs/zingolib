@@ -16,7 +16,6 @@ use thiserror::Error;
 
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
-use zcash_primitives::transaction::fees::zip317;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::Zatoshis;
@@ -159,7 +158,7 @@ impl LightWallet {
             .add_null_data_output(data.as_bytes())
             .map_err(|e| WalletError::TransparentBuild(format!("fee estimate op_return: {e:?}")))?;
 
-        zip317::FeeRule::standard()
+        self.effective_fee_rule()
             .fee_required(
                 &self.chain_type,
                 target_height,
@@ -262,7 +261,7 @@ impl LightWallet {
                 crate::utils::system_rng(),
                 &prover,
                 &prover,
-                &zip317::FeeRule::standard(),
+                &self.effective_fee_rule(),
             )
             .map_err(|e| WalletError::TransparentBuild(format!("build: {e:?}")))?;
 

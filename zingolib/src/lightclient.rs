@@ -34,6 +34,7 @@ use crate::{
         LightWallet, RecoveryInfo, WalletSettings,
         balance::AccountBalance,
         error::{BalanceError, KeyError, SummaryError, WalletError},
+        fees::StandardFeeReport,
         keys::unified::{ReceiverSelection, UnifiedAddressId},
         summary::data::TransactionSummaries,
     },
@@ -276,39 +277,13 @@ impl LightClient {
 
         let network = Self::network_access_from(&config).await?;
 
-        Ok(LightClient {
-            network,
-            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
-            sync_handle: None,
-            sync_progress: tokio::sync::watch::channel(None).1,
-            save_active: Arc::new(AtomicBool::new(false)),
-            save_handle: None,
-            proposal_pause_guard: None,
-            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
-            split_progress: migrate::SplitProgressHandle::default(),
-            batch_progress: migrate::BatchProgressHandle::default(),
-            transmit_progress: transmit::TransmitProgressHandle::default(),
-            indexer_history: indexer_history::IndexerHistoryHandle::default(),
-            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
-            #[cfg(feature = "nym")]
-            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
-                crate::mixnet::MixnetSlot::Unattached,
-            )),
-            #[cfg(feature = "nym")]
-            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
-            #[cfg(feature = "nym")]
-            standing_watchdog: None,
-            #[cfg(feature = "nym")]
-            rotation_watchdog: None,
-            #[cfg(feature = "nym")]
-            exit_pools: crate::mixnet::pools::Pools::new(),
-            #[cfg(feature = "nym")]
-            mixnet_status: crate::mixnet::status_publisher(),
-            #[cfg(feature = "nym")]
-            #[cfg(feature = "nym")]
-            proof_acquisition: std::sync::Mutex::new(None),
-        })
+        let mut client = Self::assemble(config.get_wallet_path().to_path_buf(), wallet, network);
+        // A config that names an indexer is online from construction, so the
+        // fee fetch runs here rather than waiting for the first go_online.
+        if client.is_online() {
+            client.fetch_standard_fee().await;
+        }
+        Ok(client)
     }
 
     /// Wraps an already-constructed wallet, typically from
@@ -321,14 +296,24 @@ impl LightClient {
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
         zingo_netutils::ensure_default_crypto_provider();
+        let chain_type = wallet.chain_type();
+        Self::assemble(
+            std::env::temp_dir().join("zingolib-synthetic-wallet"),
+            wallet,
+            zingo_netutils::NetworkAccess::offline(crate::config::default_indexer_for(&chain_type)),
+        )
+    }
+
+    /// Assembles a client over the wallet it holds and the network it
+    /// reached, the one field-by-field assembly every constructor shares.
+    fn assemble(
+        wallet_path: PathBuf,
+        wallet: LightWallet,
+        network: zingo_netutils::NetworkAccess,
+    ) -> Self {
         LightClient {
-            network: zingo_netutils::NetworkAccess::offline(crate::config::default_indexer_for(
-                &wallet.chain_type(),
-            )),
-            wallet: WalletMeta::new(
-                std::env::temp_dir().join("zingolib-synthetic-wallet"),
-                wallet,
-            ),
+            network,
+            wallet: WalletMeta::new(wallet_path, wallet),
             sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
             sync_handle: None,
             sync_progress: tokio::sync::watch::channel(None).1,
@@ -339,8 +324,6 @@ impl LightClient {
             split_progress: migrate::SplitProgressHandle::default(),
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
-            // Synthetic test wallets have no durable directory; the default
-            // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
             transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
@@ -357,7 +340,6 @@ impl LightClient {
             exit_pools: crate::mixnet::pools::Pools::new(),
             #[cfg(feature = "nym")]
             mixnet_status: crate::mixnet::status_publisher(),
-            #[cfg(feature = "nym")]
             #[cfg(feature = "nym")]
             proof_acquisition: std::sync::Mutex::new(None),
         }
@@ -405,39 +387,11 @@ impl LightClient {
 
         let network = Self::network_access_from(&config).await?;
 
-        Ok(LightClient {
-            network,
-            wallet: WalletMeta::new(config.get_wallet_path().to_path_buf(), wallet),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
-            sync_handle: None,
-            sync_progress: tokio::sync::watch::channel(None).1,
-            save_active: Arc::new(AtomicBool::new(false)),
-            save_handle: None,
-            proposal_pause_guard: None,
-            immediate_migration_progress: migrate::ImmediateMigrationProgressHandle::default(),
-            split_progress: migrate::SplitProgressHandle::default(),
-            batch_progress: migrate::BatchProgressHandle::default(),
-            transmit_progress: transmit::TransmitProgressHandle::default(),
-            indexer_history: indexer_history::IndexerHistoryHandle::default(),
-            transmit_retry_interval: zingo_netutils::time::TRANSMIT_RETRY_INTERVAL,
-            #[cfg(feature = "nym")]
-            mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
-                crate::mixnet::MixnetSlot::Unattached,
-            )),
-            #[cfg(feature = "nym")]
-            transmit_over_mixnet: std::sync::atomic::AtomicBool::new(true),
-            #[cfg(feature = "nym")]
-            standing_watchdog: None,
-            #[cfg(feature = "nym")]
-            rotation_watchdog: None,
-            #[cfg(feature = "nym")]
-            exit_pools: crate::mixnet::pools::Pools::new(),
-            #[cfg(feature = "nym")]
-            mixnet_status: crate::mixnet::status_publisher(),
-            #[cfg(feature = "nym")]
-            #[cfg(feature = "nym")]
-            proof_acquisition: std::sync::Mutex::new(None),
-        })
+        let mut client = Self::assemble(config.get_wallet_path().to_path_buf(), wallet, network);
+        if client.is_online() {
+            client.fetch_standard_fee().await;
+        }
+        Ok(client)
     }
 
     /// Returns the chain type for lock-free access.
@@ -596,11 +550,36 @@ impl LightClient {
         self.network.connected().map(|(uri, _indexer)| uri.clone())
     }
 
+    /// The `GetStandardFee` report of the indexer this client last connected
+    /// to, or `None` before first contact and whenever the backend does not
+    /// serve the RPC (an old lightwalletd answers `Unimplemented`). Priced
+    /// by the wallet's effective fee rule, which never pays below the ZIP 317
+    /// standard marginal fee whatever the report says.
+    pub async fn standard_fee(&self) -> Option<StandardFeeReport> {
+        self.wallet().read().await.standard_fee()
+    }
+
     pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
     ) -> Result<(), zingo_netutils::GetClientError> {
-        self.network.connect_to(server).await
+        self.network.connect_to(server).await?;
+        self.fetch_standard_fee().await;
+        Ok(())
+    }
+
+    /// One `GetStandardFee` round trip against the indexer just connected
+    /// to, cached into wallet state. The connect is complete by the time
+    /// this runs, so no failure here (an old backend, a timeout, any
+    /// transport error) fails the connect: the wallet keeps the standard
+    /// rule and tries again at the next connect.
+    async fn fetch_standard_fee(&mut self) {
+        let Some((_uri, indexer)) = self.network.connected() else {
+            return;
+        };
+        let mut indexer = indexer.clone();
+        let fetched = indexer.get_standard_fee(DEFAULT_REQUEST_TIMEOUT).await.ok();
+        self.wallet().write().await.record_standard_fee(fetched);
     }
 
     pub async fn choose_indexer(
@@ -634,14 +613,20 @@ impl LightClient {
     /// # });
     /// ```
     pub async fn go_online(&mut self) -> Result<http::Uri, ChooseIndexerError> {
-        self.network.go_online().await.map_err(|error| match error {
-            zingo_netutils::GetClientError::NoIndexerUri => {
-                ChooseIndexerError::NoDefaultIndexer(crate::config::NoDefaultIndexer {
-                    chain: self.chain_type(),
-                })
-            }
-            connect => ChooseIndexerError::Connect(connect),
-        })
+        let uri = self
+            .network
+            .go_online()
+            .await
+            .map_err(|error| match error {
+                zingo_netutils::GetClientError::NoIndexerUri => {
+                    ChooseIndexerError::NoDefaultIndexer(crate::config::NoDefaultIndexer {
+                        chain: self.chain_type(),
+                    })
+                }
+                connect => ChooseIndexerError::Connect(connect),
+            })?;
+        self.fetch_standard_fee().await;
+        Ok(uri)
     }
 
     #[cfg(any(test, feature = "testutils"))]
