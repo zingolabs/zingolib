@@ -123,6 +123,7 @@ pub struct TransactionSummary {
     pub outgoing_orchard_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_sapling_notes: Vec<OutgoingNoteSummary>,
     pub outgoing_transparent_coins: Vec<OutgoingCoinSummary>,
+    pub op_return_data: Vec<String>,
 }
 
 impl TransactionSummary {
@@ -245,6 +246,7 @@ impl std::fmt::Display for TransactionSummary {
     outgoing orchard notes: {}
     outgoing sapling notes: {}
     outgoing transparent coins: {}
+    op return data: {:?}
 }}",
             self.txid,
             datetime,
@@ -263,6 +265,7 @@ impl std::fmt::Display for TransactionSummary {
             outgoing_orchard_notes,
             outgoing_sapling_notes,
             outgoing_transparent_coins,
+            self.op_return_data,
         )
     }
 }
@@ -287,6 +290,7 @@ impl From<TransactionSummary> for JsonValue {
             "outgoing_orchard_notes" => JsonValue::from(transaction.outgoing_orchard_notes),
             "outgoing_sapling_notes" => JsonValue::from(transaction.outgoing_sapling_notes),
             "outgoing_transparent_coins" => JsonValue::from(transaction.outgoing_transparent_coins),
+            "op_return_data" => transaction.op_return_data,
         }
     }
 }
@@ -808,6 +812,7 @@ mod tests {
             outgoing_orchard_notes: vec![],
             outgoing_sapling_notes: vec![],
             outgoing_transparent_coins: vec![],
+            op_return_data: vec![],
         }
     }
 

@@ -93,6 +93,7 @@ pub struct ValueTransfer {
     /// transfers, and the pools of all self-received outputs for send-to-self transfers.
     pub pools_received: Vec<PoolType>,
     pub memos: Vec<String>,
+    pub op_return_data: Vec<String>,
 }
 
 impl ValueTransfer {
@@ -120,6 +121,7 @@ impl ValueTransfer {
             pools_sent_from: transaction.pools_sent_from.clone(),
             pools_received,
             memos,
+            op_return_data: transaction.op_return_data.clone(),
         }
     }
 }
@@ -139,6 +141,7 @@ impl std::fmt::Debug for ValueTransfer {
             .field("pools_sent_from", &self.pools_sent_from)
             .field("pools_received", &self.pools_received)
             .field("memos", &self.memos)
+            .field("op_return_data", &self.op_return_data)
             .finish()
     }
 }
@@ -184,6 +187,7 @@ impl std::fmt::Display for ValueTransfer {
     pools_sent_from: {}
     pools_received: {}
     memos: {}
+    op_return_data: {:?}
 }}",
             self.txid,
             datetime,
@@ -196,7 +200,8 @@ impl std::fmt::Display for ValueTransfer {
             recipient_address,
             display_pools(&self.pools_sent_from),
             display_pools(&self.pools_received),
-            memos
+            memos,
+            self.op_return_data
         )
     }
 }
@@ -215,7 +220,8 @@ impl From<ValueTransfer> for JsonValue {
             "recipient_address" => value_transfer.recipient_address,
             "pools_sent_from" => pools_to_json(&value_transfer.pools_sent_from),
             "pools_received" => pools_to_json(&value_transfer.pools_received),
-            "memos" => value_transfer.memos
+            "memos" => value_transfer.memos,
+            "op_return_data" => value_transfer.op_return_data
         }
     }
 }

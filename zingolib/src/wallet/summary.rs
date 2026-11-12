@@ -266,6 +266,7 @@ impl LightWallet {
                     outgoing_orchard_notes,
                     outgoing_sapling_notes,
                     outgoing_transparent_coins,
+                    op_return_data: super::transparent::op_return_texts(transaction.transaction()),
                 })
             })
             .collect::<Result<Vec<_>, SummaryError>>()?;
