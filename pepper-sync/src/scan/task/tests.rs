@@ -1,7 +1,13 @@
+use orchard::note::NoteVersion;
+use zcash_keys::keys::UnifiedSpendingKey;
+use zcash_protocol::TxId;
 use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
+use zcash_protocol::memo::Memo;
 use zcash_transparent::keys::NonHardenedChildIndex;
+use zingo_status::confirmation_status::ConfirmationStatus;
 
 use crate::keys::transparent::TransparentScope;
+use crate::wallet::{OutputId, WalletNote};
 
 use super::*;
 
@@ -381,4 +387,117 @@ fn a_verify_task_splits_at_a_load_budget_like_any_other() {
 
     assert!(splittable_at(&verify, BlockHeight::from_u32(31)));
     assert!(!splittable_at(&verify, BlockHeight::from_u32(21)));
+}
+
+const NOTE_VALUE: u64 = 100_000;
+const NOTE_HEIGHT: u32 = 25;
+const SHIELDED_POOLS: usize = 3;
+
+fn refetch_range() -> Range<BlockHeight> {
+    BlockHeight::from_u32(30)..BlockHeight::from_u32(40)
+}
+
+fn spending_key() -> UnifiedSpendingKey {
+    UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &[0; 32], AccountId::ZERO)
+        .expect("a 32 byte seed derives the keys of account zero on the main network")
+}
+
+fn sapling_crypto_note() -> sapling_crypto::Note {
+    let (_, recipient) = spending_key().sapling().default_address();
+    sapling_crypto::Note::from_parts(
+        recipient,
+        sapling_crypto::value::NoteValue::from_raw(NOTE_VALUE),
+        sapling_crypto::Rseed::AfterZip212([0; 32]),
+    )
+}
+
+fn orchard_crypto_note(version: NoteVersion) -> orchard::Note {
+    let recipient = orchard::keys::FullViewingKey::from(spending_key().orchard())
+        .address_at(0u32, orchard::keys::Scope::External);
+    let rho = orchard::note::Rho::from_bytes(&[0; 32])
+        .expect("the zero bytes encode a canonical field element");
+    let rseed = orchard::note::RandomSeed::from_bytes([0; 32], &rho)
+        .expect("the zero seed derives a nonzero ephemeral key for the zero rho");
+    orchard::Note::from_parts(
+        recipient,
+        orchard::value::NoteValue::from_raw(NOTE_VALUE),
+        rho,
+        rseed,
+        version,
+    )
+    .expect("the recipient, value, rho and seed above form a note with a valid commitment")
+}
+
+fn note_awaiting_refetch<N, Nf: Copy, P>(
+    output_index: u32,
+    crypto_note: N,
+) -> WalletNote<N, Nf, P> {
+    let mut note = WalletNote::new_for_test(
+        OutputId::new(TxId::from_bytes([0; 32]), output_index),
+        AccountId::ZERO,
+        zip32::Scope::External,
+        crypto_note,
+        Memo::Empty,
+        None,
+    );
+    note.refetch_nullifier_ranges = vec![refetch_range()];
+    note
+}
+
+fn transaction_with_a_note_awaiting_refetch_in_each_pool() -> WalletTransaction {
+    let mut transaction = WalletTransaction::new_for_test(
+        TxId::from_bytes([0; 32]),
+        ConfirmationStatus::Confirmed(BlockHeight::from_u32(NOTE_HEIGHT)),
+    );
+    transaction
+        .sapling_notes
+        .push(note_awaiting_refetch(0, sapling_crypto_note()));
+    transaction.orchard_notes.push(note_awaiting_refetch(
+        1,
+        orchard_crypto_note(NoteVersion::V2),
+    ));
+    transaction.ironwood_notes.push(note_awaiting_refetch(
+        2,
+        orchard_crypto_note(NoteVersion::V3),
+    ));
+    transaction
+}
+
+#[test]
+fn a_transaction_yields_the_refetch_ranges_of_its_note_in_each_pool() {
+    let mut transaction = transaction_with_a_note_awaiting_refetch_in_each_pool();
+
+    let yielded: Vec<Vec<Range<BlockHeight>>> = transaction
+        .refetch_nullifier_ranges_mut()
+        .map(|ranges| ranges.clone())
+        .collect();
+
+    assert_eq!(yielded, vec![vec![refetch_range()]; SHIELDED_POOLS]);
+}
+
+#[test]
+fn discarding_empties_the_refetch_ranges_of_a_note_in_each_pool() {
+    let mut transaction = transaction_with_a_note_awaiting_refetch_in_each_pool();
+
+    discard_refetch_nullifier_ranges([&mut transaction]);
+
+    let remaining: Vec<Vec<Range<BlockHeight>>> = [
+        transaction
+            .sapling_notes
+            .iter()
+            .map(|note| note.refetch_nullifier_ranges.clone())
+            .collect::<Vec<_>>(),
+        transaction
+            .orchard_notes
+            .iter()
+            .map(|note| note.refetch_nullifier_ranges.clone())
+            .collect(),
+        transaction
+            .ironwood_notes
+            .iter()
+            .map(|note| note.refetch_nullifier_ranges.clone())
+            .collect(),
+    ]
+    .concat();
+    assert_eq!(remaining, vec![Vec::new(); SHIELDED_POOLS]);
 }

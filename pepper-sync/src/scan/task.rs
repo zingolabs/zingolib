@@ -25,7 +25,7 @@ use crate::{
     sync::{self, ScanPriority, ScanRange},
     utils::block,
     wallet::{
-        ScanTarget, WalletBlock,
+        ScanTarget, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
     },
 };
@@ -58,6 +58,17 @@ type LoadKey = (TaskId, BlockHeight);
 
 fn awaited_after<K: PartialEq>(awaited: Option<K>, arrived: &K) -> Option<K> {
     awaited.filter(|key| key != arrived)
+}
+
+fn discard_refetch_nullifier_ranges<'a>(
+    wallet_transactions: impl IntoIterator<Item = &'a mut WalletTransaction>,
+) {
+    for ranges in wallet_transactions
+        .into_iter()
+        .flat_map(WalletTransaction::refetch_nullifier_ranges_mut)
+    {
+        *ranges = Vec::new();
+    }
 }
 
 struct ScanTaskRunner<T> {
@@ -393,7 +404,7 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
-        let loader = self.loader.as_mut().expect(
+        let loader = self.loader.as_ref().expect(
             "the scanner launches its loader before its first update and takes it only at shutdown",
         );
         match loader.activity() {
@@ -405,30 +416,38 @@ where
                     self.transparent_gap_addresses.clone(),
                     self.next_task_id,
                 )? {
-                    self.in_flight_tasks
-                        .insert(scan_task.task_id, scan_task.scan_range.clone());
-                    self.load_order
-                        .track(scan_task.task_id, scan_task.scan_range.block_range().start);
-                    self.next_task_id = self.next_task_id.next();
-                    loader.add_scan_task(scan_task);
+                    self.register_scan_task(scan_task);
                 } else if wallet.get_sync_state()?.scan_complete() {
-                    // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
-                    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-                        for note in transaction.sapling_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.orchard_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.ironwood_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                    }
-                    self.state.completed();
+                    self.complete_scan(wallet)?;
                 }
             }
             ScanTaskRunnerActivity::Busy | ScanTaskRunnerActivity::Ended => (),
         }
+
+        Ok(())
+    }
+
+    fn register_scan_task(&mut self, scan_task: ScanTask) {
+        self.in_flight_tasks
+            .insert(scan_task.task_id, scan_task.scan_range.clone());
+        self.load_order
+            .track(scan_task.task_id, scan_task.scan_range.block_range().start);
+        self.next_task_id = self.next_task_id.next();
+        self.loader
+            .as_mut()
+            .expect(
+                "the scanner launches its loader before its first update and takes it only at shutdown",
+            )
+            .add_scan_task(scan_task);
+    }
+
+    fn complete_scan<W>(&mut self, wallet: &mut W) -> Result<(), W::Error>
+    where
+        W: SyncTransactions,
+    {
+        // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
+        discard_refetch_nullifier_ranges(wallet.get_wallet_transactions_mut()?.values_mut());
+        self.state.completed();
 
         Ok(())
     }
