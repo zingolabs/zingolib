@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after its last scan range is scanned. The scanner set the loader's
   loading flag after it sent the scan task, so a loader that finished the
   task first left the flag set, and the scan never completed. The scanner
-  and the task now each write their own count, and the loader is loading
-  while the counts differ. The scan workers follow the same rule.
+  alone now holds the activity of the loader and of each scan worker. The
+  loader is loading from the scan task the scanner sends until the scanner
+  receives that scan task's last load. A scan worker is scanning from the
+  load the scanner sends until the scanner receives that load's results.
 
 ## [0.7.0] - 2026-10-27
 
