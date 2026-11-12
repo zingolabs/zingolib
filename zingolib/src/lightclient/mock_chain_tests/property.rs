@@ -114,7 +114,7 @@ async fn check(client: &LightClient, issued: u64) -> Result<(), String> {
     let wallet = client.wallet().read().await;
     let violations = wallet.invariant_violations();
     if !violations.is_empty() {
-        return Err(violations.join("\n"));
+        return Err(crate::wallet::invariants::violation_report(&violations));
     }
     let balance = wallet
         .account_balance(zip32::AccountId::ZERO)
@@ -137,7 +137,7 @@ async fn check_settled(client: &LightClient, issued: u64) -> Result<(), String> 
     let wallet = client.wallet().read().await;
     let violations = wallet.invariant_violations();
     if !violations.is_empty() {
-        return Err(violations.join("\n"));
+        return Err(crate::wallet::invariants::violation_report(&violations));
     }
     let mut expected = issued;
     for transaction in wallet.wallet_transactions.values() {

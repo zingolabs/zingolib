@@ -3404,15 +3404,12 @@ mod strict_chain {
     }
 
     fn ironwood_notes_unspent(wallet: &LightWallet) -> bool {
-        let pending_spends = pepper_sync::pending_spends(&wallet.wallet_transactions);
+        let spends = wallet.spend_view();
         wallet
             .wallet_transactions
             .values()
             .flat_map(IronwoodNote::transaction_outputs)
-            .all(|note| {
-                note.spending_transaction().is_none()
-                    && !pending_spends.contains_key(&note.output_id())
-            })
+            .all(|note| spends.state(note).is_unspent())
     }
 
     fn refund_address_count(wallet: &LightWallet) -> usize {

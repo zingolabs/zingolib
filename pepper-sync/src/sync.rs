@@ -1223,7 +1223,7 @@ where
     Ok(())
 }
 
-/// Scans a pending `transaction` of a given `status`, adding to the wallet and updating output spend statuses.
+/// Scans a pending `transaction` of a given `status`, adding to the wallet.
 ///
 /// Used both internally for scanning mempool transactions and externally for scanning calculated and transmitted
 /// transactions during send.
@@ -1271,7 +1271,7 @@ where
 
     // return if transaction is not relevant to the wallet
     let spends_wallet_outputs =
-        !spend::collect_transaction_spends(&pending_transaction, wallet_transactions).is_empty();
+        !spend::transaction_spends(&pending_transaction, wallet_transactions).is_empty();
     if pending_transaction.transparent_coins().is_empty()
         && pending_transaction.sapling_notes().is_empty()
         && pending_transaction.orchard_notes().is_empty()
@@ -4186,7 +4186,8 @@ mod test {
                 &orchard_nullifiers,
                 &ironwood_nullifiers,
             );
-            spend::update_spent_notes(wallet, spend_scan_targets, true).unwrap();
+            spend::update_spent_notes(wallet, spend_scan_targets)
+                .expect("an unpatched MockWallet returns its transactions and shard trees");
         }
 
         /// A spend reset *before* the spending transaction's block is scanned heals.

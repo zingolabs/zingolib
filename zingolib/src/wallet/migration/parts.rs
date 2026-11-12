@@ -750,10 +750,7 @@ impl crate::wallet::LightWallet {
                     bound: bound.output_id,
                 }));
             }
-            if wallet_note.spending_transaction().is_some()
-                || pepper_sync::pending_spends(&self.wallet_transactions)
-                    .contains_key(&bound.output_id)
-            {
+            if !self.spend_view().state(wallet_note).is_unspent() {
                 return Ok(PrepareResult::Skip(SkipReason::BoundNoteSpent {
                     bound: bound.output_id,
                 }));

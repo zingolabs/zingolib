@@ -8,6 +8,7 @@ use shardtree::{ShardTree, store::ShardStore};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
+use zingo_status::confirmation_status;
 use zip32::AccountId;
 
 use crate::{
@@ -19,7 +20,7 @@ use crate::{
         transactions::{ScannedTransactions, scan_transactions},
     },
     wallet::{
-        Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
+        self, Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
         ScanTarget, WalletBlock, WalletTransaction,
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
@@ -146,7 +147,7 @@ where
         spend_scan_targets.scan_targets(),
     );
 
-    update_spent_notes(wallet, spend_scan_targets, true)
+    update_spent_notes(wallet, spend_scan_targets)
 }
 
 /// For each scan target, fetch and scan the spending transaction. The wallet is only read.
@@ -293,26 +294,18 @@ pub(super) fn detect_shielded_spends(
 pub(super) fn update_spent_notes<W>(
     wallet: &mut W,
     spend_scan_targets: ShieldedSpendScanTargets,
-    remove_marks: bool,
 ) -> Result<(), W::Error>
 where
     W: SyncTransactions + SyncShardTrees,
 {
     let wallet_transactions = wallet.get_wallet_transactions_mut()?;
-    let sapling_mark_removals = update_spent_notes_by_protocol::<Sapling>(
-        wallet_transactions,
-        spend_scan_targets.sapling,
-        remove_marks,
-    );
-    let orchard_mark_removals = update_spent_notes_by_protocol::<Orchard>(
-        wallet_transactions,
-        spend_scan_targets.orchard,
-        remove_marks,
-    );
+    let sapling_mark_removals =
+        update_spent_notes_by_protocol::<Sapling>(wallet_transactions, spend_scan_targets.sapling);
+    let orchard_mark_removals =
+        update_spent_notes_by_protocol::<Orchard>(wallet_transactions, spend_scan_targets.orchard);
     let ironwood_mark_removals = update_spent_notes_by_protocol::<Ironwood>(
         wallet_transactions,
         spend_scan_targets.ironwood,
-        remove_marks,
     );
 
     let shard_trees = wallet.get_shard_trees_mut()?;
@@ -332,12 +325,11 @@ struct MarkRemoval {
 
 /// Sets the spending transaction of each note of `D` whose nullifier is in `spend_scan_targets`.
 ///
-/// Returns the marks to remove from the shard tree of `D`, if `remove_marks` is set: one for each spent note that is
-/// confirmed, has a position and whose spending transaction is confirmed.
+/// Returns the marks to remove from the shard tree of `D`: one for each spent note that is confirmed, has a position
+/// and whose spending transaction is confirmed.
 fn update_spent_notes_by_protocol<D>(
     wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
     spend_scan_targets: BTreeMap<<D::Note as NoteInterface>::Nullifier, ScanTarget>,
-    remove_marks: bool,
 ) -> Vec<MarkRemoval>
 where
     D: SyncDomain,
@@ -358,10 +350,7 @@ where
             {
                 note.set_spending_transaction(Some(spending_txid));
 
-                if remove_marks
-                    && transaction_confirmed
-                    && let Some(position) = note.position()
-                {
+                if transaction_confirmed && let Some(position) = note.position() {
                     spent_notes.push(SpentNote {
                         position,
                         spending_txid,
@@ -403,89 +392,194 @@ fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     }
 }
 
-pub(super) fn collect_transaction_spends(
+fn pool_spends<Op: OutputInterface>(
     transaction: &WalletTransaction,
     wallet_transactions: &HashMap<TxId, WalletTransaction>,
-) -> Vec<(OutputId, TxId)> {
-    let txid = transaction.txid();
-    let transaction = transaction.transaction();
-
-    let mut sapling_nullifiers = BTreeSet::new();
-    let mut orchard_nullifiers = BTreeSet::new();
-    let mut ironwood_nullifiers = BTreeSet::new();
-    let mut outpoints = BTreeSet::new();
-    if let Some(bundle) = transaction.sapling_bundle() {
-        for spend in bundle.shielded_spends() {
-            sapling_nullifiers.insert(*spend.nullifier());
-        }
+) -> Vec<OutputId> {
+    let inputs = Op::transaction_inputs(transaction);
+    if inputs.is_empty() {
+        return Vec::new();
     }
-    if let Some(bundle) = transaction.orchard_bundle() {
-        for action in bundle.actions() {
-            orchard_nullifiers.insert(*action.nullifier());
-        }
-    }
-    if let Some(bundle) = transaction.ironwood_bundle() {
-        for action in bundle.actions() {
-            ironwood_nullifiers.insert(*action.nullifier());
-        }
-    }
-    if let Some(bundle) = transaction.transparent_bundle() {
-        for input in &bundle.vin {
-            outpoints.insert(OutputId::from(input.prevout()));
-        }
-    }
-
     wallet_transactions
         .values()
-        .flat_map(|wallet_transaction| {
-            matched_note_ids(wallet_transaction.sapling_notes(), &sapling_nullifiers)
-                .into_iter()
-                .chain(matched_note_ids(
-                    wallet_transaction.orchard_notes(),
-                    &orchard_nullifiers,
-                ))
-                .chain(matched_note_ids(
-                    wallet_transaction.ironwood_notes(),
-                    &ironwood_nullifiers,
-                ))
-                .chain(
-                    wallet_transaction
-                        .transparent_coins()
-                        .iter()
-                        .filter(|coin| outpoints.contains(&coin.output_id))
-                        .map(|coin| coin.output_id),
-                )
-                .map(move |output_id| (output_id, txid))
+        .flat_map(Op::transaction_outputs)
+        .filter(|output| {
+            output
+                .spend_link()
+                .is_some_and(|link| inputs.contains(&&link))
         })
+        .map(|output| output.output_id())
         .collect()
 }
 
-/// The ids of the wallet notes whose nullifiers are in `targets`.
-fn matched_note_ids<N: NoteInterface>(
-    notes: &[N],
-    targets: &BTreeSet<N::Nullifier>,
-) -> Vec<OutputId> {
-    notes
-        .iter()
-        .filter(|note| {
-            note.nullifier()
-                .is_some_and(|nullifier| targets.contains(&nullifier))
-        })
-        .map(|note| note.output_id())
-        .collect()
-}
-
-/// The wallet's outputs its pending transactions spend, with the spending txid.
-pub fn pending_spends(
+pub(super) fn transaction_spends(
+    transaction: &WalletTransaction,
     wallet_transactions: &HashMap<TxId, WalletTransaction>,
-) -> HashMap<OutputId, TxId> {
-    let mut spends = HashMap::new();
-    for transaction in wallet_transactions.values() {
-        if transaction.status().is_pending() {
-            spends.extend(collect_transaction_spends(transaction, wallet_transactions));
+) -> Vec<OutputId> {
+    [
+        pool_spends::<wallet::TransparentCoin>(transaction, wallet_transactions),
+        pool_spends::<wallet::SaplingNote>(transaction, wallet_transactions),
+        pool_spends::<wallet::OrchardNote>(transaction, wallet_transactions),
+        pool_spends::<wallet::IronwoodNote>(transaction, wallet_transactions),
+    ]
+    .concat()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(missing_docs)]
+pub enum PendingStage {
+    Calculated,
+    Transmitted,
+    Mempool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(missing_docs)]
+pub struct PendingSpend {
+    pub stage: PendingStage,
+    pub txid: TxId,
+}
+
+enum SpenderStanding {
+    Pending(PendingStage),
+    Confirmed,
+    Failed,
+}
+
+impl From<confirmation_status::ConfirmationStatus> for SpenderStanding {
+    fn from(status: confirmation_status::ConfirmationStatus) -> Self {
+        match status {
+            confirmation_status::ConfirmationStatus::Calculated(_) => {
+                Self::Pending(PendingStage::Calculated)
+            }
+            confirmation_status::ConfirmationStatus::Transmitted(_) => {
+                Self::Pending(PendingStage::Transmitted)
+            }
+            confirmation_status::ConfirmationStatus::Mempool(_) => {
+                Self::Pending(PendingStage::Mempool)
+            }
+            confirmation_status::ConfirmationStatus::Confirmed(_) => Self::Confirmed,
+            confirmation_status::ConfirmationStatus::Failed(_) => Self::Failed,
         }
     }
-    spends
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum SpendState {
+    Unspent,
+    PendingSpent(PendingSpend),
+    ContestedPendingSpent {
+        leading: PendingSpend,
+        rivals: BTreeSet<PendingSpend>,
+    },
+    ConfirmedSpent(TxId),
+    SpentByUnheldTransaction(TxId),
+}
+
+#[allow(missing_docs)]
+impl SpendState {
+    #[must_use]
+    pub fn is_unspent(&self) -> bool {
+        matches!(self, Self::Unspent)
+    }
+
+    #[must_use]
+    pub fn spender(&self) -> Option<TxId> {
+        match self {
+            Self::Unspent => None,
+            Self::PendingSpent(spend) | Self::ContestedPendingSpent { leading: spend, .. } => {
+                Some(spend.txid)
+            }
+            Self::ConfirmedSpent(txid) | Self::SpentByUnheldTransaction(txid) => Some(*txid),
+        }
+    }
+
+    fn of_pending_spends(spends: BTreeSet<PendingSpend>) -> Self {
+        let mut most_advanced_first = spends.into_iter().rev();
+        let Some(leading) = most_advanced_first.next() else {
+            return Self::Unspent;
+        };
+        let rivals = most_advanced_first.collect::<BTreeSet<_>>();
+        if rivals.is_empty() {
+            Self::PendingSpent(leading)
+        } else {
+            Self::ContestedPendingSpent { leading, rivals }
+        }
+    }
+}
+
+#[allow(missing_docs)]
+pub struct SpendView<'a> {
+    wallet_transactions: &'a HashMap<TxId, WalletTransaction>,
+    pending_spends: BTreeMap<OutputId, BTreeSet<PendingSpend>>,
+}
+
+#[allow(missing_docs)]
+impl<'a> SpendView<'a> {
+    #[must_use]
+    pub fn new(wallet_transactions: &'a HashMap<TxId, WalletTransaction>) -> Self {
+        let pending_spends = wallet_transactions
+            .values()
+            .filter_map(|transaction| match transaction.status().into() {
+                SpenderStanding::Pending(stage) => Some((
+                    transaction,
+                    PendingSpend {
+                        stage,
+                        txid: transaction.txid(),
+                    },
+                )),
+                SpenderStanding::Confirmed | SpenderStanding::Failed => None,
+            })
+            .flat_map(|(transaction, spend)| {
+                transaction_spends(transaction, wallet_transactions)
+                    .into_iter()
+                    .map(move |output_id| (output_id, spend))
+            })
+            .fold(
+                BTreeMap::<OutputId, BTreeSet<PendingSpend>>::new(),
+                |mut pending_spends, (output_id, spend)| {
+                    pending_spends.entry(output_id).or_default().insert(spend);
+                    pending_spends
+                },
+            );
+        Self {
+            wallet_transactions,
+            pending_spends,
+        }
+    }
+
+    #[must_use]
+    pub fn state<Op: OutputInterface>(&self, output: &Op) -> SpendState {
+        let derived = self
+            .pending_spends
+            .get(&output.output_id())
+            .cloned()
+            .unwrap_or_default();
+        let Some(txid) = output.spending_transaction() else {
+            return SpendState::of_pending_spends(derived);
+        };
+        let Some(spender) = self.wallet_transactions.get(&txid) else {
+            return SpendState::SpentByUnheldTransaction(txid);
+        };
+        match spender.status().into() {
+            SpenderStanding::Confirmed => SpendState::ConfirmedSpent(txid),
+            SpenderStanding::Failed => SpendState::of_pending_spends(derived),
+            SpenderStanding::Pending(stage) => SpendState::of_pending_spends(
+                derived
+                    .into_iter()
+                    .chain([PendingSpend { stage, txid }])
+                    .collect(),
+            ),
+        }
+    }
+
+    #[must_use]
+    pub fn derives_pending_spend(&self, output_id: OutputId, txid: TxId) -> bool {
+        self.pending_spends
+            .get(&output_id)
+            .is_some_and(|spends| spends.iter().any(|spend| spend.txid == txid))
+    }
 }
 
 /// Locates the spends of the wallet's coins for [`apply_transparent_spends`] to record in the wallet.
@@ -605,7 +699,6 @@ pub(super) fn update_spent_coins(
 mod tests {
     use std::collections::HashMap;
 
-    use super::pending_spends;
     use super::*;
     use zcash_primitives::transaction::{TransactionData, TxVersion};
     use zcash_protocol::consensus::BranchId;
@@ -618,11 +711,22 @@ mod tests {
     use crate::keys::transparent::{TransparentAddressId, TransparentScope};
     use crate::wallet::{OutputId, TransparentCoin, WalletTransaction};
 
-    #[test]
-    fn pending_spends_reports_the_transparent_inputs_of_pending_records() {
-        let funding_txid = TxId::from_bytes([1; 32]);
+    const FUNDING_TXID_BYTES: [u8; 32] = [1; 32];
+    const UNHELD_TXID_BYTES: [u8; 32] = [9; 32];
+    const FUNDING_OUTPUT_INDEX: u32 = 0;
+    const COIN_VALUE: u64 = 100_000;
+    const FUNDING_HEIGHT: u32 = 10;
+    const FIRST_SPENDER_EXPIRY: u32 = 11;
+    const SECOND_SPENDER_EXPIRY: u32 = 12;
+    const WALLET_REBUILDS: usize = 64;
+
+    fn funding_coin_id() -> OutputId {
+        OutputId::new(TxId::from_bytes(FUNDING_TXID_BYTES), FUNDING_OUTPUT_INDEX)
+    }
+
+    fn funding_record(spending_transaction: Option<TxId>) -> WalletTransaction {
         let coin = TransparentCoin {
-            output_id: OutputId::new(funding_txid, 0),
+            output_id: funding_coin_id(),
             key_id: TransparentAddressId::new(
                 AccountId::ZERO,
                 TransparentScope::External,
@@ -630,40 +734,44 @@ mod tests {
             ),
             address: String::new(),
             script: Script::default(),
-            value: zcash_protocol::value::Zatoshis::const_from_u64(100_000),
-            spending_transaction: None,
+            value: zcash_protocol::value::Zatoshis::const_from_u64(COIN_VALUE),
+            spending_transaction,
         };
-        let funding =
-            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(10.into()))
-                .with_transparent_coins_for_test(vec![coin]);
+        WalletTransaction::new_for_test(
+            TxId::from_bytes(FUNDING_TXID_BYTES),
+            ConfirmationStatus::Confirmed(FUNDING_HEIGHT.into()),
+        )
+        .with_transparent_coins_for_test(vec![coin])
+    }
 
-        let vin = vec![TxIn::from_parts(
-            OutPoint::new([1; 32], 0),
-            Script::default(),
-            u32::MAX,
-        )];
+    fn spender_record(
+        status: ConfirmationStatus,
+        expiry_height: u32,
+    ) -> std::io::Result<WalletTransaction> {
         let bundle = zcash_transparent::bundle::Bundle {
-            vin,
+            vin: vec![TxIn::from_parts(
+                OutPoint::new(FUNDING_TXID_BYTES, FUNDING_OUTPUT_INDEX),
+                Script::default(),
+                u32::MAX,
+            )],
             vout: Vec::new(),
             authorization: Authorized,
         };
-        let pending_tx = TransactionData::from_parts(
+        let transaction = TransactionData::from_parts(
             TxVersion::V4,
             BranchId::Sapling,
             0,
-            BlockHeight::from_u32(11),
+            BlockHeight::from_u32(expiry_height),
             Some(bundle),
             None,
             None,
             None,
         )
-        .freeze()
-        .unwrap();
-        let pending_txid = pending_tx.txid();
-        let pending_record = WalletTransaction {
-            txid: pending_txid,
-            status: ConfirmationStatus::Calculated(11.into()),
-            transaction: pending_tx,
+        .freeze()?;
+        Ok(WalletTransaction {
+            txid: transaction.txid(),
+            status,
+            transaction,
             datetime: 0,
             transparent_coins: Vec::new(),
             sapling_notes: Vec::new(),
@@ -672,23 +780,150 @@ mod tests {
             outgoing_sapling_notes: Vec::new(),
             outgoing_orchard_notes: Vec::new(),
             outgoing_ironwood_notes: Vec::new(),
-        };
+        })
+    }
 
-        let mut wallet_transactions =
-            HashMap::from([(funding_txid, funding), (pending_txid, pending_record)]);
-        let spends = pending_spends(&wallet_transactions);
+    fn wallet_of(
+        records: impl IntoIterator<Item = WalletTransaction>,
+    ) -> HashMap<TxId, WalletTransaction> {
+        records
+            .into_iter()
+            .map(|record| (record.txid(), record))
+            .collect()
+    }
+
+    fn coin_states(wallet_transactions: &HashMap<TxId, WalletTransaction>) -> Vec<SpendState> {
+        let spends = SpendView::new(wallet_transactions);
+        wallet_transactions
+            .values()
+            .flat_map(WalletTransaction::transparent_coins)
+            .map(|coin| spends.state(coin))
+            .collect()
+    }
+
+    fn first_spender(status: ConfirmationStatus) -> std::io::Result<WalletTransaction> {
+        spender_record(status, FIRST_SPENDER_EXPIRY)
+    }
+
+    fn second_spender(status: ConfirmationStatus) -> std::io::Result<WalletTransaction> {
+        spender_record(status, SECOND_SPENDER_EXPIRY)
+    }
+
+    #[test]
+    fn an_output_that_no_transaction_spends_is_unspent() {
         assert_eq!(
-            spends.get(&OutputId::new(funding_txid, 0)),
-            Some(&pending_txid)
+            coin_states(&wallet_of([funding_record(None)])),
+            vec![SpendState::Unspent]
+        );
+    }
+
+    #[test]
+    fn the_input_of_one_pending_transaction_is_pending_spent_at_its_stage() -> std::io::Result<()> {
+        for (status, stage) in [
+            (
+                ConfirmationStatus::Calculated(FIRST_SPENDER_EXPIRY.into()),
+                PendingStage::Calculated,
+            ),
+            (
+                ConfirmationStatus::Transmitted(FIRST_SPENDER_EXPIRY.into()),
+                PendingStage::Transmitted,
+            ),
+            (
+                ConfirmationStatus::Mempool(FIRST_SPENDER_EXPIRY.into()),
+                PendingStage::Mempool,
+            ),
+        ] {
+            let spender = first_spender(status)?;
+            let txid = spender.txid();
+            assert_eq!(
+                coin_states(&wallet_of([funding_record(None), spender])),
+                vec![SpendState::PendingSpent(PendingSpend { stage, txid })]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_input_of_a_confirmed_or_failed_transaction_is_unspent_without_a_recorded_spend()
+    -> std::io::Result<()> {
+        for status in [
+            ConfirmationStatus::Confirmed(FIRST_SPENDER_EXPIRY.into()),
+            ConfirmationStatus::Failed(FIRST_SPENDER_EXPIRY.into()),
+        ] {
+            assert_eq!(
+                coin_states(&wallet_of([funding_record(None), first_spender(status)?])),
+                vec![SpendState::Unspent]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn two_pending_spenders_of_one_output_are_contested_the_same_way_on_every_rebuild()
+    -> std::io::Result<()> {
+        let transmitted = ConfirmationStatus::Transmitted(FIRST_SPENDER_EXPIRY.into());
+        let in_mempool = ConfirmationStatus::Mempool(SECOND_SPENDER_EXPIRY.into());
+        let contested = SpendState::ContestedPendingSpent {
+            leading: PendingSpend {
+                stage: PendingStage::Mempool,
+                txid: second_spender(in_mempool)?.txid(),
+            },
+            rivals: BTreeSet::from([PendingSpend {
+                stage: PendingStage::Transmitted,
+                txid: first_spender(transmitted)?.txid(),
+            }]),
+        };
+        for _ in 0..WALLET_REBUILDS {
+            assert_eq!(
+                coin_states(&wallet_of([
+                    funding_record(None),
+                    first_spender(transmitted)?,
+                    second_spender(in_mempool)?,
+                ])),
+                vec![contested.clone()]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_recorded_spend_reads_by_the_standing_of_its_transaction() -> std::io::Result<()> {
+        let confirmed = first_spender(ConfirmationStatus::Confirmed(FIRST_SPENDER_EXPIRY.into()))?;
+        let confirmed_txid = confirmed.txid();
+        assert_eq!(
+            coin_states(&wallet_of([
+                funding_record(Some(confirmed_txid)),
+                confirmed
+            ])),
+            vec![SpendState::ConfirmedSpent(confirmed_txid)]
         );
 
-        // Only pending records reserve their inputs: the same transaction
-        // confirmed reports nothing, because a confirmed transaction's spends
-        // are recorded on the outputs by the scan that found its block.
-        wallet_transactions
-            .get_mut(&pending_txid)
-            .unwrap()
-            .update_status(ConfirmationStatus::Confirmed(12.into()), 0, false);
-        assert!(pending_spends(&wallet_transactions).is_empty());
+        let failed = first_spender(ConfirmationStatus::Failed(FIRST_SPENDER_EXPIRY.into()))?;
+        assert_eq!(
+            coin_states(&wallet_of([funding_record(Some(failed.txid())), failed])),
+            vec![SpendState::Unspent]
+        );
+
+        let unheld_txid = TxId::from_bytes(UNHELD_TXID_BYTES);
+        assert_eq!(
+            coin_states(&wallet_of([funding_record(Some(unheld_txid))])),
+            vec![SpendState::SpentByUnheldTransaction(unheld_txid)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_confirmed_recorded_spend_outranks_a_pending_spender() -> std::io::Result<()> {
+        let confirmed = first_spender(ConfirmationStatus::Confirmed(FIRST_SPENDER_EXPIRY.into()))?;
+        let confirmed_txid = confirmed.txid();
+        assert_eq!(
+            coin_states(&wallet_of([
+                funding_record(Some(confirmed_txid)),
+                confirmed,
+                second_spender(ConfirmationStatus::Mempool(SECOND_SPENDER_EXPIRY.into()))?,
+            ])),
+            vec![SpendState::ConfirmedSpent(confirmed_txid)]
+        );
+        Ok(())
     }
 }

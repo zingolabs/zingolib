@@ -300,7 +300,7 @@ impl LightWallet {
         Op: OutputInterface,
         F: Fn(&Op, &WalletTransaction) -> bool,
     {
-        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = self.spend_view();
         match &self
             .unified_key_store
             .get(&account_id)
@@ -342,8 +342,7 @@ impl LightWallet {
                         .iter()
                         .filter(|&output| {
                             filter_function(output, transaction)
-                                && output.spending_transaction().is_none()
-                                && !pending_spends.contains_key(&output.output_id())
+                                && spends.state(output).is_unspent()
                                 && output.key_id().account_id() == account_id
                         })
                         .map(pepper_sync::wallet::OutputInterface::value)
