@@ -46,16 +46,21 @@ const STALLED_SESSION: [Step; 14] = [
 
 static ENGINE_LOG: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
-struct EngineLogWriter;
+struct EngineLogLine(Vec<u8>);
 
-impl io::Write for EngineLogWriter {
+impl io::Write for EngineLogLine {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        note_in_engine_log(String::from_utf8_lossy(bytes).trim_end().to_string());
-        Ok(bytes.len())
+        self.0.write(bytes)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+        self.0.flush()
+    }
+}
+
+impl Drop for EngineLogLine {
+    fn drop(&mut self) {
+        note_in_engine_log(String::from_utf8_lossy(&self.0).trim_end().to_string());
     }
 }
 
@@ -71,7 +76,7 @@ fn capture_engine_log() -> bool {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::new(ENGINE_LOG_FILTER))
         .with_ansi(false)
-        .with_writer(|| EngineLogWriter)
+        .with_writer(|| EngineLogLine(Vec::new()))
         .try_init()
         .is_ok()
 }
