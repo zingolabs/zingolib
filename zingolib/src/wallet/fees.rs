@@ -83,7 +83,7 @@ pub(crate) fn effective_fee_rule(reported: Option<StandardFeeReport>) -> zip317:
         zip317::P2PKH_STANDARD_INPUT_SIZE,
         zip317::P2PKH_STANDARD_OUTPUT_SIZE,
     )
-    .unwrap_or_else(|| standard)
+    .unwrap_or(standard)
 }
 
 #[cfg(test)]
