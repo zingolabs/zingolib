@@ -105,8 +105,8 @@ pub(crate) fn effective_fee_rule(
 pub struct StandardFeeReport {
     /// The reported marginal fee, zatoshis per logical action.
     pub fee_zat: u64,
-    /// The backend fee-estimator version, [`STATIC_ZIP317_ESTIMATOR`] for the
-    /// static ZIP 317 marginal fee.
+    /// The backend fee-estimator version, `0` for the static ZIP 317
+    /// marginal fee.
     pub estimator_version: u32,
 }
 
