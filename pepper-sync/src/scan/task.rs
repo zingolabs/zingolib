@@ -42,15 +42,18 @@ const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RunnerActivity {
+enum ScanTaskRunnerActivity {
     Idle,
     Busy,
     Ended,
 }
 
-impl RunnerActivity {
-    fn of(scan_tasks_sent: u64, scan_tasks_finished: u64, runner_ended: bool) -> Self {
-        match (runner_ended, scan_tasks_sent == scan_tasks_finished) {
+impl ScanTaskRunnerActivity {
+    fn of(scan_tasks_sent: u64, scan_tasks_finished: u64, scan_task_runner_ended: bool) -> Self {
+        match (
+            scan_task_runner_ended,
+            scan_tasks_sent == scan_tasks_finished,
+        ) {
             (true, _) => Self::Ended,
             (false, true) => Self::Idle,
             (false, false) => Self::Busy,
@@ -79,11 +82,11 @@ impl ScanTaskLedger {
         self.finished.clone()
     }
 
-    fn activity(&self, runner_ended: bool) -> RunnerActivity {
-        RunnerActivity::of(
+    fn activity(&self, scan_task_runner_ended: bool) -> ScanTaskRunnerActivity {
+        ScanTaskRunnerActivity::of(
             self.sent,
             self.finished.load(atomic::Ordering::Acquire),
-            runner_ended,
+            scan_task_runner_ended,
         )
     }
 }
@@ -348,7 +351,7 @@ where
         let scanning_workers = self
             .workers
             .iter()
-            .filter(|worker| matches!(worker.activity(), RunnerActivity::Busy))
+            .filter(|worker| matches!(worker.activity(), ScanTaskRunnerActivity::Busy))
             .count();
         if !load_admitted(scanning_workers, self.load_order.held()) {
             return;
@@ -356,7 +359,7 @@ where
         let Some(worker) = self
             .workers
             .iter_mut()
-            .find(|worker| matches!(worker.activity(), RunnerActivity::Idle))
+            .find(|worker| matches!(worker.activity(), ScanTaskRunnerActivity::Idle))
         else {
             return;
         };
@@ -380,7 +383,7 @@ where
             "the scanner launches its loader before its first update and takes it only at shutdown",
         );
         match loader.activity() {
-            RunnerActivity::Idle => {
+            ScanTaskRunnerActivity::Idle => {
                 if let Some(scan_task) = sync::state::create_scan_task(
                     &self.consensus_parameters,
                     wallet,
@@ -410,7 +413,7 @@ where
                     self.state.completed();
                 }
             }
-            RunnerActivity::Busy | RunnerActivity::Ended => (),
+            ScanTaskRunnerActivity::Busy | ScanTaskRunnerActivity::Ended => (),
         }
 
         Ok(())
@@ -697,7 +700,7 @@ where
         self.load_receiver = Some(load_receiver);
     }
 
-    fn activity(&self) -> RunnerActivity {
+    fn activity(&self) -> ScanTaskRunnerActivity {
         self.ledger
             .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
@@ -709,7 +712,7 @@ where
             .as_ref()
             .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("the scanner sends a scan task only to an idle loader, whose runner holds the receiver of an empty channel");
+            .expect("the scanner sends a scan task only to an idle loader, whose scan task runner holds the receiver of an empty channel");
     }
 
     fn update_load_store(&mut self) {
@@ -914,7 +917,7 @@ where
         self.scan_task_sender = Some(scan_task_sender);
     }
 
-    fn activity(&self) -> RunnerActivity {
+    fn activity(&self) -> ScanTaskRunnerActivity {
         self.ledger
             .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
@@ -926,7 +929,7 @@ where
             .as_ref()
             .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("the scanner sends a scan task only to an idle worker, whose runner holds the receiver of an empty channel");
+            .expect("the scanner sends a scan task only to an idle worker, whose scan task runner holds the receiver of an empty channel");
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -1199,30 +1202,30 @@ mod tests {
     const ONE_SCAN_TASK: u64 = 1;
 
     #[test]
-    fn a_running_runner_with_every_sent_scan_task_finished_is_idle() {
+    fn a_running_scan_task_runner_with_every_sent_scan_task_finished_is_idle() {
         assert_eq!(
-            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, false),
-            RunnerActivity::Idle
+            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, false),
+            ScanTaskRunnerActivity::Idle
         );
     }
 
     #[test]
-    fn a_running_runner_with_an_unfinished_scan_task_is_busy() {
+    fn a_running_scan_task_runner_with_an_unfinished_scan_task_is_busy() {
         assert_eq!(
-            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, false),
-            RunnerActivity::Busy
+            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, false),
+            ScanTaskRunnerActivity::Busy
         );
     }
 
     #[test]
-    fn an_ended_runner_is_ended_whatever_its_counts() {
+    fn an_ended_scan_task_runner_is_ended_whatever_its_counts() {
         assert_eq!(
-            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, true),
-            RunnerActivity::Ended
+            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, true),
+            ScanTaskRunnerActivity::Ended
         );
         assert_eq!(
-            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, true),
-            RunnerActivity::Ended
+            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, true),
+            ScanTaskRunnerActivity::Ended
         );
     }
 
@@ -1230,11 +1233,11 @@ mod tests {
     fn a_sent_scan_task_reads_busy_until_it_finishes() {
         let mut ledger = ScanTaskLedger::new();
         ledger.record_sent();
-        assert_eq!(ledger.activity(false), RunnerActivity::Busy);
+        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Busy);
         ledger
             .finished_counter()
             .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
-        assert_eq!(ledger.activity(false), RunnerActivity::Idle);
+        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Idle);
     }
 
     #[test]
@@ -1244,7 +1247,7 @@ mod tests {
             .finished_counter()
             .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
         ledger.record_sent();
-        assert_eq!(ledger.activity(false), RunnerActivity::Idle);
+        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Idle);
     }
 
     /// An address map as held by the scanner, for the given external indexes.
