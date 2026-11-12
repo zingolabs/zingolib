@@ -528,6 +528,7 @@ where
         continuous_sync_interval.reset();
         let mut reorg_occured = false;
         scanner.state.reverify();
+        tracing::debug!("Sync stage: requesting the chain height.");
         // every server request made before scanning begins is abandoned when shutdown is requested, so a stop is
         // not held behind a slow server. the requests are made with the wallet lock released.
         let Some(chain_height) = unless_shutdown(
@@ -564,6 +565,7 @@ where
             .map_err(SyncError::WalletError)?;
         drop(wallet_guard);
         if let Some(tree_bounds_source) = tree_bounds_source {
+            tracing::debug!("Sync stage: requesting the tree bounds.");
             let Some(tree_bounds) = unless_shutdown(
                 &sync_mode,
                 state::fetch_tree_bounds(
@@ -694,6 +696,7 @@ where
             // the previous sync session were not covered by transparent address discovery and may not have been
             // scanned. these blocks are above the transparent scan floor of the previous sync session, which
             // address discovery searches from.
+            tracing::debug!("Sync stage: discovering transparent addresses.");
             scanner.transparent_gap_addresses.extend(
                 transparent::address_discovery(
                     consensus_parameters,
@@ -727,6 +730,7 @@ where
             // fetching from the number of stored shards, so the subtree roots of these empty shards would never be
             // fetched. for example, a pool rescan (see `truncate_to_pool_activation_height`) clears the pool's shard
             // tree and ends the sync session, relying on the next sync session to fetch the pool's subtree roots.
+            tracing::debug!("Sync stage: requesting the subtree roots.");
             let fetch_start = subtree_root_fetch_start(&*wallet.read().await)?;
             let Some(subtree_roots) = unless_shutdown(
                 &sync_mode,
@@ -785,6 +789,7 @@ where
 
         // publish sync status prior to scanning
         publish_sync_status(&*wallet.read().await, &progress).await?;
+        tracing::debug!("Sync stage: scanning.");
 
         'scan: loop {
             tokio::select! {
@@ -860,6 +865,7 @@ where
                             drop(wallet_guard);
                         }
                         MempoolMessage::NewBlockMined => {
+                            tracing::debug!("Sync stage: the mempool monitor reported a new block.");
                             check_for_new_blocks = true;
                         }
                     }
@@ -877,11 +883,13 @@ where
                             }
                         },
                         SyncMode::Shutdown => {
-                            match mempool_drain_verdict(
+                            let drain_verdict = mempool_drain_verdict(
                                 shutdown_mempool.clone(),
                                 unprocessed_mempool_transactions_count.clone(), mempool_shutdown_timer.get_or_insert_with(Instant::now).elapsed(),
                                 mempool_stream_connected_at.get().map(|at| at.elapsed())
-                            ).await {
+                            ).await;
+                            tracing::debug!("Sync stage: shutdown requested, mempool drain verdict {drain_verdict:?}.");
+                            match drain_verdict {
                                 MempoolDrainVerdict::NotShutdown | MempoolDrainVerdict::ShutdownNotDrained => {
                                     continue 'scan;
                                 }
@@ -897,6 +905,7 @@ where
                     }
 
                     if check_for_new_blocks && scanner.is_verified() {
+                        tracing::debug!("Sync stage: leaving the scan to check for new blocks.");
                         check_for_new_blocks = false;
                         first_verification_complete = true;
                         continue 'continuous_sync;
@@ -905,6 +914,7 @@ where
                     scanner.update(&mut *wallet.write().await, nullifier_map_limit_exceeded).await?;
 
                     if matches!(scanner.state, ScannerState::Complete) && config.shutdown_on_completion {
+                        tracing::debug!("Sync stage: the scan is complete, requesting shutdown.");
                         let _ignore_mode_before_completion = SyncMode::apply(&sync_mode, SyncMode::on_completion)?;
                     }
                 }
@@ -919,6 +929,7 @@ where
 
     expire_transactions(&mut *wallet.write().await)?;
 
+    tracing::debug!("Sync stage: the scan loop ended, stopping the workers.");
     // shutdown workers and loader
     while scanner.worker_poolsize() != 0 {
         let worker_id = scanner
@@ -928,7 +939,9 @@ where
             .id();
         scanner.shutdown_worker(worker_id).await;
     }
+    tracing::debug!("Sync stage: stopping the loader.");
     scanner.shutdown_loader().await?;
+    tracing::debug!("Sync stage: publishing the final sync status.");
 
     let mut wallet_guard = wallet.write().await;
     wallet_guard
@@ -955,6 +968,7 @@ where
 
     // a session shut down before scanning began has not asked the mempool monitor to stop.
     shutdown_mempool.store(true, atomic::Ordering::Release);
+    tracing::debug!("Sync stage: joining the mempool monitor.");
     match mempool_handle.await.expect("task panicked") {
         Ok(()) => (),
         Err(e @ MempoolError::ShutdownWithoutStream) => tracing::warn!("{e}"),
@@ -962,6 +976,7 @@ where
     }
     // the fetcher is aborted rather than joined: the only request it can still be serving is one that a shutdown
     // abandoned, whose reply nobody awaits, and a slow server must not hold the shutdown for it.
+    tracing::debug!("Sync stage: joining the fetcher.");
     fetcher_handle.abort();
     if let Err(join_error) = fetcher_handle.await
         && join_error.is_panic()
@@ -2950,6 +2965,7 @@ where
                 // reset on reconnect, since any successful connect
                 // proves the indexer serves the stream.
                 let _already_set = stream_connected_at.set(std::time::Instant::now());
+                tracing::debug!("Mempool monitor: the stream is connected.");
                 interval.reset();
                 loop {
                     tokio::select! {
@@ -2971,6 +2987,7 @@ where
                                         }
                                 }
                                 Ok(None) => {
+                                     tracing::debug!("Mempool monitor: the stream ended, reporting a new block.");
                                      match mempool_transaction_sender
                                         .send(MempoolMessage::NewBlockMined)
                                         .await {
@@ -3011,6 +3028,7 @@ where
         }
     }
 
+    tracing::debug!("Mempool monitor: stopped.");
     Ok(())
 }
 

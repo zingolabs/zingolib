@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
 
 ### Changed
+- **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
+  returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
+  selection checks a reservation in constant time. A consumer that indexed
+  or sorted the vector collects the set first.
+- `InputSource::select_spendable_notes` on `LightWallet` returns each pool's
+  notes in the order note selection takes them, which depends only on the
+  notes' values and output ids. It followed the iteration order of the
+  wallet's transaction map, which differed from run to run. A consumer that
+  shows the notes of a proposal sees a stable order.
 - Testnet has a Default Indexer, `https://testnet.zec.rocks:443`, so
   `IndexerChoice::Default` resolves on testnet and an offline testnet client
   that named no indexer holds it undialed for `go_online`.

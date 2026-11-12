@@ -2,10 +2,6 @@ use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicBool},
-    },
     time::Duration,
 };
 
@@ -40,6 +36,70 @@ const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanTaskRunnerActivity {
+    Idle,
+    Busy,
+    Ended,
+}
+
+impl ScanTaskRunnerActivity {
+    fn of(arrival_awaited: bool, scan_task_runner_ended: bool) -> Self {
+        match (scan_task_runner_ended, arrival_awaited) {
+            (true, _) => Self::Ended,
+            (false, false) => Self::Idle,
+            (false, true) => Self::Busy,
+        }
+    }
+}
+
+type LoadKey = (TaskId, BlockHeight);
+
+fn awaited_after<K: PartialEq>(awaited: Option<K>, arrived: &K) -> Option<K> {
+    awaited.filter(|key| key != arrived)
+}
+
+struct ScanTaskRunner<T> {
+    handle: Option<JoinHandle<T>>,
+    awaited: Option<LoadKey>,
+    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
+}
+
+impl<T> ScanTaskRunner<T> {
+    fn new() -> Self {
+        Self {
+            handle: None,
+            awaited: None,
+            scan_task_sender: None,
+        }
+    }
+
+    fn started(&mut self, handle: JoinHandle<T>, scan_task_sender: mpsc::Sender<ScanTask>) {
+        self.handle = Some(handle);
+        self.scan_task_sender = Some(scan_task_sender);
+    }
+
+    fn activity(&self) -> ScanTaskRunnerActivity {
+        ScanTaskRunnerActivity::of(
+            self.awaited.is_some(),
+            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
+        )
+    }
+
+    fn send(&mut self, scan_task: ScanTask, awaited: LoadKey) {
+        self.awaited = Some(awaited);
+        self.scan_task_sender
+            .as_ref()
+            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
+            .try_send(scan_task)
+            .expect("the scanner sends a scan task only to an idle scan task runner, which holds the receiver of an empty channel");
+    }
+
+    fn arrived(&mut self, arrived: &LoadKey) {
+        self.awaited = awaited_after(self.awaited, arrived);
+    }
+}
 
 pub(crate) enum ScannerState {
     Verification,
@@ -128,6 +188,10 @@ where
         load: ScanLoad,
         scan_results: Result<ScanResults, ScanError>,
     ) -> Vec<(ScanLoad, Result<ScanResults, ScanError>)> {
+        let arrived = (load.task_id, load.scan_range.block_range().start);
+        for worker in &mut self.workers {
+            worker.results_arrived(&arrived);
+        }
         self.load_order.admit(load, scan_results)
     }
 
@@ -219,14 +283,6 @@ where
         }
     }
 
-    pub(crate) fn idle_worker(&self) -> Option<&ScanWorker<P>> {
-        if let Some(idle_worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            Some(idle_worker)
-        } else {
-            None
-        }
-    }
-
     /// Shutdown worker by `worker_id`.
     ///
     /// Panics if worker with given `worker_id` is not found.
@@ -306,22 +362,26 @@ where
     }
 
     fn update_workers(&mut self) {
-        let loader = self.loader.as_ref().expect("loader should be running");
         let scanning_workers = self
             .workers
             .iter()
-            .filter(|worker| worker.is_scanning())
+            .filter(|worker| matches!(worker.activity(), ScanTaskRunnerActivity::Busy))
             .count();
-        if loader.load.is_some()
-            && load_admitted(scanning_workers, self.load_order.held())
-            && let Some(worker) = self.idle_worker()
-        {
-            let load = loader
-                .load
-                .clone()
-                .expect("load should exist in this closure");
+        if !load_admitted(scanning_workers, self.load_order.held()) {
+            return;
+        }
+        let Some(worker) = self
+            .workers
+            .iter_mut()
+            .find(|worker| matches!(worker.activity(), ScanTaskRunnerActivity::Idle))
+        else {
+            return;
+        };
+        let loader = self.loader.as_mut().expect(
+            "the scanner launches its loader before its first update and takes it only at shutdown",
+        );
+        if let Some(load) = loader.load.take() {
             worker.add_scan_task(load);
-            self.loader.as_mut().expect("loader should be running").load = None;
         }
     }
 
@@ -333,36 +393,41 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
-        let loader = self.loader.as_ref().expect("loader should be running");
-        if !loader.is_loading() {
-            if let Some(scan_task) = sync::state::create_scan_task(
-                &self.consensus_parameters,
-                wallet,
-                nullifier_map_limit_exceeded,
-                self.transparent_gap_addresses.clone(),
-                self.next_task_id,
-            )? {
-                self.in_flight_tasks
-                    .insert(scan_task.task_id, scan_task.scan_range.clone());
-                self.load_order
-                    .track(scan_task.task_id, scan_task.scan_range.block_range().start);
-                self.next_task_id = self.next_task_id.next();
-                loader.add_scan_task(scan_task);
-            } else if wallet.get_sync_state()?.scan_complete() {
-                // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
-                for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-                    for note in transaction.sapling_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
+        let loader = self.loader.as_mut().expect(
+            "the scanner launches its loader before its first update and takes it only at shutdown",
+        );
+        match loader.activity() {
+            ScanTaskRunnerActivity::Idle => {
+                if let Some(scan_task) = sync::state::create_scan_task(
+                    &self.consensus_parameters,
+                    wallet,
+                    nullifier_map_limit_exceeded,
+                    self.transparent_gap_addresses.clone(),
+                    self.next_task_id,
+                )? {
+                    self.in_flight_tasks
+                        .insert(scan_task.task_id, scan_task.scan_range.clone());
+                    self.load_order
+                        .track(scan_task.task_id, scan_task.scan_range.block_range().start);
+                    self.next_task_id = self.next_task_id.next();
+                    loader.add_scan_task(scan_task);
+                } else if wallet.get_sync_state()?.scan_complete() {
+                    // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
+                    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+                        for note in transaction.sapling_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
+                        for note in transaction.orchard_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
+                        for note in transaction.ironwood_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
                     }
-                    for note in transaction.orchard_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
-                    }
-                    for note in transaction.ironwood_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
-                    }
+                    self.state.completed();
                 }
-                self.state.completed();
             }
+            ScanTaskRunnerActivity::Busy | ScanTaskRunnerActivity::Ended => (),
         }
 
         Ok(())
@@ -374,11 +439,9 @@ where
 }
 
 struct Loader<P> {
-    handle: Option<JoinHandle<Result<(), ServerError>>>,
-    is_loading: Arc<AtomicBool>,
+    runner: ScanTaskRunner<Result<(), ServerError>>,
     load: Option<ScanTask>,
     consensus_parameters: P,
-    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     load_receiver: Option<mpsc::Receiver<ScanTask>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
 }
@@ -392,11 +455,9 @@ where
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ) -> Self {
         Self {
-            handle: None,
-            is_loading: Arc::new(AtomicBool::new(false)),
+            runner: ScanTaskRunner::new(),
             load: None,
             consensus_parameters,
-            scan_task_sender: None,
             load_receiver: None,
             fetch_request_sender,
         }
@@ -411,7 +472,6 @@ where
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_loading = self.is_loading.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -637,32 +697,23 @@ where
                 }
 
                 let _ignore_error = load_sender.send(scan_task).await;
-
-                is_loading.store(false, atomic::Ordering::Release);
             }
-
-            is_loading.store(false, atomic::Ordering::Release);
 
             Ok(())
         });
 
-        self.handle = Some(handle);
-        self.scan_task_sender = Some(scan_task_sender);
+        self.runner.started(handle, scan_task_sender);
         self.load_receiver = Some(load_receiver);
     }
 
-    fn is_loading(&self) -> bool {
-        self.is_loading.load(atomic::Ordering::Acquire)
+    fn activity(&self) -> ScanTaskRunnerActivity {
+        self.runner.activity()
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
-        self.scan_task_sender
-            .clone()
-            .expect("loader should be running")
-            .try_send(scan_task)
-            .expect("loader should never be sent multiple tasks at one time");
-        self.is_loading.store(true, atomic::Ordering::Release);
+        let awaited_final_load = (scan_task.task_id, scan_task.scan_range.block_range().end);
+        self.runner.send(scan_task, awaited_final_load);
     }
 
     fn update_load_store(&mut self) {
@@ -670,21 +721,21 @@ where
             .load_receiver
             .as_mut()
             .expect("loader should be running");
-        if self.load.is_none() && !load_receiver.is_empty() {
-            self.load = Some(
-                load_receiver
-                    .try_recv()
-                    .expect("channel should be non-empty!"),
-            );
+        if self.load.is_none()
+            && let Ok(load) = load_receiver.try_recv()
+        {
+            let arrived = (load.task_id, load.scan_range.block_range().end);
+            self.runner.arrived(&arrived);
+            self.load = Some(load);
         }
     }
 
     fn check_error(&mut self) -> Result<(), ServerError> {
-        if let Some(mut handle) = self.handle.take() {
+        if let Some(mut handle) = self.runner.handle.take() {
             if let Some(result) = handle.borrow_mut().now_or_never() {
                 result.expect("task panicked")?;
             } else {
-                self.handle = Some(handle);
+                self.runner.handle = Some(handle);
             }
         }
 
@@ -696,7 +747,7 @@ where
     /// This should always be called in the context of the scanner as it must be also be taken from the Scanner struct.
     async fn shutdown(&mut self) -> Result<(), ServerError> {
         tracing::debug!("Shutting down loader");
-        if let Some(sender) = self.scan_task_sender.take() {
+        if let Some(sender) = self.runner.scan_task_sender.take() {
             drop(sender);
         }
         if let Some(receiver) = self.load_receiver.take() {
@@ -704,6 +755,7 @@ where
         }
 
         let mut handle = self
+            .runner
             .handle
             .take()
             .expect("loader should always have a handle to take!");
@@ -787,10 +839,8 @@ fn includes_blocks_above_floor(
 
 pub(crate) struct ScanWorker<P> {
     id: usize,
-    handle: Option<JoinHandle<()>>,
-    is_scanning: Arc<AtomicBool>,
+    runner: ScanTaskRunner<()>,
     consensus_parameters: P,
-    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -811,10 +861,8 @@ where
     ) -> Self {
         Self {
             id,
-            handle: None,
-            is_scanning: Arc::new(AtomicBool::new(false)),
+            runner: ScanTaskRunner::new(),
             consensus_parameters,
-            scan_task_sender: None,
             scan_results_sender,
             fetch_request_sender,
             ufvks,
@@ -833,7 +881,6 @@ where
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_scanning = self.is_scanning.clone();
         let scan_results_sender = self.scan_results_sender.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
@@ -858,29 +905,24 @@ where
                 )
                 .await;
                 let _ignore_error = scan_results_sender.send((load, scan_results));
-
-                is_scanning.store(false, atomic::Ordering::Release);
             }
-
-            is_scanning.store(false, atomic::Ordering::Release);
         });
 
-        self.handle = Some(handle);
-        self.scan_task_sender = Some(scan_task_sender);
+        self.runner.started(handle, scan_task_sender);
     }
 
-    fn is_scanning(&self) -> bool {
-        self.is_scanning.load(atomic::Ordering::Acquire)
+    fn activity(&self) -> ScanTaskRunnerActivity {
+        self.runner.activity()
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn results_arrived(&mut self, arrived: &LoadKey) {
+        self.runner.arrived(arrived);
+    }
+
+    fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
-        self.scan_task_sender
-            .clone()
-            .expect("worker should be running")
-            .try_send(scan_task)
-            .expect("worker should never be sent multiple tasks at one time");
-        self.is_scanning.store(true, atomic::Ordering::Release);
+        let awaited_results = (scan_task.task_id, scan_task.scan_range.block_range().start);
+        self.runner.send(scan_task, awaited_results);
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -889,11 +931,12 @@ where
     /// (See `Scanner::shutdown_worker`).
     async fn shutdown(&mut self) -> Result<(), JoinError> {
         tracing::debug!("Shutting down worker {}", self.id);
-        if let Some(sender) = self.scan_task_sender.take() {
+        if let Some(sender) = self.runner.scan_task_sender.take() {
             drop(sender);
         }
 
         let mut handle = self
+            .runner
             .handle
             .take()
             .expect("worker should always have a handle to take!");
@@ -1140,332 +1183,4 @@ impl ScanTask {
 }
 
 #[cfg(test)]
-mod tests {
-    use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
-    use zcash_transparent::keys::NonHardenedChildIndex;
-
-    use crate::keys::transparent::TransparentScope;
-
-    use super::*;
-
-    const GAP_LIMIT: u32 = 3;
-
-    /// An address map as held by the scanner, for the given external indexes.
-    fn external_addresses(
-        indexes: impl IntoIterator<Item = u32>,
-    ) -> HashMap<String, TransparentAddressId> {
-        indexes
-            .into_iter()
-            .map(|index| {
-                (
-                    format!("external address {index}"),
-                    TransparentAddressId::new(
-                        AccountId::ZERO,
-                        TransparentScope::External,
-                        NonHardenedChildIndex::from_index(index).unwrap(),
-                    ),
-                )
-            })
-            .collect()
-    }
-
-    fn scanner_with_gap_addresses(
-        gap_addresses: HashMap<String, TransparentAddressId>,
-    ) -> Scanner<MainNetwork> {
-        let (scan_results_sender, _) = mpsc::unbounded_channel();
-        let (fetch_request_sender, _) = mpsc::unbounded_channel();
-        let mut scanner = Scanner::new(
-            MAIN_NETWORK,
-            scan_results_sender,
-            fetch_request_sender,
-            HashMap::new(),
-            GAP_LIMIT,
-        );
-        scanner.transparent_gap_addresses = gap_addresses;
-        scanner
-    }
-
-    /// Scan results without compact block transparent data, such as re-fetched nullifiers, carry no changes to the
-    /// gap addresses. The scanner keeps the gap addresses it holds.
-    #[test]
-    fn gap_addresses_are_kept_when_scan_results_carry_no_changes() {
-        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
-
-        scanner.update_transparent_gap_addresses(&HashMap::new(), HashMap::new());
-
-        assert_eq!(scanner.transparent_gap_addresses, external_addresses(1..=3));
-    }
-
-    /// The gap addresses found in use are removed and the gap addresses derived to replace them are added. The gap
-    /// addresses above the highest address found in use are kept.
-    #[test]
-    fn gap_addresses_found_in_use_are_replaced() {
-        let mut scanner = scanner_with_gap_addresses(external_addresses(1..=3));
-
-        scanner.update_transparent_gap_addresses(
-            &external_addresses(1..=2),
-            external_addresses(4..=5),
-        );
-
-        assert_eq!(scanner.transparent_gap_addresses, external_addresses(3..=5));
-    }
-
-    const SCAN_RANGE_END: u32 = 20;
-
-    fn block_range() -> Range<BlockHeight> {
-        BlockHeight::from_u32(10)..BlockHeight::from_u32(SCAN_RANGE_END + 1)
-    }
-
-    fn no_block_error() -> ServerError {
-        ServerError::RequestFailed(tonic::Status::not_found("no block"))
-    }
-
-    /// Answers chain height requests with `chain_height`.
-    fn spawn_chain_height_fetcher(chain_height: u32) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::ChainTip(reply_sender) => {
-                        let _ignore_error =
-                            reply_sender.send(Ok(zingo_netutils::lightwallet_protocol::BlockId {
-                                height: u64::from(chain_height),
-                                hash: Vec::new(),
-                            }));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-
-        fetch_request_sender
-    }
-
-    /// The server's chain height is below the last block of the scan range, so it has no block to serve for the top
-    /// of the scan range.
-    #[tokio::test]
-    async fn fetch_failure_under_a_lowered_chain_height_reports_the_chain_height() {
-        let error = fetch_failure(
-            spawn_chain_height_fetcher(SCAN_RANGE_END - 1),
-            &block_range(),
-            no_block_error(),
-        )
-        .await;
-
-        assert!(matches!(
-            error,
-            ServerError::ChainHeightBelowScanRange { chain_height, scan_range_end }
-                if chain_height == BlockHeight::from_u32(SCAN_RANGE_END - 1)
-                    && scan_range_end == BlockHeight::from_u32(SCAN_RANGE_END)
-        ));
-    }
-
-    /// The server's chain holds the whole scan range, so the fetch failed for another reason.
-    #[tokio::test]
-    async fn fetch_failure_with_the_scan_range_on_chain_returns_the_fetch_error() {
-        for chain_height in [SCAN_RANGE_END, SCAN_RANGE_END + 1] {
-            let error = fetch_failure(
-                spawn_chain_height_fetcher(chain_height),
-                &block_range(),
-                no_block_error(),
-            )
-            .await;
-
-            assert!(
-                matches!(error, ServerError::RequestFailed(_)),
-                "chain height {chain_height}"
-            );
-        }
-    }
-
-    /// The chain height request fails with the fetcher gone, leaving the fetch error as the only known cause.
-    #[tokio::test]
-    async fn fetch_failure_with_no_chain_height_returns_the_fetch_error() {
-        let (fetch_request_sender, _) = mpsc::unbounded_channel();
-
-        let error = fetch_failure(fetch_request_sender, &block_range(), no_block_error()).await;
-
-        assert!(matches!(error, ServerError::RequestFailed(_)));
-    }
-
-    fn load(task_id: TaskId, start: u32, end: u32) -> ScanLoad {
-        ScanLoad {
-            task_id,
-            scan_range: ScanRange::from_parts(
-                BlockHeight::from_u32(start)..BlockHeight::from_u32(end),
-                ScanPriority::ChainTip,
-            ),
-            chain_height: BlockHeight::from_u32(end - 1),
-            highest_scanned_height: BlockHeight::from_u32(start - 1),
-        }
-    }
-
-    fn results() -> Result<ScanResults, ScanError> {
-        Err(ScanError::ServerError(no_block_error()))
-    }
-
-    fn released_starts(released: &[(ScanLoad, Result<ScanResults, ScanError>)]) -> Vec<u32> {
-        released
-            .iter()
-            .map(|(load, _)| u32::from(load.scan_range.block_range().start))
-            .collect()
-    }
-
-    /// Loads of a task arriving in block height order are released as they arrive.
-    #[test]
-    fn loads_arriving_in_order_are_released_as_they_arrive() {
-        let task = TaskId::first();
-        let mut order = LoadOrder::default();
-        order.track(task, BlockHeight::from_u32(10));
-
-        assert_eq!(
-            released_starts(&order.admit(load(task, 10, 20), results())),
-            [10]
-        );
-        assert_eq!(
-            released_starts(&order.admit(load(task, 20, 30), results())),
-            [20]
-        );
-        assert_eq!(order.held(), 0);
-    }
-
-    /// A load arriving above an unreleased lower load of its task is held back, and released in height order once
-    /// the lower load arrives.
-    #[test]
-    fn a_load_above_an_unreleased_load_is_held_until_the_lower_load_arrives() {
-        let task = TaskId::first();
-        let mut order = LoadOrder::default();
-        order.track(task, BlockHeight::from_u32(10));
-
-        assert!(order.admit(load(task, 30, 40), results()).is_empty());
-        assert!(order.admit(load(task, 20, 30), results()).is_empty());
-        assert_eq!(order.held(), 2);
-        assert_eq!(
-            released_starts(&order.admit(load(task, 10, 20), results())),
-            [10, 20, 30]
-        );
-        assert_eq!(order.held(), 0);
-    }
-
-    /// The ordering of one task does not hold back the loads of another.
-    #[test]
-    fn tasks_are_ordered_independently() {
-        let first = TaskId::first();
-        let second = first.next();
-        let mut order = LoadOrder::default();
-        order.track(first, BlockHeight::from_u32(10));
-        order.track(second, BlockHeight::from_u32(50));
-
-        assert!(order.admit(load(first, 20, 30), results()).is_empty());
-        assert_eq!(
-            released_starts(&order.admit(load(second, 50, 60), results())),
-            [50]
-        );
-    }
-
-    /// The results of a task the scanner does not track are released as they are.
-    #[test]
-    fn loads_of_an_untracked_task_are_released_as_they_are() {
-        let mut order = LoadOrder::default();
-
-        assert_eq!(
-            released_starts(&order.admit(load(TaskId::first(), 20, 30), results())),
-            [20]
-        );
-        assert_eq!(order.held(), 0);
-    }
-
-    /// Retiring a task drops the results held back for it.
-    #[test]
-    fn retiring_a_task_drops_its_held_results() {
-        let task = TaskId::first();
-        let mut order = LoadOrder::default();
-        order.track(task, BlockHeight::from_u32(10));
-        assert!(order.admit(load(task, 20, 30), results()).is_empty());
-
-        order.retain(&BTreeMap::new());
-
-        assert_eq!(order.held(), 0);
-        assert_eq!(
-            released_starts(&order.admit(load(task, 10, 20), results())),
-            [10]
-        );
-    }
-
-    /// A held result takes the place of a load of compact blocks in a worker, so a worker takes a load only while
-    /// the scanning workers and held results together stay within the pool.
-    #[test]
-    fn a_worker_takes_a_load_only_within_the_pool() {
-        for (scanning_workers, held_results, admitted) in [
-            (0, 0, true),
-            (MAX_WORKER_POOLSIZE - 1, 0, true),
-            (0, MAX_WORKER_POOLSIZE - 1, true),
-            (MAX_WORKER_POOLSIZE - 1, 1, false),
-            (0, MAX_WORKER_POOLSIZE, false),
-        ] {
-            assert_eq!(
-                load_admitted(scanning_workers, held_results),
-                admitted,
-                "{scanning_workers} scanning, {held_results} held"
-            );
-        }
-    }
-
-    /// A scan task of any priority is split above its first block when a load budget is reached.
-    #[test]
-    fn scan_tasks_are_split_above_their_first_block() {
-        const START: u32 = 10;
-        let block_range = BlockHeight::from_u32(START)..BlockHeight::from_u32(START * 2);
-
-        for (priority, block_height, splittable) in [
-            (ScanPriority::ChainTip, START, false),
-            (ScanPriority::ChainTip, START + 1, true),
-            (ScanPriority::ScannedWithoutMapping, START + 1, true),
-            (ScanPriority::Verify, START, false),
-            (ScanPriority::Verify, START + 1, true),
-        ] {
-            assert_eq!(
-                splittable_at(
-                    &ScanRange::from_parts(block_range.clone(), priority),
-                    BlockHeight::from_u32(block_height)
-                ),
-                splittable,
-                "{priority:?} at {block_height}"
-            );
-        }
-    }
-
-    #[test]
-    fn transparent_data_is_only_requested_for_ranges_above_transparent_scan_floor() {
-        let floor = BlockHeight::from_u32(1_000);
-        for (block_range, include_transparent) in [
-            // below the floor
-            (floor - 10..floor - 5, false),
-            // ends at the floor
-            (floor - 5..floor + 1, false),
-            // spans the floor
-            (floor - 5..floor + 5, true),
-            // starts above the floor
-            (floor + 1..floor + 5, true),
-        ] {
-            assert_eq!(
-                includes_blocks_above_floor(&block_range, floor),
-                include_transparent,
-                "{block_range:?}"
-            );
-        }
-    }
-
-    /// A load budget splits a scan task of any priority, since the re-org handler resets the wallet range that
-    /// encloses the failed load instead of the load's exact range.
-    #[test]
-    fn a_verify_task_splits_at_a_load_budget_like_any_other() {
-        let verify = ScanRange::from_parts(
-            BlockHeight::from_u32(21)..BlockHeight::from_u32(41),
-            ScanPriority::Verify,
-        );
-
-        assert!(splittable_at(&verify, BlockHeight::from_u32(31)));
-        assert!(!splittable_at(&verify, BlockHeight::from_u32(21)));
-    }
-}
+mod tests;
