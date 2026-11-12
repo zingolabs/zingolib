@@ -58,6 +58,13 @@ impl OutputLocks {
         self.0.remove(output).is_some()
     }
 
+    pub fn owner_at(&self, output: &OutputRef, target_height: BlockHeight) -> Option<LockOwner> {
+        self.0
+            .get(output)
+            .filter(|lock| lock.expiry_height >= target_height)
+            .map(|lock| lock.owner)
+    }
+
     /// Every locked output paired with the last height at which its lock binds.
     pub fn iter(&self) -> impl Iterator<Item = (OutputRef, BlockHeight)> + '_ {
         self.0

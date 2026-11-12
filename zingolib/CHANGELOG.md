@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
   and `indexer` together.
 
+- `InputSource::select_spendable_notes` on `LightWallet` honours the
+  `LockFilter` and target height the input selector passes. A note locked
+  through `OutputLockStore` by another owner is never selected, `Exclude`
+  selects no locked note, and `PreferUnlocked` and `PreferLocked` order the
+  named owners' notes as upstream specifies. The migration soft reservation
+  is expressed as `PreferUnlocked` for the migration lock owner on both
+  proposal paths, so a bound note is still spent only when the free notes
+  fall short and all-funds selection still includes it.
+- **Breaking:** `MigrationState::reserved_outputs` returns pool-typed
+  `zcash_client_backend::wallet::OutputRef`s and replaces
+  `reserved_output_ids`.
+
 ### Deprecated
 
 ### Removed
