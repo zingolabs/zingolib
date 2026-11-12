@@ -60,6 +60,47 @@ fn awaited_after<K: PartialEq>(awaited: Option<K>, arrived: &K) -> Option<K> {
     awaited.filter(|key| key != arrived)
 }
 
+struct ScanTaskRunner<T> {
+    handle: Option<JoinHandle<T>>,
+    awaited: Option<LoadKey>,
+    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
+}
+
+impl<T> ScanTaskRunner<T> {
+    fn new() -> Self {
+        Self {
+            handle: None,
+            awaited: None,
+            scan_task_sender: None,
+        }
+    }
+
+    fn started(&mut self, handle: JoinHandle<T>, scan_task_sender: mpsc::Sender<ScanTask>) {
+        self.handle = Some(handle);
+        self.scan_task_sender = Some(scan_task_sender);
+    }
+
+    fn activity(&self) -> ScanTaskRunnerActivity {
+        ScanTaskRunnerActivity::of(
+            self.awaited.is_some(),
+            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
+        )
+    }
+
+    fn send(&mut self, scan_task: ScanTask, awaited: LoadKey) {
+        self.awaited = Some(awaited);
+        self.scan_task_sender
+            .as_ref()
+            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
+            .try_send(scan_task)
+            .expect("the scanner sends a scan task only to an idle scan task runner, which holds the receiver of an empty channel");
+    }
+
+    fn arrived(&mut self, arrived: &LoadKey) {
+        self.awaited = awaited_after(self.awaited, arrived);
+    }
+}
+
 pub(crate) enum ScannerState {
     Verification,
     Scan,
@@ -398,11 +439,9 @@ where
 }
 
 struct Loader<P> {
-    handle: Option<JoinHandle<Result<(), ServerError>>>,
-    awaited_final_load: Option<LoadKey>,
+    runner: ScanTaskRunner<Result<(), ServerError>>,
     load: Option<ScanTask>,
     consensus_parameters: P,
-    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     load_receiver: Option<mpsc::Receiver<ScanTask>>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
 }
@@ -416,11 +455,9 @@ where
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ) -> Self {
         Self {
-            handle: None,
-            awaited_final_load: None,
+            runner: ScanTaskRunner::new(),
             load: None,
             consensus_parameters,
-            scan_task_sender: None,
             load_receiver: None,
             fetch_request_sender,
         }
@@ -665,26 +702,18 @@ where
             Ok(())
         });
 
-        self.handle = Some(handle);
-        self.scan_task_sender = Some(scan_task_sender);
+        self.runner.started(handle, scan_task_sender);
         self.load_receiver = Some(load_receiver);
     }
 
     fn activity(&self) -> ScanTaskRunnerActivity {
-        ScanTaskRunnerActivity::of(
-            self.awaited_final_load.is_some(),
-            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
-        )
+        self.runner.activity()
     }
 
     fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
-        self.awaited_final_load = Some((scan_task.task_id, scan_task.scan_range.block_range().end));
-        self.scan_task_sender
-            .as_ref()
-            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
-            .try_send(scan_task)
-            .expect("the scanner sends a scan task only to an idle loader, whose scan task runner holds the receiver of an empty channel");
+        let awaited_final_load = (scan_task.task_id, scan_task.scan_range.block_range().end);
+        self.runner.send(scan_task, awaited_final_load);
     }
 
     fn update_load_store(&mut self) {
@@ -696,17 +725,17 @@ where
             && let Ok(load) = load_receiver.try_recv()
         {
             let arrived = (load.task_id, load.scan_range.block_range().end);
-            self.awaited_final_load = awaited_after(self.awaited_final_load, &arrived);
+            self.runner.arrived(&arrived);
             self.load = Some(load);
         }
     }
 
     fn check_error(&mut self) -> Result<(), ServerError> {
-        if let Some(mut handle) = self.handle.take() {
+        if let Some(mut handle) = self.runner.handle.take() {
             if let Some(result) = handle.borrow_mut().now_or_never() {
                 result.expect("task panicked")?;
             } else {
-                self.handle = Some(handle);
+                self.runner.handle = Some(handle);
             }
         }
 
@@ -718,7 +747,7 @@ where
     /// This should always be called in the context of the scanner as it must be also be taken from the Scanner struct.
     async fn shutdown(&mut self) -> Result<(), ServerError> {
         tracing::debug!("Shutting down loader");
-        if let Some(sender) = self.scan_task_sender.take() {
+        if let Some(sender) = self.runner.scan_task_sender.take() {
             drop(sender);
         }
         if let Some(receiver) = self.load_receiver.take() {
@@ -726,6 +755,7 @@ where
         }
 
         let mut handle = self
+            .runner
             .handle
             .take()
             .expect("loader should always have a handle to take!");
@@ -809,10 +839,8 @@ fn includes_blocks_above_floor(
 
 pub(crate) struct ScanWorker<P> {
     id: usize,
-    handle: Option<JoinHandle<()>>,
-    awaited_results: Option<LoadKey>,
+    runner: ScanTaskRunner<()>,
     consensus_parameters: P,
-    scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: HashMap<AccountId, UnifiedFullViewingKey>,
@@ -833,10 +861,8 @@ where
     ) -> Self {
         Self {
             id,
-            handle: None,
-            awaited_results: None,
+            runner: ScanTaskRunner::new(),
             consensus_parameters,
-            scan_task_sender: None,
             scan_results_sender,
             fetch_request_sender,
             ufvks,
@@ -882,29 +908,21 @@ where
             }
         });
 
-        self.handle = Some(handle);
-        self.scan_task_sender = Some(scan_task_sender);
+        self.runner.started(handle, scan_task_sender);
     }
 
     fn activity(&self) -> ScanTaskRunnerActivity {
-        ScanTaskRunnerActivity::of(
-            self.awaited_results.is_some(),
-            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
-        )
+        self.runner.activity()
     }
 
     fn results_arrived(&mut self, arrived: &LoadKey) {
-        self.awaited_results = awaited_after(self.awaited_results, arrived);
+        self.runner.arrived(arrived);
     }
 
     fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
-        self.awaited_results = Some((scan_task.task_id, scan_task.scan_range.block_range().start));
-        self.scan_task_sender
-            .as_ref()
-            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
-            .try_send(scan_task)
-            .expect("the scanner sends a scan task only to an idle worker, whose scan task runner holds the receiver of an empty channel");
+        let awaited_results = (scan_task.task_id, scan_task.scan_range.block_range().start);
+        self.runner.send(scan_task, awaited_results);
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -913,11 +931,12 @@ where
     /// (See `Scanner::shutdown_worker`).
     async fn shutdown(&mut self) -> Result<(), JoinError> {
         tracing::debug!("Shutting down worker {}", self.id);
-        if let Some(sender) = self.scan_task_sender.take() {
+        if let Some(sender) = self.runner.scan_task_sender.take() {
             drop(sender);
         }
 
         let mut handle = self
+            .runner
             .handle
             .take()
             .expect("worker should always have a handle to take!");
