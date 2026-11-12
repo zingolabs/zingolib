@@ -42,15 +42,15 @@ const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TaskActivity {
+enum RunnerActivity {
     Idle,
     Busy,
     Ended,
 }
 
-impl TaskActivity {
-    fn of(tasks_sent: u64, tasks_finished: u64, task_ended: bool) -> Self {
-        match (task_ended, tasks_sent == tasks_finished) {
+impl RunnerActivity {
+    fn of(scan_tasks_sent: u64, scan_tasks_finished: u64, runner_ended: bool) -> Self {
+        match (runner_ended, scan_tasks_sent == scan_tasks_finished) {
             (true, _) => Self::Ended,
             (false, true) => Self::Idle,
             (false, false) => Self::Busy,
@@ -58,12 +58,12 @@ impl TaskActivity {
     }
 }
 
-struct TaskLedger {
+struct ScanTaskLedger {
     sent: u64,
     finished: Arc<AtomicU64>,
 }
 
-impl TaskLedger {
+impl ScanTaskLedger {
     fn new() -> Self {
         Self {
             sent: 0,
@@ -79,11 +79,11 @@ impl TaskLedger {
         self.finished.clone()
     }
 
-    fn activity(&self, task_ended: bool) -> TaskActivity {
-        TaskActivity::of(
+    fn activity(&self, runner_ended: bool) -> RunnerActivity {
+        RunnerActivity::of(
             self.sent,
             self.finished.load(atomic::Ordering::Acquire),
-            task_ended,
+            runner_ended,
         )
     }
 }
@@ -348,7 +348,7 @@ where
         let scanning_workers = self
             .workers
             .iter()
-            .filter(|worker| matches!(worker.activity(), TaskActivity::Busy))
+            .filter(|worker| matches!(worker.activity(), RunnerActivity::Busy))
             .count();
         if !load_admitted(scanning_workers, self.load_order.held()) {
             return;
@@ -356,7 +356,7 @@ where
         let Some(worker) = self
             .workers
             .iter_mut()
-            .find(|worker| matches!(worker.activity(), TaskActivity::Idle))
+            .find(|worker| matches!(worker.activity(), RunnerActivity::Idle))
         else {
             return;
         };
@@ -380,7 +380,7 @@ where
             "the scanner launches its loader before its first update and takes it only at shutdown",
         );
         match loader.activity() {
-            TaskActivity::Idle => {
+            RunnerActivity::Idle => {
                 if let Some(scan_task) = sync::state::create_scan_task(
                     &self.consensus_parameters,
                     wallet,
@@ -410,7 +410,7 @@ where
                     self.state.completed();
                 }
             }
-            TaskActivity::Busy | TaskActivity::Ended => (),
+            RunnerActivity::Busy | RunnerActivity::Ended => (),
         }
 
         Ok(())
@@ -423,7 +423,7 @@ where
 
 struct Loader<P> {
     handle: Option<JoinHandle<Result<(), ServerError>>>,
-    ledger: TaskLedger,
+    ledger: ScanTaskLedger,
     load: Option<ScanTask>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
@@ -441,7 +441,7 @@ where
     ) -> Self {
         Self {
             handle: None,
-            ledger: TaskLedger::new(),
+            ledger: ScanTaskLedger::new(),
             load: None,
             consensus_parameters,
             scan_task_sender: None,
@@ -459,7 +459,7 @@ where
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let tasks_finished = self.ledger.finished_counter();
+        let scan_tasks_finished = self.ledger.finished_counter();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -686,7 +686,7 @@ where
 
                 let _ignore_error = load_sender.send(scan_task).await;
 
-                tasks_finished.fetch_add(1, atomic::Ordering::Release);
+                scan_tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
 
             Ok(())
@@ -697,7 +697,7 @@ where
         self.load_receiver = Some(load_receiver);
     }
 
-    fn activity(&self) -> TaskActivity {
+    fn activity(&self) -> RunnerActivity {
         self.ledger
             .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
@@ -707,9 +707,9 @@ where
         self.ledger.record_sent();
         self.scan_task_sender
             .as_ref()
-            .expect("run stores the sender before the scanner sends a task, and only shutdown takes it")
+            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("the scanner sends a task only to an idle loader, whose task holds the receiver of an empty channel");
+            .expect("the scanner sends a scan task only to an idle loader, whose runner holds the receiver of an empty channel");
     }
 
     fn update_load_store(&mut self) {
@@ -835,7 +835,7 @@ fn includes_blocks_above_floor(
 pub(crate) struct ScanWorker<P> {
     id: usize,
     handle: Option<JoinHandle<()>>,
-    ledger: TaskLedger,
+    ledger: ScanTaskLedger,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
@@ -859,7 +859,7 @@ where
         Self {
             id,
             handle: None,
-            ledger: TaskLedger::new(),
+            ledger: ScanTaskLedger::new(),
             consensus_parameters,
             scan_task_sender: None,
             scan_results_sender,
@@ -880,7 +880,7 @@ where
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let tasks_finished = self.ledger.finished_counter();
+        let scan_tasks_finished = self.ledger.finished_counter();
         let scan_results_sender = self.scan_results_sender.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
@@ -906,7 +906,7 @@ where
                 .await;
                 let _ignore_error = scan_results_sender.send((load, scan_results));
 
-                tasks_finished.fetch_add(1, atomic::Ordering::Release);
+                scan_tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
         });
 
@@ -914,7 +914,7 @@ where
         self.scan_task_sender = Some(scan_task_sender);
     }
 
-    fn activity(&self) -> TaskActivity {
+    fn activity(&self) -> RunnerActivity {
         self.ledger
             .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
@@ -924,9 +924,9 @@ where
         self.ledger.record_sent();
         self.scan_task_sender
             .as_ref()
-            .expect("run stores the sender before the scanner sends a task, and only shutdown takes it")
+            .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("the scanner sends a task only to an idle worker, whose task holds the receiver of an empty channel");
+            .expect("the scanner sends a scan task only to an idle worker, whose runner holds the receiver of an empty channel");
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -1195,56 +1195,56 @@ mod tests {
     use super::*;
 
     const GAP_LIMIT: u32 = 3;
-    const TASKS_SENT: u64 = 3;
-    const ONE_TASK: u64 = 1;
+    const SCAN_TASKS_SENT: u64 = 3;
+    const ONE_SCAN_TASK: u64 = 1;
 
     #[test]
-    fn a_running_task_with_every_sent_task_finished_is_idle() {
+    fn a_running_runner_with_every_sent_scan_task_finished_is_idle() {
         assert_eq!(
-            TaskActivity::of(TASKS_SENT, TASKS_SENT, false),
-            TaskActivity::Idle
+            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, false),
+            RunnerActivity::Idle
         );
     }
 
     #[test]
-    fn a_running_task_with_an_unfinished_task_is_busy() {
+    fn a_running_runner_with_an_unfinished_scan_task_is_busy() {
         assert_eq!(
-            TaskActivity::of(TASKS_SENT, TASKS_SENT - ONE_TASK, false),
-            TaskActivity::Busy
+            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, false),
+            RunnerActivity::Busy
         );
     }
 
     #[test]
-    fn an_ended_task_is_ended_whatever_its_counts() {
+    fn an_ended_runner_is_ended_whatever_its_counts() {
         assert_eq!(
-            TaskActivity::of(TASKS_SENT, TASKS_SENT, true),
-            TaskActivity::Ended
+            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, true),
+            RunnerActivity::Ended
         );
         assert_eq!(
-            TaskActivity::of(TASKS_SENT, TASKS_SENT - ONE_TASK, true),
-            TaskActivity::Ended
+            RunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, true),
+            RunnerActivity::Ended
         );
     }
 
     #[test]
-    fn a_sent_task_reads_busy_until_it_finishes() {
-        let mut ledger = TaskLedger::new();
+    fn a_sent_scan_task_reads_busy_until_it_finishes() {
+        let mut ledger = ScanTaskLedger::new();
         ledger.record_sent();
-        assert_eq!(ledger.activity(false), TaskActivity::Busy);
+        assert_eq!(ledger.activity(false), RunnerActivity::Busy);
         ledger
             .finished_counter()
-            .fetch_add(ONE_TASK, atomic::Ordering::Release);
-        assert_eq!(ledger.activity(false), TaskActivity::Idle);
+            .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
+        assert_eq!(ledger.activity(false), RunnerActivity::Idle);
     }
 
     #[test]
-    fn a_task_that_finishes_before_its_send_is_recorded_reads_idle_once_recorded() {
-        let mut ledger = TaskLedger::new();
+    fn a_scan_task_that_finishes_before_its_send_is_recorded_reads_idle_once_recorded() {
+        let mut ledger = ScanTaskLedger::new();
         ledger
             .finished_counter()
-            .fetch_add(ONE_TASK, atomic::Ordering::Release);
+            .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
         ledger.record_sent();
-        assert_eq!(ledger.activity(false), TaskActivity::Idle);
+        assert_eq!(ledger.activity(false), RunnerActivity::Idle);
     }
 
     /// An address map as held by the scanner, for the given external indexes.
