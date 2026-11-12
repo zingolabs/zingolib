@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- A Sync Session with `shutdown_on_completion` set no longer runs forever
+  after its last scan range is scanned. The scanner set the loader's
+  loading flag after it sent the scan task, so a loader that finished the
+  task first left the flag set, and the scan never completed. The scanner
+  and the task now each write their own count, and the loader is loading
+  while the counts differ. The scan workers follow the same rule.
 
 ## [0.7.0] - 2026-10-27
 

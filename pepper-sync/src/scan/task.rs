@@ -4,7 +4,7 @@ use std::{
     ops::Range,
     sync::{
         Arc,
-        atomic::{self, AtomicBool},
+        atomic::{self, AtomicU64},
     },
     time::Duration,
 };
@@ -40,6 +40,53 @@ const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
 use zingo_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskActivity {
+    Idle,
+    Busy,
+    Ended,
+}
+
+impl TaskActivity {
+    fn of(tasks_sent: u64, tasks_finished: u64, task_ended: bool) -> Self {
+        match (task_ended, tasks_sent == tasks_finished) {
+            (true, _) => Self::Ended,
+            (false, true) => Self::Idle,
+            (false, false) => Self::Busy,
+        }
+    }
+}
+
+struct TaskLedger {
+    sent: u64,
+    finished: Arc<AtomicU64>,
+}
+
+impl TaskLedger {
+    fn new() -> Self {
+        Self {
+            sent: 0,
+            finished: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn record_sent(&mut self) {
+        self.sent += 1;
+    }
+
+    fn finished_counter(&self) -> Arc<AtomicU64> {
+        self.finished.clone()
+    }
+
+    fn activity(&self, task_ended: bool) -> TaskActivity {
+        TaskActivity::of(
+            self.sent,
+            self.finished.load(atomic::Ordering::Acquire),
+            task_ended,
+        )
+    }
+}
 
 pub(crate) enum ScannerState {
     Verification,
@@ -219,14 +266,6 @@ where
         }
     }
 
-    pub(crate) fn idle_worker(&self) -> Option<&ScanWorker<P>> {
-        if let Some(idle_worker) = self.workers.iter().find(|worker| !worker.is_scanning()) {
-            Some(idle_worker)
-        } else {
-            None
-        }
-    }
-
     /// Shutdown worker by `worker_id`.
     ///
     /// Panics if worker with given `worker_id` is not found.
@@ -306,22 +345,26 @@ where
     }
 
     fn update_workers(&mut self) {
-        let loader = self.loader.as_ref().expect("loader should be running");
         let scanning_workers = self
             .workers
             .iter()
-            .filter(|worker| worker.is_scanning())
+            .filter(|worker| matches!(worker.activity(), TaskActivity::Busy))
             .count();
-        if loader.load.is_some()
-            && load_admitted(scanning_workers, self.load_order.held())
-            && let Some(worker) = self.idle_worker()
-        {
-            let load = loader
-                .load
-                .clone()
-                .expect("load should exist in this closure");
+        if !load_admitted(scanning_workers, self.load_order.held()) {
+            return;
+        }
+        let Some(worker) = self
+            .workers
+            .iter_mut()
+            .find(|worker| matches!(worker.activity(), TaskActivity::Idle))
+        else {
+            return;
+        };
+        let loader = self.loader.as_mut().expect(
+            "the scanner launches its loader before its first update and takes it only at shutdown",
+        );
+        if let Some(load) = loader.load.take() {
             worker.add_scan_task(load);
-            self.loader.as_mut().expect("loader should be running").load = None;
         }
     }
 
@@ -333,36 +376,41 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
-        let loader = self.loader.as_ref().expect("loader should be running");
-        if !loader.is_loading() {
-            if let Some(scan_task) = sync::state::create_scan_task(
-                &self.consensus_parameters,
-                wallet,
-                nullifier_map_limit_exceeded,
-                self.transparent_gap_addresses.clone(),
-                self.next_task_id,
-            )? {
-                self.in_flight_tasks
-                    .insert(scan_task.task_id, scan_task.scan_range.clone());
-                self.load_order
-                    .track(scan_task.task_id, scan_task.scan_range.block_range().start);
-                self.next_task_id = self.next_task_id.next();
-                loader.add_scan_task(scan_task);
-            } else if wallet.get_sync_state()?.scan_complete() {
-                // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
-                for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-                    for note in transaction.sapling_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
+        let loader = self.loader.as_mut().expect(
+            "the scanner launches its loader before its first update and takes it only at shutdown",
+        );
+        match loader.activity() {
+            TaskActivity::Idle => {
+                if let Some(scan_task) = sync::state::create_scan_task(
+                    &self.consensus_parameters,
+                    wallet,
+                    nullifier_map_limit_exceeded,
+                    self.transparent_gap_addresses.clone(),
+                    self.next_task_id,
+                )? {
+                    self.in_flight_tasks
+                        .insert(scan_task.task_id, scan_task.scan_range.clone());
+                    self.load_order
+                        .track(scan_task.task_id, scan_task.scan_range.block_range().start);
+                    self.next_task_id = self.next_task_id.next();
+                    loader.add_scan_task(scan_task);
+                } else if wallet.get_sync_state()?.scan_complete() {
+                    // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
+                    for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
+                        for note in transaction.sapling_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
+                        for note in transaction.orchard_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
+                        for note in transaction.ironwood_notes.as_mut_slice() {
+                            note.refetch_nullifier_ranges = Vec::new();
+                        }
                     }
-                    for note in transaction.orchard_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
-                    }
-                    for note in transaction.ironwood_notes.as_mut_slice() {
-                        note.refetch_nullifier_ranges = Vec::new();
-                    }
+                    self.state.completed();
                 }
-                self.state.completed();
             }
+            TaskActivity::Busy | TaskActivity::Ended => (),
         }
 
         Ok(())
@@ -375,7 +423,7 @@ where
 
 struct Loader<P> {
     handle: Option<JoinHandle<Result<(), ServerError>>>,
-    is_loading: Arc<AtomicBool>,
+    ledger: TaskLedger,
     load: Option<ScanTask>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
@@ -393,7 +441,7 @@ where
     ) -> Self {
         Self {
             handle: None,
-            is_loading: Arc::new(AtomicBool::new(false)),
+            ledger: TaskLedger::new(),
             load: None,
             consensus_parameters,
             scan_task_sender: None,
@@ -411,7 +459,7 @@ where
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_loading = self.is_loading.clone();
+        let tasks_finished = self.ledger.finished_counter();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -638,10 +686,8 @@ where
 
                 let _ignore_error = load_sender.send(scan_task).await;
 
-                is_loading.store(false, atomic::Ordering::Release);
+                tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
-
-            is_loading.store(false, atomic::Ordering::Release);
 
             Ok(())
         });
@@ -651,18 +697,19 @@ where
         self.load_receiver = Some(load_receiver);
     }
 
-    fn is_loading(&self) -> bool {
-        self.is_loading.load(atomic::Ordering::Acquire)
+    fn activity(&self) -> TaskActivity {
+        self.ledger
+            .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
+        self.ledger.record_sent();
         self.scan_task_sender
-            .clone()
-            .expect("loader should be running")
+            .as_ref()
+            .expect("run stores the sender before the scanner sends a task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("loader should never be sent multiple tasks at one time");
-        self.is_loading.store(true, atomic::Ordering::Release);
+            .expect("the scanner sends a task only to an idle loader, whose task holds the receiver of an empty channel");
     }
 
     fn update_load_store(&mut self) {
@@ -788,7 +835,7 @@ fn includes_blocks_above_floor(
 pub(crate) struct ScanWorker<P> {
     id: usize,
     handle: Option<JoinHandle<()>>,
-    is_scanning: Arc<AtomicBool>,
+    ledger: TaskLedger,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
@@ -812,7 +859,7 @@ where
         Self {
             id,
             handle: None,
-            is_scanning: Arc::new(AtomicBool::new(false)),
+            ledger: TaskLedger::new(),
             consensus_parameters,
             scan_task_sender: None,
             scan_results_sender,
@@ -833,7 +880,7 @@ where
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let is_scanning = self.is_scanning.clone();
+        let tasks_finished = self.ledger.finished_counter();
         let scan_results_sender = self.scan_results_sender.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
@@ -859,28 +906,27 @@ where
                 .await;
                 let _ignore_error = scan_results_sender.send((load, scan_results));
 
-                is_scanning.store(false, atomic::Ordering::Release);
+                tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
-
-            is_scanning.store(false, atomic::Ordering::Release);
         });
 
         self.handle = Some(handle);
         self.scan_task_sender = Some(scan_task_sender);
     }
 
-    fn is_scanning(&self) -> bool {
-        self.is_scanning.load(atomic::Ordering::Acquire)
+    fn activity(&self) -> TaskActivity {
+        self.ledger
+            .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
     }
 
-    fn add_scan_task(&self, scan_task: ScanTask) {
+    fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
+        self.ledger.record_sent();
         self.scan_task_sender
-            .clone()
-            .expect("worker should be running")
+            .as_ref()
+            .expect("run stores the sender before the scanner sends a task, and only shutdown takes it")
             .try_send(scan_task)
-            .expect("worker should never be sent multiple tasks at one time");
-        self.is_scanning.store(true, atomic::Ordering::Release);
+            .expect("the scanner sends a task only to an idle worker, whose task holds the receiver of an empty channel");
     }
 
     /// Shuts down worker by dropping the sender to the worker task and awaiting the handle.
@@ -1149,6 +1195,57 @@ mod tests {
     use super::*;
 
     const GAP_LIMIT: u32 = 3;
+    const TASKS_SENT: u64 = 3;
+    const ONE_TASK: u64 = 1;
+
+    #[test]
+    fn a_running_task_with_every_sent_task_finished_is_idle() {
+        assert_eq!(
+            TaskActivity::of(TASKS_SENT, TASKS_SENT, false),
+            TaskActivity::Idle
+        );
+    }
+
+    #[test]
+    fn a_running_task_with_an_unfinished_task_is_busy() {
+        assert_eq!(
+            TaskActivity::of(TASKS_SENT, TASKS_SENT - ONE_TASK, false),
+            TaskActivity::Busy
+        );
+    }
+
+    #[test]
+    fn an_ended_task_is_ended_whatever_its_counts() {
+        assert_eq!(
+            TaskActivity::of(TASKS_SENT, TASKS_SENT, true),
+            TaskActivity::Ended
+        );
+        assert_eq!(
+            TaskActivity::of(TASKS_SENT, TASKS_SENT - ONE_TASK, true),
+            TaskActivity::Ended
+        );
+    }
+
+    #[test]
+    fn a_sent_task_reads_busy_until_it_finishes() {
+        let mut ledger = TaskLedger::new();
+        ledger.record_sent();
+        assert_eq!(ledger.activity(false), TaskActivity::Busy);
+        ledger
+            .finished_counter()
+            .fetch_add(ONE_TASK, atomic::Ordering::Release);
+        assert_eq!(ledger.activity(false), TaskActivity::Idle);
+    }
+
+    #[test]
+    fn a_task_that_finishes_before_its_send_is_recorded_reads_idle_once_recorded() {
+        let mut ledger = TaskLedger::new();
+        ledger
+            .finished_counter()
+            .fetch_add(ONE_TASK, atomic::Ordering::Release);
+        ledger.record_sent();
+        assert_eq!(ledger.activity(false), TaskActivity::Idle);
+    }
 
     /// An address map as held by the scanner, for the given external indexes.
     fn external_addresses(
