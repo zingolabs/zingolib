@@ -669,6 +669,24 @@ pub struct WalletTransaction {
 }
 
 impl WalletTransaction {
+    pub(crate) fn refetch_nullifier_ranges_mut(
+        &mut self,
+    ) -> impl Iterator<Item = &mut Vec<Range<BlockHeight>>> {
+        let sapling = self
+            .sapling_notes
+            .iter_mut()
+            .map(|note| &mut note.refetch_nullifier_ranges);
+        let orchard = self
+            .orchard_notes
+            .iter_mut()
+            .map(|note| &mut note.refetch_nullifier_ranges);
+        let ironwood = self
+            .ironwood_notes
+            .iter_mut()
+            .map(|note| &mut note.refetch_nullifier_ranges);
+        sapling.chain(orchard).chain(ironwood)
+    }
+
     /// Transaction ID
     #[must_use]
     pub fn txid(&self) -> TxId {

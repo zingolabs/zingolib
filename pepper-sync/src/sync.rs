@@ -2494,16 +2494,11 @@ where
             [block_ranges.partition_point(|range| range.start < scan_range.block_range().end)..]
             .to_vec()
     };
-    for transaction in transactions.values_mut() {
-        for note in transaction.sapling_notes.as_mut_slice() {
-            note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
-        }
-        for note in transaction.orchard_notes.as_mut_slice() {
-            note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
-        }
-        for note in transaction.ironwood_notes.as_mut_slice() {
-            note.refetch_nullifier_ranges = refetch_nullifier_ranges.clone();
-        }
+    for ranges in transactions
+        .values_mut()
+        .flat_map(WalletTransaction::refetch_nullifier_ranges_mut)
+    {
+        *ranges = refetch_nullifier_ranges.clone();
     }
 
     wallet
