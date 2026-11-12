@@ -2,10 +2,6 @@ use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
-    sync::{
-        Arc,
-        atomic::{self, AtomicU64},
-    },
     time::Duration,
 };
 
@@ -49,46 +45,19 @@ enum ScanTaskRunnerActivity {
 }
 
 impl ScanTaskRunnerActivity {
-    fn of(scan_tasks_sent: u64, scan_tasks_finished: u64, scan_task_runner_ended: bool) -> Self {
-        match (
-            scan_task_runner_ended,
-            scan_tasks_sent == scan_tasks_finished,
-        ) {
+    fn of(arrival_awaited: bool, scan_task_runner_ended: bool) -> Self {
+        match (scan_task_runner_ended, arrival_awaited) {
             (true, _) => Self::Ended,
-            (false, true) => Self::Idle,
-            (false, false) => Self::Busy,
+            (false, false) => Self::Idle,
+            (false, true) => Self::Busy,
         }
     }
 }
 
-struct ScanTaskLedger {
-    sent: u64,
-    finished: Arc<AtomicU64>,
-}
+type LoadKey = (TaskId, BlockHeight);
 
-impl ScanTaskLedger {
-    fn new() -> Self {
-        Self {
-            sent: 0,
-            finished: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    fn record_sent(&mut self) {
-        self.sent += 1;
-    }
-
-    fn finished_counter(&self) -> Arc<AtomicU64> {
-        self.finished.clone()
-    }
-
-    fn activity(&self, scan_task_runner_ended: bool) -> ScanTaskRunnerActivity {
-        ScanTaskRunnerActivity::of(
-            self.sent,
-            self.finished.load(atomic::Ordering::Acquire),
-            scan_task_runner_ended,
-        )
-    }
+fn awaited_after<K: PartialEq>(awaited: Option<K>, arrived: &K) -> Option<K> {
+    awaited.filter(|key| key != arrived)
 }
 
 pub(crate) enum ScannerState {
@@ -178,6 +147,10 @@ where
         load: ScanLoad,
         scan_results: Result<ScanResults, ScanError>,
     ) -> Vec<(ScanLoad, Result<ScanResults, ScanError>)> {
+        let arrived = (load.task_id, load.scan_range.block_range().start);
+        for worker in &mut self.workers {
+            worker.results_arrived(&arrived);
+        }
         self.load_order.admit(load, scan_results)
     }
 
@@ -426,7 +399,7 @@ where
 
 struct Loader<P> {
     handle: Option<JoinHandle<Result<(), ServerError>>>,
-    ledger: ScanTaskLedger,
+    awaited_final_load: Option<LoadKey>,
     load: Option<ScanTask>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
@@ -444,7 +417,7 @@ where
     ) -> Self {
         Self {
             handle: None,
-            ledger: ScanTaskLedger::new(),
+            awaited_final_load: None,
             load: None,
             consensus_parameters,
             scan_task_sender: None,
@@ -462,7 +435,6 @@ where
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
         let (load_sender, load_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let scan_tasks_finished = self.ledger.finished_counter();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
 
@@ -688,8 +660,6 @@ where
                 }
 
                 let _ignore_error = load_sender.send(scan_task).await;
-
-                scan_tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
 
             Ok(())
@@ -701,13 +671,15 @@ where
     }
 
     fn activity(&self) -> ScanTaskRunnerActivity {
-        self.ledger
-            .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
+        ScanTaskRunnerActivity::of(
+            self.awaited_final_load.is_some(),
+            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
+        )
     }
 
     fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to loader:\n{:#?}", &scan_task);
-        self.ledger.record_sent();
+        self.awaited_final_load = Some((scan_task.task_id, scan_task.scan_range.block_range().end));
         self.scan_task_sender
             .as_ref()
             .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
@@ -720,12 +692,12 @@ where
             .load_receiver
             .as_mut()
             .expect("loader should be running");
-        if self.load.is_none() && !load_receiver.is_empty() {
-            self.load = Some(
-                load_receiver
-                    .try_recv()
-                    .expect("channel should be non-empty!"),
-            );
+        if self.load.is_none()
+            && let Ok(load) = load_receiver.try_recv()
+        {
+            let arrived = (load.task_id, load.scan_range.block_range().end);
+            self.awaited_final_load = awaited_after(self.awaited_final_load, &arrived);
+            self.load = Some(load);
         }
     }
 
@@ -838,7 +810,7 @@ fn includes_blocks_above_floor(
 pub(crate) struct ScanWorker<P> {
     id: usize,
     handle: Option<JoinHandle<()>>,
-    ledger: ScanTaskLedger,
+    awaited_results: Option<LoadKey>,
     consensus_parameters: P,
     scan_task_sender: Option<mpsc::Sender<ScanTask>>,
     scan_results_sender: mpsc::UnboundedSender<(ScanLoad, Result<ScanResults, ScanError>)>,
@@ -862,7 +834,7 @@ where
         Self {
             id,
             handle: None,
-            ledger: ScanTaskLedger::new(),
+            awaited_results: None,
             consensus_parameters,
             scan_task_sender: None,
             scan_results_sender,
@@ -883,7 +855,6 @@ where
     fn run(&mut self, max_outputs: usize) {
         let (scan_task_sender, mut scan_task_receiver) = mpsc::channel::<ScanTask>(1);
 
-        let scan_tasks_finished = self.ledger.finished_counter();
         let scan_results_sender = self.scan_results_sender.clone();
         let fetch_request_sender = self.fetch_request_sender.clone();
         let consensus_parameters = self.consensus_parameters.clone();
@@ -908,8 +879,6 @@ where
                 )
                 .await;
                 let _ignore_error = scan_results_sender.send((load, scan_results));
-
-                scan_tasks_finished.fetch_add(1, atomic::Ordering::Release);
             }
         });
 
@@ -918,13 +887,19 @@ where
     }
 
     fn activity(&self) -> ScanTaskRunnerActivity {
-        self.ledger
-            .activity(self.handle.as_ref().is_none_or(JoinHandle::is_finished))
+        ScanTaskRunnerActivity::of(
+            self.awaited_results.is_some(),
+            self.handle.as_ref().is_none_or(JoinHandle::is_finished),
+        )
+    }
+
+    fn results_arrived(&mut self, arrived: &LoadKey) {
+        self.awaited_results = awaited_after(self.awaited_results, arrived);
     }
 
     fn add_scan_task(&mut self, scan_task: ScanTask) {
         tracing::trace!("Adding scan task to worker {}:\n{:#?}", self.id, &scan_task);
-        self.ledger.record_sent();
+        self.awaited_results = Some((scan_task.task_id, scan_task.scan_range.block_range().start));
         self.scan_task_sender
             .as_ref()
             .expect("run stores the sender before the scanner sends a scan task, and only shutdown takes it")
@@ -1198,56 +1173,65 @@ mod tests {
     use super::*;
 
     const GAP_LIMIT: u32 = 3;
-    const SCAN_TASKS_SENT: u64 = 3;
-    const ONE_SCAN_TASK: u64 = 1;
+    const AWAITED_HEIGHT: u32 = 120;
+    const OTHER_HEIGHT: u32 = 110;
+
+    fn load_key(task_id: TaskId, height: u32) -> LoadKey {
+        (task_id, BlockHeight::from_u32(height))
+    }
 
     #[test]
-    fn a_running_scan_task_runner_with_every_sent_scan_task_finished_is_idle() {
+    fn a_running_scan_task_runner_that_awaits_no_arrival_is_idle() {
         assert_eq!(
-            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, false),
+            ScanTaskRunnerActivity::of(false, false),
             ScanTaskRunnerActivity::Idle
         );
     }
 
     #[test]
-    fn a_running_scan_task_runner_with_an_unfinished_scan_task_is_busy() {
+    fn a_running_scan_task_runner_that_awaits_an_arrival_is_busy() {
         assert_eq!(
-            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, false),
+            ScanTaskRunnerActivity::of(true, false),
             ScanTaskRunnerActivity::Busy
         );
     }
 
     #[test]
-    fn an_ended_scan_task_runner_is_ended_whatever_its_counts() {
+    fn an_ended_scan_task_runner_is_ended_whatever_it_awaits() {
         assert_eq!(
-            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT, true),
+            ScanTaskRunnerActivity::of(false, true),
             ScanTaskRunnerActivity::Ended
         );
         assert_eq!(
-            ScanTaskRunnerActivity::of(SCAN_TASKS_SENT, SCAN_TASKS_SENT - ONE_SCAN_TASK, true),
+            ScanTaskRunnerActivity::of(true, true),
             ScanTaskRunnerActivity::Ended
         );
     }
 
     #[test]
-    fn a_sent_scan_task_reads_busy_until_it_finishes() {
-        let mut ledger = ScanTaskLedger::new();
-        ledger.record_sent();
-        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Busy);
-        ledger
-            .finished_counter()
-            .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
-        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Idle);
+    fn the_awaited_arrival_ends_the_wait() {
+        let awaited = load_key(TaskId::first(), AWAITED_HEIGHT);
+        assert_eq!(awaited_after(Some(awaited), &awaited), None);
     }
 
     #[test]
-    fn a_scan_task_that_finishes_before_its_send_is_recorded_reads_idle_once_recorded() {
-        let mut ledger = ScanTaskLedger::new();
-        ledger
-            .finished_counter()
-            .fetch_add(ONE_SCAN_TASK, atomic::Ordering::Release);
-        ledger.record_sent();
-        assert_eq!(ledger.activity(false), ScanTaskRunnerActivity::Idle);
+    fn an_arrival_at_another_height_keeps_the_wait() {
+        let awaited = load_key(TaskId::first(), AWAITED_HEIGHT);
+        let arrived = load_key(TaskId::first(), OTHER_HEIGHT);
+        assert_eq!(awaited_after(Some(awaited), &arrived), Some(awaited));
+    }
+
+    #[test]
+    fn an_arrival_of_another_scan_task_keeps_the_wait() {
+        let awaited = load_key(TaskId::first(), AWAITED_HEIGHT);
+        let arrived = load_key(TaskId::first().next(), AWAITED_HEIGHT);
+        assert_eq!(awaited_after(Some(awaited), &arrived), Some(awaited));
+    }
+
+    #[test]
+    fn an_arrival_with_nothing_awaited_leaves_nothing_awaited() {
+        let arrived = load_key(TaskId::first(), AWAITED_HEIGHT);
+        assert_eq!(awaited_after(None, &arrived), None);
     }
 
     /// An address map as held by the scanner, for the given external indexes.
