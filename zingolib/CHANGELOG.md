@@ -29,15 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` before first contact. Every proposal, shield, OP_RETURN send, and
   migration now prices with the effective fee rule, whose marginal fee is
   the backend's reported standard fee clamped between the ZIP 317 standard
-  marginal fee of 5,000 zatoshi per logical action and the weight-ratio cap
-  over it (4 × 5,000 = 20,000), so the wallet never pays below the ZIP 317
-  standard and never pays past the point where extra fee stops buying
-  inclusion. A report whose fee-estimator version is not the static one is
-  cached but never priced, and where 8.0.0 priced every transaction by the
-  standard rule alone this release keeps that rule whenever the backend
-  does not answer `GetStandardFee` (an old lightwalletd answers
-  `Unimplemented`) or any fetch fails: the connect itself never fails on
-  the fee, and there is no retry loop, the next connect fetches again.
+  marginal fee in force at the expected mining height and the weight-ratio
+  cap over it, so the wallet never pays below the standard and never pays
+  past the point where extra fee stops buying inclusion. The revision in
+  force follows ZIP 2009: Revision 1 prices at 5,000 zatoshi per logical
+  action with a weight-ratio cap of 4 (20,000), and Revision 2 prices at
+  1,000 zatoshi with a cap of 10 (10,000) from Mainnet block 3,590,000
+  (expected 19 November 2026); Testnet and a regtest chain reduce with
+  NU7 itself. A wallet that cannot name the mining height, a report whose
+  fee-estimator version is not the static one, a backend that does not
+  answer `GetStandardFee` (an old lightwalletd answers `Unimplemented`),
+  and any fetch failure all keep the revision's standard rule, and where
+  8.0.0 priced every transaction by the standard rule alone this release
+  keeps that posture: the connect itself never fails on the fee, and
+  there is no retry loop, the next connect fetches again.
   Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
   5,000 now raises the marginal fee to its report, at most to 20,000.
 

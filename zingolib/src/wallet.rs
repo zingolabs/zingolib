@@ -324,12 +324,17 @@ impl LightWallet {
 
     /// The fee rule every proposal, shield, OP_RETURN send, and migration
     /// prices with: ZIP 317 with the marginal fee raised to the node's
-    /// reported standard fee. The single production definition; see
+    /// reported standard fee, under the revision in force at the expected
+    /// mining height. The single production definition; see
     /// [`fees::effective_fee_rule`].
     pub(crate) fn effective_fee_rule(
         &self,
     ) -> zcash_primitives::transaction::fees::zip317::FeeRule {
-        fees::effective_fee_rule(self.standard_fee)
+        fees::effective_fee_rule(
+            self.standard_fee,
+            &self.chain_type,
+            self.sync_state.last_known_chain_height(),
+        )
     }
 
     /// Returns the wallet's mnemonic for internal operations.

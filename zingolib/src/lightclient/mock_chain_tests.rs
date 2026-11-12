@@ -11,9 +11,10 @@ use zingo_common_components::protocol::ActivationHeights;
 use crate::check_client_balances;
 use crate::lightclient::LightClient;
 use crate::testutils::lightclient::{from_inputs, get_base_address};
+use crate::testutils::mock_activation_heights_with;
 #[cfg(feature = "nym")]
 use crate::testutils::mock_indexer::faucet_funding_transaction_on;
-use crate::testutils::mock_indexer::{Fault, MockNet, Rpc};
+use crate::testutils::mock_indexer::{Fault, MockChain, MockNet, Rpc};
 use crate::testutils::synthetic_wallet;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::fees::StandardFeeReport;
@@ -28,6 +29,9 @@ const REWARD: Zatoshis = Zatoshis::const_from_u64(REWARD_ZATS);
 // Above every twin's funding height, and cheap to mine past when a twin
 // crosses the activation.
 const DEFERRED_NU6_3: u32 = 130;
+// A few blocks past genesis, enough for a synced wallet to know the mining
+// height without funding or maturity bookkeeping.
+const SYNCED_TIP_HEIGHT: u32 = 10;
 /// The ZIP 318 anchor bucket interval, the block count of
 /// `AnchorRetentionInterval::default()`, which is not a `const fn`.
 const ANCHOR_RETENTION_INTERVAL: u32 = 144;
@@ -489,10 +493,12 @@ async fn self_send_to_t_displays_as_one_transaction() {
 /// Transmitted-to-Confirmed transition of an unmined send.
 ///
 /// One deliberate divergence from the live literals: the second
-/// funding wave's fee is Some(10_000) here, not the live Some(20_000).
+/// funding wave's fee is Some(2_000) here, not the live Some(20_000).
 /// That fee belongs to the FAUCET's economics (its live note pool is
-/// fragmented by earlier waves. The mock faucet is fresh each wave) and
-/// says nothing about the recipient behavior this test protects.
+/// fragmented by earlier waves, and the live literals predate the
+/// revision 2 marginal the mock chain is past. The mock faucet is fresh
+/// each wave) and says nothing about the recipient behavior this test
+/// protects.
 #[tokio::test]
 async fn send_to_transparent_and_sapling_maintain_balance() {
     use zcash_protocol::consensus::BlockHeight;
@@ -536,7 +542,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         blockheight: BlockHeight::from_u32(2),
         kind: TransactionKind::Received,
         value: recipient_initial_funds,
-        fee: Some(10_000),
+        fee: Some(2_000),
         zec_price: None,
         pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
@@ -697,7 +703,7 @@ async fn send_to_transparent_and_sapling_maintain_balance() {
         // The documented divergence: the mock faucet is fresh, so its
         // funding send is the plain two-action 10_000, not the live
         // fragmented-faucet 20_000.
-        fee: Some(10_000),
+        fee: Some(2_000),
         zec_price: None,
         pools_sent_from: vec![],
         ironwood_notes: vec![BasicNoteSummary::from_parts(
@@ -2026,9 +2032,9 @@ async fn sync_rejects_server_below_minimum_lightwallet_protocol_version() {
 }
 
 /// The report fetched at first contact drives the effective fee rule. A
-/// backend reporting a marginal fee above the ZIP 317 standard raises the
-/// rule to it; the mock chain's ZIP 317 mempool policy still accepts only
-/// transactions that pay it.
+/// backend reporting a marginal fee above the revision's standard raises
+/// the rule to it; the mock chain's ZIP 317 mempool policy still accepts
+/// only transactions that pay it.
 #[tokio::test]
 async fn a_backend_fee_above_standard_raises_the_effective_rule() {
     let mut net = MockNet::launch().await;
@@ -2053,52 +2059,95 @@ async fn a_backend_fee_above_standard_raises_the_effective_rule() {
     );
 }
 
-/// A backend reporting the ZIP 317 standard marginal fee, or less, leaves
-/// the standard rule standing.
+/// The mock chain reduces at NU7, so the revision 2 band runs from 1,000
+/// zatoshi: any backend report inside it prices as reported, and one below
+/// the band clamps up to the reduced standard. The clients sync to the tip
+/// first, the moment the wallet knows the mining height and switches
+/// revisions.
 #[tokio::test]
-async fn a_backend_fee_at_or_below_standard_keeps_the_standard_rule() {
-    for fee_zat in [5_000, 1_000] {
+async fn a_backend_fee_in_the_revision_2_band_is_honored() {
+    for fee_zat in [1_000, 5_000] {
         let mut net = MockNet::launch().await;
+        net.chain.write().await.mine_empty_blocks(SYNCED_TIP_HEIGHT);
         net.chain.write().await.standard_fee = StandardFeeReport {
             fee_zat,
             estimator_version: 0,
         };
-        let client = net.client(HOSPITAL_MUSEUM, None).await;
+        let mut client = net
+            .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+            .await;
+        client.sync().await.expect("continuous sync launches");
+        wait_until_scanned_to(&client, SYNCED_TIP_HEIGHT).await;
 
         let rule = client.wallet().read().await.effective_fee_rule();
-        assert_eq!(rule.marginal_fee().into_u64(), 5_000);
+        assert_eq!(rule.marginal_fee().into_u64(), fee_zat);
     }
+
+    let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(SYNCED_TIP_HEIGHT);
+    net.chain.write().await.standard_fee = StandardFeeReport {
+        fee_zat: 100,
+        estimator_version: 0,
+    };
+    let mut client = net
+        .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, SYNCED_TIP_HEIGHT).await;
+
+    let rule = client.wallet().read().await.effective_fee_rule();
+    assert_eq!(
+        rule.marginal_fee().into_u64(),
+        1_000,
+        "the wallet never pays under the revision in force"
+    );
 }
 
 /// An old backend answers `Unimplemented`: the connect still succeeds, no
-/// report is cached, and the standard rule prices every proposal.
+/// report is cached, and once the wallet knows the mining height the
+/// revision the chain is in prices every proposal.
 #[tokio::test]
 async fn an_unimplemented_standard_fee_keeps_the_standard_rule() {
     use zaino_proto::tonic::Code;
 
     let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(SYNCED_TIP_HEIGHT);
     net.chain.write().await.faults.inject(
         Rpc::StandardFee,
         Fault::Fail(Code::Unimplemented, "unknown method".to_string()),
     );
-    let client = net.client(HOSPITAL_MUSEUM, None).await;
+    let mut client = net
+        .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, SYNCED_TIP_HEIGHT).await;
 
     assert_eq!(client.standard_fee().await, None);
     let rule = client.wallet().read().await.effective_fee_rule();
-    assert_eq!(rule.marginal_fee().into_u64(), 5_000);
+    assert_eq!(
+        rule.marginal_fee().into_u64(),
+        1_000,
+        "the mock chain is past the reduction, so its standard marginal is 1,000"
+    );
 }
 
 /// A report the wallet cannot interpret — an estimator version whose
 /// semantics it does not know — is cached as the backend's answer but never
-/// priced: the standard rule stands.
+/// priced: once the wallet knows the height, the revision's standard rule
+/// stands.
 #[tokio::test]
 async fn an_unknown_estimator_version_is_never_priced() {
     let mut net = MockNet::launch().await;
+    net.chain.write().await.mine_empty_blocks(SYNCED_TIP_HEIGHT);
     net.chain.write().await.standard_fee = StandardFeeReport {
         fee_zat: 7_000,
         estimator_version: 1,
     };
-    let client = net.client(HOSPITAL_MUSEUM, None).await;
+    let mut client = net
+        .client(HOSPITAL_MUSEUM, Some(continuous_sync_wallet_settings()))
+        .await;
+    client.sync().await.expect("continuous sync launches");
+    wait_until_scanned_to(&client, SYNCED_TIP_HEIGHT).await;
 
     assert_eq!(
         client.standard_fee().await,
@@ -2107,6 +2156,25 @@ async fn an_unknown_estimator_version_is_never_priced() {
             estimator_version: 1,
         })
     );
+    let rule = client.wallet().read().await.effective_fee_rule();
+    assert_eq!(rule.marginal_fee().into_u64(), 1_000);
+}
+
+/// A chain that has not reached the reduction keeps the revision 1
+/// parameters: a 1,000-zatoshi report clamps up to the 5,000 standard,
+/// because a wallet that underpays may not relay.
+#[tokio::test]
+async fn a_1_000_report_never_underpays_before_the_reduction() {
+    let mut net = MockNet::launch_with(MockChain::with_activation_heights(
+        mock_activation_heights_with(|era| era.set_nu7(None)),
+    ))
+    .await;
+    net.chain.write().await.standard_fee = StandardFeeReport {
+        fee_zat: 1_000,
+        estimator_version: 0,
+    };
+    let client = net.client(HOSPITAL_MUSEUM, None).await;
+
     let rule = client.wallet().read().await.effective_fee_rule();
     assert_eq!(rule.marginal_fee().into_u64(), 5_000);
 }

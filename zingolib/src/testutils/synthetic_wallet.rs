@@ -65,12 +65,17 @@ pub struct SyntheticWalletBuilder {
 
 impl SyntheticWalletBuilder {
     /// A regtest wallet for `mnemonic` with birthday 1. The chain is
-    /// considered fully scanned through [`Self::tip`] (default 20).
+    /// considered fully scanned through [`Self::tip`] (default 20). The
+    /// schedule defers NU7, so the suite prices at the revision 1 standard
+    /// its pinned fee literals were derived under; the wallet carries no
+    /// backend report and would otherwise price at the reduced standard.
     pub fn new(mnemonic: &str) -> Self {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
-            activation_heights: crate::testutils::mock_activation_heights(),
+            activation_heights: crate::testutils::mock_activation_heights_with(|era| {
+                era.set_nu7(None)
+            }),
             ironwood_note_values: Vec::new(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
