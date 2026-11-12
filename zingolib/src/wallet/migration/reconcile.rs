@@ -450,7 +450,10 @@ impl ChainView for crate::wallet::LightWallet {
                     .iter()
                     .find(|note| note.output_id() == output_id)
             })?;
-        let spending_txid = note.spending_transaction()?;
+        let spending_txid = match note.spending_transaction() {
+            Some(spending_txid) => spending_txid,
+            None => *pepper_sync::pending_spends(&self.wallet_transactions).get(&output_id)?,
+        };
         Some((
             spending_txid,
             self.transaction_confirmed_height(&spending_txid),
@@ -476,6 +479,7 @@ impl ChainView for crate::wallet::LightWallet {
     fn orchard_confirmed_spendable(&self, account: zip32::AccountId) -> u64 {
         use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
 
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         self.wallet_transactions
             .values()
             .filter(|transaction| transaction.status().is_confirmed())
@@ -484,6 +488,7 @@ impl ChainView for crate::wallet::LightWallet {
             })
             .filter(|note| {
                 note.spending_transaction().is_none()
+                    && !pending_spends.contains_key(&note.output_id())
                     && note.key_id().account_id() == account
                     && note.note().version() == orchard::note::NoteVersion::V2
             })

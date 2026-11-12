@@ -89,5 +89,9 @@ macro_rules! check_client_balances {
             balance.confirmed_transparent_balance.unwrap().into_u64(),
             $transparent
         );
+        {
+            let invariant_wallet = $client.wallet().read().await;
+            $crate::wallet::invariants::assert_wallet_invariants(&invariant_wallet);
+        }
     };
 }

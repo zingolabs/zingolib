@@ -61,6 +61,7 @@ pub fn mock_activation_heights_deferring_nu6_3(activation: u32) -> ActivationHei
 pub mod assertions;
 pub mod chain_generics;
 pub mod fee_tables;
+pub mod invariants;
 pub mod lightclient;
 pub mod macros;
 pub mod migration;
