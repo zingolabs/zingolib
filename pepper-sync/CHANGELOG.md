@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Breaking:** `wallet::WalletTransaction` is renamed to
+  `wallet::TransactionRecord`. The type holds the wallet's record of a
+  transaction, whose status can be calculated, transmitted, in the mempool,
+  confirmed or failed, so it is not always a transaction on the chain. A
+  consumer replaces the name; no field or method changes.
 
 ### Deprecated
 

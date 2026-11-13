@@ -149,6 +149,6 @@ pub async fn lookup_statuses(
         wallet
             .wallet_transactions
             .get(&txid)
-            .map(pepper_sync::wallet::WalletTransaction::status)
+            .map(pepper_sync::wallet::TransactionRecord::status)
     })
 }

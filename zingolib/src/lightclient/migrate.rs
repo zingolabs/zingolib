@@ -3369,7 +3369,7 @@ mod tests {
     /// reporting the migration vanished mid-split.
     #[tokio::test]
     async fn mid_round_status_projects_over_pending_outputs() {
-        use pepper_sync::wallet::{OutputId, WalletTransaction};
+        use pepper_sync::wallet::{OutputId, TransactionRecord};
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
@@ -3404,7 +3404,7 @@ mod tests {
             .collect();
         wallet.wallet_transactions.insert(
             round_txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            TransactionRecord::new_for_test_with_orchard_notes(
                 round_txid,
                 ConfirmationStatus::Transmitted(BlockHeight::from_u32(361)),
                 outputs,

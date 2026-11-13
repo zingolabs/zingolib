@@ -20,7 +20,7 @@ use crate::{
     keys::transparent::TransparentAddressId,
     sync::ScanPriority,
     utils::{block, transaction},
-    wallet::{NullifierMap, OutputId, ScanTarget, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, ScanTarget, TransactionRecord, WalletBlock},
     witness::{self, LocatedTreeData, WitnessData},
 };
 
@@ -101,7 +101,7 @@ pub(crate) struct ScanResults {
     pub(crate) nullifiers: NullifierMap,
     pub(crate) outpoints: BTreeMap<OutputId, ScanTarget>,
     pub(crate) scanned_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    pub(crate) wallet_transactions: HashMap<TxId, WalletTransaction>,
+    pub(crate) wallet_transactions: HashMap<TxId, TransactionRecord>,
     /// External scan targets whose transaction the server did not serve, to drop from the sync state.
     pub(crate) dropped_scan_targets: BTreeSet<ScanTarget>,
     pub(crate) sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,

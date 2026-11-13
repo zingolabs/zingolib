@@ -115,7 +115,7 @@ impl TxMap {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
+                LegacyTransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
                     .unwrap(),
             ))
         })?;
@@ -175,16 +175,18 @@ impl TxMap {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
+                LegacyTransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
-        let _mempool: Vec<(TxId, TransactionRecord)> = if version <= 20 {
+        let _mempool: Vec<(TxId, LegacyTransactionRecord)> = if version <= 20 {
             Vector::read_collected_mut(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
                 r.read_exact(&mut txid_bytes)?;
-                let transaction_metadata =
-                    TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?;
+                let transaction_metadata = LegacyTransactionRecord::read(
+                    r,
+                    (wallet_capability, old_inc_witnesses.as_mut()),
+                )?;
 
                 Ok((TxId::from_bytes(txid_bytes), transaction_metadata))
             })?
@@ -226,18 +228,18 @@ impl TxMap {
 }
 
 /// A convenience wrapper, to impl behavior on.
-pub struct TransactionRecordsById(pub HashMap<TxId, TransactionRecord>);
+pub struct TransactionRecordsById(pub HashMap<TxId, LegacyTransactionRecord>);
 
 impl TransactionRecordsById {
     /// Constructs a `TransactionRecordsById` from a `HashMap`
-    pub fn from_map(map: HashMap<TxId, TransactionRecord>) -> Self {
+    pub fn from_map(map: HashMap<TxId, LegacyTransactionRecord>) -> Self {
         TransactionRecordsById(map)
     }
 }
 
 ///  Everything (SOMETHING) about a transaction
 #[allow(dead_code)]
-pub struct TransactionRecord {
+pub struct LegacyTransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
     pub status: zingo_status::confirmation_status::ConfirmationStatus,
     /// Timestamp of Tx. Added in v4
@@ -267,7 +269,7 @@ pub struct TransactionRecord {
     pub price: Option<f64>,
 }
 
-impl TransactionRecord {
+impl LegacyTransactionRecord {
     /// TODO: Add Doc Comment Here!
     #[allow(clippy::type_complexity)]
     pub fn read<R: Read>(

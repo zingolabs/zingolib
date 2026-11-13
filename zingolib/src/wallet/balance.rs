@@ -2,7 +2,7 @@
 
 use pepper_sync::wallet::{
     IronwoodNote, KeyIdInterface, NoteInterface, OrchardNote, OutputInterface, SaplingNote,
-    TransparentCoin, WalletTransaction,
+    TransactionRecord, TransparentCoin,
 };
 use zcash_client_backend::data_api::WalletRead;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
@@ -166,7 +166,7 @@ impl LightWallet {
     ///   [`COINBASE_MATURITY_BLOCKS`] confirmations
     fn is_transparent_output_mature<Op: OutputInterface>(
         &self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
     ) -> bool {
         // Only transparent outputs need coinbase maturity check
         if Op::POOL_TYPE != PoolType::Transparent {
@@ -298,7 +298,7 @@ impl LightWallet {
     ) -> Result<Zatoshis, BalanceError>
     where
         Op: OutputInterface,
-        F: Fn(&Op, &WalletTransaction) -> bool,
+        F: Fn(&Op, &TransactionRecord) -> bool,
     {
         match &self
             .unified_key_store
@@ -366,7 +366,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |_output, transaction: &WalletTransaction| {
+            |_output, transaction: &TransactionRecord| {
                 transaction.status().is_confirmed()
                     && self.is_transparent_output_mature::<Op>(transaction)
             },
@@ -391,7 +391,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |output, transaction: &WalletTransaction| {
+            |output, transaction: &TransactionRecord| {
                 Op::value(output) > MARGINAL_FEE.into_u64()
                     && transaction.status().is_confirmed()
                     && self.is_transparent_output_mature::<Op>(transaction)
@@ -417,7 +417,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |_, transaction: &WalletTransaction| transaction.status().is_pending(),
+            |_, transaction: &TransactionRecord| transaction.status().is_pending(),
             account_id,
         )
     }
@@ -439,7 +439,7 @@ impl LightWallet {
         Op: OutputInterface,
     {
         self.get_filtered_balance::<Op, _>(
-            |note, transaction: &WalletTransaction| {
+            |note, transaction: &TransactionRecord| {
                 Op::value(note) > MARGINAL_FEE.into_u64() && transaction.status().is_pending()
             },
             account_id,
@@ -483,7 +483,7 @@ impl LightWallet {
         };
 
         let spendable_balance = self.get_filtered_balance::<N, _>(
-            |note, transaction: &WalletTransaction| {
+            |note, transaction: &TransactionRecord| {
                 N::value(note) > MARGINAL_FEE.into_u64()
                     && transaction.status().is_confirmed()
                     && transaction.status().get_height() <= anchor_height

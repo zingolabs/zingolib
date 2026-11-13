@@ -20,8 +20,8 @@ use crate::{
     scan::task::{ScanTask, TaskId},
     sync::ScanRange,
     wallet::{
-        InitialSyncState, ScanTarget, ScanTargetOrigin, SyncState, TreeBounds, WalletBlock,
-        WalletTransaction,
+        InitialSyncState, ScanTarget, ScanTargetOrigin, SyncState, TransactionRecord, TreeBounds,
+        WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncWallet},
     },
 };
@@ -1438,7 +1438,7 @@ pub(super) fn update_found_note_shard_priority(
     consensus_parameters: &impl consensus::Parameters,
     sync_state: &mut SyncState,
     shielded_protocol: ShieldedPool,
-    wallet_transaction: &WalletTransaction,
+    wallet_transaction: &TransactionRecord,
 ) {
     let found_note = match shielded_protocol {
         ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
@@ -1628,7 +1628,7 @@ mod tests {
         use zingo_status::confirmation_status::ConfirmationStatus;
 
         use super::*;
-        use crate::wallet::{OutputId, ScanTargetOrigin, WalletNote, WalletTransaction};
+        use crate::wallet::{OutputId, ScanTargetOrigin, TransactionRecord, WalletNote};
 
         fn height(height: u32) -> BlockHeight {
             BlockHeight::from_u32(height)
@@ -1642,7 +1642,7 @@ mod tests {
             ScanRange::from_parts(range(start, end), priority)
         }
 
-        fn sapling_transaction(txid: TxId, block_height: u32) -> WalletTransaction {
+        fn sapling_transaction(txid: TxId, block_height: u32) -> TransactionRecord {
             let (_, recipient) = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32])
                 .expect("a 32 byte seed derives a key")
                 .default_address();
@@ -1658,7 +1658,7 @@ mod tests {
                 Memo::Empty,
                 None,
             );
-            WalletTransaction::new_for_test(
+            TransactionRecord::new_for_test(
                 txid,
                 ConfirmationStatus::Confirmed(height(block_height)),
             )

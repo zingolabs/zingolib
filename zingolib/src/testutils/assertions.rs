@@ -2,7 +2,7 @@
 
 use nonempty::NonEmpty;
 
-use pepper_sync::wallet::WalletTransaction;
+use pepper_sync::wallet::TransactionRecord;
 use zcash_client_backend::proposal::{Proposal, Step};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::value::Zatoshis;
@@ -21,7 +21,7 @@ pub enum ProposalToTransactionRecordComparisonError {
 /// compares a proposal with a fulfilled record and returns the agreed fee
 pub fn compare_fee<NoteRef>(
     wallet: &LightWallet,
-    transaction: &WalletTransaction,
+    transaction: &TransactionRecord,
     step: &Step<NoteRef>,
 ) -> Result<Zatoshis, ProposalToTransactionRecordComparisonError> {
     let recorded_fee_result = wallet.calculate_transaction_fee(transaction);
@@ -75,7 +75,7 @@ pub async fn for_each_proposed_transaction<N, Res>(
     client: &LightClient,
     proposal: &Proposal<zcash_primitives::transaction::fees::zip317::FeeRule, N>,
     txids: &NonEmpty<TxId>,
-    f: fn(&LightWallet, &WalletTransaction, &Step<N>) -> Res,
+    f: fn(&LightWallet, &TransactionRecord, &Step<N>) -> Res,
 ) -> Vec<Result<Res, LookupRecordsPairStepsError>> {
     let wallet = client.wallet().read().await;
 
