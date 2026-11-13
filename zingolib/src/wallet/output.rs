@@ -1,8 +1,11 @@
 //! All things needed to create, manaage, and use notes
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use pepper_sync::wallet::IronwoodNote;
 use pepper_sync::wallet::KeyIdInterface;
+use pepper_sync::wallet::OrchardNote;
+use pepper_sync::wallet::SaplingNote;
 use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
@@ -19,7 +22,6 @@ use pepper_sync::wallet::TransparentCoin;
 use pepper_sync::wallet::WalletTransaction;
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;
-use zingo_status::confirmation_status::ConfirmationStatus;
 
 pub mod query;
 
@@ -129,6 +131,62 @@ impl std::fmt::Display for SpendStatus {
     }
 }
 
+impl From<pepper_sync::PendingSpend> for SpendStatus {
+    fn from(spend: pepper_sync::PendingSpend) -> Self {
+        match spend.stage {
+            pepper_sync::PendingStage::Calculated => Self::CalculatedSpent(spend.txid),
+            pepper_sync::PendingStage::Transmitted => Self::TransmittedSpent(spend.txid),
+            pepper_sync::PendingStage::Mempool => Self::MempoolSpent(spend.txid),
+        }
+    }
+}
+
+impl From<pepper_sync::SpendState> for SpendStatus {
+    fn from(state: pepper_sync::SpendState) -> Self {
+        match state {
+            pepper_sync::SpendState::Unspent => Self::Unspent,
+            pepper_sync::SpendState::PendingSpent(spend)
+            | pepper_sync::SpendState::ContestedPendingSpent { leading: spend, .. } => spend.into(),
+            pepper_sync::SpendState::ConfirmedSpent(txid)
+            | pepper_sync::SpendState::SpentByUnheldTransaction(txid)
+            | pepper_sync::SpendState::SpentByFailedTransaction(txid) => Self::Spent(txid),
+        }
+    }
+}
+
+fn sum_queried_pool_outputs<Op: OutputInterface>(
+    spends: &pepper_sync::SpendView<'_>,
+    transaction: &WalletTransaction,
+    spend_status: OutputSpendStatusQuery,
+) -> u64 {
+    Op::transaction_outputs(transaction)
+        .iter()
+        .filter(|&output| spend_status.matches(&spends.state(output)))
+        .map(OutputInterface::value)
+        .sum()
+}
+
+fn sum_queried_transaction_outputs(
+    spends: &pepper_sync::SpendView<'_>,
+    transaction: &WalletTransaction,
+    query: OutputQuery,
+) -> u64 {
+    let mut sum = 0;
+    if query.transparent() {
+        sum += sum_queried_pool_outputs::<TransparentCoin>(spends, transaction, query.spend_status);
+    }
+    if query.sapling() {
+        sum += sum_queried_pool_outputs::<SaplingNote>(spends, transaction, query.spend_status);
+    }
+    if query.orchard() {
+        sum += sum_queried_pool_outputs::<OrchardNote>(spends, transaction, query.spend_status);
+    }
+    if query.ironwood() {
+        sum += sum_queried_pool_outputs::<IronwoodNote>(spends, transaction, query.spend_status);
+    }
+    sum
+}
+
 impl LightWallet {
     /// Returns the transaction the given `output` belongs to.
     pub fn output_transaction(&self, output: &impl OutputInterface) -> &WalletTransaction {
@@ -137,40 +195,14 @@ impl LightWallet {
             .expect("transaction should exist in the wallet")
     }
 
+    #[must_use]
+    pub fn spend_view(&self) -> pepper_sync::SpendView<'_> {
+        pepper_sync::SpendView::new(&self.wallet_transactions)
+    }
+
     /// Returns [`self::SpendStatus`] for the given `output`.
-    pub fn output_spend_status(
-        &self,
-        output: &impl OutputInterface,
-        pending_spends: &HashMap<OutputId, TxId>,
-    ) -> SpendStatus {
-        if let Some(txid) = output.spending_transaction() {
-            match self
-                .wallet_transactions
-                .get(&txid)
-                .expect("transaction should exist in the wallet")
-                .status()
-            {
-                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(txid),
-                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
-                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
-                ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
-                ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
-            }
-        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
-            match self
-                .wallet_transactions
-                .get(txid)
-                .expect("transaction should exist in the wallet")
-                .status()
-            {
-                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(*txid),
-                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(*txid),
-                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(*txid),
-                _ => SpendStatus::Unspent,
-            }
-        } else {
-            SpendStatus::Unspent
-        }
+    pub fn output_spend_status(&self, output: &impl OutputInterface) -> SpendStatus {
+        self.spend_view().state(output).into()
     }
 
     /// Gets all outputs of a given type in the wallet.
@@ -185,16 +217,11 @@ impl LightWallet {
     /// Sum the values of all outputs in the wallet which match the given `query`.
     #[must_use]
     pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
-        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = self.spend_view();
         self.wallet_transactions
             .values()
-            .fold(0, |acc, transaction| {
-                acc + self.sum_queried_transaction_output_values(
-                    transaction,
-                    query,
-                    &pending_spends,
-                )
-            })
+            .map(|transaction| sum_queried_transaction_outputs(&spends, transaction, query))
+            .sum()
     }
 
     /// Sum the values of all outputs in the `transaction` which match the given `query`.
@@ -203,72 +230,8 @@ impl LightWallet {
         &self,
         transaction: &WalletTransaction,
         query: OutputQuery,
-        pending_spends: &HashMap<OutputId, TxId>,
     ) -> u64 {
-        let mut sum = 0;
-        if query.transparent() {
-            for output in transaction.transparent_coins() {
-                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
-                    sum += output.value();
-                }
-            }
-        }
-        if query.sapling() {
-            for output in transaction.sapling_notes() {
-                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
-                    sum += output.value();
-                }
-            }
-        }
-        if query.orchard() {
-            for output in transaction.orchard_notes() {
-                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
-                    sum += output.value();
-                }
-            }
-        }
-        if query.ironwood() {
-            for output in transaction.ironwood_notes() {
-                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
-                    sum += output.value();
-                }
-            }
-        }
-        sum
-    }
-
-    /// Returns `true` if `output` spend status matches the `query`. Otherwise, returns `false`.
-    fn query_output_spend_status(
-        &self,
-        query: OutputSpendStatusQuery,
-        output: &impl OutputInterface,
-        pending_spends: &HashMap<OutputId, TxId>,
-    ) -> bool {
-        if let Some(txid) = output.spending_transaction() {
-            match self
-                .wallet_transactions
-                .get(&txid)
-                .expect("transaction should exist in the wallet")
-                .status()
-            {
-                ConfirmationStatus::Confirmed(_) => query.spent,
-                _confirmation_pending if query.pending_spent => true,
-                _ => false,
-            }
-        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
-            match self
-                .wallet_transactions
-                .get(txid)
-                .expect("transaction should exist in the wallet")
-                .status()
-            {
-                ConfirmationStatus::Confirmed(_) => query.spent,
-                _confirmation_pending if query.pending_spent => true,
-                _ => false,
-            }
-        } else {
-            query.unspent
-        }
+        sum_queried_transaction_outputs(&self.spend_view(), transaction, query)
     }
 
     /// Returns all spendable notes of the specified shielded pool and `account` confirmed at or below `anchor_height`.
@@ -329,7 +292,7 @@ impl LightWallet {
             });
         }
 
-        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = &self.spend_view();
         Ok(self
             .wallet_transactions
             .values()
@@ -341,8 +304,7 @@ impl LightWallet {
                     N::transaction_outputs(transaction)
                         .iter()
                         .filter(move |&note| {
-                            note.spending_transaction().is_none()
-                                && !pending_spends.contains_key(&note.output_id())
+                            spends.state(note).is_unspent()
                                 && note.nullifier().is_some()
                                 && note.position().is_some()
                                 && self.can_build_witness::<N>(
@@ -386,7 +348,7 @@ impl LightWallet {
         let Some(spend_horizon) = self.spend_horizon(true) else {
             return Vec::new();
         };
-        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = &self.spend_view();
 
         self.wallet_transactions
             .values()
@@ -409,8 +371,7 @@ impl LightWallet {
                     TransparentCoin::transaction_outputs(transaction)
                         .iter()
                         .filter(move |&coin| {
-                            coin.spending_transaction().is_none()
-                                && !pending_spends.contains_key(&coin.output_id())
+                            spends.state(coin).is_unspent()
                                 && if include_potentially_spent_coins {
                                     // checks all ranges with `FoundNote` priority or higher above the coin height are
                                     // scanned as all relevant transactions containing transparent spends are known and
@@ -455,6 +416,115 @@ impl LightWallet {
                 note: note.clone(),
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod spend_agreement_tests {
+    use pepper_sync::wallet::{OrchardNote, OutputInterface as _, WalletTransaction};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::PoolType;
+    use zcash_protocol::value::Zatoshis;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zingo_test_vectors::seeds;
+
+    use super::query::{OutputPoolQuery, OutputQuery, OutputSpendStatusQuery};
+    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::wallet::LightWallet;
+    use crate::wallet::error::BalanceError;
+
+    const NOTE_VALUE: u64 = 100_000;
+    const NOTHING: u64 = 0;
+    const FAILED_SPENDER_TXID_BYTES: [u8; 32] = [7; 32];
+    const FAILED_SPENDER_HEIGHT: u32 = 5;
+
+    fn wallet_with_a_note_marked_by_a_failed_spender() -> LightWallet {
+        let mut wallet = SyntheticWalletBuilder::new(seeds::HOSPITAL_MUSEUM_SEED)
+            .orchard_note(NOTE_VALUE)
+            .build();
+        let failed_spender = TxId::from_bytes(FAILED_SPENDER_TXID_BYTES);
+        for transaction in wallet.wallet_transactions.values_mut() {
+            for note in transaction.orchard_notes_mut() {
+                note.set_spending_transaction(Some(failed_spender));
+            }
+        }
+        wallet.wallet_transactions.insert(
+            failed_spender,
+            WalletTransaction::new_for_test(
+                failed_spender,
+                ConfirmationStatus::Failed(FAILED_SPENDER_HEIGHT.into()),
+            ),
+        );
+        wallet
+    }
+
+    fn orchard_sum(wallet: &LightWallet, spend_status: OutputSpendStatusQuery) -> u64 {
+        wallet.sum_queried_output_values(OutputQuery {
+            spend_status,
+            pools: OutputPoolQuery::one_pool(PoolType::ORCHARD),
+        })
+    }
+
+    #[test]
+    fn every_site_withholds_a_note_whose_recorded_spend_names_a_failed_transaction()
+    -> Result<(), BalanceError> {
+        let wallet = wallet_with_a_note_marked_by_a_failed_spender();
+
+        let statuses = wallet
+            .wallet_outputs::<OrchardNote>()
+            .into_iter()
+            .map(|note| wallet.output_spend_status(note))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            statuses,
+            vec![super::SpendStatus::Spent(TxId::from_bytes(
+                FAILED_SPENDER_TXID_BYTES
+            ))]
+        );
+
+        assert_eq!(
+            orchard_sum(&wallet, OutputSpendStatusQuery::only_unspent()),
+            NOTHING,
+            "the unspent query counts a note with a recorded spend"
+        );
+        assert_eq!(
+            orchard_sum(&wallet, OutputSpendStatusQuery::only_spent()),
+            NOTE_VALUE,
+            "the spent query misses a note with a recorded spend"
+        );
+        assert_eq!(
+            wallet
+                .account_balance(zip32::AccountId::ZERO)?
+                .confirmed_orchard_balance,
+            Some(Zatoshis::const_from_u64(NOTHING)),
+            "the balance counts a note with a recorded spend"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reconciliation_names_the_spender_that_the_spend_state_names() {
+        use crate::wallet::migration::reconcile::ChainView as _;
+
+        let wallet = wallet_with_a_note_marked_by_a_failed_spender();
+        let spends = wallet.spend_view();
+
+        let named_by_reconciliation = wallet
+            .wallet_outputs::<OrchardNote>()
+            .into_iter()
+            .map(|note| {
+                wallet
+                    .note_spend(note.output_id())
+                    .map(|(spender, _confirmed_height)| spender)
+            })
+            .collect::<Vec<_>>();
+        let named_by_spend_state = wallet
+            .wallet_outputs::<OrchardNote>()
+            .into_iter()
+            .map(|note| spends.state(note).spender())
+            .collect::<Vec<_>>();
+
+        assert_eq!(named_by_reconciliation, named_by_spend_state);
     }
 }
 

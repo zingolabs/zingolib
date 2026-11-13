@@ -37,7 +37,6 @@ async fn assert_ironwood_note_statuses(
     expected: &[(u64, SpendStatus, Option<bool>)],
 ) {
     let wallet = client.wallet().read().await;
-    let pending_spends = pepper_sync::pending_spends(&wallet.wallet_transactions);
     assert_eq!(wallet.wallet_outputs::<SaplingNote>().len(), 0);
     let ironwood_notes = wallet.wallet_outputs::<IronwoodNote>();
     assert_eq!(ironwood_notes.len(), expected.len());
@@ -47,11 +46,7 @@ async fn assert_ironwood_note_statuses(
             .find(|&&note| note.value() == *value)
             .unwrap_or_else(|| panic!("no ironwood note of value {value}")))
         .clone();
-        assert_eq!(
-            wallet.output_spend_status(&note, &pending_spends),
-            *status,
-            "note {value}"
-        );
+        assert_eq!(wallet.output_spend_status(&note), *status, "note {value}");
         if let Some(want_confirmed) = confirmed {
             assert_eq!(
                 wallet.output_transaction(&note).status().is_confirmed(),

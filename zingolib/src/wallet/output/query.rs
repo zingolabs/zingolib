@@ -13,6 +13,18 @@ pub struct OutputSpendStatusQuery {
     pub spent: bool,
 }
 impl OutputSpendStatusQuery {
+    #[must_use]
+    pub fn matches(self, state: &pepper_sync::SpendState) -> bool {
+        match state {
+            pepper_sync::SpendState::Unspent => self.unspent,
+            pepper_sync::SpendState::PendingSpent(_)
+            | pepper_sync::SpendState::ContestedPendingSpent { .. } => self.pending_spent,
+            pepper_sync::SpendState::ConfirmedSpent(_)
+            | pepper_sync::SpendState::SpentByUnheldTransaction(_)
+            | pepper_sync::SpendState::SpentByFailedTransaction(_) => self.spent,
+        }
+    }
+
     /// a query that accepts notes of any spent status
     #[must_use]
     pub fn any() -> Self {

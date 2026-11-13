@@ -355,7 +355,10 @@ async fn doctor(lightclient: &mut LightClient) -> Result<String, CommandError> {
     if violations.is_empty() {
         return Ok("no violations".to_string());
     }
-    Ok(format!("{}\nremedy: rescan", violations.join("\n")))
+    Ok(format!(
+        "{}\nremedy: rescan",
+        zingolib::wallet::invariants::violation_report(&violations)
+    ))
 }
 
 async fn delete(lightclient: &mut LightClient) -> Result<String, CommandError> {

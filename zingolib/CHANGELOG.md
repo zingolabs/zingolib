@@ -9,10 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `LightWallet::invariant_violations` reports every violated wallet
-  invariant: outputs stored under foreign txids, spends recorded on
-  transactions that do not carry the input, spends released by failed
-  transactions, and balance lines that disagree with the raw notes. The
-  zingo-cli `doctor` command prints the list and its remedy.
+  invariant as an `InvariantViolation`: outputs stored under foreign txids,
+  spends recorded on transactions that do not carry the input, spends
+  released by failed transactions, and balance lines that disagree with the
+  raw notes. Each variant carries the pool, the output and the transaction it
+  concerns, and its `Display` is the line the zingo-cli `doctor` command
+  prints beside the remedy.
+- `LightWallet::spend_view` returns a `pepper_sync::SpendView` over the
+  wallet's transactions, `SpendStatus` converts from `pepper_sync::SpendState`,
+  and `OutputSpendStatusQuery::matches` tests a `SpendState` against a query.
 - `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
   carry the UTF-8 text of each OP_RETURN output of the transaction, in output
   order, and their JSON carries it as `op_return_data`. A Maya or THORChain
@@ -54,12 +59,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
   and `indexer` together.
 - A pending transaction's spends of the wallet's notes derive from the
-  transaction's inputs each time they are read (`pepper_sync::pending_spends`),
+  transaction's inputs each time they are read (`pepper_sync::SpendView`),
   and `spending_transaction` on a note records only a spend the scanner saw
   in a scanned block. Balances, note selection, and the spend-status listings
   read the two together, so a pending send shows its inputs spent until the
   transaction confirms or fails, where 8.0.0 stored the pending spend on the
   notes and every failure path erased it again.
+- Balances, note selection, the output queries, the summaries and the
+  migration checks all read one spend state per output, from
+  `pepper_sync::SpendView::state`. A note whose recorded spend names a failed
+  transaction reads as spent at every one of them, where 8.0.0 reported it
+  unspent in the summaries, pending-spent in the output queries and spent in
+  the balance. A recorded spend is the evidence of a mined block, so the
+  status of its transaction does not release the note. A note whose recorded spend names a transaction the wallet
+  does not hold reads as spent, where 8.0.0 panicked in the summaries.
 
 ### Fixed
 - A transaction the wallet believes failed, whose block later reaches the
