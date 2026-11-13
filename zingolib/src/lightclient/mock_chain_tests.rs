@@ -4879,3 +4879,181 @@ mod boundary_pruning {
         }
     }
 }
+
+/// A swap reserves a refund address whether or not anything is ever paid to it, so a wallet's
+/// refund addresses can stay empty on chain for longer than the discovery gap limit. These tests
+/// pin what a wallet restored from the same seed finds behind such a run of empty addresses.
+mod refund_gap {
+    use std::num::NonZeroU32;
+
+    use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+    use pepper_sync::sync::MAX_REORG_ALLOWANCE;
+    use zcash_keys::encoding::AddressCodec;
+    use zip32::AccountId;
+
+    use super::{HOSPITAL_MUSEUM, LightClient, MockNet};
+    use crate::wallet::WalletSettings;
+
+    const PAID: u64 = 50_000;
+    /// One transparent input and two shielded outputs under ZIP 317.
+    const SHIELD_FEE: u64 = 15_000;
+
+    /// The discovery the apps run: `TransparentAddressDiscovery::default()`.
+    fn app_settings() -> WalletSettings {
+        WalletSettings {
+            sync_config: SyncConfig {
+                transparent_address_discovery: TransparentAddressDiscovery::default(),
+                performance_level: PerformanceLevel::High,
+                shutdown_on_completion: true,
+            },
+            min_confirmations: NonZeroU32::new(1).expect("one is not zero"),
+        }
+    }
+
+    async fn reserve(client: &LightClient, count: usize) -> String {
+        let (_, address) = *client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(count, AccountId::ZERO)
+            .expect("the refund index does not overflow in these tests")
+            .last()
+            .expect("every call reserves at least one address");
+        address.encode(&client.chain_type())
+    }
+
+    /// Returns the first device, which reserved the refund addresses up to `index`, after a payment
+    /// to the last of them alone. The lower addresses stay empty on chain, as they do after a sale
+    /// through NEAR Intents or a swap committed and never paid. `blocks_above` are mined over the
+    /// payment.
+    async fn first_device_paid_at(
+        net: &mut MockNet,
+        index: usize,
+        blocks_above: u32,
+    ) -> LightClient {
+        net.chain.write().await.mine_empty_blocks(10);
+        let first_device = net.client(HOSPITAL_MUSEUM, Some(app_settings())).await;
+        let address = reserve(&first_device, index + 1).await;
+        let funding = net.funding_transaction(vec![(&address, PAID, None)]).await;
+        let mut chain = net.chain.write().await;
+        chain.mine_block(vec![funding]);
+        chain.mine_empty_blocks(blocks_above);
+        drop(chain);
+        first_device
+    }
+
+    async fn synced_restored_wallet(net: &mut MockNet) -> LightClient {
+        let mut restored = net.client(HOSPITAL_MUSEUM, Some(app_settings())).await;
+        restored
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+        restored
+    }
+
+    /// The confirmed transparent balance and the confirmed balance of every shielded pool, in
+    /// zatoshis.
+    async fn balances(client: &LightClient) -> (u64, u64) {
+        let balance = client
+            .account_balance(AccountId::ZERO)
+            .await
+            .expect("the account exists");
+        let zatoshis = |value: Option<zcash_protocol::value::Zatoshis>| {
+            value.expect("the wallet is synced").into_u64()
+        };
+        (
+            zatoshis(balance.confirmed_transparent_balance),
+            zatoshis(balance.confirmed_ironwood_balance)
+                + zatoshis(balance.confirmed_orchard_balance)
+                + zatoshis(balance.confirmed_sapling_balance),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_finds_funds_behind_nine_empty_refund_addresses() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(&mut net, 9, 1).await;
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_misses_funds_behind_ten_empty_refund_addresses() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(&mut net, 10, 1).await;
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&restored).await, (0, 0));
+    }
+
+    /// Twenty swaps leave twenty empty addresses and the twenty first is refunded. The device that
+    /// reserved the addresses sees the refund, and a wallet restored from the same seed does not.
+    #[tokio::test]
+    async fn only_the_device_that_reserved_the_addresses_sees_a_refund_behind_twenty_empty_ones() {
+        let mut net = MockNet::launch().await;
+        let mut first_device = first_device_paid_at(&mut net, 20, 1).await;
+
+        first_device
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&first_device).await, (PAID, 0));
+        assert_eq!(balances(&restored).await, (0, 0));
+    }
+
+    /// Reaching the refund at index 20 takes the search window of indexes 11 to 20, so eleven
+    /// reservations, and a rescan, because a later session only searches recent blocks.
+    #[tokio::test]
+    async fn a_restored_wallet_needs_eleven_reservations_and_a_rescan_to_find_that_refund() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(&mut net, 20, MAX_REORG_ALLOWANCE + 10).await;
+        let mut restored = synced_restored_wallet(&mut net).await;
+
+        reserve(&restored, 10).await;
+        restored
+            .rescan_and_await()
+            .await
+            .expect("the mock chain rescans");
+        assert_eq!(balances(&restored).await, (0, 0));
+
+        reserve(&restored, 1).await;
+        restored
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+        assert_eq!(balances(&restored).await, (0, 0));
+
+        restored
+            .rescan_and_await()
+            .await
+            .expect("the mock chain rescans");
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    /// A shielded note is found by trial decryption, so shielding the refund before restoring takes
+    /// it out of reach of the gap limit.
+    #[tokio::test]
+    async fn a_restored_wallet_finds_that_refund_once_the_first_device_has_shielded_it() {
+        let mut net = MockNet::launch().await;
+        let mut first_device = first_device_paid_at(&mut net, 20, 1).await;
+        first_device
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+
+        first_device
+            .quick_shield(AccountId::ZERO)
+            .await
+            .expect("the refund covers the shielding fee");
+        net.chain.write().await.mine_mempool();
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&restored).await, (0, PAID - SHIELD_FEE));
+    }
+}
