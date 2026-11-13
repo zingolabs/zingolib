@@ -450,9 +450,7 @@ impl ChainView for crate::wallet::LightWallet {
                     .iter()
                     .find(|note| note.output_id() == output_id)
             })?;
-        let spending_txid = note
-            .spending_transaction()
-            .or_else(|| self.spend_view().state(note).spender())?;
+        let spending_txid = self.spend_view().state(note).spender()?;
         Some((
             spending_txid,
             self.transaction_confirmed_height(&spending_txid),

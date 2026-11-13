@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpendView` derives the spend state of any wallet output from the wallet's
   transactions, without changing them. `SpendView::state` returns a
   `SpendState`: `Unspent`, `PendingSpent`, `ContestedPendingSpent`,
-  `ConfirmedSpent` or `SpentByUnheldTransaction`. A pending spend derives from
-  the inputs of each pending transaction, and a recorded spend reads by the
-  status of its transaction, so a recorded spend of a failed transaction reads
-  as unspent. Two pending transactions that spend one output read as
+  `ConfirmedSpent`, `SpentByUnheldTransaction` or `SpentByFailedTransaction`.
+  A pending spend derives from the inputs of each pending transaction. A
+  recorded spend is the evidence of a mined block, so it never reads as
+  unspent: where the wallet holds its transaction as failed, the output reads
+  as `SpentByFailedTransaction`. Two pending transactions that spend one output read as
   `ContestedPendingSpent`, led by the transaction at the most advanced
   `PendingStage`, so the answer does not depend on map iteration order.
 

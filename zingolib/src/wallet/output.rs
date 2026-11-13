@@ -148,7 +148,8 @@ impl From<pepper_sync::SpendState> for SpendStatus {
             pepper_sync::SpendState::PendingSpent(spend)
             | pepper_sync::SpendState::ContestedPendingSpent { leading: spend, .. } => spend.into(),
             pepper_sync::SpendState::ConfirmedSpent(txid)
-            | pepper_sync::SpendState::SpentByUnheldTransaction(txid) => Self::Spent(txid),
+            | pepper_sync::SpendState::SpentByUnheldTransaction(txid)
+            | pepper_sync::SpendState::SpentByFailedTransaction(txid) => Self::Spent(txid),
         }
     }
 }
@@ -465,7 +466,8 @@ mod spend_agreement_tests {
     }
 
     #[test]
-    fn every_site_reads_a_note_marked_by_a_failed_spender_as_unspent() -> Result<(), BalanceError> {
+    fn every_site_withholds_a_note_whose_recorded_spend_names_a_failed_transaction()
+    -> Result<(), BalanceError> {
         let wallet = wallet_with_a_note_marked_by_a_failed_spender();
 
         let statuses = wallet
@@ -473,26 +475,56 @@ mod spend_agreement_tests {
             .into_iter()
             .map(|note| wallet.output_spend_status(note))
             .collect::<Vec<_>>();
-        assert_eq!(statuses, vec![super::SpendStatus::Unspent]);
+        assert_eq!(
+            statuses,
+            vec![super::SpendStatus::Spent(TxId::from_bytes(
+                FAILED_SPENDER_TXID_BYTES
+            ))]
+        );
 
         assert_eq!(
             orchard_sum(&wallet, OutputSpendStatusQuery::only_unspent()),
-            NOTE_VALUE,
-            "the unspent query disagrees with the spend status"
+            NOTHING,
+            "the unspent query counts a note with a recorded spend"
         );
         assert_eq!(
-            orchard_sum(&wallet, OutputSpendStatusQuery::only_pending_spent()),
-            NOTHING,
-            "the pending-spent query disagrees with the spend status"
+            orchard_sum(&wallet, OutputSpendStatusQuery::only_spent()),
+            NOTE_VALUE,
+            "the spent query misses a note with a recorded spend"
         );
         assert_eq!(
             wallet
                 .account_balance(zip32::AccountId::ZERO)?
                 .confirmed_orchard_balance,
-            Some(Zatoshis::const_from_u64(NOTE_VALUE)),
-            "the balance disagrees with the spend status"
+            Some(Zatoshis::const_from_u64(NOTHING)),
+            "the balance counts a note with a recorded spend"
         );
         Ok(())
+    }
+
+    #[test]
+    fn reconciliation_names_the_spender_that_the_spend_state_names() {
+        use crate::wallet::migration::reconcile::ChainView as _;
+
+        let wallet = wallet_with_a_note_marked_by_a_failed_spender();
+        let spends = wallet.spend_view();
+
+        let named_by_reconciliation = wallet
+            .wallet_outputs::<OrchardNote>()
+            .into_iter()
+            .map(|note| {
+                wallet
+                    .note_spend(note.output_id())
+                    .map(|(spender, _confirmed_height)| spender)
+            })
+            .collect::<Vec<_>>();
+        let named_by_spend_state = wallet
+            .wallet_outputs::<OrchardNote>()
+            .into_iter()
+            .map(|note| spends.state(note).spender())
+            .collect::<Vec<_>>();
+
+        assert_eq!(named_by_reconciliation, named_by_spend_state);
     }
 }
 

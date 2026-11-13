@@ -68,9 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Balances, note selection, the output queries, the summaries and the
   migration checks all read one spend state per output, from
   `pepper_sync::SpendView::state`. A note whose recorded spend names a failed
-  transaction reads as unspent at every one of them, where 8.0.0 reported it
+  transaction reads as spent at every one of them, where 8.0.0 reported it
   unspent in the summaries, pending-spent in the output queries and spent in
-  the balance. A note whose recorded spend names a transaction the wallet
+  the balance. A recorded spend is the evidence of a mined block, so the
+  status of its transaction does not release the note. A note whose recorded spend names a transaction the wallet
   does not hold reads as spent, where 8.0.0 panicked in the summaries.
 
 ### Fixed

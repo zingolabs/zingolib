@@ -475,6 +475,7 @@ pub enum SpendState {
     },
     ConfirmedSpent(TxId),
     SpentByUnheldTransaction(TxId),
+    SpentByFailedTransaction(TxId),
 }
 
 #[allow(missing_docs)]
@@ -491,7 +492,9 @@ impl SpendState {
             Self::PendingSpent(spend) | Self::ContestedPendingSpent { leading: spend, .. } => {
                 Some(spend.txid)
             }
-            Self::ConfirmedSpent(txid) | Self::SpentByUnheldTransaction(txid) => Some(*txid),
+            Self::ConfirmedSpent(txid)
+            | Self::SpentByUnheldTransaction(txid)
+            | Self::SpentByFailedTransaction(txid) => Some(*txid),
         }
     }
 
@@ -564,7 +567,7 @@ impl<'a> SpendView<'a> {
         };
         match spender.status().into() {
             SpenderStanding::Confirmed => SpendState::ConfirmedSpent(txid),
-            SpenderStanding::Failed => SpendState::of_pending_spends(derived),
+            SpenderStanding::Failed => SpendState::SpentByFailedTransaction(txid),
             SpenderStanding::Pending(stage) => SpendState::of_pending_spends(
                 derived
                     .into_iter()
@@ -899,9 +902,10 @@ mod tests {
         );
 
         let failed = first_spender(ConfirmationStatus::Failed(FIRST_SPENDER_EXPIRY.into()))?;
+        let failed_txid = failed.txid();
         assert_eq!(
-            coin_states(&wallet_of([funding_record(Some(failed.txid())), failed])),
-            vec![SpendState::Unspent]
+            coin_states(&wallet_of([funding_record(Some(failed_txid)), failed])),
+            vec![SpendState::SpentByFailedTransaction(failed_txid)]
         );
 
         let unheld_txid = TxId::from_bytes(UNHELD_TXID_BYTES);
@@ -909,6 +913,21 @@ mod tests {
             coin_states(&wallet_of([funding_record(Some(unheld_txid))])),
             vec![SpendState::SpentByUnheldTransaction(unheld_txid)]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_recorded_spend_that_names_a_failed_transaction_withholds_the_output() -> std::io::Result<()>
+    {
+        let failed = first_spender(ConfirmationStatus::Failed(FIRST_SPENDER_EXPIRY.into()))?;
+        let failed_txid = failed.txid();
+
+        let readings = coin_states(&wallet_of([funding_record(Some(failed_txid)), failed]))
+            .iter()
+            .map(|state| (state.is_unspent(), state.spender()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(readings, vec![(false, Some(failed_txid))]);
         Ok(())
     }
 

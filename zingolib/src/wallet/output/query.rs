@@ -20,7 +20,8 @@ impl OutputSpendStatusQuery {
             pepper_sync::SpendState::PendingSpent(_)
             | pepper_sync::SpendState::ContestedPendingSpent { .. } => self.pending_spent,
             pepper_sync::SpendState::ConfirmedSpent(_)
-            | pepper_sync::SpendState::SpentByUnheldTransaction(_) => self.spent,
+            | pepper_sync::SpendState::SpentByUnheldTransaction(_)
+            | pepper_sync::SpendState::SpentByFailedTransaction(_) => self.spent,
         }
     }
 
