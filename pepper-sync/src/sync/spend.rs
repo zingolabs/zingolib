@@ -21,7 +21,7 @@ use crate::{
     },
     wallet::{
         Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
-        ScanTarget, WalletBlock, WalletTransaction,
+        ScanTarget, TransactionRecord, WalletBlock,
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
 };
@@ -62,9 +62,9 @@ impl ShieldedSpendScanTargets {
 /// wallet's record of the same transaction, which is the contract of
 /// [`SyncTransactions::extend_wallet_transactions`].
 fn transactions_with_scanned<'a>(
-    wallet_transactions: &'a HashMap<TxId, WalletTransaction>,
-    scanned_transactions: &'a HashMap<TxId, WalletTransaction>,
-) -> impl Iterator<Item = &'a WalletTransaction> + Clone {
+    wallet_transactions: &'a HashMap<TxId, TransactionRecord>,
+    scanned_transactions: &'a HashMap<TxId, TransactionRecord>,
+) -> impl Iterator<Item = &'a TransactionRecord> + Clone {
     wallet_transactions
         .iter()
         .filter(|(txid, _)| !scanned_transactions.contains_key(*txid))
@@ -87,7 +87,7 @@ pub(super) async fn locate_shielded_spends<P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-    scanned_transactions: &mut HashMap<TxId, WalletTransaction>,
+    scanned_transactions: &mut HashMap<TxId, TransactionRecord>,
     scanned_nullifiers: &NullifierMap,
 ) -> Result<ShieldedSpendScanTargets, SyncError<W::Error>>
 where
@@ -172,8 +172,8 @@ async fn scan_spending_transactions<L, P, W>(
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scan_targets: L,
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-    scanned_transactions: &HashMap<TxId, WalletTransaction>,
-) -> Result<HashMap<TxId, WalletTransaction>, SyncError<W::Error>>
+    scanned_transactions: &HashMap<TxId, TransactionRecord>,
+) -> Result<HashMap<TxId, TransactionRecord>, SyncError<W::Error>>
 where
     L: Iterator<Item = ScanTarget>,
     P: consensus::Parameters,
@@ -186,7 +186,7 @@ where
         scanned_transactions,
     )
     .filter(|transaction| transaction.status().is_confirmed())
-    .map(WalletTransaction::txid)
+    .map(TransactionRecord::txid)
     .collect::<HashSet<_>>();
     let mut spending_scan_targets = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
@@ -246,7 +246,7 @@ where
 
 /// Collects the derived nullifiers from each note of `transactions`
 pub(super) fn collect_derived_nullifiers<'a>(
-    transactions: impl Iterator<Item = &'a WalletTransaction> + Clone,
+    transactions: impl Iterator<Item = &'a TransactionRecord> + Clone,
 ) -> (
     Vec<sapling_crypto::Nullifier>,
     Vec<orchard::note::Nullifier>,
@@ -254,16 +254,16 @@ pub(super) fn collect_derived_nullifiers<'a>(
 ) {
     let sapling_nullifiers = transactions
         .clone()
-        .flat_map(super::super::wallet::WalletTransaction::sapling_notes)
+        .flat_map(super::super::wallet::TransactionRecord::sapling_notes)
         .filter_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let orchard_nullifiers = transactions
         .clone()
-        .flat_map(super::super::wallet::WalletTransaction::orchard_notes)
+        .flat_map(super::super::wallet::TransactionRecord::orchard_notes)
         .filter_map(|note| note.nullifier)
         .collect::<Vec<_>>();
     let ironwood_nullifiers = transactions
-        .flat_map(super::super::wallet::WalletTransaction::ironwood_notes)
+        .flat_map(super::super::wallet::TransactionRecord::ironwood_notes)
         .filter_map(|note| note.nullifier)
         .collect::<Vec<_>>();
 
@@ -341,7 +341,7 @@ struct MarkRemoval {
 /// Returns the marks to remove from the shard tree of `D`, if `remove_marks` is set: one for each spent note that is
 /// confirmed, has a position and whose spending transaction is confirmed.
 fn update_spent_notes_by_protocol<D>(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    wallet_transactions: &mut HashMap<TxId, TransactionRecord>,
     spend_scan_targets: BTreeMap<<D::Note as NoteInterface>::Nullifier, ScanTarget>,
     remove_marks: bool,
 ) -> Vec<MarkRemoval>
@@ -424,7 +424,7 @@ pub(super) async fn locate_transparent_spends<P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-    scanned_transactions: &mut HashMap<TxId, WalletTransaction>,
+    scanned_transactions: &mut HashMap<TxId, TransactionRecord>,
     scanned_outpoints: &BTreeMap<OutputId, ScanTarget>,
 ) -> Result<BTreeMap<OutputId, ScanTarget>, SyncError<W::Error>>
 where
@@ -485,10 +485,10 @@ where
 
 /// Collects the output ids from each coin of `transactions`
 pub(super) fn collect_transparent_output_ids<'a>(
-    transactions: impl Iterator<Item = &'a WalletTransaction>,
+    transactions: impl Iterator<Item = &'a TransactionRecord>,
 ) -> Vec<OutputId> {
     transactions
-        .flat_map(super::super::wallet::WalletTransaction::transparent_coins)
+        .flat_map(super::super::wallet::TransactionRecord::transparent_coins)
         .map(|coin| coin.output_id)
         .collect()
 }
@@ -506,7 +506,7 @@ pub(super) fn detect_spends<K: Ord + Copy>(
 /// Update the spending transaction for all coins where the output id matches the output id in the spend scan target map.
 /// The items in the spend scan target map are taken directly from the outpoint map during spend detection.
 pub(super) fn update_spent_coins(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    wallet_transactions: &mut HashMap<TxId, TransactionRecord>,
     transparent_spend_scan_targets: BTreeMap<OutputId, ScanTarget>,
 ) {
     wallet_transactions

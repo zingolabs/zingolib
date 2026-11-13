@@ -405,7 +405,7 @@ impl WalletRead for LightWallet {
 
 /// The account owning the wallet output `output` names, when the wallet holds it.
 fn output_account<O: OutputInterface>(
-    transaction: &pepper_sync::wallet::WalletTransaction,
+    transaction: &pepper_sync::wallet::TransactionRecord,
     output: &LockedOutputRef,
 ) -> Option<zip32::AccountId> {
     (O::POOL_TYPE == output.pool())

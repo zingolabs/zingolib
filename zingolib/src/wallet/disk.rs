@@ -37,8 +37,8 @@ use pepper_sync::{
     config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery},
     keys::transparent::{self, TransparentAddressId, TransparentScope},
     wallet::{
-        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock,
-        WalletTransaction,
+        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState,
+        TransactionRecord, WalletBlock,
     },
 };
 
@@ -759,7 +759,7 @@ impl LightWallet {
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
         let wallet_transactions =
-            Vector::read(&mut reader, |r| WalletTransaction::read(r, &chain_type))?
+            Vector::read(&mut reader, |r| TransactionRecord::read(r, &chain_type))?
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect::<HashMap<_, _>>();

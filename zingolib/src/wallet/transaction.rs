@@ -4,7 +4,7 @@ use zcash_protocol::value::Zatoshis;
 
 use pepper_sync::wallet::{
     IronwoodNote, OrchardNote, OutgoingNoteInterface, OutputId, OutputInterface, SaplingNote,
-    TransparentCoin, WalletTransaction,
+    TransactionRecord, TransparentCoin,
 };
 
 use super::LightWallet;
@@ -48,7 +48,7 @@ impl LightWallet {
     /// Failing a transaction releases its inputs.
     pub(super) fn find_spends<Op: OutputInterface>(
         &self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
         fail_on_miss: bool,
     ) -> Result<Vec<&Op>, SpendError> {
         let inputs = Op::transaction_inputs(transaction);
@@ -103,7 +103,7 @@ impl LightWallet {
     /// Gets all wallet outputs spent in the given `transaction`, grouped by pool.
     pub(super) fn find_spends_by_pool<'wallet>(
         &'wallet self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
     ) -> Result<SpendsByPool<'wallet>, SpendError> {
         Ok(SpendsByPool {
             transparent: self.find_spends::<TransparentCoin>(transaction, false)?,
@@ -119,7 +119,7 @@ impl LightWallet {
     // TODO: write integration test
     pub fn calculate_transaction_fee(
         &self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
     ) -> Result<Zatoshis, FeeError> {
         Ok(transaction
             .transaction()
@@ -168,7 +168,7 @@ impl LightWallet {
     /// [`Self::find_spends_by_pool`].
     pub(crate) fn transaction_kind(
         &self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
         spends: &SpendsByPool<'_>,
     ) -> TransactionKind {
         let zfz_address = get_zennies_for_zingo_address(self.chain_type);
@@ -234,7 +234,7 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use pepper_sync::wallet::WalletTransaction;
+    use pepper_sync::wallet::TransactionRecord;
     use zcash_primitives::transaction::TxId;
     use zingo_status::confirmation_status::ConfirmationStatus;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -275,7 +275,7 @@ mod tests {
         let status = ConfirmationStatus::Calculated(1.into());
         wallet
             .wallet_transactions
-            .insert(txid, WalletTransaction::new_for_test(txid, status));
+            .insert(txid, TransactionRecord::new_for_test(txid, status));
 
         let result = wallet.remove_failed_transaction(txid);
 
@@ -290,7 +290,7 @@ mod tests {
         let status = ConfirmationStatus::Failed(1.into());
         wallet
             .wallet_transactions
-            .insert(txid, WalletTransaction::new_for_test(txid, status));
+            .insert(txid, TransactionRecord::new_for_test(txid, status));
 
         let result = wallet.remove_failed_transaction(txid);
 

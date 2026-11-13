@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
 
 ### Changed
+- **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
+  `TransactionRecord`, and every zingolib signature that named it names
+  `TransactionRecord` now, the `LightWallet::wallet_transactions` field
+  included. A consumer replaces the type name; no field or method changes.
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
   returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
   selection checks a reservation in constant time. A consumer that indexed

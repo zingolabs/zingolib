@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use crate::wallet::{
-    NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, TransactionRecord, WalletBlock,
     traits::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
@@ -92,7 +92,7 @@ pub(super) struct MockWallet {
     get_sync_state_patch: Option<SyncStatePatch>,
     get_birthday_patch: Option<GetBirthdayPatch>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    wallet_transactions: HashMap<TxId, TransactionRecord>,
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
@@ -106,7 +106,7 @@ pub(super) struct MockWalletBuilder {
     get_birthday_patch: Option<GetBirthdayPatch>,
     sync_state: SyncState,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    wallet_transactions: HashMap<TxId, TransactionRecord>,
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
@@ -141,7 +141,7 @@ impl MockWalletBuilder {
 
     pub(crate) fn wallet_transactions(
         mut self,
-        wallet_transactions: HashMap<TxId, WalletTransaction>,
+        wallet_transactions: HashMap<TxId, TransactionRecord>,
     ) -> Self {
         self.wallet_transactions = wallet_transactions;
         self
@@ -291,7 +291,7 @@ impl SyncTransactions for MockWallet {
     fn get_wallet_transactions(
         &self,
     ) -> Result<
-        &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&self.wallet_transactions)
@@ -300,7 +300,7 @@ impl SyncTransactions for MockWallet {
     fn get_wallet_transactions_mut(
         &mut self,
     ) -> Result<
-        &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&mut self.wallet_transactions)

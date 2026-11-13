@@ -27,7 +27,7 @@ use zcash_keys::keys::UnifiedSpendingKey;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::{
-    IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransparentCoin, WalletTransaction,
+    IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransactionRecord, TransparentCoin,
 };
 use zcash_primitives::transaction::TxId;
 #[cfg(test)]
@@ -191,7 +191,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_ironwood_notes(
+                TransactionRecord::new_for_test_with_ironwood_notes(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(index).unwrap(),
@@ -232,7 +232,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_orchard_notes(
+                TransactionRecord::new_for_test_with_orchard_notes(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(note_count + index).unwrap(),
@@ -278,7 +278,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(sapling_nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test(
+                TransactionRecord::new_for_test(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(note_count + index).unwrap(),
@@ -347,7 +347,7 @@ impl SyntheticWalletBuilder {
             );
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test(
+                TransactionRecord::new_for_test(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(shielded_note_count + index).unwrap(),
@@ -470,7 +470,7 @@ pub fn inject_confirmed_orchard_notes(wallet: &mut LightWallet, count: u32, valu
         .with_nullifier_for_test(nullifier);
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            TransactionRecord::new_for_test_with_orchard_notes(
                 txid,
                 ConfirmationStatus::Confirmed(BlockHeight::from_u32(2 + index)),
                 vec![note],

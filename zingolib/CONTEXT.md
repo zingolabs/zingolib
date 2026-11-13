@@ -96,7 +96,7 @@
 
 **LightWallet** — The wallet's internal data store. Holds keys, wallet transactions, shard trees, and sync state. Not part of the public contract — all external access is intended to go through `LightClient` passthrough methods. Direct access via the temporary `LightClient::wallet()` escape hatch is pending removal as the passthrough API is completed.
 
-**WalletTransaction** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine.
+**TransactionRecord** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine. *Avoid*: WalletTransaction (the name of the type before the rename).
 
 **WalletBlock** — A compact record of a scanned block, retained only at scan range bounds or when it contains wallet-relevant transactions.
 
