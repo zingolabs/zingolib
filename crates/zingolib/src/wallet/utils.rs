@@ -39,8 +39,11 @@ pub(crate) fn read_string_body<R: Read>(mut reader: R, str_len: u64) -> io::Resu
     let mut str_bytes = vec![0; str_len as usize];
     reader.read_exact(&mut str_bytes)?;
 
-    String::from_utf8(str_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
+    utf8_string(str_bytes)
+}
+
+pub(crate) fn utf8_string(bytes: Vec<u8>) -> io::Result<String> {
+    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
 }
 
 /// TODO: Add Doc Comment Here!
@@ -235,6 +238,20 @@ mod tests {
         // Invalid hex should fall back to plain text
         let result = memo_bytes_from_string("0xZZZZ".to_string());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn invalid_utf8_is_invalid_data() {
+        let err = utf8_string(vec![u8::MAX])
+            .expect_err("0xff is never a byte of a UTF-8 sequence, so the bytes are not UTF-8");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn valid_utf8_decodes_to_its_string() {
+        let decoded = utf8_string(b"main".to_vec())
+            .expect("the bytes come from a Rust string literal, which is valid UTF-8");
+        assert_eq!(decoded, "main");
     }
 
     #[test]

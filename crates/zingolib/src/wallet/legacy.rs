@@ -26,7 +26,14 @@ use zcash_protocol::{
 use zingolib_netutils::lightwallet_protocol::CompactBlock;
 use zingolib_status::confirmation_status::ConfirmationStatus;
 
-use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
+use super::{keys::legacy::WalletCapability, traits::ReadableWriteable, utils::utf8_string};
+
+fn read_orchard_nullifier(bytes: &[u8; 32]) -> io::Result<orchard::note::Nullifier> {
+    Option::from(orchard::note::Nullifier::from_bytes(bytes)).ok_or(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "stored orchard nullifier is not a canonical field element",
+    ))
+}
 
 /// TODO: Add Doc Comment Here!
 #[derive(Clone, PartialEq)]
@@ -115,8 +122,7 @@ impl TxMap {
 
             Ok((
                 TxId::from_bytes(txid_bytes),
-                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))
-                    .unwrap(),
+                TransactionRecord::read(r, (wallet_capability, old_inc_witnesses.as_mut()))?,
             ))
         })?;
 
@@ -359,7 +365,7 @@ impl TransactionRecord {
             zcash_encoding::Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
-                Ok(orchard::note::Nullifier::from_bytes(&n).unwrap())
+                read_orchard_nullifier(&n)
             })?
         };
         let status = if pending {
@@ -405,7 +411,10 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
             .fvk()
             .vk
             .to_payment_address(diversifier)
-            .unwrap()
+            .ok_or(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "stored sapling note diversifier is not valid for the wallet's sapling viewing key",
+            ))?
             .create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed),
         )
     }
@@ -423,7 +432,12 @@ fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<sapling_crypto::Rsee
     reader.read_exact(&mut r_bytes)?;
 
     let r = match note_type {
-        1 => sapling_crypto::Rseed::BeforeZip212(jubjub::Fr::from_bytes(&r_bytes).unwrap()),
+        1 => sapling_crypto::Rseed::BeforeZip212(
+            Option::from(jubjub::Fr::from_bytes(&r_bytes)).ok_or(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "stored sapling rseed is not a canonical jubjub scalar",
+            ))?,
+        ),
         2 => sapling_crypto::Rseed::AfterZip212(r_bytes),
         _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bad note type")),
     };
@@ -500,7 +514,7 @@ impl TransparentOutput {
         let address_len = reader.read_i32::<byteorder::LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
-        let address = String::from_utf8(address_bytes).unwrap();
+        let address = utf8_string(address_bytes)?;
         assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
 
         let mut transaction_id_bytes = [0; 32];
@@ -835,7 +849,7 @@ impl
         let read_nullifier = |r: &mut R| {
             let mut nullifier = [0u8; 32];
             r.read_exact(&mut nullifier)?;
-            Ok(orchard::note::Nullifier::from_bytes(&nullifier).unwrap())
+            read_orchard_nullifier(&nullifier)
         };
 
         let nullifier = match external_version {
@@ -941,7 +955,7 @@ impl OutgoingTxData {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
-        let address = String::from_utf8(address_bytes).unwrap();
+        let address = utf8_string(address_bytes)?;
 
         let value = reader.read_u64::<LittleEndian>()?;
 
@@ -974,7 +988,7 @@ impl OutgoingTxData {
         let address_len = reader.read_u64::<LittleEndian>()?;
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
-        let address = String::from_utf8(address_bytes).unwrap();
+        let address = utf8_string(address_bytes)?;
 
         let value = reader.read_u64::<LittleEndian>()?;
 
@@ -1321,5 +1335,30 @@ mod shardtree_boundary {
                 out.push(path);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_non_canonical_orchard_nullifier_is_invalid_data() {
+        let err = read_orchard_nullifier(&[u8::MAX; _]).expect_err(
+            "the all-ones encoding is 2^256 - 1, above the Pallas base field modulus (below 2^255), so it is not canonical",
+        );
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            err.to_string(),
+            "stored orchard nullifier is not a canonical field element"
+        );
+    }
+
+    #[test]
+    fn a_canonical_orchard_nullifier_round_trips() {
+        let canonical = [u8::MIN; _];
+        let nullifier = read_orchard_nullifier(&canonical)
+            .expect("zero is below the Pallas base field modulus, so its encoding is canonical");
+        assert_eq!(nullifier.to_bytes(), canonical);
     }
 }
