@@ -4208,9 +4208,9 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "zcash_protocol",
- "zingo-netutils",
  "zingo_test_vectors",
  "zingolib",
+ "zingolib-netutils",
  "zip32",
 ]
 
@@ -6438,12 +6438,10 @@ name = "pepper-sync"
 version = "0.7.0"
 dependencies = [
  "bip32 0.6.0",
- "byteorder",
  "crossbeam-channel",
  "futures",
  "hex",
  "incrementalmerkletree",
- "jubjub",
  "memuse",
  "orchard",
  "proptest",
@@ -6458,15 +6456,13 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding",
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo",
- "zingo-netutils",
- "zingo-status",
+ "zingolib-common",
+ "zingolib-netutils",
  "zip32",
 ]
 
@@ -11081,36 +11077,87 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo"
-version = "2.0.0"
+name = "zingo_common_components"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29f41ddb12ba9aa1fdbf4025fb54639f1fddd25c6e297574922b39fabfb730d4"
 dependencies = [
- "android_logger 0.11.3",
+ "hex",
+]
+
+[[package]]
+name = "zingo_grpc_proxy"
+version = "0.1.0"
+source = "git+https://github.com/zingolabs/grpc_proxy.git?rev=bad24e29529a0bb381f71f02f977752c20c26613#bad24e29529a0bb381f71f02f977752c20c26613"
+dependencies = [
+ "zaino-proto 0.2.0 (git+https://github.com/zingolabs/zaino.git?rev=2e2816cb3755e7ff4d18bed1a96b95dc07c1549c)",
+]
+
+[[package]]
+name = "zingo_test_vectors"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0610b074a9384c4e22c387637b8c24fff121a931f417de76212e12102bca0554"
+dependencies = [
+ "bip0039 0.12.0",
+]
+
+[[package]]
+name = "zingolib"
+version = "8.0.0"
+dependencies = [
+ "bech32",
+ "bip0039 0.14.0",
+ "blake2b_simd",
+ "byteorder",
+ "chrono",
+ "dirs",
+ "futures",
  "hex",
  "http 1.5.0",
+ "incrementalmerkletree",
  "json",
- "lazy_static",
+ "jubjub",
  "log",
- "once_cell",
+ "nonempty",
+ "orchard",
  "pepper-sync",
- "quote",
+ "portpicker",
+ "proptest",
+ "rand 0.10.2",
+ "rand_chacha 0.10.0",
+ "sapling-crypto",
+ "secrecy",
+ "serde",
  "serde_json",
- "syn 2.0.119",
+ "shardtree",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
- "uniffi",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "zaino-proto 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "zcash_address",
  "zcash_client_backend",
+ "zcash_encoding",
  "zcash_keys",
+ "zcash_pool_migration",
+ "zcash_primitives",
+ "zcash_proofs",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-nym-proxy-ffi",
  "zingo_common_components",
+ "zingo_test_vectors",
  "zingolib",
+ "zingolib-common",
+ "zingolib-file-format",
+ "zingolib-netutils",
  "zip32",
 ]
 
 [[package]]
-name = "zingo-cli"
+name = "zingolib-cli"
 version = "0.5.0"
 dependencies = [
  "clap",
@@ -11133,35 +11180,105 @@ dependencies = [
  "zcash_client_backend",
  "zcash_keys",
  "zcash_protocol",
- "zingo-net-diag",
- "zingo-netutils",
- "zingo-status",
  "zingo_common_components",
  "zingo_grpc_proxy",
  "zingo_test_vectors",
  "zingolib",
+ "zingolib-netutils",
  "zip32",
 ]
 
 [[package]]
-name = "zingo-memo"
-version = "0.3.0"
-dependencies = [
- "zcash_address",
- "zcash_encoding",
- "zcash_keys",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-net-diag"
+name = "zingolib-common"
 version = "0.1.0"
 dependencies = [
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "byteorder",
+ "incrementalmerkletree",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "sapling-crypto",
+ "secrecy",
  "serde",
+ "shardtree",
+ "thiserror 2.0.19",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zip32",
 ]
 
 [[package]]
-name = "zingo-netutils"
+name = "zingolib-ffi"
+version = "2.0.0"
+dependencies = [
+ "android_logger 0.11.3",
+ "hex",
+ "http 1.5.0",
+ "json",
+ "lazy_static",
+ "log",
+ "once_cell",
+ "pepper-sync",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
+ "thiserror 2.0.19",
+ "tokio",
+ "uniffi",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zingolib",
+ "zingolib-nym-proxy-ffi",
+ "zip32",
+]
+
+[[package]]
+name = "zingolib-file-format"
+version = "0.1.0"
+dependencies = [
+ "append-only-vec",
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "blake2b_simd",
+ "bs58",
+ "byteorder",
+ "hex",
+ "incrementalmerkletree",
+ "jubjub",
+ "lightwallet-protocol",
+ "log",
+ "orchard",
+ "prost 0.14.4",
+ "sapling-crypto",
+ "serde",
+ "shardtree",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zingolib-common",
+ "zip32",
+]
+
+[[package]]
+name = "zingolib-netutils"
 version = "7.0.0"
 dependencies = [
  "futures-channel",
@@ -11198,11 +11315,10 @@ dependencies = [
  "tonic",
  "tower",
  "x509-parser",
- "zingo-net-diag",
 ]
 
 [[package]]
-name = "zingo-nym-proxy-ffi"
+name = "zingolib-nym-proxy-ffi"
 version = "0.1.0"
 dependencies = [
  "android_logger 0.15.1",
@@ -11213,122 +11329,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uniffi",
- "zingo-netutils",
+ "zingolib-netutils",
 ]
 
 [[package]]
-name = "zingo-price"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "zcash_encoding",
- "zingo-net-diag",
- "zingo-netutils",
-]
-
-[[package]]
-name = "zingo-status"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-uniffi-bindgen"
+name = "zingolib-uniffi-bindgen"
 version = "0.1.0"
 dependencies = [
  "uniffi",
-]
-
-[[package]]
-name = "zingo_common_components"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29f41ddb12ba9aa1fdbf4025fb54639f1fddd25c6e297574922b39fabfb730d4"
-dependencies = [
- "hex",
-]
-
-[[package]]
-name = "zingo_grpc_proxy"
-version = "0.1.0"
-source = "git+https://github.com/zingolabs/grpc_proxy.git?rev=bad24e29529a0bb381f71f02f977752c20c26613#bad24e29529a0bb381f71f02f977752c20c26613"
-dependencies = [
- "zaino-proto 0.2.0 (git+https://github.com/zingolabs/zaino.git?rev=2e2816cb3755e7ff4d18bed1a96b95dc07c1549c)",
-]
-
-[[package]]
-name = "zingo_test_vectors"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0610b074a9384c4e22c387637b8c24fff121a931f417de76212e12102bca0554"
-dependencies = [
- "bip0039 0.12.0",
-]
-
-[[package]]
-name = "zingolib"
-version = "8.0.0"
-dependencies = [
- "append-only-vec",
- "bech32",
- "bip0039 0.14.0",
- "bip32 0.6.0",
- "blake2b_simd",
- "bs58",
- "byteorder",
- "chrono",
- "dirs",
- "futures",
- "hex",
- "http 1.5.0",
- "incrementalmerkletree",
- "json",
- "jubjub",
- "log",
- "nonempty",
- "orchard",
- "pepper-sync",
- "portpicker",
- "proptest",
- "prost 0.14.4",
- "rand 0.10.2",
- "rand_chacha 0.10.0",
- "sapling-crypto",
- "secrecy",
- "serde",
- "serde_json",
- "shardtree",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
- "zaino-proto 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zcash_address",
- "zcash_client_backend",
- "zcash_encoding",
- "zcash_keys",
- "zcash_pool_migration",
- "zcash_primitives",
- "zcash_proofs",
- "zcash_protocol",
- "zcash_transparent",
- "zingo-memo",
- "zingo-net-diag",
- "zingo-netutils",
- "zingo-price",
- "zingo-status",
- "zingo_common_components",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
 ]
 
 [[package]]

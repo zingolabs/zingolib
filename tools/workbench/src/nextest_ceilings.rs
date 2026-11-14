@@ -293,7 +293,7 @@ test-group = 'testnet'
 slow-timeout = { period = "60s", terminate-after = 60, grace-period = "30s" }
 
 [[profile.default.overrides]]
-filter = 'package(libtonode-tests) | package(zingo-cli)'
+filter = 'package(libtonode-tests) | package(zingolib-cli)'
 
 [[profile.default.overrides]]
 filter = '''
@@ -314,10 +314,10 @@ slow-timeout = { period = "60s", terminate-after = 20, grace-period = "30s" }
             Filterset::Or(vec![test("a"), test("b_c")])
         );
         assert_eq!(
-            filterset("package(libtonode-tests) | package(zingo-cli)")?,
+            filterset("package(libtonode-tests) | package(zingolib-cli)")?,
             Filterset::Or(vec![
                 Filterset::Term(FiltersetTerm::Package("libtonode-tests".to_string())),
-                Filterset::Term(FiltersetTerm::Package("zingo-cli".to_string())),
+                Filterset::Term(FiltersetTerm::Package("zingolib-cli".to_string())),
             ])
         );
         assert_eq!(

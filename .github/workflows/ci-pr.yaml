@@ -27,7 +27,7 @@ on:
       - "rust-toolchain.toml"
       - "bindings/**"
       - "**/uniffi.toml"
-      - "zingo-ffi/lib/src/exported_surface.snapshot.txt"
+      - "ffi/lib/src/exported_surface.snapshot.txt"
       - ".github/workflows/**"
       - "deny.toml"
       - ".github/actions/**"
@@ -82,14 +82,14 @@ jobs:
   # The three gates the root workspace keeps from cargo-checkmate, each
   # at the scope the phase had: rustfmt over every crate, clippy over
   # the library and binary targets with the default features (the nym
-  # job lints every target of zingolib and zingo-cli under nym, and the
+  # job lints every target of zingolib and zingolib-cli under nym, and the
   # test archive compiles every test target with warnings denied), and
   # rustdoc over the workspace's own crates only. The
   # checkmate doc phase documented every dependency with warnings denied,
   # six minutes a run that a dependency's rustdoc warning could fail.
   # The check and build phases are covered by the cargo-hack sweep and
   # the test archive build. The proxy crate is excluded here because it
-  # turns on the `nym` feature of zingo-netutils, which would unify the
+  # turns on the `nym` feature of zingolib-netutils, which would unify the
   # nym-sdk stack into the whole build; the nym feature job lints it.
   root-lints:
     name: Format, clippy and rustdoc (root workspace)
@@ -108,10 +108,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --exclude zingo-nym-proxy-ffi -- -D warnings
+        run: cargo clippy --workspace --exclude zingolib-nym-proxy-ffi -- -D warnings
 
       - name: Doc
-        run: cargo doc --workspace --exclude zingo-nym-proxy-ffi --no-deps
+        run: cargo doc --workspace --exclude zingolib-nym-proxy-ffi --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -173,6 +173,36 @@ jobs:
             exit 1
           fi
 
+  no-network-in-wallet-crates:
+    name: No network code in the wallet crates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Reject a network dependency in the normal trees
+        run: |
+          status=0
+          forbid() {
+            crate="$1"
+            flags="$2"
+            shift 2
+            for dep in "$@"; do
+              if cargo tree --locked -p "$crate" $flags -e normal -i "$dep" > /dev/null 2>&1; then
+                echo "::error::$crate depends on $dep"
+                status=1
+              fi
+            done
+          }
+          forbid zingolib-common "" pepper-sync zingolib zingolib-netutils tokio tonic hyper reqwest lightwallet-protocol futures
+          forbid zingolib-file-format "" zingolib pepper-sync zingolib-netutils reqwest
+          forbid zingolib-file-format --no-default-features zingolib pepper-sync zingolib-netutils reqwest tonic tokio hyper lightwallet-protocol
+          exit "$status"
+
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
   cargo-hack-check:
@@ -191,9 +221,9 @@ jobs:
           key: ${{ inputs.cargo-hack-subcommand || 'check' }}
 
       # The flags are the action's defaults plus two exclusions and one
-      # excluded feature. zingo-uniffi-bindgen is a binary with no library
+      # excluded feature. zingolib-uniffi-bindgen is a binary with no library
       # target and no features, and `--lib` fails on a package without one.
-      # zingo-nym-proxy-ffi turns on the `nym` feature of zingo-netutils, and
+      # zingolib-nym-proxy-ffi turns on the `nym` feature of zingolib-netutils, and
       # `nym` itself is excluded from the powerset, because its nym-sdk stack
       # would rebuild once per feature subset; the nym feature job below
       # checks the two crates with every feature on. The rest of netutils'
@@ -202,15 +232,15 @@ jobs:
         uses: zingolabs/infrastructure/.github/actions/cargo-hack@20485fed7a080e381130ed8120419dc81acae641
         with:
           hack-subcommand: ${{ inputs.cargo-hack-subcommand || 'check' }}
-          hack-flags: "--workspace --exclude zingo-uniffi-bindgen --exclude zingo-nym-proxy-ffi --exclude-features nym --feature-powerset --lib --bins --tests --target-dir target/hack"
+          hack-flags: "--workspace --exclude zingolib-uniffi-bindgen --exclude zingolib-nym-proxy-ffi --exclude-features nym --feature-powerset --lib --bins --tests --target-dir target/hack"
 
-  # The `nym` feature of zingo-netutils compiles the nym-sdk stack, and the
+  # The `nym` feature of zingolib-netutils compiles the nym-sdk stack, and the
   # proxy crate turns it on. The --workspace jobs above and the nextest
   # archive in test.yaml exclude the proxy crate so that feature
   # unification keeps the stack out of every other build; this job checks
   # the two crates with every feature on and runs the proxy crate's tests.
   netutils-nym:
-    name: zingo-netutils (nym feature)
+    name: zingolib-netutils (nym feature)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -224,16 +254,16 @@ jobs:
 
       - name: Clippy
         run: >-
-          cargo clippy --package zingo-netutils --package zingo-nym-proxy-ffi
+          cargo clippy --package zingolib-netutils --package zingolib-nym-proxy-ffi
           --all-targets --all-features -- -D warnings
 
       # The proxy crate's live-mixnet feature builds a test that reaches the
       # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
-        run: cargo test --package zingo-netutils --all-features
+        run: cargo test --package zingolib-netutils --all-features
 
       - name: Test the proxy crate
-        run: cargo test --package zingo-nym-proxy-ffi
+        run: cargo test --package zingolib-nym-proxy-ffi
 
       # The live test reaches the real Nym network, so it may fail on the
       # network without failing the check (zingolib/0054). One thread keeps
@@ -244,7 +274,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 25
         run: |
-          cargo test --package zingo-nym-proxy-ffi \
+          cargo test --package zingolib-nym-proxy-ffi \
             --features live-mixnet --test live_mixnet -- --test-threads=1
 
       # The root-lints job documents the members with their default
@@ -252,7 +282,7 @@ jobs:
       # rustdoc lints, so the nym feature needs its own doc gate.
       - name: Doc
         run: >-
-          cargo doc --package zingo-netutils --package zingo-nym-proxy-ffi
+          cargo doc --package zingolib-netutils --package zingolib-nym-proxy-ffi
           --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
@@ -322,7 +352,7 @@ jobs:
       bundle: ${{ needs.binding-layer-names.outputs.bundle_ios }}
 
   # The `nym` feature gates the mixnet transmission and price-fetch surfaces
-  # (ADR 0011) in zingolib and zingo-cli. zingo-cli carries it as a default
+  # (ADR 0011) in zingolib and zingolib-cli. zingolib-cli carries it as a default
   # feature (ADR 0026), so the --workspace jobs above compile the CLI's gated
   # code; zingolib's own default remains nym-off. The gated lib suites run
   # sharded in the test-nym job below. This job keeps the targets a nextest
@@ -331,8 +361,8 @@ jobs:
   # strings must keep compiling and rendering. Those three steps finish in
   # about five minutes, so the timeout bounds a hang at four times that.
   nym-feature:
-    name: nym feature (zingolib + zingo-cli)
-    # Compile-bound: clippy and the doc tests build zingolib and zingo-cli
+    name: nym feature (zingolib + zingolib-cli)
+    # Compile-bound: clippy and the doc tests build zingolib and zingolib-cli
     # under the nym features. On four cores the job took 8.3 minutes, longer
     # than the archive and its shards; on the sixteen-core runner that the
     # CI_LINUX_RUNNER repository variable names it took 2.5 (2026-10-16).
@@ -348,7 +378,7 @@ jobs:
         uses: ./.github/actions/rust-setup
 
       - name: Clippy
-        run: cargo clippy -p zingolib -p zingo-cli --features nym --all-targets -- -D warnings
+        run: cargo clippy -p zingolib -p zingolib-cli --features nym --all-targets -- -D warnings
 
       # The lib suites under the nym features run in the test-nym job
       # below, sharded like the normal suite. This job keeps the targets
@@ -358,8 +388,8 @@ jobs:
 
       # The opt-out shape (`--no-default-features`, run-cli's `--nakednet`)
       # must keep building, and its typed refusals must keep rendering.
-      - name: Test zingo-cli without the default nym feature
-        run: cargo test -p zingo-cli --no-default-features --lib
+      - name: Test zingolib-cli without the default nym feature
+        run: cargo test -p zingolib-cli --no-default-features --lib
 
   run-doc-tests:
     name: Run doc tests
@@ -415,7 +445,7 @@ jobs:
     uses: ./.github/workflows/test.yaml
     with:
       suite: nym
-      archive-args: --package zingolib --package zingo-cli --features nym --lib
+      archive-args: --package zingolib --package zingolib-cli --features nym --lib
       partitions: "[1, 2, 3, 4, 5, 6]"
       image-tag: ${{ needs.ensure-image.outputs.image-tag }}
     permissions:

@@ -10,7 +10,7 @@
   over the known implementors. Never add one. Existing ones are debt to retire,
   not precedent to follow. Ruled 2026-08-18.
   - **One sanctioned exception:** `Arc<dyn ProxyHosting>` in
-    `zingo-netutils/src/provider.rs`. A platform host is implemented outside
+    `crates/netutils/src/provider.rs`. A platform host is implemented outside
     this workspace and reached across an FFI boundary, so its concrete type is
     unnameable here. The alternatives were weighed and both cost more than the
     rule saves: a type parameter reaches `Acquirer`, `Pools`, and `LightClient`,

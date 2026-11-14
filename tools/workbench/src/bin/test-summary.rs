@@ -2,12 +2,12 @@
 //!
 //! Invoked as `makers hierarchy-test`, which runs
 //! `cargo run --bin test-summary -- <nextest args>`.
-//! Runs the `packages` and `zingo-cli` phases (each in its own CI container
+//! Runs the `packages` and `zingolib-cli` phases (each in its own CI container
 //! via the `makers test` front door), streams each run's output while
 //! capturing it, parses the nextest summary line, and aggregates the totals.
 //!
 //! Phases gate: a failing phase stops the later, more expensive phase from
-//! launching (a broken unit test should never cost a zingo-cli run). The
+//! launching (a broken unit test should never cost a zingolib-cli run). The
 //! summary table still prints for every phase, marking the ones a failure
 //! prevented from running.
 //!
@@ -44,7 +44,7 @@ fn is_package_selection_arg(arg: &str) -> bool {
 /// change, recompiles) a distinct variant of zingolib per phase.
 const PHASES: &[(&str, &[&str])] = &[
     ("packages", &["packages"]),
-    ("zingo-cli", &["-E", "package(zingo-cli)"]),
+    ("zingolib-cli", &["-E", "package(zingolib-cli)"]),
 ];
 
 /// One nextest run's tallies, zero where the summary line was absent.
@@ -340,7 +340,7 @@ mod package_selection_guard {
             "--workspace",
             "--all",
             "--exclude",
-            "--exclude=zingo-cli",
+            "--exclude=zingolib-cli",
             "--manifest-path",
             "--manifest-path=Cargo.toml",
         ] {

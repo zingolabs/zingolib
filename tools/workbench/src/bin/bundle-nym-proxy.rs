@@ -1,4 +1,4 @@
-//! - Runs `cargo build --package zingo-netutils --features nym --bin nym-proxy` in the repo root.
+//! - Runs `cargo build --package zingolib-netutils --features nym --bin nym-proxy` in the repo root.
 //! - Copies the built binary into `--dest <dir>` through a staged rename when that directory is not cargo's own.
 
 #![forbid(unsafe_code)]
@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use cargo_metadata::Message;
 use workbench::{binding_layer, parse_dest, repo_root, run};
 
-const PACKAGE: &str = "zingo-netutils";
+const PACKAGE: &str = "zingolib-netutils";
 const FEATURE: &str = "nym";
 const BIN: &str = "nym-proxy";
 

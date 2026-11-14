@@ -1,7 +1,7 @@
 use crate::binding_manifest;
 use std::path;
 
-#[path = "../../../zingolib/short_commit.rs"]
+#[path = "../../../crates/zingolib/short_commit.rs"]
 pub mod short_commit;
 
 /// The language of the Android bindings.
@@ -13,15 +13,15 @@ pub const SWIFT: &str = "swift";
 /// The binding languages that the builder generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
-const BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
+const BINDGEN_PACKAGE: &str = "zingolib-uniffi-bindgen";
 
-const BINDGEN_BIN: &str = "zingo-uniffi-bindgen";
+const BINDGEN_BIN: &str = "zingolib-uniffi-bindgen";
 
 /// The wallet crate's library name, from which its library file names derive.
-pub const WALLET_LIB_NAME: &str = "zingo";
+pub const WALLET_LIB_NAME: &str = "zingolib_ffi";
 
 /// The proxy crate's library name, from which its library file names derive.
-pub const PROXY_LIB_NAME: &str = "zingo_nym_proxy_ffi";
+pub const PROXY_LIB_NAME: &str = "zingolib_nym_proxy_ffi";
 
 const MACH_O_SYMBOL_PREFIX: &str = "_";
 const UNIFFI_SYMBOL_PREFIXES: [&str; 2] = ["uniffi_", "ffi_"];
@@ -35,13 +35,13 @@ pub fn exported_symbol_patterns(lib_name: &str) -> [String; 2] {
 }
 
 /// The proxy crate's package name, which cargo selects in its own workspace.
-pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
+pub const PROXY_PACKAGE: &str = "zingolib-nym-proxy-ffi";
 
 pub const PROXY_FEATURE_ARGS: [&str; 2] = ["--features", PROXY_PACKAGE];
 
-pub const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
+pub const WALLET_CRATE_DIR: &str = "ffi/lib";
 
-pub const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
+pub const PROXY_CRATE_DIR: &str = "crates/netutils/nym-proxy-ffi";
 
 pub const BINDING_CRATE_DIRS: [&str; 2] = [WALLET_CRATE_DIR, PROXY_CRATE_DIR];
 
@@ -89,7 +89,7 @@ pub const KOTLIN_OUT_DIR: &str = "kotlin";
 pub const JNI_LIBS_DIR: &str = "jniLibs";
 
 /// The name of the wallet's Android library.
-pub const ANDROID_WALLET_LIBRARY: &str = "libuniffi_zingo.so";
+pub const ANDROID_WALLET_LIBRARY: &str = "libuniffi_zingolib_ffi.so";
 
 /// The prefix of a Unix library file name.
 pub const LIBRARY_PREFIX: &str = "lib";
@@ -123,11 +123,11 @@ pub const SWIFT_LINKED_FRAMEWORK: &str = "SystemConfiguration";
 
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
-pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
+pub const SWIFT_CONTRACT_TESTS_DIR: &str = "crates/netutils/nym-proxy-ffi/contract-tests";
 
 pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
 
-pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
+pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../../bindings/swift";
 
 const SWIFTPM_PACKAGE_SCHEME_SUFFIX: &str = "-Package";
 
@@ -227,10 +227,10 @@ pub fn executed_tests(log: &str) -> Result<usize, Vec<String>> {
 }
 
 /// The wallet's generated Swift source.
-pub const WALLET_SWIFT: &str = "zingo.swift";
+pub const WALLET_SWIFT: &str = "zingolib_ffi.swift";
 
 /// The proxy's generated Swift source.
-pub const PROXY_SWIFT: &str = "zingo_nym_proxy_ffi.swift";
+pub const PROXY_SWIFT: &str = "zingolib_nym_proxy_ffi.swift";
 
 /// Both generated Swift sources.
 pub const SWIFT_SOURCES: [&str; 2] = [WALLET_SWIFT, PROXY_SWIFT];
@@ -317,7 +317,7 @@ pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
 const SLICE_SEGMENT: &str = "slice";
 pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
-pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
+pub const WALLET_MANIFEST: &str = "crates/zingolib/Cargo.toml";
 const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
 pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
 pub const MAVEN_REPOSITORY_DIR: &str = "repository";
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn the_descriptor_env_is_the_one_the_build_script_emits() {
-        let build_script = include_str!("../../../zingolib/build.rs");
+        let build_script = include_str!("../../../crates/zingolib/build.rs");
         assert!(build_script.contains(&format!(
             "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
         )));
@@ -919,7 +919,7 @@ mod tests {
     #[test]
     fn the_wallet_crate_offers_the_proxy_feature_the_ios_build_enables() -> Result<(), Vec<String>>
     {
-        let manifest: toml_edit::DocumentMut = include_str!("../../../zingo-ffi/lib/Cargo.toml")
+        let manifest: toml_edit::DocumentMut = include_str!("../../../ffi/lib/Cargo.toml")
             .parse()
             .map_err(|error| {
                 vec![format!(
@@ -970,7 +970,7 @@ mod tests {
         assert!(enabled
             .iter()
             .any(|value| value.as_str() == Some(&dependency_feature)));
-        let source = include_str!("../../../zingo-ffi/lib/src/lib.rs");
+        let source = include_str!("../../../ffi/lib/src/lib.rs");
         assert!(source.contains(&format!(
             "#[cfg(feature = \"{feature}\")]\nextern crate {};",
             PROXY_PACKAGE.replace('-', "_")
@@ -1073,7 +1073,7 @@ mod tests {
     #[test]
     fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
         let manifest =
-            include_str!("../../../zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift");
+            include_str!("../../../crates/netutils/nym-proxy-ffi/contract-tests/Package.swift");
         assert!(manifest.contains(&format!("name: \"{SWIFT_CONTRACT_TESTS_PACKAGE}\"")));
         assert!(manifest.contains(&format!(
             ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
@@ -1175,7 +1175,7 @@ mod tests {
     #[test]
     fn the_swift_contract_test_count_is_the_number_of_xctest_methods() {
         let suite = include_str!(
-            "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
+            "../../../crates/netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
         );
         assert_eq!(xctest_methods(suite), SWIFT_CONTRACT_TEST_COUNT);
         let mixed = [
@@ -1200,7 +1200,7 @@ mod tests {
 
     #[test]
     fn the_wallet_crate_builds_no_bindgen() {
-        let manifest = include_str!("../../../zingo-ffi/lib/Cargo.toml");
+        let manifest = include_str!("../../../ffi/lib/Cargo.toml");
         assert!(!manifest.contains("[[bin]]"));
         assert!(!manifest.contains("\"cli\""));
     }
@@ -1213,7 +1213,7 @@ mod tests {
             wallet_workspace: "/w/Cargo.toml",
             target_dir: "/t",
         };
-        let args = bindgen_args(&inputs, "/t/release/libzingo.so", "/o");
+        let args = bindgen_args(&inputs, "/t/release/libzingolib_ffi.so", "/o");
         assert_eq!(
             args,
             [
@@ -1225,13 +1225,13 @@ mod tests {
                 crate::MANIFEST_PATH_FLAG,
                 "/w/Cargo.toml",
                 "--package",
-                "zingo-uniffi-bindgen",
+                "zingolib-uniffi-bindgen",
                 "--bin",
-                "zingo-uniffi-bindgen",
+                "zingolib-uniffi-bindgen",
                 "--",
                 "generate",
                 "--library",
-                "/t/release/libzingo.so",
+                "/t/release/libzingolib_ffi.so",
                 "--language",
                 "kotlin",
                 "--out-dir",

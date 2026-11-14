@@ -163,16 +163,16 @@ const LIBTOOL: &str = "libtool";
 const LIBTOOL_STATIC_FLAG: &str = "-static";
 
 /// The wallet's generated C header.
-const WALLET_HEADER: &str = "zingoFFI.h";
+const WALLET_HEADER: &str = "zingolib_ffiFFI.h";
 
 /// The wallet's generated module map.
-const WALLET_MODULEMAP: &str = "zingoFFI.modulemap";
+const WALLET_MODULEMAP: &str = "zingolib_ffiFFI.modulemap";
 
 /// The proxy's generated C header.
-const PROXY_HEADER: &str = "zingo_nym_proxy_ffiFFI.h";
+const PROXY_HEADER: &str = "zingolib_nym_proxy_ffiFFI.h";
 
 /// The proxy's generated module map.
-const PROXY_MODULEMAP: &str = "zingo_nym_proxy_ffiFFI.modulemap";
+const PROXY_MODULEMAP: &str = "zingolib_nym_proxy_ffiFFI.modulemap";
 
 /// The module map that declares both modules inside the wallet XCFramework.
 const COMBINED_MODULEMAP: &str = "module.modulemap";
@@ -2421,7 +2421,7 @@ mod tests {
         assert_eq!(generations.len(), binding_layer::GENERATIONS.len());
         assert!(generations
             .iter()
-            .all(|command| command.contains("--package zingo-uniffi-bindgen")));
+            .all(|command| command.contains("--package zingolib-uniffi-bindgen")));
         assert!(generations
             .iter()
             .all(|command| !command

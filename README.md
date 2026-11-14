@@ -9,8 +9,8 @@ If you believe you have discovered a security issue, please contact us at:
 zingodisclosure@proton.me
 
 ## Zingo CLI
-`zingo-cli` is a command line indexer client. Its own README,
-[zingo-cli/README.md](zingo-cli/README.md), holds everything specific to it:
+`zingolib-cli` is a command line indexer client. Its own README,
+[bin/cli/README.md](bin/cli/README.md), holds everything specific to it:
 the one procedure that builds it, which bundles the `nym-proxy` binary beside
 it, and how to launch it, take it online, choose a network (regtest included),
 create or restore a wallet, and set its session options. Releases are currently

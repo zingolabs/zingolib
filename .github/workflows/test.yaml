@@ -21,7 +21,7 @@ on:
       archive-args:
         required: false
         type: string
-        default: --workspace --exclude zingo-nym-proxy-ffi
+        default: --workspace --exclude zingolib-nym-proxy-ffi
       # The shards that run the archive, as a JSON array of partition
       # numbers. Every shard pays for a checkout, a nextest install, the
       # archive download and a container start before its first test, so
@@ -96,7 +96,7 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           cargo nextest archive --verbose \
-            ${ARCHIVE_ARGS:---workspace --exclude zingo-nym-proxy-ffi} \
+            ${ARCHIVE_ARGS:---workspace --exclude zingolib-nym-proxy-ffi} \
             --archive-file "${ARCHIVE}.tar.zst"
 
       - name: Upload archive

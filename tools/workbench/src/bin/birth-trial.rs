@@ -23,25 +23,25 @@ use std::time::{Duration, Instant};
 
 use workbench::{repo_root, run};
 
-/// Agreeing representations of `zingo_netutils`'s minted stdout tokens,
+/// Agreeing representations of `zingolib_netutils`'s minted stdout tokens,
 /// restated because the workbench is deliberately std-only and takes no
 /// production dependency; these must not drift from that crate.
 const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 
 /// The token the proxy publishes its local SOCKS5 address under, agreeing
-/// with `zingo_netutils::SOCKS5_ADDR_LINE_PREFIX`.
+/// with `zingolib_netutils::SOCKS5_ADDR_LINE_PREFIX`.
 const SOCKS5_ADDR_LINE_PREFIX: &str = "SOCKS5_ADDR=";
 
 /// The address the Sentinel probes, agreeing with
-/// `zingo_netutils::sentinel::SENTINEL_HOST` in its four octets.
+/// `zingolib_netutils::sentinel::SENTINEL_HOST` in its four octets.
 const SENTINEL_HOST_OCTETS: [u8; 4] = [1, 1, 1, 1];
 
 /// The port the Sentinel probes, agreeing with
-/// `zingo_netutils::sentinel::SENTINEL_PORT`.
+/// `zingolib_netutils::sentinel::SENTINEL_PORT`.
 const SENTINEL_PORT: u16 = 53;
 
 /// How long one Sentinel round trip may take before the exit is judged to
-/// carry nothing, agreeing with `zingo_netutils::time::SENTINEL_BUDGET`.
+/// carry nothing, agreeing with `zingolib_netutils::time::SENTINEL_BUDGET`.
 const SENTINEL_BUDGET: Duration = Duration::from_millis(3_500);
 
 /// The reply bytes a probe reads before it stops, agreeing with the
@@ -92,7 +92,7 @@ const SOCKS5_IPV4_REPLY_BYTES: usize = 10;
 
 /// How long one birth may take to announce its exit before the trial
 /// counts it unreachable, agreeing with
-/// `zingo_netutils::time::EXIT_ANNOUNCEMENT_GRACE`.
+/// `zingolib_netutils::time::EXIT_ANNOUNCEMENT_GRACE`.
 const ANNOUNCEMENT_GRACE: Duration = Duration::from_millis(7_000);
 
 /// How many births one trial run makes when `--births` names no other count.

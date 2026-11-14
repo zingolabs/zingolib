@@ -23,7 +23,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing-subscriber.workspace = true
 zcash_protocol = { workspace = true }
 # `testutils` exposes `time::test`, the tests' temporal parameters.
-zingo-netutils = { workspace = true, features = ["testutils"] }
+zingolib-netutils = { workspace = true, features = ["testutils"] }
 zingo_test_vectors = { workspace = true }
 zingolib = { workspace = true, features = ["perspective", "testutils"] }
 zip32 = { workspace = true }

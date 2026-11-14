@@ -2,7 +2,7 @@
 
 zingolib supports React Native mobile development. This file is the guide
 to building and publishing the Binding Layer. The glossary's
-[Consumers section](../zingolib/CONTEXT.md#consumers) defines the Binding
+[Consumers section](../crates/zingolib/CONTEXT.md#consumers) defines the Binding
 Layer, the Prebuilt Bundle, the Bundle Pin, the Published Commit and the
 Publication Record.
 
@@ -30,9 +30,9 @@ cargo run --manifest-path tools/workbench/Cargo.toml --bin build-binding-layer -
   ios --assemble
 ```
 
-`zingo-ffi/lib/src/exported_surface.snapshot.txt` is a snapshot of the
+`ffi/lib/src/exported_surface.snapshot.txt` is a snapshot of the
 exported surface. The test `the_library_exports_the_committed_surface` in
-`zingo-ffi/lib/tests/exported_surface.rs` diffs the sources against it on
+`ffi/lib/tests/exported_surface.rs` diffs the sources against it on
 every pull request and prints the lines to add or remove. A change to an
 exported function, record or error updates the snapshot in the same pull
 request.

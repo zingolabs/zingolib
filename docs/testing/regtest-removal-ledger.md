@@ -334,7 +334,7 @@ gate). The offline twins run in zingolib's default unit suite.
 **The twins' two hosts.** Tier 1 (three tests) runs on the synthetic
 wallet rig alone: fabricated spendable funds, real proposal/build logic,
 no network of any kind. Tiers 2–3 (five tests) run on the **stateful
-mock indexer** (`zingolib/src/testutils/mock_indexer.rs`): an in-process
+mock indexer** (`crates/zingolib/src/testutils/mock_indexer.rs`): an in-process
 `CompactTxStreamer` server over a fabricated chain, so the wallet's REAL
 pipeline (`GrpcIndexer`, pepper-sync scanning, record building, spend
 bookkeeping, transparent self-receipts) runs end to end with no zebrad

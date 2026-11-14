@@ -168,11 +168,11 @@ jobs:
         run: |
           set -eu
           for abi in $ABIS; do
-            test -f "$OUTPUT/jniLibs/$abi/libuniffi_zingo.so"
-            test -f "$OUTPUT/jniLibs/$abi/libzingo_nym_proxy_ffi.so"
+            test -f "$OUTPUT/jniLibs/$abi/libuniffi_zingolib_ffi.so"
+            test -f "$OUTPUT/jniLibs/$abi/libzingolib_nym_proxy_ffi.so"
           done
-          test -f "$OUTPUT/kotlin/uniffi/zingo/zingo.kt"
-          test -f "$OUTPUT/kotlin/uniffi/zingo_nym_proxy_ffi/zingo_nym_proxy_ffi.kt"
+          test -f "$OUTPUT/kotlin/uniffi/zingolib_ffi/zingolib_ffi.kt"
+          test -f "$OUTPUT/kotlin/uniffi/zingolib_nym_proxy_ffi/zingolib_nym_proxy_ffi.kt"
           test -f "$OUTPUT/descriptor.txt"
 
       - name: Setup Gradle
@@ -209,7 +209,7 @@ jobs:
           grep --quiet '<artifactId>jna</artifactId>' "$pom"
           entries="$(unzip -Z1 "$aar")"
           for abi in $ABIS; do
-            for library in libuniffi_zingo.so libzingo_nym_proxy_ffi.so; do
+            for library in libuniffi_zingolib_ffi.so libzingolib_nym_proxy_ffi.so; do
               echo "$entries" | grep --quiet --line-regexp "jni/$abi/$library"
             done
           done
