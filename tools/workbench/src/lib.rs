@@ -23,6 +23,8 @@ pub mod binding_manifest;
 pub mod binding_publish;
 pub mod cache_families;
 pub mod closed_pr_runs;
+#[cfg(test)]
+mod crate_move;
 pub mod dupes_gate;
 pub mod nextest_ceilings;
 pub mod orasust;

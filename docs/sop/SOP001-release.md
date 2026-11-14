@@ -91,8 +91,9 @@ API inherits the major. A compatible bump of a dependency forces nothing:
 the requirement already admits it, and the dependent crate releases when
 its own section says so. Cargo orders the set by dependency at publish
 time, so the order needs no thought here. The current order, read from a
-dry run on 2026-10-29, is `zingo-memo`, `zingo-net-diag`, `zingo-status`,
-`zingo-netutils`, `pepper-sync`, `zingo-price`, `zingolib`, `zingo-cli`.
+dry run on 2026-10-29, is `zingolib-memo`, `zingolib-net-diag`,
+`zingolib-status`, `zingolib-netutils`, `pepper-sync`, `zingolib-price`,
+`zingolib`, `zingolib-cli`.
 
 `zingolib-cli` is a crate of the set like any other, with a version of its own
 that does not track zingolib's. It stays in this workspace because it is

@@ -50,7 +50,7 @@ mod misplaced_session_option {
             "{guidance}"
         );
         assert!(
-            guidance.contains("zingo-cli --online sync run"),
+            guidance.contains("zingolib-cli --online sync run"),
             "the fix moves the option ahead of the command: {guidance}"
         );
     }

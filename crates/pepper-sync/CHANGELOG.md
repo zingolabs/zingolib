@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called.
 
 ### Changed
+- BREAKING: the crate depends on `zingolib-memo`, `zingolib-status` and
+  `zingolib-netutils`, renamed from `zingo-memo`, `zingo-status` and
+  `zingo-netutils`. A consumer that names a type of those crates moves to
+  the new package names.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status

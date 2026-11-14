@@ -166,7 +166,7 @@ pub fn misplaced_session_option(args: &[String]) -> Option<String> {
     let corrected = |option: &str| {
         format!(
             "`{option}` is a session option and must come before the command.\n       \
-             try:  zingo-cli {option} {rest}",
+             try:  zingolib-cli {option} {rest}",
             rest = args
                 .iter()
                 .skip(1)
