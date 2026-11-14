@@ -105,8 +105,24 @@ const SPAWN_ANCHOR: &str = "let sync_handle = tokio::spawn(async move {";
 /// block refuses instead of producing a number.
 const SPAWN_CALL: &str = "pepper_sync::sync";
 
-/// The file the graft rewrites in each arm's worktree.
-const SYNC_SOURCE: &str = "crates/zingolib/src/lightclient/sync.rs";
+struct Layout {
+    sync_source: &'static str,
+    cli_source: &'static str,
+    cli: &'static str,
+}
+
+const LAYOUTS: [Layout; 2] = [
+    Layout {
+        sync_source: "crates/zingolib/src/lightclient/sync.rs",
+        cli_source: "bin/cli/src/lib.rs",
+        cli: "zingolib-cli",
+    },
+    Layout {
+        sync_source: "zingolib/src/lightclient/sync.rs",
+        cli_source: "zingo-cli/src/lib.rs",
+        cli: "zingo-cli",
+    },
+];
 
 /// The marker the graft opens its span with.
 const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
@@ -176,9 +192,6 @@ const WALLETS_DIR: &str = "wallets";
 // `config::DEFAULT_WALLET_NAME` because the workbench is std-only; it must
 // not drift from that constant.
 const WALLET_FILE: &str = "zingo-wallet.dat";
-
-// The process name the memory reading follows, as the kernel reports it.
-const CLI_COMM: &str = "zingolib-cli";
 
 // Where the kernel publishes each process's name, children, and memory.
 const PROC: &str = "/proc";
@@ -302,6 +315,7 @@ struct Request {
 struct Arm {
     spec: Spec,
     worktree: PathBuf,
+    layout: &'static Layout,
     /// Whether the arm's `Makefile.toml` carries the `run-cli` task, which
     /// builds mixnet-capable and bundles the proxy. An arm predating it is
     /// built and launched directly.
@@ -605,7 +619,13 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
         ],
     )?;
 
-    let source = worktree.join(SYNC_SOURCE);
+    let layout = workbench::required(
+        LAYOUTS
+            .iter()
+            .find(|layout| worktree.join(layout.sync_source).is_file()),
+        &format!("sync source in {}", spec.label()),
+    )?;
+    let source = worktree.join(layout.sync_source);
     let original = std::fs::read_to_string(&source)
         .map_err(|e| vec![format!("cannot read {}: {e}", source.display())])?;
     let instrumented = graft(&original)
@@ -614,11 +634,11 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
         .map_err(|e| vec![format!("cannot write {}: {e}", source.display())])?;
 
     let makefile = std::fs::read_to_string(worktree.join("Makefile.toml")).unwrap_or_default();
-    let cli_source =
-        std::fs::read_to_string(worktree.join("bin/cli/src/lib.rs")).unwrap_or_default();
+    let cli_source = std::fs::read_to_string(worktree.join(layout.cli_source)).unwrap_or_default();
 
     Ok(Arm {
         spec: spec.clone(),
+        layout,
         hosted: makefile.contains("[tasks.run-cli]"),
         consents: cli_source.contains("Arg::new(\"online\")"),
         worktree,
@@ -864,7 +884,7 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     let mut build = Command::new("cargo");
     build
         .current_dir(&arm.worktree)
-        .args(["build", "--release", "-p", "zingolib-cli"]);
+        .args(["build", "--release", "-p", arm.layout.cli]);
     if arm.spec.nakednet {
         build.arg("--no-default-features");
     }
@@ -878,7 +898,7 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
         )]);
     }
     Ok(Command::new(
-        arm.worktree.join("target/release/zingolib-cli"),
+        arm.worktree.join("target/release").join(arm.layout.cli),
     ))
 }
 
@@ -965,7 +985,7 @@ fn children_of(entry: &Path) -> Vec<u32> {
 fn names_cli(stat: &str) -> bool {
     stat.split_once('(')
         .and_then(|(_, named)| named.rsplit_once(')'))
-        .is_some_and(|(name, _)| name == CLI_COMM)
+        .is_some_and(|(name, _)| LAYOUTS.iter().any(|layout| name == layout.cli))
 }
 
 // The high-water mark a process's status reports, in bytes.
@@ -1387,5 +1407,39 @@ mod tests {
             "Name:\tzingolib-cli\nVmPeak:\t    2048 kB\nVmHWM:\t    1536 kB\nVmRSS:\t    1024 kB\n";
         assert_eq!(high_water(status), Some(1536 * KIB));
         assert_eq!(high_water("Name:\tzingolib-cli\nVmRSS:\t 1024 kB\n"), None);
+    }
+
+    const COMMIT_AS_NOBODY: [&str; 9] = [
+        "-c",
+        "user.name=sync-ab",
+        "-c",
+        "user.email=sync-ab@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--quiet",
+        "--message=layout",
+    ];
+
+    #[test]
+    fn an_arm_of_either_layout_is_prepared() -> Result<(), Vec<String>> {
+        for layout in &LAYOUTS {
+            let scratch = workbench::fresh_dir(&std::env::temp_dir().join(format!(
+                "sync-ab-{}-{}",
+                layout.cli,
+                std::process::id()
+            )))?;
+            let root = scratch.join("repo");
+            let source = root.join(layout.sync_source);
+            workbench::create_parent(&source)?;
+            workbench::write(&source, EARLY_ERA)?;
+            git(&root, &["init", "--quiet"])?;
+            git(&root, &["add", "--all"])?;
+            git(&root, &COMMIT_AS_NOBODY)?;
+            let prepared = prepare(&root, &Spec::parse("HEAD"));
+            let _ = std::fs::remove_dir_all(&scratch);
+            assert_eq!(prepared?.layout.cli, layout.cli);
+        }
+        Ok(())
     }
 }

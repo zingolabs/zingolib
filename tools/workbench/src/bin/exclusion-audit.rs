@@ -328,12 +328,12 @@ mod resolve {
     use super::*;
 
     const LISTING: &str = "\
-zingolib v5.0.0 (/repo/zingolib)
+zingolib v5.0.0 (/repo/crates/zingolib)
 zingolib feature \"nym\"
 zingolib feature \"perspective\" (*)
 zingolib-netutils v5.0.1 (/repo/crates/netutils)
 zingolib-netutils feature \"socks5-transmit\"
-zingo-memo v0.1.1 (/repo/zingo-memo)
+zingolib-memo v0.1.1 (/repo/crates/memo)
 [dev-dependencies]
 ";
 
@@ -344,7 +344,7 @@ zingo-memo v0.1.1 (/repo/zingo-memo)
     #[test]
     fn a_featureless_crate_is_present_and_empty() {
         let graph = resolve(LISTING);
-        assert_eq!(graph.get("zingo-memo"), Some(&BTreeSet::new()));
+        assert_eq!(graph.get("zingolib-memo"), Some(&BTreeSet::new()));
     }
 
     /// HYPOTHESIS: cargo's `(*)` deduplication marker is not read as part of

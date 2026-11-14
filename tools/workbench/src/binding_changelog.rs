@@ -40,10 +40,14 @@ const DIFF_ARGS: [&str; 8] = [
     "diff",
     "--no-color",
     "--no-ext-diff",
-    "--no-renames",
+    "--find-renames",
     "--diff-algorithm=myers",
     "--indent-heuristic",
 ];
+const RENAMES_ARGS: [&str; 4] = ["diff", "--find-renames", "--name-status", "--diff-filter=R"];
+const ANY_CHANGELOG: &str = ":(glob)**/CHANGELOG.md";
+const STATUS_SEPARATOR: char = '\t';
+const STATUS_FIELDS: usize = 1;
 const CONTEXT_FLAG: &str = "--unified=";
 const WHOLE_FILE_CONTEXT: i32 = i32::MAX / 2;
 const TITLE_LEVEL: usize = 1;
@@ -502,11 +506,31 @@ fn gather(
 }
 
 /// - Runs `git diff` in `root`.
+fn path_at(root: &Path, since: &str, commit: &str, relative: &str) -> Result<String, Error> {
+    let args = [
+        RENAMES_ARGS.as_slice(),
+        &[since, commit, "--", ANY_CHANGELOG],
+    ]
+    .concat();
+    let renames = crate::git_in(root, &args)?;
+    let before = renames
+        .lines()
+        .filter_map(|row| {
+            let mut paths = row.split(STATUS_SEPARATOR).skip(STATUS_FIELDS);
+            Some((paths.next()?, paths.next()?))
+        })
+        .find(|(_, after)| *after == relative)
+        .map_or(relative, |(before, _)| before);
+    Ok(before.to_string())
+}
+
+/// - Runs `git diff` in `root`.
 fn changelog_diff(root: &Path, since: &str, commit: &str, relative: &str) -> Result<String, Error> {
     let context = format!("{CONTEXT_FLAG}{WHOLE_FILE_CONTEXT}");
+    let before = path_at(root, since, commit, relative)?;
     let args = [
         DIFF_ARGS.as_slice(),
-        &[&context, since, commit, "--", relative],
+        &[&context, since, commit, "--", &before, relative],
     ]
     .concat();
     Ok(crate::git_in(root, &args)?)
@@ -828,8 +852,7 @@ mod tests {
 
     #[test]
     fn the_diff_carries_a_heading_far_above_the_change_as_context() -> Result<(), Error> {
-        let repo = crate::scratch_dir("changelog-context")?;
-        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let repo = scratch_repo("changelog-context")?;
         let changelog = repo.join(CRATE_CHANGELOG);
         let old = "## [Unreleased]\n\n### Added\n- a\n- b\n- c\n- d\n- e\n- f\n";
         crate::write(&changelog, old)?;
@@ -915,11 +938,39 @@ mod tests {
         binding_manifest::commit_on(repo, "changelog")
     }
 
+    fn scratch_repo(name: &str) -> Result<crate::ScratchDir, Vec<String>> {
+        let repo = crate::scratch_dir(name)?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        Ok(repo)
+    }
+
+    fn entry(dir: &str, commit: &str, since: Option<&str>) -> binding_manifest::Entry {
+        binding_manifest::Entry {
+            commit: commit.to_string(),
+            since: since.map(str::to_string),
+            digests: Vec::new(),
+            audited: vec![binding_manifest::AuditedCrate {
+                name: "a".to_string(),
+                dir: PathBuf::from(dir),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_moved_changelog_gains_only_its_new_items() -> Result<(), Error> {
+        let repo = scratch_repo("changelog-moved")?;
+        let origin = changelog_commit(&repo, "old", &["one"], &[])?;
+        crate::hermetic_git(&repo, &["mv", "old", "new"])?;
+        let moved = changelog_commit(&repo, "new", &["one", "two"], &[])?;
+        let file = regenerated_from(&repo, &[entry("new", &moved, Some(&origin))])?;
+        assert!(file.contains("- two") && !file.contains("- one"), "{file}");
+        Ok(())
+    }
+
     #[test]
     fn a_release_line_section_follows_the_candidate_it_fixes_and_the_merge_back_follows_both(
     ) -> Result<(), Error> {
-        let repo = crate::scratch_dir("changelog-release-line")?;
-        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let repo = scratch_repo("changelog-release-line")?;
         let dir = "crate-a";
         let origin = changelog_commit(&repo, dir, &[], &[])?;
         let candidate = changelog_commit(&repo, dir, &["one"], &[])?;
@@ -933,21 +984,11 @@ mod tests {
         )?;
         let after = changelog_commit(&repo, dir, &["one", "two", "three"], &["fix"])?;
 
-        let audited = vec![binding_manifest::AuditedCrate {
-            name: "a".to_string(),
-            dir: PathBuf::from(dir),
-        }];
-        let entry = |commit: &str, since: Option<&str>| binding_manifest::Entry {
-            commit: commit.to_string(),
-            since: since.map(str::to_string),
-            digests: Vec::new(),
-            audited: audited.clone(),
-        };
         let entries = [
-            entry(&candidate, Some(&origin)),
-            entry(&later, None),
-            entry(&fix, None),
-            entry(&after, None),
+            entry(dir, &candidate, Some(&origin)),
+            entry(dir, &later, None),
+            entry(dir, &fix, None),
+            entry(dir, &after, None),
         ];
         let file = regenerated_from(&repo, &entries)?;
         let section_start = format!("\n{SECTION_MARK}");
