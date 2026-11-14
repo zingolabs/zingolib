@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use zingolib_net_diag::{NetOpFailure, NetOpStage, chain_texts};
+use net_diag::{NetOpFailure, NetOpStage, chain_texts};
 
 use crate::conduit::ConduitDial;
 use crate::crypto::ensure_default_crypto_provider;

@@ -3,11 +3,11 @@
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
+use netutils::Indexer as _;
+use netutils::default_indexer;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
-use zingolib_netutils::Indexer as _;
-use zingolib_netutils::default_indexer;
 
 /// The number of blocks below the live tip the timed sync scans.
 const GUARD_WINDOW: u32 = 5_000;
@@ -36,8 +36,8 @@ fn main() {
                 .unwrap_or_else(|| GUARD_INDEXER.to_string())
                 .parse()
                 .expect("the indexer URI parses");
-            zingolib_netutils::ensure_default_crypto_provider();
-            let mut grpc = zingolib_netutils::GrpcIndexer::new(indexer.clone())
+            netutils::ensure_default_crypto_provider();
+            let mut grpc = netutils::GrpcIndexer::new(indexer.clone())
                 .await
                 .expect("the indexer client builds");
             let block = grpc

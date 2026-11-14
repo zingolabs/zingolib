@@ -29,6 +29,7 @@ use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::{
     IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransparentCoin, WalletTransaction,
 };
+use status::confirmation_status::ConfirmationStatus;
 use zcash_primitives::transaction::TxId;
 #[cfg(test)]
 use zcash_protocol::PoolType;
@@ -37,7 +38,6 @@ use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::memo::Memo;
 use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
-use zingolib_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::mocks::SaplingCryptoNoteBuilder;

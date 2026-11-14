@@ -63,7 +63,7 @@ pub enum TransportError {
         /// kept as a source so the typed failure reaches a caller whole
         /// rather than flattened into this message.
         #[source]
-        detail: Option<zingolib_net_diag::NetOpFailure>,
+        detail: Option<net_diag::NetOpFailure>,
     },
     /// The transport's status channel closed before readiness.
     #[error("the pool transport's status channel closed")]
@@ -228,7 +228,7 @@ impl TransportAcquirable for Acquirer {
 }
 
 /// The provider seam, defined below the seam (ADR 0046).
-pub use zingolib_netutils::provider::{
+pub use netutils::provider::{
     HostRefusal, HostedProvider, HostedTransport, ProxyHosting, RotationVerdict, rotation_interval,
 };
 
@@ -321,7 +321,7 @@ mod tests {
     fn a_discovery_spawn_failure_renders_its_detail_once() {
         const DETAIL: &str = "the discover binary is absent";
         let failure = TransportError::DiscoverySpawn(std::io::Error::other(DETAIL));
-        let chain = zingolib_net_diag::chain_texts(&failure);
+        let chain = net_diag::chain_texts(&failure);
         assert_eq!(
             chain.join("\n").matches(DETAIL).count(),
             DETAIL_RENDERINGS,
@@ -350,10 +350,8 @@ mod tests {
 
         /// A script rotates only when its test asks it to, so the default
         /// holds the client for the whole of any test's run.
-        fn rotation_verdict(&self) -> zingolib_netutils::provider::RotationVerdict {
-            zingolib_netutils::provider::RotationVerdict::Defer(
-                zingolib_netutils::time::CLIENT_ROTATION_MAX,
-            )
+        fn rotation_verdict(&self) -> netutils::provider::RotationVerdict {
+            netutils::provider::RotationVerdict::Defer(netutils::time::CLIENT_ROTATION_MAX)
         }
     }
 

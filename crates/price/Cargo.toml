@@ -18,15 +18,15 @@ license = "MIT"
 # feature the crate is the storage-only price data model.
 default = ["socks5-fetch"]
 socks5-fetch = [
-    "zingolib-netutils/socks5-fetch",
-    "dep:zingolib-netutils",
+    "netutils/socks5-fetch",
+    "dep:netutils",
     "dep:serde",
     "dep:serde_json",
 
     "dep:thiserror",
-    "dep:zingolib-net-diag",
+    "dep:net-diag",
 ]
-zingolib-netutils = ["dep:zingolib-netutils"]
+zingolib-netutils = ["dep:netutils"]
 
 [dependencies]
 zcash_encoding = { workspace = true }
@@ -35,9 +35,9 @@ byteorder = { workspace = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
-zingolib-net-diag = { workspace = true, optional = true }
-zingolib-netutils = { version = "7.0.0", path = "../netutils", optional = true }
+net-diag = { workspace = true, optional = true }
+netutils = { package = "zingolib-netutils", version = "7.0.0", path = "../netutils", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
-zingolib-netutils = { path = "../netutils", features = ["socks5-fetch"] }
+netutils = { package = "zingolib-netutils", path = "../netutils", features = ["socks5-fetch"] }

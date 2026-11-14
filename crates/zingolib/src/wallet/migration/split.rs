@@ -887,7 +887,7 @@ impl crate::wallet::LightWallet {
             &ufvks,
             self,
             transaction,
-            zingolib_status::confirmation_status::ConfirmationStatus::Calculated(target_height),
+            status::confirmation_status::ConfirmationStatus::Calculated(target_height),
             timestamp,
         ) {
             Ok(()) => (),

@@ -4,9 +4,9 @@ use http::Uri;
 
 use zcash_protocol::{PoolType, ShieldedPool};
 
+use netutils::default_indexer;
 use zingo_common_components::protocol::ActivationHeights;
 use zingo_test_vectors::seeds;
-use zingolib_netutils::default_indexer;
 
 use crate::config::{ChainType, ClientConfig, WalletConfig};
 use crate::testutils::chain_generics::networked::TESTNET_INDEXER;

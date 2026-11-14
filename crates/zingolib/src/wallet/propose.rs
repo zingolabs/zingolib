@@ -311,31 +311,29 @@ impl LightWallet {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let uas_bytes = match zingolib_memo::create_wallet_internal_memo(
-            &self.chain_type,
-            recipient_uas.as_slice(),
-        ) {
-            Ok(packed) => {
-                if packed.recorded < recipient_uas.len() {
-                    log::error!(
-                        "The memo field holds {} of the {} recipient addresses of this send. \
+        let uas_bytes =
+            match memo::create_wallet_internal_memo(&self.chain_type, recipient_uas.as_slice()) {
+                Ok(packed) => {
+                    if packed.recorded < recipient_uas.len() {
+                        log::error!(
+                            "The memo field holds {} of the {} recipient addresses of this send. \
                          After a rescan the wallet will not display the sent-to address of the \
                          rest. This is a visual error only. The correct addresses were sent to.",
-                        packed.recorded,
-                        recipient_uas.len()
-                    );
+                            packed.recorded,
+                            recipient_uas.len()
+                        );
+                    }
+                    packed.bytes
                 }
-                packed.bytes
-            }
-            Err(e) => {
-                log::error!(
-                    "Could not write uas to memo field: {e}\n\
+                Err(e) => {
+                    log::error!(
+                        "Could not write uas to memo field: {e}\n\
         Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
         The correct address was sent to."
-                );
-                [0; zingolib_memo::MEMO_LEN]
-            }
-        };
+                    );
+                    [0; memo::MEMO_LEN]
+                }
+            };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
     }
 

@@ -8,11 +8,13 @@ use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 
 use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
+use netutils::lightwallet_protocol::CompactBlock;
 use pepper_sync::shardtree_ext::ShardTreeExt as _;
 use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
 };
+use status::confirmation_status::ConfirmationStatus;
 use zcash_client_backend::serialization::shardtree::read_shard;
 use zcash_encoding::{CompactSize, Optional, Vector};
 use zcash_primitives::{
@@ -23,8 +25,6 @@ use zcash_protocol::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
 };
-use zingolib_netutils::lightwallet_protocol::CompactBlock;
-use zingolib_status::confirmation_status::ConfirmationStatus;
 
 use super::{keys::legacy::WalletCapability, traits::ReadableWriteable};
 
@@ -239,7 +239,7 @@ impl TransactionRecordsById {
 #[allow(dead_code)]
 pub struct TransactionRecord {
     /// the relationship of the transaction to the blockchain. can be either Broadcast (to mempool}, or Confirmed.
-    pub status: zingolib_status::confirmation_status::ConfirmationStatus,
+    pub status: status::confirmation_status::ConfirmationStatus,
     /// Timestamp of Tx. Added in v4
     pub datetime: u64,
     /// Txid of this transaction. It's duplicated here (It is also the Key in the `HashMap` that points to this

@@ -20,27 +20,24 @@ pub(crate) struct PriceRun {
 
 #[cfg(feature = "nym")]
 impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
-    type Target = zingolib_price::PriceSource;
-    type Outcome = (
-        zingolib_price::PriceSource,
-        Result<zingolib_price::Price, zingolib_price::PriceError>,
-    );
+    type Target = price::PriceSource;
+    type Outcome = (price::PriceSource, Result<price::Price, price::PriceError>);
 
     fn targets(&self) -> Vec<Self::Target> {
-        zingolib_price::RACED_SOURCES.to_vec()
+        price::RACED_SOURCES.to_vec()
     }
 
     async fn probe(
         &self,
-        dial: zingolib_netutils::conduit::ConduitDial,
+        dial: netutils::conduit::ConduitDial,
         target: Self::Target,
     ) -> Self::Outcome {
-        let outcome = zingolib_price::get_source_price(
+        let outcome = price::get_source_price(
             target,
             &dial,
             target.url(),
-            zingolib_price::REQUEST_TIMEOUT,
-            zingolib_price::CONNECT_TIMEOUT,
+            price::REQUEST_TIMEOUT,
+            price::CONNECT_TIMEOUT,
         )
         .await;
         (target, outcome)
@@ -222,7 +219,7 @@ async fn adjudicate_standing_proof(
     slot: std::sync::Arc<std::sync::Mutex<crate::mixnet::MixnetSlot>>,
     pools: std::sync::Arc<crate::mixnet::pools::Pools>,
     status: crate::mixnet::driver::StatusPublisher,
-    evidence: zingolib_netutils::sentinel::ExitEvidence,
+    evidence: netutils::sentinel::ExitEvidence,
 ) {
     // Read the client's facts under a brief lock; never hold it across an
     // await.
@@ -265,8 +262,8 @@ async fn adjudicate_standing_proof(
         if let crate::mixnet::MixnetSlot::Attached(client) =
             &*slot.lock().expect("mixnet slot mutex")
         {
-            client.forsake(zingolib_net_diag::NetOpFailure::message(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(net_diag::NetOpFailure::message(
+                net_diag::NetOpStage::RouteResolution,
                 "the attached transport",
                 "the exit failed under an attached session, which cannot \
                  rebirth its transport locally",
@@ -306,8 +303,8 @@ async fn adjudicate_standing_proof(
             if let crate::mixnet::MixnetSlot::Attached(client) =
                 &*slot.lock().expect("mixnet slot mutex")
             {
-                client.forsake(zingolib_net_diag::NetOpFailure::from_error(
-                    zingolib_net_diag::NetOpStage::RouteResolution,
+                client.forsake(net_diag::NetOpFailure::from_error(
+                    net_diag::NetOpStage::RouteResolution,
                     "the session's exit census",
                     &exhausted,
                 ));
@@ -336,11 +333,8 @@ async fn run_proof_acquisition(
             _ => return,
         }
     };
-    let evidence = zingolib_netutils::sentinel::probe_sentinel(
-        socks5,
-        zingolib_netutils::time::SENTINEL_BUDGET,
-    )
-    .await;
+    let evidence =
+        netutils::sentinel::probe_sentinel(socks5, netutils::time::SENTINEL_BUDGET).await;
     adjudicate_standing_proof(slot, pools, status, evidence).await;
 }
 
@@ -1089,10 +1083,10 @@ impl LightClient {
 
     /// Why the transport died, while Mixnet Mode is
     /// [`Indicator::Died`](crate::mixnet::Indicator) and the watcher held a
-    /// typed cause: the [`zingolib_net_diag::NetOpFailure`] record naming the
+    /// typed cause: the [`net_diag::NetOpFailure`] record naming the
     /// stage, the target, and the cause chain as a vector, so a `died`
     /// verdict carries *why* without anyone parsing prose.
-    pub fn mixnet_death_detail(&self) -> Option<zingolib_net_diag::NetOpFailure> {
+    pub fn mixnet_death_detail(&self) -> Option<net_diag::NetOpFailure> {
         self.mixnet_slot
             .lock()
             .expect("mixnet slot mutex")
@@ -1234,7 +1228,7 @@ impl LightClient {
             crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
             (outcomes, dial)
         } else {
-            let conduit = zingolib_netutils::conduit::MixnetConduit::over(socks5_addr);
+            let conduit = netutils::conduit::MixnetConduit::over(socks5_addr);
             match crate::mixnet::speed::run_wave(&run, &conduit).await {
                 crate::mixnet::speed::WaveEnd::Settled(outcomes)
                 | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
@@ -1242,8 +1236,7 @@ impl LightClient {
                 }
             }
         };
-        let raced = zingolib_price::first_quote(outcomes)
-            .map_err(crate::wallet::error::PriceError::from)?;
+        let raced = price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
@@ -1647,7 +1640,7 @@ mod tests {
             ) -> Result<crate::mixnet::MixnetProxy, crate::mixnet::acquire::TransportError>
             {
                 Err(crate::mixnet::acquire::TransportError::NotReady {
-                    budget: zingolib_netutils::time::NYM_LIFECYCLE_TIMEOUT,
+                    budget: netutils::time::NYM_LIFECYCLE_TIMEOUT,
                 })
             }
 
@@ -1884,10 +1877,10 @@ mod tests {
             let client = crate::mixnet::StandingClient::new(proxy, None, true);
             let exhausted = crate::mixnet::acquire::TransportError::NoProvenExit {
                 probed: crate::mixnet::pools::MAX_PROVING_BIRTHS,
-                budget: zingolib_netutils::time::SENTINEL_BUDGET,
+                budget: netutils::time::SENTINEL_BUDGET,
             };
-            client.forsake(zingolib_net_diag::NetOpFailure::from_error(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(net_diag::NetOpFailure::from_error(
+                net_diag::NetOpStage::RouteResolution,
                 "the session's exit census",
                 &exhausted,
             ));
@@ -2299,7 +2292,7 @@ mod proof_acquisition {
             slot.clone(),
             pools.clone(),
             std::sync::Arc::clone(&status),
-            zingolib_netutils::sentinel::evidence_of(Some(64), 900),
+            netutils::sentinel::evidence_of(Some(64), 900),
         )
         .await;
 
@@ -2328,7 +2321,7 @@ mod proof_acquisition {
             slot.clone(),
             pools.clone(),
             std::sync::Arc::clone(&status),
-            zingolib_netutils::sentinel::ExitEvidence::Silent,
+            netutils::sentinel::ExitEvidence::Silent,
         )
         .await;
 

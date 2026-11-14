@@ -5,16 +5,16 @@
 //! not depend on the network stack. Each submit builds a fresh connection to
 //! its own URI, so parts never travel over the synchronization channel.
 
+use netutils::Indexer as _;
+use netutils::lightwallet_protocol::RawTransaction;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zingolib_netutils::Indexer as _;
-use zingolib_netutils::lightwallet_protocol::RawTransaction;
 
 use crate::wallet::migration::transmission::{
     PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
 };
 
-pub(super) use zingolib_netutils::time::MIGRATION_SUBMIT_TIMEOUT;
+pub(super) use netutils::time::MIGRATION_SUBMIT_TIMEOUT;
 
 /// Submits parts over gRPC and can do nothing else.
 pub struct GrpcTransmissionClient {
@@ -35,7 +35,7 @@ impl TransmissionClient for GrpcTransmissionClient {
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
     ) -> Result<TransmissionReceipt, PartTransmissionError> {
-        let mut indexer = zingolib_netutils::GrpcIndexer::new(self.uri.clone())
+        let mut indexer = netutils::GrpcIndexer::new(self.uri.clone())
             .await
             .map_err(|e| PartTransmissionError::Transport(e.to_string()))?;
         let txid_hex = indexer

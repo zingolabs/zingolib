@@ -25,7 +25,7 @@ pub enum MigrationWire {
     Nakednet,
     /// Submission through the local SOCKS5 proxy.
     #[cfg(feature = "nym")]
-    Mixnet(zingolib_netutils::conduit::ConduitDial),
+    Mixnet(netutils::conduit::ConduitDial),
 }
 
 /// The [`TransmissionClient`] the Mixnet Mode policy resolved for this session.
@@ -64,12 +64,12 @@ impl TransmissionClient for RoutedTransmissionClient {
 
 #[cfg(feature = "nym")]
 async fn submit_over_socks5(
-    dial: &zingolib_netutils::conduit::ConduitDial,
+    dial: &netutils::conduit::ConduitDial,
     indexer: &http::Uri,
     raw_tx: Vec<u8>,
     expiry_height: BlockHeight,
 ) -> Result<TransmissionReceipt, PartTransmissionError> {
-    let txid_hex = zingolib_netutils::Socks5Indexer::new(
+    let txid_hex = netutils::Socks5Indexer::new(
         dial.socks5(),
         indexer.clone(),
         super::transmission_grpc::MIGRATION_SUBMIT_TIMEOUT,

@@ -66,7 +66,7 @@ fn interactive_mode_redirects_tracing_to_log_file() {
     // Wait for the startup INFO lines to reach the log file, polling
     // instead of sleeping a fixed interval; the ceiling only bounds the
     // pathological case.
-    let deadline = std::time::Instant::now() + zingolib_netutils::time::test::LOG_FLUSH_DEADLINE;
+    let deadline = std::time::Instant::now() + netutils::time::test::LOG_FLUSH_DEADLINE;
     loop {
         if std::fs::read_to_string(&log_path)
             .unwrap_or_default()
@@ -77,7 +77,7 @@ fn interactive_mode_redirects_tracing_to_log_file() {
         assert!(
             std::time::Instant::now() < deadline,
             "no INFO line reached the log file within {:?}",
-            zingolib_netutils::time::test::LOG_FLUSH_DEADLINE
+            netutils::time::test::LOG_FLUSH_DEADLINE
         );
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
@@ -375,8 +375,8 @@ fn write_stub_proxy(
     socks5_addr: std::net::SocketAddr,
 ) -> std::path::PathBuf {
     let path = dir.join("stub-nym-proxy");
-    let exit_prefix = zingolib_netutils::NYM_EXIT_LINE_PREFIX;
-    let socks5_prefix = zingolib_netutils::SOCKS5_ADDR_LINE_PREFIX;
+    let exit_prefix = netutils::NYM_EXIT_LINE_PREFIX;
+    let socks5_prefix = netutils::SOCKS5_ADDR_LINE_PREFIX;
     // The advertised directory, built here so its shell indentation is not
     // subject to the string continuations below.
     let advertised: String = (1..=STUB_EXIT_COUNT)

@@ -181,7 +181,7 @@ impl StandingClient {
             condemned: std::sync::atomic::AtomicBool::new(false),
             forsaken: std::sync::Mutex::new(None),
             proof_deadline: std::sync::Mutex::new(
-                std::time::Instant::now() + zingolib_netutils::time::NYM_EPOCH,
+                std::time::Instant::now() + netutils::time::NYM_EPOCH,
             ),
             conduit: std::sync::Mutex::new(None),
         }
@@ -220,7 +220,7 @@ impl StandingClient {
 
     /// Latches the failover's exhaustion — the unconsented loss of the
     /// transport — holding `cause` as the death's typed story.
-    pub(crate) fn forsake(&self, cause: zingolib_net_diag::NetOpFailure) {
+    pub(crate) fn forsake(&self, cause: net_diag::NetOpFailure) {
         *self.forsaken.lock().expect("forsaken mutex") = Some(DeathReport {
             at: std::time::SystemTime::now(),
             detail: Some(cause),
@@ -263,7 +263,7 @@ impl StandingClient {
     /// proof deadline one epoch out — and returns whether this call was the
     /// promoting one.
     pub(crate) fn note_round_trip(&self) -> bool {
-        self.set_proof_deadline(std::time::Instant::now() + zingolib_netutils::time::NYM_EPOCH);
+        self.set_proof_deadline(std::time::Instant::now() + netutils::time::NYM_EPOCH);
         !self
             .confirmed
             .swap(true, std::sync::atomic::Ordering::AcqRel)
@@ -286,8 +286,8 @@ impl StandingClient {
             return;
         };
         conduit.supersede();
-        let deadline = std::time::Instant::now() + zingolib_netutils::time::CONDUIT_DRAIN_BUDGET;
-        while conduit.state() != zingolib_netutils::conduit::ConduitState::Retired {
+        let deadline = std::time::Instant::now() + netutils::time::CONDUIT_DRAIN_BUDGET;
+        while conduit.state() != netutils::conduit::ConduitState::Retired {
             if std::time::Instant::now() >= deadline {
                 // A guard outliving the longest bounded operation is a leak,
                 // not slow work: holding the transport open for it would
@@ -299,7 +299,7 @@ impl StandingClient {
                 );
                 break;
             }
-            tokio::time::sleep(zingolib_netutils::time::CONDUIT_DRAIN_POLL).await;
+            tokio::time::sleep(netutils::time::CONDUIT_DRAIN_POLL).await;
         }
         self.stop().await;
     }
@@ -557,7 +557,7 @@ mod stale_proof {
 #[cfg(test)]
 mod hand_off {
     use super::StandingClient;
-    use zingolib_netutils::conduit::ConduitState;
+    use netutils::conduit::ConduitState;
 
     /// How many recheck intervals a held guard is observed across before
     /// the wait is called a wait rather than a scheduling accident.
@@ -602,7 +602,7 @@ mod hand_off {
         let mut retiring = tokio::spawn(client.retire());
         assert!(
             tokio::time::timeout(
-                zingolib_netutils::time::CONDUIT_DRAIN_POLL * DRAIN_OBSERVATION_POLLS,
+                netutils::time::CONDUIT_DRAIN_POLL * DRAIN_OBSERVATION_POLLS,
                 &mut retiring,
             )
             .await
@@ -616,7 +616,7 @@ mod hand_off {
         );
 
         drop(held);
-        tokio::time::timeout(zingolib_netutils::time::CONDUIT_DRAIN_BUDGET, retiring)
+        tokio::time::timeout(netutils::time::CONDUIT_DRAIN_BUDGET, retiring)
             .await
             .expect("a drained conduit lets its transport stop")
             .expect("the retirement runs to completion");
@@ -680,8 +680,8 @@ mod demotion {
         let slot = attached(true);
         if let MixnetSlot::Attached(client) = &slot {
             client.condemn();
-            client.forsake(zingolib_net_diag::NetOpFailure::message(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(net_diag::NetOpFailure::message(
+                net_diag::NetOpStage::RouteResolution,
                 "the session's exit census",
                 "every failover birth failed its proof",
             ));

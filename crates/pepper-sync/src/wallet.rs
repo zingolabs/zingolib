@@ -28,8 +28,8 @@ use zcash_protocol::{
 use zcash_transparent::address::Script;
 use zcash_transparent::bundle::OutPoint;
 
-use zingolib_netutils::lightwallet_protocol::CompactBlock;
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use netutils::lightwallet_protocol::CompactBlock;
+use status::confirmation_status::ConfirmationStatus;
 
 use crate::{
     client::FetchRequest,
@@ -2083,9 +2083,9 @@ impl SyncDomain for Ironwood {
 
 #[cfg(test)]
 mod test {
+    use status::confirmation_status::ConfirmationStatus;
     use zcash_protocol::TxId;
     use zcash_protocol::consensus::BlockHeight;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
 
     use super::WalletTransaction;
 

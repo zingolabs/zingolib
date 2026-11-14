@@ -26,9 +26,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use netutils::NymProxy;
+use netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 use tokio::runtime::Runtime;
-use zingolib_netutils::NymProxy;
-use zingolib_netutils::time::{LISTENER_MONITOR_INTERVAL, LOOPBACK_DIAL_BOUND};
 
 #[cfg(target_os = "android")]
 mod debug_log;
@@ -612,7 +612,7 @@ mod tests {
         (endpoint, serving)
     }
 
-    use zingolib_netutils::time::test::MONITOR_CHECK_TIMEOUT;
+    use netutils::time::test::MONITOR_CHECK_TIMEOUT;
 
     #[tokio::test]
     async fn check_passes_a_listener_that_completes_the_handshake() {
@@ -711,7 +711,7 @@ mod tests {
         }
     }
 
-    use zingolib_netutils::time::test::MONITOR_CHECK_INTERVAL;
+    use netutils::time::test::MONITOR_CHECK_INTERVAL;
 
     #[tokio::test]
     async fn monitor_reports_death_exactly_once_after_the_listener_dies() {
@@ -777,7 +777,7 @@ mod tests {
             .expect("the callback must complete without panicking");
     }
 
-    use zingolib_netutils::time::test::MOCK_OP_BOUND;
+    use netutils::time::test::MOCK_OP_BOUND;
 
     /// Teardown bounds short enough for a test to wait out.
     const QUICK_BOUNDS: TeardownBounds = TeardownBounds {

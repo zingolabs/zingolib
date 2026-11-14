@@ -4,22 +4,22 @@ use std::ops::Range;
 
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use tracing::instrument;
-use zcash_primitives::transaction::TxId;
-use zcash_protocol::consensus::BlockHeight;
-use zingolib_netutils::{
+use netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
         BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
         PoolType, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
+use tracing::instrument;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
 
 use crate::client::FetchRequest;
 
-use zingolib_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
+use netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
-use zingolib_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
+use netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.

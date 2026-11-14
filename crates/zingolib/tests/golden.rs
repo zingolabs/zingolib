@@ -11,6 +11,7 @@ mod common;
 use std::str::FromStr as _;
 
 use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
+use status::confirmation_status::ConfirmationStatus;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -19,7 +20,6 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::wallet::LightWallet;
 use zingolib::wallet::keys::unified::ReceiverSelection;
-use zingolib_status::confirmation_status::ConfirmationStatus;
 
 use common::{own_orchard_receiver, received, regtest_wallet, self_send, sent, zfz_self_send};
 

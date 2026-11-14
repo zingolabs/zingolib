@@ -20,7 +20,7 @@ use super::LightClient;
 use super::SyncResult;
 use super::error::LightClientError;
 
-use zingolib_netutils::time::SYNC_START_TIMEOUT;
+use netutils::time::SYNC_START_TIMEOUT;
 
 /// Minted log marker opening the sync engine's span.
 pub const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
@@ -396,7 +396,7 @@ impl LightClient {
             PollReport::Ready(Err(e)) => {
                 let action = e.recovery_recommendation();
                 let description =
-                    zingolib_net_diag::chain_texts(&e).join(super::migrate::CAUSE_CHAIN_SEPARATOR);
+                    net_diag::chain_texts(&e).join(super::migrate::CAUSE_CHAIN_SEPARATOR);
                 Some((action, description))
             }
             _ => None,
@@ -617,7 +617,7 @@ pub mod test {
     pub(crate) async fn sync_example_wallet(
         wallet_case: examples::NetworkSeedVersion,
     ) -> LightClient {
-        zingolib_netutils::ensure_default_crypto_provider();
+        netutils::ensure_default_crypto_provider();
 
         let mut lc = wallet_case.load_example_wallet_online().await;
 

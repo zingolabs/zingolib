@@ -4,6 +4,7 @@ use std::{
 };
 
 use incrementalmerkletree::{Marking, Position, Retention};
+use netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::Node;
 use tokio::sync::mpsc;
@@ -15,9 +16,6 @@ use zcash_protocol::{
     value::Zatoshis,
 };
 use zcash_transparent::address::Script;
-use zingolib_netutils::lightwallet_protocol::{
-    CompactBlock, CompactOrchardAction, CompactSaplingOutput,
-};
 use zip32::AccountId;
 
 use crate::{
@@ -710,8 +708,8 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
     use zcash_primitives::transaction::TxId;
-    use zingolib_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
 
@@ -1083,7 +1081,7 @@ mod tests {
         let script = Script::from(external_address(ufvk, index).script());
         let mut compact_block = block_with_served_ironwood_actions(0, 10);
         compact_block.height = height;
-        compact_block.vtx[0].vout = vec![zingolib_netutils::lightwallet_protocol::TxOut {
+        compact_block.vtx[0].vout = vec![netutils::lightwallet_protocol::TxOut {
             value: 100_000,
             script_pub_key: script.0.0,
         }];
@@ -1226,7 +1224,7 @@ mod tests {
             compact_block.hash = vec![hash; 32];
             compact_block.prev_hash = vec![hash - 1; 32];
             compact_block.vtx[0].txid = vec![hash + 10; 32];
-            compact_block.vtx[0].vin = vec![zingolib_netutils::lightwallet_protocol::CompactTxIn {
+            compact_block.vtx[0].vin = vec![netutils::lightwallet_protocol::CompactTxIn {
                 prevout_txid: prevout_txid.to_vec(),
                 prevout_index: 0,
             }];

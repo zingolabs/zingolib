@@ -15,7 +15,7 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use zingolib_netutils::default_indexer;
+use netutils::default_indexer;
 
 /// The number of mainnet blocks the benchmark syncs.
 const SYNC_WINDOW: u32 = 20_000;

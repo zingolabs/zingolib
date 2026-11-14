@@ -32,8 +32,7 @@ use std::time::Duration;
 use tokio::sync::{RwLock, mpsc};
 use tokio_stream::Stream;
 
-use zaino_proto::tonic::{self, Code, Request, Response, Status};
-use zingolib_netutils::lightwallet_protocol::{
+use netutils::lightwallet_protocol::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainMetadata, ChainSpec, CompactBlock,
     CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend, CompactTx, CompactTxIn,
     CompactTxStreamer, CompactTxStreamerServer, Duration as ProtoDuration, Empty,
@@ -42,6 +41,7 @@ use zingolib_netutils::lightwallet_protocol::{
     SendResponse, SubtreeRoot, TransparentAddressBlockFilter, TreeState, TxFilter,
     TxOut as CompactTxOut,
 };
+use zaino_proto::tonic::{self, Code, Request, Response, Status};
 
 use incrementalmerkletree::Hashable as _;
 use incrementalmerkletree::frontier::CommitmentTree;
@@ -2449,12 +2449,12 @@ impl MockNet {
 
     /// Launches the mock over TLS with the committed localhost certificate.
     pub async fn launch_tls() -> Self {
-        zingolib_netutils::ensure_default_crypto_provider();
+        netutils::ensure_default_crypto_provider();
         Self::serve(
             MockChain::new(),
             Some(tonic::transport::Identity::from_pem(
-                zingolib_netutils::test_tls::LOCALHOST_CERT_PEM,
-                zingolib_netutils::test_tls::LOCALHOST_KEY_PEM,
+                netutils::test_tls::LOCALHOST_CERT_PEM,
+                netutils::test_tls::LOCALHOST_KEY_PEM,
             )),
         )
         .await

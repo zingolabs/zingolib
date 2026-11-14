@@ -25,7 +25,7 @@ pub(crate) const MAX_RETRIES: u8 = 3;
 /// cadence, for the verdict to become storage-backed (issue #2450).
 pub(crate) const MAX_QUEUED_PROBES: u8 = 30;
 
-use zingolib_netutils::time::TRANSMIT_RETRY_INTERVAL;
+use netutils::time::TRANSMIT_RETRY_INTERVAL;
 
 /// A shareable snapshot of the in-flight Transmission's latest progress line,
 /// or `None` when no transmission is running. A consumer holding a clone (the
@@ -79,7 +79,7 @@ pub(crate) trait SubmitFailure: std::fmt::Display {
 /// The nakednet path's failure type: a gRPC status, carried whole. The
 /// server's verdict is the status message (rejections are folded into a
 /// status by `GrpcIndexer::send_transaction`).
-impl SubmitFailure for zingolib_netutils::Status {
+impl SubmitFailure for netutils::Status {
     fn rejection_text(&self) -> Option<&str> {
         Some(self.message())
     }
@@ -89,11 +89,11 @@ impl SubmitFailure for zingolib_netutils::Status {
 /// hold a server verdict offer text to classify; transport failures are
 /// transient by construction.
 #[cfg(feature = "nym")]
-impl SubmitFailure for zingolib_netutils::Socks5TransmitError {
+impl SubmitFailure for netutils::Socks5TransmitError {
     fn rejection_text(&self) -> Option<&str> {
         match self {
-            zingolib_netutils::Socks5TransmitError::Rejected(rejection) => Some(&rejection.message),
-            zingolib_netutils::Socks5TransmitError::Rpc { status, .. } => Some(status.message()),
+            netutils::Socks5TransmitError::Rejected(rejection) => Some(&rejection.message),
+            netutils::Socks5TransmitError::Rpc { status, .. } => Some(status.message()),
             _ => None,
         }
     }

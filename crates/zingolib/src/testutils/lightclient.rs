@@ -1,9 +1,9 @@
 //! This mod is mostly to take inputs, raw data amd convert it into lightclient actions
 //! (obviously) in a test environment.
 
+use status::confirmation_status::ConfirmationStatus;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingolib_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
 use crate::wallet::summary::data::TransactionKind;

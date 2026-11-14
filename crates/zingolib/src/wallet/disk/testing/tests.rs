@@ -521,7 +521,7 @@ async fn wallet_reads_pre_release_v42_with_allow_v6_byte() {
 #[test]
 fn ambiguous_version_42_tail_is_refused() {
     use crate::wallet::LightWallet;
-    use zingolib_price::PriceList;
+    use price::PriceList;
 
     let parsed = || Ok((PriceList::new(), None));
     let failed = || {

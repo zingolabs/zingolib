@@ -11,10 +11,10 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
+use netutils::lightwallet_protocol::CompactBlock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
-use zingolib_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
 
 use crate::{
@@ -35,7 +35,7 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
-use zingolib_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+use netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanTaskRunnerActivity {

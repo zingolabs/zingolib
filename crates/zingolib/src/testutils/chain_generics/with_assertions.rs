@@ -9,8 +9,8 @@ use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
-use zingolib_netutils::Indexer as _;
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use netutils::Indexer as _;
+use status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use crate::lightclient::LightClient;
@@ -175,7 +175,7 @@ where
 
     let mut indexer = timed(
         "follow_proposal::grpc_indexer_connect",
-        zingolib_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()),
+        netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()),
     )
     .await
     .unwrap();

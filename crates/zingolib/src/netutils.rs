@@ -23,12 +23,12 @@
 // GetClientError joins the set deliberately: zingolib-cli's `network on`
 // consent act connects mid-session via `set_indexer_uri` and models the
 // failure as a typed variant rather than a rendered string.
-pub use zingolib_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypto_provider};
+pub use netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypto_provider};
 
-pub use zingolib_netutils::time;
+pub use netutils::time;
 
 // Status joins on the same terms, and for the same reason: an RPC rejection
 // is the indexer's own verdict, so a consumer carries that verdict rather
 // than a rendering of it. A consumer holding a typed rejection cannot reach
 // it without this, because the funnel is a consumer's only path to the crate.
-pub use zingolib_netutils::{Status, TimeoutExpired};
+pub use netutils::{Status, TimeoutExpired};

@@ -27,14 +27,14 @@ resolver = "2"
 [workspace.dependencies]
 ### Workspace
 pepper-sync = { version = "0.7.0", path = "crates/pepper-sync" }
-zingolib-memo = { version = "0.3.0", path = "crates/memo" }
-zingolib-net-diag = { version = "0.1.0", path = "crates/net-diag" }
+memo = { package = "zingolib-memo", version = "0.3.0", path = "crates/memo" }
+net-diag = { package = "zingolib-net-diag", version = "0.1.0", path = "crates/net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
 # zingolib re-enables it only under its `nym` feature (the mixnet-only
 # price rule). The crate's own default keeps the fetch for standalone
 # builds and tests.
-zingolib-price = { version = "0.3.0", path = "crates/price", default-features = false }
-zingolib-status = { version = "0.3.0", path = "crates/status" }
+price = { package = "zingolib-price", version = "0.3.0", path = "crates/price", default-features = false }
+status = { package = "zingolib-status", version = "0.3.0", path = "crates/status" }
 zingolib = { version = "8.0.0", path = "crates/zingolib" }
 
 ### Tests and Integration Tests
@@ -58,7 +58,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingolib-netutils = { version = "7.0.0", path = "crates/netutils", features = [
+netutils = { package = "zingolib-netutils", version = "7.0.0", path = "crates/netutils", features = [
   "globally-public-transparent",
 ] }
 zingolib-nym-proxy-ffi = { version = "0.1.0", path = "crates/netutils/nym-proxy-ffi" }

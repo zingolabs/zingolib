@@ -33,7 +33,7 @@ pub(crate) trait SpeedPrioritized {
     /// leg so the conduit counts it as outstanding.
     fn probe(
         &self,
-        dial: zingolib_netutils::conduit::ConduitDial,
+        dial: netutils::conduit::ConduitDial,
         target: Self::Target,
     ) -> impl std::future::Future<Output = Self::Outcome> + Send;
 
@@ -96,11 +96,10 @@ pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     // One shared deadline bounds the whole run — every redraw, birth, and
     // wave together — so the draw and birth budgets can no longer multiply
     // into an unbounded go-online wait.
-    let deadline =
-        tokio::time::Instant::now() + zingolib_netutils::time::SPEED_ACQUISITION_DEADLINE;
+    let deadline = tokio::time::Instant::now() + netutils::time::SPEED_ACQUISITION_DEADLINE;
     let refusal = |draws: usize| SpeedError::DeadlineExhausted {
         draws,
-        budget: zingolib_netutils::time::SPEED_ACQUISITION_DEADLINE,
+        budget: netutils::time::SPEED_ACQUISITION_DEADLINE,
     };
     for draw in 1..=MAX_SPEED_EXIT_DRAWS {
         operation.narrate(SpeedProgress::Acquiring { draw });
@@ -110,7 +109,7 @@ pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
         let (member, socks5) = acquired?;
         // One conduit per draw, so the count reflects the legs this wave has
         // in flight and nothing outside it.
-        let conduit = zingolib_netutils::conduit::MixnetConduit::over(socks5);
+        let conduit = netutils::conduit::MixnetConduit::over(socks5);
         let Ok(wave) = tokio::time::timeout_at(deadline, run_wave(operation, &conduit)).await
         else {
             // The deadline, not the exit, ended this wave: the member
@@ -130,7 +129,7 @@ pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     }
     Err(SpeedError::NoLiveExit {
         draws: MAX_SPEED_EXIT_DRAWS,
-        budget: zingolib_netutils::time::SENTINEL_BUDGET,
+        budget: netutils::time::SENTINEL_BUDGET,
     })
 }
 
@@ -184,7 +183,7 @@ pub(crate) enum WaveEnd<O> {
 /// Races `operation`'s targets through `conduit` in one full-width wave.
 pub(crate) async fn run_wave<T: SpeedPrioritized>(
     operation: &T,
-    conduit: &zingolib_netutils::conduit::MixnetConduit,
+    conduit: &netutils::conduit::MixnetConduit,
 ) -> WaveEnd<T::Outcome> {
     use futures::StreamExt as _;
 
@@ -219,7 +218,7 @@ mod tests {
 
         fn probe(
             &self,
-            _dial: zingolib_netutils::conduit::ConduitDial,
+            _dial: netutils::conduit::ConduitDial,
             _target: usize,
         ) -> impl std::future::Future<Output = bool> + Send {
             std::future::ready(false)
@@ -255,8 +254,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_shared_deadline_ends_a_hanging_acquisition() {
         let outcome = tokio::time::timeout(
-            zingolib_netutils::time::SPEED_ACQUISITION_DEADLINE
-                + zingolib_netutils::time::SENTINEL_BUDGET,
+            netutils::time::SPEED_ACQUISITION_DEADLINE + netutils::time::SENTINEL_BUDGET,
             run_speed_prioritized(&HangingAcquire),
         )
         .await;
@@ -267,7 +265,7 @@ mod tests {
             matches!(
                 refusal,
                 SpeedError::DeadlineExhausted { budget, .. }
-                    if budget == zingolib_netutils::time::SPEED_ACQUISITION_DEADLINE
+                    if budget == netutils::time::SPEED_ACQUISITION_DEADLINE
             ),
             "the refusal names the ruled deadline, got: {refusal}"
         );
@@ -289,7 +287,7 @@ mod tests {
 
         fn probe(
             &self,
-            _dial: zingolib_netutils::conduit::ConduitDial,
+            _dial: netutils::conduit::ConduitDial,
             target: usize,
         ) -> impl std::future::Future<Output = bool> + Send {
             let answered = self.answers[target];
@@ -331,7 +329,7 @@ mod tests {
     /// unsettled one claims to have settled.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_wave_ends_when_its_operation_settles() {
-        let conduit = zingolib_netutils::conduit::MixnetConduit::over(
+        let conduit = netutils::conduit::MixnetConduit::over(
             "127.0.0.1:1".parse().expect("a static address"),
         );
 

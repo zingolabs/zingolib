@@ -23,10 +23,10 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 #[cfg(feature = "socks5-fetch")]
+use net_diag::{NetOpFailure, chain_texts};
+#[cfg(feature = "socks5-fetch")]
 use serde::Deserialize;
 use zcash_encoding::{Optional, Vector};
-#[cfg(feature = "socks5-fetch")]
-use zingolib_net_diag::{NetOpFailure, chain_texts};
 
 /// Errors with price requests and parsing.
 // TODO: remove unused when historical data is implemented
@@ -41,11 +41,11 @@ pub enum PriceError {
         failure: NetOpFailure,
         /// The underlying transport failure, untouched.
         #[source]
-        source: Box<zingolib_netutils::socks5_fetch::Socks5FetchError>,
+        source: Box<netutils::socks5_fetch::Socks5FetchError>,
     },
     /// The price source answered with fewer trades than requested, so the
     /// median position does not exist. A typed
-    /// [`zingolib_net_diag::NetOpStage::PayloadDecode`]
+    /// [`net_diag::NetOpStage::PayloadDecode`]
     /// condition: the payload decoded but was structurally short.
     #[error("the price source returned {received} trades where {TRADES_REQUESTED} were requested")]
     InsufficientTrades {
@@ -261,7 +261,7 @@ const GEMINI_ZECUSD_URL: &str = "https://api.gemini.com/v1/trades/zecusd?limit_t
 /// native bound under the mobile UI's 25-second watchdog, so the native call
 /// ends (and releases whatever holds it) before or shortly after the UI
 /// gives up. A hang through a half-dead tunnel becomes a typed
-/// [`zingolib_net_diag::NetOpStage::TimedOut`] failure instead of an unbounded
+/// [`net_diag::NetOpStage::TimedOut`] failure instead of an unbounded
 /// wait.
 #[cfg(feature = "socks5-fetch")]
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
@@ -771,7 +771,7 @@ fn parse_kucoin_histories(body: &str) -> Result<Price, PriceError> {
 #[cfg(feature = "socks5-fetch")]
 pub async fn get_source_price(
     source: PriceSource,
-    dial: &zingolib_netutils::conduit::ConduitDial,
+    dial: &netutils::conduit::ConduitDial,
     url: &str,
     request_timeout: Duration,
     connect_timeout: Duration,
@@ -795,16 +795,12 @@ pub async fn get_source_price_untunneled(
     request_timeout: Duration,
     connect_timeout: Duration,
 ) -> Result<Price, PriceError> {
-    let body = zingolib_netutils::socks5_fetch::fetch_text_untunneled(
-        url,
-        request_timeout,
-        connect_timeout,
-    )
-    .await
-    .map_err(|error| PriceError::RequestFailed {
-        failure: error.net_op_failure(),
-        source: Box::new(error),
-    })?;
+    let body = netutils::socks5_fetch::fetch_text_untunneled(url, request_timeout, connect_timeout)
+        .await
+        .map_err(|error| PriceError::RequestFailed {
+            failure: error.net_op_failure(),
+            source: Box::new(error),
+        })?;
     source.parse(&body)
 }
 
@@ -828,8 +824,8 @@ mod tests {
             .expect_err("a version above the current version is refused");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
+    use net_diag::NetOpStage;
     use tokio::net::TcpListener;
-    use zingolib_net_diag::NetOpStage;
 
     /// Generous bounds for tests whose subject is not the timeout.
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -843,7 +839,7 @@ mod tests {
         request_timeout: Duration,
         connect_timeout: Duration,
     ) -> Result<Price, PriceError> {
-        let conduit = zingolib_netutils::conduit::MixnetConduit::over(socks5);
+        let conduit = netutils::conduit::MixnetConduit::over(socks5);
         get_source_price(
             source,
             &conduit.dial(),

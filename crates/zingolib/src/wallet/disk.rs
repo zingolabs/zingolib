@@ -18,9 +18,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
+use netutils::lightwallet_protocol::TreeState;
+use price::PriceList;
 use zingo_common_components::protocol::ActivationHeights;
-use zingolib_netutils::lightwallet_protocol::TreeState;
-use zingolib_price::PriceList;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
 use super::{LightWallet, RecoveryInfo, error::KeyError};

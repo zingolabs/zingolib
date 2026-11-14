@@ -20,9 +20,9 @@ test-features = []
 
 [dependencies]
 # Zingo
-zingolib-memo.workspace = true
-zingolib-status.workspace = true
-zingolib-netutils.workspace = true
+memo.workspace = true
+status.workspace = true
+netutils.workspace = true
 
 # Zcash
 incrementalmerkletree.workspace = true

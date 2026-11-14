@@ -40,8 +40,8 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
+use net_diag::{NetOpFailure, NetOpStage};
 use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
-use zingolib_net_diag::{NetOpFailure, NetOpStage};
 
 use crate::arm_race::acquisition_launch_policy;
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};

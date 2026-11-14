@@ -12,10 +12,10 @@
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
+use netutils::default_indexer;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
-use zingolib_netutils::default_indexer;
 
 /// The number of mainnet blocks the benchmark syncs.
 const SYNC_WINDOW: u32 = 20_000;

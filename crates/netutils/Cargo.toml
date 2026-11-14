@@ -65,7 +65,7 @@ tokio = { workspace = true, optional = true, features = [
     "io-std",
     "io-util",
 ] }
-zingolib-net-diag = { version = "0.1.0", path = "../net-diag", optional = true }
+net-diag = { package = "zingolib-net-diag", version = "0.1.0", path = "../net-diag", optional = true }
 rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 nym-socks5-proxy-helpers = { version = "=1.21.6", optional = true }
@@ -103,7 +103,7 @@ socks5-transmit = [
     # chain walk rather than a private copy of it. Std-only and
     # zero-dependency, so it resolves in both this crate's own lockfile and
     # the parent workspace's without coupling either.
-    "dep:zingolib-net-diag",
+    "dep:net-diag",
 ]
 # The wallet-side SOCKS5-dialing HTTP fetch: one conduit-guarded request,
 # classified into a typed zingolib-net-diag failure. Light in the same sense
@@ -111,7 +111,7 @@ socks5-transmit = [
 # workspace's lockfile.
 socks5-fetch = [
     "dep:reqwest",
-    "dep:zingolib-net-diag",
+    "dep:net-diag",
 ]
 nym = [
     "dep:nym-sdk",
@@ -132,7 +132,7 @@ nym = [
     # The provider connect race reports its exhausted attempts as typed
     # zingolib-net-diag records (issue #2562). Std-only and zero-dependency, so
     # it resolves in this crate's own lockfile without coupling.
-    "dep:zingolib-net-diag",
+    "dep:net-diag",
     # The following are pinned versions, we don't directly depend on them
     "dep:nym-client-core-config-types",
     "dep:nym-crypto",

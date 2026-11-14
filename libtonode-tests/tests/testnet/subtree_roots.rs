@@ -2,6 +2,8 @@ use std::num::NonZeroU32;
 use std::time::Duration;
 
 use incrementalmerkletree::Position;
+use netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
+use netutils::{GrpcIndexer, Indexer};
 use pepper_sync::error::SyncError;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::ShardTree;
@@ -16,8 +18,6 @@ use zingolib::sync::SyncModeError;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::NetworkedTestEnvironment;
 use zingolib::testutils::{default_test_wallet_settings, tempfile::TempDir};
-use zingolib_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
-use zingolib_netutils::{GrpcIndexer, Indexer};
 
 use super::TESTNET_INDEXER;
 

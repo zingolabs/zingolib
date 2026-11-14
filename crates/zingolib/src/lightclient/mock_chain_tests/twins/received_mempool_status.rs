@@ -1,5 +1,5 @@
+use status::confirmation_status::ConfirmationStatus;
 use zcash_protocol::PoolType;
-use zingolib_status::confirmation_status::ConfirmationStatus;
 
 use super::{FUNDING, funded_client};
 use crate::lightclient::LightClient;

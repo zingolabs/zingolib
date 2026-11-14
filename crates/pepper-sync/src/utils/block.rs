@@ -1,6 +1,6 @@
+use netutils::lightwallet_protocol::CompactBlock;
 use zcash_primitives::block::{BlockHash, BlockHeader};
 use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
-use zingolib_netutils::lightwallet_protocol::CompactBlock;
 
 use super::transaction;
 

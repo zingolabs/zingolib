@@ -17,7 +17,7 @@ use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
-use zingolib_price::PriceList;
+use price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;

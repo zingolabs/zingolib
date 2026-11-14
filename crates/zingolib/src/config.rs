@@ -361,8 +361,8 @@ impl IndexerChoice {
 }
 
 pub fn default_indexer_for(chain: &ChainType) -> Option<http::Uri> {
-    use zingolib_netutils::default_indexer;
-    use zingolib_netutils::default_indexer::IndexerChain;
+    use netutils::default_indexer;
+    use netutils::default_indexer::IndexerChain;
 
     match chain {
         ChainType::Mainnet => Some(default_indexer::default_indexer(IndexerChain::Main)),
@@ -735,7 +735,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_clientconfig() {
         let valid_uri = crate::config::construct_indexer_uri(
-            zingolib_netutils::default_indexer::MAINNET_DEFAULT_INDEXER.to_string(),
+            netutils::default_indexer::MAINNET_DEFAULT_INDEXER.to_string(),
         )
         .expect("MAINNET_DEFAULT_INDEXER is a literal the netutils doc-test pins parseable");
 

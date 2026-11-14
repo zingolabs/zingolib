@@ -89,10 +89,7 @@ async fn price_rounds_report_their_outcomes() {
             // failures live further down the chain: walk every layer.
             Err(e) => (
                 None,
-                Some((
-                    mode_tally(&e),
-                    zingolib_net_diag::chain_texts(&e).join(" <- "),
-                )),
+                Some((mode_tally(&e), net_diag::chain_texts(&e).join(" <- "))),
             ),
         };
         println!(
@@ -194,17 +191,17 @@ fn speed_mode(failure: &zingolib::mixnet::speed::SpeedError) -> String {
 /// One source's failure named by its own kind, and for a transport failure
 /// by the stage it reached, which is what separates a tunnel that carried
 /// nothing from an operator that refused.
-fn source_mode(failure: &zingolib_price::PriceError) -> String {
+fn source_mode(failure: &price::PriceError) -> String {
     match failure {
-        zingolib_price::PriceError::RequestFailed { failure, .. } => {
+        price::PriceError::RequestFailed { failure, .. } => {
             format!("at {}", failure.stage)
         }
-        zingolib_price::PriceError::InsufficientTrades { .. } => "too few trades".to_string(),
-        zingolib_price::PriceError::DeserializationFailed(_) => "undecodable body".to_string(),
-        zingolib_price::PriceError::ParseError(_) => "unparsable number".to_string(),
-        zingolib_price::PriceError::PriceListNotInitialized => "no price list".to_string(),
-        zingolib_price::PriceError::InvalidPrice => "invalid price".to_string(),
-        zingolib_price::PriceError::SourceReportedError(_) => "source refused".to_string(),
-        zingolib_price::PriceError::UnexpectedShape(_) => "unexpected shape".to_string(),
+        price::PriceError::InsufficientTrades { .. } => "too few trades".to_string(),
+        price::PriceError::DeserializationFailed(_) => "undecodable body".to_string(),
+        price::PriceError::ParseError(_) => "unparsable number".to_string(),
+        price::PriceError::PriceListNotInitialized => "no price list".to_string(),
+        price::PriceError::InvalidPrice => "invalid price".to_string(),
+        price::PriceError::SourceReportedError(_) => "source refused".to_string(),
+        price::PriceError::UnexpectedShape(_) => "unexpected shape".to_string(),
     }
 }
