@@ -29,7 +29,7 @@ impl LightWallet {
         &self,
         reverse_sort: bool,
     ) -> Result<TransactionSummaries, SummaryError> {
-        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let spend_view = self.spend_view();
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -53,7 +53,7 @@ impl LightWallet {
                     .ironwood_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output, &pending_spends);
+                        let spend_status = spend_view.state(output).into();
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -73,7 +73,7 @@ impl LightWallet {
                     .orchard_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output, &pending_spends);
+                        let spend_status = spend_view.state(output).into();
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -93,7 +93,7 @@ impl LightWallet {
                     .sapling_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output, &pending_spends);
+                        let spend_status = spend_view.state(output).into();
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -113,7 +113,7 @@ impl LightWallet {
                     .transparent_coins()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output, &pending_spends);
+                        let spend_status = spend_view.state(output).into();
 
                         BasicCoinSummary::from_parts(
                             output.value(),
@@ -294,18 +294,11 @@ impl LightWallet {
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
     {
-        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = self.spend_view();
         let note_summaries = self
             .wallet_outputs::<N>()
             .into_iter()
-            .filter(|&note| {
-                if include_spent_notes {
-                    true
-                } else {
-                    note.spending_transaction().is_none()
-                        && !pending_spends.contains_key(&note.output_id())
-                }
-            })
+            .filter(|&note| include_spent_notes || spends.state(note).is_unspent())
             .map(|note| {
                 let memo = if let Memo::Text(memo_text) = note.memo() {
                     Some(memo_text.to_string())
@@ -318,7 +311,7 @@ impl LightWallet {
                     value: note.value(),
                     status: transaction.status(),
                     block_height: transaction.status().get_height(),
-                    spend_status: self.output_spend_status(note, &pending_spends),
+                    spend_status: spends.state(note).into(),
                     memo,
                     time: transaction.datetime(),
                     txid: note.output_id().txid(),
@@ -334,17 +327,10 @@ impl LightWallet {
 
     #[must_use]
     pub fn coin_summaries(&self, include_spent_coins: bool) -> Vec<CoinSummary> {
-        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let spends = self.spend_view();
         self.wallet_outputs::<TransparentCoin>()
             .into_iter()
-            .filter(|&coin| {
-                if include_spent_coins {
-                    true
-                } else {
-                    coin.spending_transaction().is_none()
-                        && !pending_spends.contains_key(&coin.output_id())
-                }
-            })
+            .filter(|&coin| include_spent_coins || spends.state(coin).is_unspent())
             .map(|coin| {
                 let transaction = self.output_transaction(coin);
 
@@ -352,7 +338,7 @@ impl LightWallet {
                     value: coin.value(),
                     status: transaction.status(),
                     block_height: transaction.status().get_height(),
-                    spend_status: self.output_spend_status(coin, &pending_spends),
+                    spend_status: spends.state(coin).into(),
                     time: transaction.datetime(),
                     txid: coin.output_id().txid(),
                     output_index: coin.output_id().output_index(),
