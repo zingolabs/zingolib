@@ -18,7 +18,7 @@ use std::process::Command;
 use workbench::{repo_root, run};
 
 /// The stdout line prefix the proxy's discover mode announces each Exit
-/// Node under. An agreeing representation of `zingo_netutils::
+/// Node under. An agreeing representation of `zingolib_netutils::
 /// NYM_EXIT_LINE_PREFIX`, restated because this crate is deliberately
 /// std-only and takes no production dependency; the two must not drift.
 const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";

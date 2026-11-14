@@ -1,20 +1,18 @@
 [workspace]
 members = [
   "libtonode-tests",
-  "pepper-sync",
-  "zingo-cli",
-  "zingo-memo",
-  "zingo-net-diag",
-  "zingo-price",
-  "zingo-status",
-  "zingolib",
-  "zingo-netutils",
-  "zingo-netutils/webpki-verifier-shim",
-  "zingo-netutils/nym-proxy-ffi",
-  "zingo-ffi/lib",
-  "zingo-ffi/uniffi-bindgen",
+  "crates/pepper-sync",
+  "bin/cli",
+  "crates/common",
+  "crates/file-format",
+  "crates/zingolib",
+  "crates/netutils",
+  "crates/netutils/webpki-verifier-shim",
+  "crates/netutils/nym-proxy-ffi",
+  "ffi/lib",
+  "ffi/uniffi-bindgen",
 ]
-# zingo-netutils, its verifier shim, and the proxy crate are members since
+# zingolib-netutils, its verifier shim, and the proxy crate are members since
 # PR #3037. The nym-sdk stack once needed `crypto-common ^0.2` while
 # zcash_primitives 0.29 and 0.30 pinned `=0.2.0-rc.1`, which kept netutils in
 # a workspace of its own with a second lockfile (zingo-adrs zingolib/0011,
@@ -26,16 +24,10 @@ resolver = "2"
 
 [workspace.dependencies]
 ### Workspace
-pepper-sync = { version = "0.7.0", path = "pepper-sync" }
-zingo-memo = { version = "0.3.0", path = "zingo-memo" }
-zingo-net-diag = { version = "0.1.0", path = "zingo-net-diag" }
-# default-features = false: the fetch machinery (socks5-fetch) is opt-in;
-# zingolib re-enables it only under its `nym` feature (the mixnet-only
-# price rule). The crate's own default keeps the fetch for standalone
-# builds and tests.
-zingo-price = { version = "0.3.0", path = "zingo-price", default-features = false }
-zingo-status = { version = "0.3.0", path = "zingo-status" }
-zingolib = { version = "8.0.0", path = "zingolib" }
+pepper-sync = { version = "0.7.0", path = "crates/pepper-sync" }
+zingolib-common = { version = "0.1.0", path = "crates/common", default-features = false }
+zingolib-file-format = { version = "0.1.0", path = "crates/file-format", default-features = false }
+zingolib = { version = "8.0.0", path = "crates/zingolib" }
 
 ### Tests and Integration Tests
 portpicker = "0.1"
@@ -58,10 +50,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-zingo-netutils = { version = "7.0.0", path = "zingo-netutils", features = [
+zingolib-netutils = { version = "7.0.0", path = "crates/netutils", features = [
   "globally-public-transparent",
 ] }
-zingo-nym-proxy-ffi = { version = "0.1.0", path = "zingo-netutils/nym-proxy-ffi" }
+zingolib-nym-proxy-ffi = { version = "0.1.0", path = "crates/netutils/nym-proxy-ffi" }
 zingo_common_components = "0.4.0"
 tokio-stream = "0.1"
 
@@ -120,7 +112,7 @@ http = "1"
 # aws-lc-rs is the workspace's sole rustls CryptoProvider (ring is excised);
 # prefer-post-quantum leads outbound handshakes with the X25519MLKEM768
 # hybrid group. Runtime installation is first-install-wins via
-# zingo_netutils::crypto::ensure_default_crypto_provider, so downstream
+# zingolib_netutils::crypto::ensure_default_crypto_provider, so downstream
 # embedders that install their own provider first keep it.
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
 prost = "0.14"
@@ -151,7 +143,7 @@ dirs = "6"
 memuse = "0.2"
 rand = "0.10"
 
-# zingo-netutils and child crates
+# zingolib-netutils and child crates
 rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
 tokio-rustls = { version = "0.26", default-features = false, features = [
   "aws_lc_rs",
@@ -178,7 +170,7 @@ opt-level = 3
 
 # The one profile of the Binding Layer: the wallet library on both
 # platforms, the proxy library on Android, and the iOS archive that carries
-# both crates under the wallet crate's `zingo-nym-proxy-ffi` feature. The
+# both crates under the wallet crate's `zingolib-nym-proxy-ffi` feature. The
 # nym stack beneath the proxy therefore compiles with the same size
 # optimization and overflow checks on both platforms. Ruled 2026-10-22:
 # the proxy once kept a plain release profile of its own, inherited from
@@ -206,4 +198,4 @@ opt-level = "z"
 # manifest of the workspace being built, so the table moved here with the
 # crate.
 [patch.crates-io]
-rustls-platform-verifier = { path = "zingo-netutils/webpki-verifier-shim" }
+rustls-platform-verifier = { path = "crates/netutils/webpki-verifier-shim" }

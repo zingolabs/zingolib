@@ -147,7 +147,7 @@ jobs:
       # resolves (ADR 0024): the environment names the binary, and nothing
       # is copied onto PATH.
       - name: Build the proxy
-        run: cargo build --release --package zingo-netutils --features nym --bin nym-proxy
+        run: cargo build --release --package zingolib-netutils --features nym --bin nym-proxy
 
       - name: Run the cells and the probe
         continue-on-error: true

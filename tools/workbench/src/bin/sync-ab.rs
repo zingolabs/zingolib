@@ -106,7 +106,7 @@ const SPAWN_ANCHOR: &str = "let sync_handle = tokio::spawn(async move {";
 const SPAWN_CALL: &str = "pepper_sync::sync";
 
 /// The file the graft rewrites in each arm's worktree.
-const SYNC_SOURCE: &str = "zingolib/src/lightclient/sync.rs";
+const SYNC_SOURCE: &str = "crates/zingolib/src/lightclient/sync.rs";
 
 /// The marker the graft opens its span with.
 const SYNC_SPAN_OPEN: &str = "SYNC_SPAN=open";
@@ -178,7 +178,7 @@ const WALLETS_DIR: &str = "wallets";
 const WALLET_FILE: &str = "zingo-wallet.dat";
 
 // The process name the memory reading follows, as the kernel reports it.
-const CLI_COMM: &str = "zingo-cli";
+const CLI_COMM: &str = "zingolib-cli";
 
 // Where the kernel publishes each process's name, children, and memory.
 const PROC: &str = "/proc";
@@ -615,7 +615,7 @@ fn prepare(root: &Path, spec: &Spec) -> Result<Arm, Vec<String>> {
 
     let makefile = std::fs::read_to_string(worktree.join("Makefile.toml")).unwrap_or_default();
     let cli_source =
-        std::fs::read_to_string(worktree.join("zingo-cli/src/lib.rs")).unwrap_or_default();
+        std::fs::read_to_string(worktree.join("bin/cli/src/lib.rs")).unwrap_or_default();
 
     Ok(Arm {
         spec: spec.clone(),
@@ -864,7 +864,7 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
     let mut build = Command::new("cargo");
     build
         .current_dir(&arm.worktree)
-        .args(["build", "--release", "-p", "zingo-cli"]);
+        .args(["build", "--release", "-p", "zingolib-cli"]);
     if arm.spec.nakednet {
         build.arg("--no-default-features");
     }
@@ -877,7 +877,9 @@ fn launcher(arm: &Arm) -> Result<Command, Vec<String>> {
             arm.spec.label()
         )]);
     }
-    Ok(Command::new(arm.worktree.join("target/release/zingo-cli")))
+    Ok(Command::new(
+        arm.worktree.join("target/release/zingolib-cli"),
+    ))
 }
 
 // A close on `err` is a failure only while no later span has opened: the
@@ -1358,10 +1360,12 @@ mod tests {
     // or a name holding a parenthesis is taken for the CLI.
     #[test]
     fn a_stat_line_names_the_cli() {
-        assert!(names_cli("4242 (zingo-cli) S 4200 4100 4100 0 -1"));
+        assert!(names_cli("4242 (zingolib-cli) S 4200 4100 4100 0 -1"));
         assert!(!names_cli("4243 (nym-proxy) S 4242 4243 4100 0 -1"));
         assert!(!names_cli("4244 (cargo) S 4200 4100 4100 0 -1"));
-        assert!(!names_cli("4245 (zingo-cli (old)) S 4200 4100 4100 0 -1"));
+        assert!(!names_cli(
+            "4245 (zingolib-cli (old)) S 4200 4100 4100 0 -1"
+        ));
         assert!(!names_cli("no fields at all"));
     }
 
@@ -1380,8 +1384,8 @@ mod tests {
     #[test]
     fn the_high_water_mark_is_read_in_bytes() {
         let status =
-            "Name:\tzingo-cli\nVmPeak:\t    2048 kB\nVmHWM:\t    1536 kB\nVmRSS:\t    1024 kB\n";
+            "Name:\tzingolib-cli\nVmPeak:\t    2048 kB\nVmHWM:\t    1536 kB\nVmRSS:\t    1024 kB\n";
         assert_eq!(high_water(status), Some(1536 * KIB));
-        assert_eq!(high_water("Name:\tzingo-cli\nVmRSS:\t 1024 kB\n"), None);
+        assert_eq!(high_water("Name:\tzingolib-cli\nVmRSS:\t 1024 kB\n"), None);
     }
 }

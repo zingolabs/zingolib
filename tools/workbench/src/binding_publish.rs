@@ -1046,7 +1046,7 @@ mod tests {
         let first = binding_manifest::commit_on(&repo, "first")?;
         let published = binding_manifest::commit_on(&repo, "published")?;
         let record = format!(
-            "[[entry]]\ncommit = \"{published}\"\nsince = \"{first}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
+            "[[entry]]\ncommit = \"{published}\"\nsince = \"{first}\"\naudited = [\"zingolib-ffi (ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
         );
         crate::create_parent(&repo.join(binding_manifest::FILE))?;
         crate::write(&repo.join(binding_manifest::FILE), record)?;
@@ -1079,8 +1079,8 @@ mod tests {
         crate::hermetic_git(&repo, &["switch", "--quiet", BRANCH])?;
         let later = binding_manifest::commit_on(&repo, "later")?;
         let record = format!(
-            "[[entry]]\ncommit = \"{candidate}\"\nsince = \"{first}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n\
-             [[entry]]\ncommit = \"{later}\"\naudited = [\"zingo (zingo-ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
+            "[[entry]]\ncommit = \"{candidate}\"\nsince = \"{first}\"\naudited = [\"zingolib-ffi (ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n\
+             [[entry]]\ncommit = \"{later}\"\naudited = [\"zingolib-ffi (ffi/lib)\"]\nandroid = \"{ZERO_DIGEST}\"\nios = \"{ZERO_DIGEST}\"\n"
         );
         crate::create_parent(&repo.join(binding_manifest::FILE))?;
         crate::write(&repo.join(binding_manifest::FILE), record)?;

@@ -1,0 +1,76 @@
+[package]
+name = "zingolib-file-format"
+description = "The zingo wallet file: its content as one data type, and the readers and the writer of every layout version."
+authors = ["<zingo@zingolabs.org>"]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[features]
+default = ["legacy"]
+legacy = [
+    "dep:append-only-vec",
+    "dep:bip32",
+    "dep:blake2b_simd",
+    "dep:bs58",
+    "dep:incrementalmerkletree",
+    "dep:jubjub",
+    "dep:lightwallet-protocol",
+    "dep:orchard",
+    "dep:prost",
+    "dep:sapling-crypto",
+    "dep:shardtree",
+    "dep:zcash_address",
+    "dep:zcash_client_backend",
+    "zcash_keys/unstable",
+]
+
+[dependencies]
+# Zingo
+zingolib-common = { workspace = true, features = ["serialization"] }
+zingo_common_components.workspace = true
+
+# Zcash
+incrementalmerkletree = { workspace = true, optional = true }
+orchard = { workspace = true, optional = true }
+sapling-crypto = { workspace = true, optional = true }
+shardtree = { workspace = true, optional = true, features = ["legacy-api"] }
+zcash_address = { workspace = true, optional = true }
+zcash_client_backend = { workspace = true, optional = true, features = [
+    "unstable-serialization",
+] }
+zcash_encoding.workspace = true
+zcash_keys.workspace = true
+zcash_primitives.workspace = true
+zcash_protocol.workspace = true
+zcash_transparent.workspace = true
+
+# Protocol
+bip0039.workspace = true
+bip32 = { workspace = true, optional = true }
+lightwallet-protocol = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+zip32.workspace = true
+
+# Cryptography
+blake2b_simd = { workspace = true, optional = true }
+bs58 = { workspace = true, optional = true, features = ["check"] }
+jubjub = { workspace = true, optional = true }
+
+append-only-vec = { workspace = true, optional = true }
+
+# Logging
+log.workspace = true
+
+# Serialization
+byteorder.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+hex.workspace = true
+zingolib-common = { workspace = true, features = ["test-features"] }

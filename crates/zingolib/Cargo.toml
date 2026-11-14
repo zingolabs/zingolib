@@ -1,0 +1,122 @@
+[package]
+name = "zingolib"
+description = "Zingo backend library."
+version = "8.0.0"
+authors = ["<zingo@zingolabs.org>"]
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[features]
+default = []
+# The editorial layer (`zingolib::perspective`). Off by default: a consumer
+# that wants the editorial layer opts in, and the default build proves core
+# stands without it.
+perspective = []
+nym = [
+    "zingolib-netutils/socks5-fetch",
+    "zingolib-netutils/socks5-transmit",
+    "dep:serde_json",
+]
+testutils = [
+    "perspective",
+    "zingolib-netutils/testutils",
+    "portpicker",
+    "zingo_test_vectors",
+    "tempfile",
+    "pepper-sync/test-features",
+    "dep:zaino-proto",
+    "dep:tokio-stream",
+]
+
+[dependencies]
+bech32 = { workspace = true }
+bip0039.workspace = true
+blake2b_simd = { workspace = true }
+byteorder = { workspace = true }
+chrono = { workspace = true }
+dirs.workspace = true
+futures = { workspace = true }
+hex = { workspace = true }
+http.workspace = true
+incrementalmerkletree = { workspace = true }
+json = { workspace = true }
+jubjub = { workspace = true }
+log = { workspace = true }
+nonempty.workspace = true
+orchard = { workspace = true }
+pepper-sync = { workspace = true }
+portpicker = { workspace = true, optional = true }
+rand = { workspace = true }
+sapling-crypto.workspace = true
+secrecy = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+shardtree = { workspace = true }
+tempfile = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+zcash_address = { workspace = true }
+zcash_client_backend = { workspace = true, features = [
+    "unstable",
+    "unstable-spanning-tree",
+] }
+zcash_encoding = { workspace = true }
+zcash_keys = { workspace = true }
+zcash_primitives = { workspace = true }
+# download-params (and its minreq/rustls-0.21/ring subtree) is build-time
+# only: build.rs fetches the sapling params; runtime code never downloads.
+zcash_proofs = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
+zingolib-common = { workspace = true }
+zingolib-file-format = { workspace = true, features = ["legacy"] }
+zingolib-netutils = { workspace = true, features = ["diag-serde"] }
+zingo_common_components = { workspace = true }
+zingo_test_vectors = { workspace = true, optional = true }
+zip32.workspace = true
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+], optional = true }
+tokio-stream = { workspace = true, optional = true }
+# Registry-sourced, not git: cargo keys a package by source, so a git
+# zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
+# zcash_transparent that no version bump can unify with the registry stack.
+zcash_pool_migration = { version = "=0.2.0", default-features = false }
+
+[build-dependencies]
+zcash_proofs = { workspace = true, features = ["download-params"] }
+
+# The live mixnet harnesses drive nym-gated API, so they build only with
+# the `nym` feature; every other test target stays auto-discovered.
+[[test]]
+name = "price_harness"
+required-features = ["nym"]
+
+[dev-dependencies]
+# Self dev-dependency: activates these features for every test target, so
+# the feature-gated integration tests always compile and run in
+# package-scoped invocations instead of silently building empty binaries.
+zingolib = { path = ".", features = ["perspective", "testutils"] }
+pepper-sync = { workspace = true, features = ["test-features"] }
+# The nym tests read their temporal parameters from `time::test`.
+zingolib-netutils = { workspace = true, features = ["testutils"] }
+# `test-util` enables paused-time tests (`start_paused`) for the attached-
+# transport falsifiers; dev-only, so the shipped graph is unchanged.
+tokio = { workspace = true, features = ["full", "test-util"] }
+portpicker = { workspace = true }
+proptest = { workspace = true }
+rand_chacha = "0.10"
+tempfile = { workspace = true }
+tokio-stream.workspace = true
+tracing-subscriber = { workspace = true }
+zaino-proto = { version = "0.2.0", default-features = false, features = [
+    "grpc_proxy_server",
+] }
+zingo_test_vectors = { workspace = true }
+serde_json.workspace = true
+
+[badges]
+maintenance = { status = "actively-developed" }
