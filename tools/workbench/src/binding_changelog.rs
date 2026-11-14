@@ -575,7 +575,7 @@ mod tests {
                     --- a/x/CHANGELOG.md\n\
                     +++ b/x/CHANGELOG.md\n\
                     @@ -1,1 +1,10 @@\n\
-                    +# zingo-netutils changelog\n\
+                    +# zingolib-netutils changelog\n\
                     +All notable changes to this project will be documented in this file.\n\
                     +The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\n\
                     +Entries follow the house style.\n\

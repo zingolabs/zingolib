@@ -8,4 +8,4 @@ cargo nextest run --run-ignored=all sapling_glory_goddess
 cargo nextest run --run-ignored=all shield_glory_goddess
 
 to update the testnet wallet run
-cargo run -- -c=testnet --server="https://testnet.zec.rocks:9067" --data-dir=zingolib/src/wallet/disk/testing/examples/testnet/glory_goddess/latest
+cargo run -- -c=testnet --server="https://testnet.zec.rocks:9067" --data-dir=crates/zingolib/src/wallet/disk/testing/examples/testnet/glory_goddess/latest

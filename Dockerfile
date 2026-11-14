@@ -83,7 +83,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 # this needs to be re-added to ensure hermeticity
 #
 # TODO: additionally, restore
-#    cargo build --release --frozen --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
+#    cargo build --release --frozen --target $TARGET_ARCH --bin zingolib-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingolib-cli /usr/local/bin/zingolib-cli
 # --frozen was als removed due to build script
 
 # TODO : get rid of:
@@ -96,20 +96,20 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=${HOME}/target \
     --mount=type=cache,target=${HOME}/.zcash-params \
-    cargo build --release ${FEATURES:+--features ${FEATURES}} --target $TARGET_ARCH --bin zingo-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingo-cli /usr/local/bin/zingo-cli
+    cargo build --release ${FEATURES:+--features ${FEATURES}} --target $TARGET_ARCH --bin zingolib-cli && install -D -m 0755 target/${TARGET_ARCH}/release/zingolib-cli /usr/local/bin/zingolib-cli
 
 ############################
 # Export stage
 ############################
 FROM scratch AS export
-COPY --from=release /usr/local/bin/zingo-cli /zingo-cli
+COPY --from=release /usr/local/bin/zingolib-cli /zingolib-cli
 
 ############################
 # Runtime stage
 ############################
 FROM busybox AS runtime
 
-# Create a non-privileged user for running `zingo-cli`.
+# Create a non-privileged user for running `zingolib-cli`.
 #
 # We use a high UID/GID (10901) to avoid overlap with host system users.
 # This reduces the risk of container user namespace conflicts with host accounts,
@@ -146,13 +146,13 @@ WORKDIR /usr/local/bin
 
 USER root
 RUN mkdir -p /usr/local/bin/wallets && chown -R ${UID}:${GID} /usr/local/bin/ && chmod -R 770 /usr/local/bin/
-COPY --chown=${UID}:${GID} --from=export /zingo-cli /usr/local/bin/zingo-cli
-RUN chmod 550 /usr/local/bin/zingo-cli
+COPY --chown=${UID}:${GID} --from=export /zingolib-cli /usr/local/bin/zingolib-cli
+RUN chmod 550 /usr/local/bin/zingolib-cli
 COPY --chown=${UID}:${GID} ./utils/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 550 /usr/local/bin/entrypoint.sh
 
 USER $USER
 # ./entrypoint.sh runs, then executes CMD (or custom command if provided).
-# Prints zingo-cli version, address if a new wallet is created, and info on success.
+# Prints zingolib-cli version, address if a new wallet is created, and info on success.
 ENTRYPOINT [ "./entrypoint.sh" ]
-CMD [ "./zingo-cli", "--help"]
+CMD [ "./zingolib-cli", "--help"]

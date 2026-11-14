@@ -4208,9 +4208,9 @@ dependencies = [
  "tokio",
  "tracing-subscriber",
  "zcash_protocol",
- "zingo-netutils",
  "zingo_test_vectors",
  "zingolib",
+ "zingolib-netutils",
  "zip32",
 ]
 
@@ -6464,9 +6464,9 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo",
- "zingo-netutils",
- "zingo-status",
+ "zingolib-memo",
+ "zingolib-netutils",
+ "zingolib-status",
  "zip32",
 ]
 
@@ -11081,171 +11081,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingo"
-version = "2.0.0"
-dependencies = [
- "android_logger 0.11.3",
- "hex",
- "http 1.5.0",
- "json",
- "lazy_static",
- "log",
- "once_cell",
- "pepper-sync",
- "quote",
- "serde_json",
- "syn 2.0.119",
- "thiserror 2.0.19",
- "tokio",
- "uniffi",
- "zcash_address",
- "zcash_client_backend",
- "zcash_keys",
- "zcash_protocol",
- "zcash_transparent",
- "zingo-nym-proxy-ffi",
- "zingo_common_components",
- "zingolib",
- "zip32",
-]
-
-[[package]]
-name = "zingo-cli"
-version = "0.5.0"
-dependencies = [
- "clap",
- "hex",
- "http 1.5.0",
- "indoc",
- "json",
- "log",
- "nonempty",
- "pepper-sync",
- "rustyline",
- "shellwords",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing-subscriber",
- "zcash_address",
- "zcash_client_backend",
- "zcash_keys",
- "zcash_protocol",
- "zingo-net-diag",
- "zingo-netutils",
- "zingo-status",
- "zingo_common_components",
- "zingo_grpc_proxy",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
-]
-
-[[package]]
-name = "zingo-memo"
-version = "0.3.0"
-dependencies = [
- "zcash_address",
- "zcash_encoding",
- "zcash_keys",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-net-diag"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "zingo-netutils"
-version = "7.0.0"
-dependencies = [
- "futures-channel",
- "http 1.5.0",
- "http-body-util",
- "hyper 1.11.0",
- "hyper-rustls 0.27.9",
- "hyper-util",
- "lightwallet-protocol",
- "nym-bandwidth-fetcher",
- "nym-client-core",
- "nym-client-core-config-types",
- "nym-coconut-dkg-common",
- "nym-crypto",
- "nym-http-api-client",
- "nym-lp-data",
- "nym-sdk",
- "nym-socks5-proxy-helpers",
- "nym-sphinx",
- "nym-sphinx-types",
- "nym-statistics-common",
- "nym-topology",
- "nym-validator-client",
- "rand 0.10.2",
- "reqwest 0.12.28",
- "rustls 0.23.46",
- "rustls-pemfile 2.2.0",
- "serde",
- "thiserror 2.0.19",
- "tokio",
- "tokio-rustls 0.26.4",
- "tokio-socks",
- "tokio-stream",
- "tonic",
- "tower",
- "x509-parser",
- "zingo-net-diag",
-]
-
-[[package]]
-name = "zingo-nym-proxy-ffi"
-version = "0.1.0"
-dependencies = [
- "android_logger 0.15.1",
- "log",
- "thiserror 2.0.19",
- "tokio",
- "tokio-socks",
- "tracing",
- "tracing-subscriber",
- "uniffi",
- "zingo-netutils",
-]
-
-[[package]]
-name = "zingo-price"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "zcash_encoding",
- "zingo-net-diag",
- "zingo-netutils",
-]
-
-[[package]]
-name = "zingo-status"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingo-uniffi-bindgen"
-version = "0.1.0"
-dependencies = [
- "uniffi",
-]
-
-[[package]]
 name = "zingo_common_components"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11320,15 +11155,180 @@ dependencies = [
  "zcash_proofs",
  "zcash_protocol",
  "zcash_transparent",
- "zingo-memo",
- "zingo-net-diag",
- "zingo-netutils",
- "zingo-price",
- "zingo-status",
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
+ "zingolib-memo",
+ "zingolib-net-diag",
+ "zingolib-netutils",
+ "zingolib-price",
+ "zingolib-status",
  "zip32",
+]
+
+[[package]]
+name = "zingolib-cli"
+version = "0.5.0"
+dependencies = [
+ "clap",
+ "hex",
+ "http 1.5.0",
+ "indoc",
+ "json",
+ "log",
+ "nonempty",
+ "pepper-sync",
+ "rustyline",
+ "shellwords",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing-subscriber",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_protocol",
+ "zingo_common_components",
+ "zingo_grpc_proxy",
+ "zingo_test_vectors",
+ "zingolib",
+ "zingolib-net-diag",
+ "zingolib-netutils",
+ "zingolib-status",
+ "zip32",
+]
+
+[[package]]
+name = "zingolib-ffi"
+version = "2.0.0"
+dependencies = [
+ "android_logger 0.11.3",
+ "hex",
+ "http 1.5.0",
+ "json",
+ "lazy_static",
+ "log",
+ "once_cell",
+ "pepper-sync",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
+ "thiserror 2.0.19",
+ "tokio",
+ "uniffi",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_keys",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zingolib",
+ "zingolib-nym-proxy-ffi",
+ "zip32",
+]
+
+[[package]]
+name = "zingolib-memo"
+version = "0.3.0"
+dependencies = [
+ "zcash_address",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_protocol",
+]
+
+[[package]]
+name = "zingolib-net-diag"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "zingolib-netutils"
+version = "7.0.0"
+dependencies = [
+ "futures-channel",
+ "http 1.5.0",
+ "http-body-util",
+ "hyper 1.11.0",
+ "hyper-rustls 0.27.9",
+ "hyper-util",
+ "lightwallet-protocol",
+ "nym-bandwidth-fetcher",
+ "nym-client-core",
+ "nym-client-core-config-types",
+ "nym-coconut-dkg-common",
+ "nym-crypto",
+ "nym-http-api-client",
+ "nym-lp-data",
+ "nym-sdk",
+ "nym-socks5-proxy-helpers",
+ "nym-sphinx",
+ "nym-sphinx-types",
+ "nym-statistics-common",
+ "nym-topology",
+ "nym-validator-client",
+ "rand 0.10.2",
+ "reqwest 0.12.28",
+ "rustls 0.23.46",
+ "rustls-pemfile 2.2.0",
+ "serde",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tokio-socks",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "x509-parser",
+ "zingolib-net-diag",
+]
+
+[[package]]
+name = "zingolib-nym-proxy-ffi"
+version = "0.1.0"
+dependencies = [
+ "android_logger 0.15.1",
+ "log",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-socks",
+ "tracing",
+ "tracing-subscriber",
+ "uniffi",
+ "zingolib-netutils",
+]
+
+[[package]]
+name = "zingolib-price"
+version = "0.3.0"
+dependencies = [
+ "byteorder",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "zcash_encoding",
+ "zingolib-net-diag",
+ "zingolib-netutils",
+]
+
+[[package]]
+name = "zingolib-status"
+version = "0.3.0"
+dependencies = [
+ "byteorder",
+ "zcash_protocol",
+]
+
+[[package]]
+name = "zingolib-uniffi-bindgen"
+version = "0.1.0"
+dependencies = [
+ "uniffi",
 ]
 
 [[package]]

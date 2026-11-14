@@ -7,8 +7,6 @@ use pepper_sync::wallet::ShardTrees;
 use shardtree::ShardTree;
 use shardtree::store::ShardStore;
 use zcash_protocol::ShieldedPool;
-use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
-use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig, construct_indexer_uri};
 use zingolib::data::PollReport;
@@ -18,6 +16,8 @@ use zingolib::sync::SyncModeError;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::NetworkedTestEnvironment;
 use zingolib::testutils::{default_test_wallet_settings, tempfile::TempDir};
+use zingolib_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
+use zingolib_netutils::{GrpcIndexer, Indexer};
 
 use super::TESTNET_INDEXER;
 

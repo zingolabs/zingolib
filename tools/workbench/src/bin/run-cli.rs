@@ -1,10 +1,10 @@
-//! Build and launch `zingo-cli`, by default mixnet-capable.
+//! Build and launch `zingolib-cli`, by default mixnet-capable.
 //!
 //! Usage: `run-cli [--nakednet] [--debug] [--features <list>]
-//! [--target-dir <dir>] [--build-only] [<zingo-cli args...>]`. Those flags
+//! [--target-dir <dir>] [--build-only] [<zingolib-cli args...>]`. Those flags
 //! are consumed wherever they appear (as are the retired `--nym` and
 //! `--release`, no-ops now that they name the defaults); every other
-//! argument is forwarded to `zingo-cli` unchanged. The build is a release
+//! argument is forwarded to `zingolib-cli` unchanged. The build is a release
 //! build unless `--debug` asks otherwise. `--build-only` stops after the
 //! build and the bundling, which is how a caller pays the compile once
 //! before timing anything, and `--target-dir` gives a build its own
@@ -138,7 +138,9 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         .map_or_else(|| root.join("target"), PathBuf::from);
 
     let mut build = Command::new("cargo");
-    build.current_dir(&root).args(["build", "-p", "zingo-cli"]);
+    build
+        .current_dir(&root)
+        .args(["build", "-p", "zingolib-cli"]);
     if target_dir.is_some() {
         build.arg(TARGET_DIR_FLAG).arg(&builds);
     }
@@ -146,7 +148,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         build.arg("--release");
     }
     if !nym {
-        // The mixnet transport rides zingo-cli's default features (ADR 0026);
+        // The mixnet transport rides zingolib-cli's default features (ADR 0026);
         // a nakednet build is the explicit opt-out.
         build.arg("--no-default-features");
     }
@@ -160,7 +162,9 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         .status()
         .map_err(|e| vec![format!("failed to run cargo build: {e}")])?;
     if !status.success() {
-        return Err(vec![format!("cargo build of zingo-cli failed ({status})")]);
+        return Err(vec![format!(
+            "cargo build of zingolib-cli failed ({status})"
+        )]);
     }
 
     let beside = builds.join(profile);
@@ -176,7 +180,7 @@ fn launch(args: &[String]) -> Result<i32, Vec<String>> {
         return Ok(0);
     }
 
-    let cli = beside.join(format!("zingo-cli{}", std::env::consts::EXE_SUFFIX));
+    let cli = beside.join(format!("zingolib-cli{}", std::env::consts::EXE_SUFFIX));
     let cli_status = Command::new(&cli)
         .args(&cli_args)
         .status()
