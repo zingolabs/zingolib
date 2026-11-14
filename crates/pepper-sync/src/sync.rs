@@ -13,8 +13,6 @@ use shardtree::store::memory::MemoryShardStore;
 use tokio::sync::{RwLock, mpsc, watch};
 
 use incrementalmerkletree::{Marking, Retention};
-use netutils::lightwallet_protocol::{RawTransaction, SubtreeRoot};
-use netutils::{Indexer, TransparentIndexer};
 use orchard::tree::MerkleHashOrchard;
 use shardtree::store::ShardStore;
 use zcash_keys::keys::UnifiedFullViewingKey;
@@ -22,8 +20,10 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
+use zl_netutils::lightwallet_protocol::{RawTransaction, SubtreeRoot};
+use zl_netutils::{Indexer, TransparentIndexer};
 
-use status::confirmation_status::ConfirmationStatus;
+use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
@@ -1448,7 +1448,7 @@ async fn mempool_drain_verdict(
     mempool_shutdown_timer: Duration,
     mempool_stream_connection_timer: Option<Duration>,
 ) -> MempoolDrainVerdict {
-    use netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
+    use zl_netutils::time::{MEMPOOL_DRAIN_CEILING, MEMPOOL_DRAIN_SETTLE};
 
     if mempool_shutdown_timer < MEMPOOL_DRAIN_CEILING {
         let Some(mempool_elapsed) = mempool_stream_connection_timer else {
@@ -3425,11 +3425,11 @@ mod test {
         use std::convert::Infallible;
 
         use incrementalmerkletree::{Marking, Position, Retention};
-        use netutils::lightwallet_protocol::SubtreeRoot;
         use orchard::tree::MerkleHashOrchard;
         use shardtree::error::ShardTreeError;
         use shardtree::store::{Checkpoint, ShardStore as _};
         use zcash_protocol::consensus::BlockHeight;
+        use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
         use crate::mocks::{MockWallet, MockWalletBuilder};
         use crate::sync::{ScanPriority, ScanRange, rollback_unscanned_tree_states};
@@ -4009,7 +4009,7 @@ mod test {
             time::Duration,
         };
 
-        use netutils::time::MEMPOOL_DRAIN_CEILING;
+        use zl_netutils::time::MEMPOOL_DRAIN_CEILING;
 
         use crate::sync::{MempoolDrainVerdict, mempool_drain_verdict};
 
@@ -4113,13 +4113,13 @@ mod test {
         use std::collections::HashMap;
 
         use sapling_crypto::value::NoteValue;
-        use status::confirmation_status::ConfirmationStatus;
         use zcash_keys::keys::UnifiedSpendingKey;
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::{
             consensus::{BlockHeight, MAIN_NETWORK},
             memo::Memo,
         };
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use crate::{
             mocks::{MockWallet, MockWalletBuilder},
@@ -4347,12 +4347,12 @@ mod test {
     mod transparent_spend_without_change {
         use std::collections::{BTreeMap, HashMap};
 
-        use netutils::lightwallet_protocol::RawTransaction;
-        use status::confirmation_status::ConfirmationStatus;
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
+        use zl_netutils::lightwallet_protocol::RawTransaction;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use crate::{
             client::FetchRequest,
@@ -4841,9 +4841,9 @@ mod test {
     mod expire_transactions {
         use std::collections::HashMap;
 
-        use status::confirmation_status::ConfirmationStatus;
         use zcash_protocol::TxId;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use crate::mocks::{MockWallet, MockWalletBuilder};
         use crate::sync::{ScanPriority, ScanRange, expire_transactions};
@@ -5183,12 +5183,12 @@ mod test {
 
         use incrementalmerkletree::frontier::CommitmentTree;
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
-        use netutils::lightwallet_protocol::TreeState;
         use orchard::tree::MerkleHashOrchard;
         use shardtree::store::{self, ShardStore as _};
         use tokio::sync::mpsc;
         use zcash_primitives::merkle_tree::write_commitment_tree;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_netutils::lightwallet_protocol::TreeState;
 
         use crate::{
             client::FetchRequest,
@@ -5460,13 +5460,13 @@ mod test {
         use std::collections::{BTreeMap, BTreeSet, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
-        use netutils::lightwallet_protocol::{RawTransaction, TreeState};
         use orchard::tree::MerkleHashOrchard;
         use shardtree::store::ShardStore as _;
-        use status::confirmation_status::ConfirmationStatus;
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
+        use zl_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -6025,10 +6025,10 @@ mod test {
     mod hash_discontinuity {
         use std::collections::{BTreeMap, HashMap};
 
-        use netutils::lightwallet_protocol::TreeState;
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_netutils::lightwallet_protocol::TreeState;
 
         use crate::{
             client::FetchRequest,
@@ -6335,7 +6335,7 @@ mod test {
         #[test]
         fn resumes_from_the_tree_when_a_rollback_dropped_its_bare_roots() {
             let mut shard_trees = ShardTrees::new();
-            let bare_root = netutils::lightwallet_protocol::SubtreeRoot {
+            let bare_root = zl_netutils::lightwallet_protocol::SubtreeRoot {
                 root_hash: <MerkleHashOrchard as incrementalmerkletree::Hashable>::empty_root(
                     incrementalmerkletree::Level::from(witness::SHARD_HEIGHT),
                 )
@@ -6363,15 +6363,15 @@ mod test {
         use std::collections::{BTreeMap, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
-        use netutils::lightwallet_protocol::TreeState;
         use orchard::tree::MerkleHashOrchard;
-        use status::confirmation_status::ConfirmationStatus;
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
+        use zl_netutils::lightwallet_protocol::TreeState;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;

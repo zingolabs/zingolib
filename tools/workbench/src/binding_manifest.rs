@@ -786,7 +786,7 @@ mod tests {
         "pepper-sync (crates/pepper-sync)",
         "zingolib (crates/zingolib)",
         "zingolib-nym-proxy-ffi (crates/netutils/nym-proxy-ffi)",
-        "zingolib-netutils (crates/netutils)",
+        "zl-netutils (crates/netutils)",
     ];
 
     fn audited(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {

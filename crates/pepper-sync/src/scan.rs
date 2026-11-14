@@ -8,11 +8,11 @@ use task::ScanTask;
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::Position;
-use netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
+use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 
 use crate::{
     client::FetchRequest,

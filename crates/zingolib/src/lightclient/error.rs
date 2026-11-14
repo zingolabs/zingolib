@@ -4,8 +4,8 @@ use std::convert::Infallible;
 
 use zcash_protocol::TxId;
 
-use netutils::GetClientError;
 use pepper_sync::error::{SyncError, SyncModeError};
+use zl_netutils::GetClientError;
 
 #[cfg(feature = "nym")]
 use crate::wallet::error::PriceError;
@@ -38,7 +38,7 @@ pub enum LightClientError {
     ClientError(#[from] GetClientError),
     /// Indexer request error.
     #[error("Indexer request error.")]
-    IndexerError(#[from] netutils::Status),
+    IndexerError(#[from] zl_netutils::Status),
     /// File error.
     #[error("File error. {0}")]
     FileError(std::io::Error),

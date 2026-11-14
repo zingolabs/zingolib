@@ -10,7 +10,7 @@ use http::Uri;
 
 use zcash_protocol::consensus::BlockHeight;
 
-use netutils::Indexer as _;
+use zl_netutils::Indexer as _;
 
 use super::conduct_chain::ConductChain;
 use crate::config::{ChainType, ClientConfig, WalletConfig};
@@ -146,7 +146,7 @@ impl NetworkedTestEnvironment {
         let uri = self
             .lightserver_uri()
             .expect("the networked environment always holds its indexer URI");
-        let mut indexer = netutils::GrpcIndexer::new(uri)
+        let mut indexer = zl_netutils::GrpcIndexer::new(uri)
             .await
             .unwrap_or_else(|error| panic!("{TESTNET_INDEXER} refused a connection: {error}"));
         let latest = indexer

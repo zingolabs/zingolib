@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-- BREAKING: the package is `zingolib-memo` and its library
-  `zingolib_memo`, renamed from `zingo-memo` and `zingo_memo`.
+- BREAKING: the package is `zl-memo` and its library
+  `zl_memo`, renamed from `zingo-memo` and `zingo_memo`.
 
 ### Deprecated
 

@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-- BREAKING: the package is `zingolib-net-diag` and its library
-  `zingolib_net_diag`, renamed from `zingo-net-diag` and `zingo_net_diag`.
+- BREAKING: the package is `zl-net-diag` and its library
+  `zl_net_diag`, renamed from `zingo-net-diag` and `zingo_net_diag`.
 
 ### Deprecated
 

@@ -114,7 +114,7 @@
 
 **LightClient** — The user-facing entry point. Owns the connection to the Indexer, manages the sync lifecycle, and exposes operations such as send, shield, rescan, and balance.
 
-**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zingolib_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
+**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zl_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
@@ -373,8 +373,8 @@
 
 ## Utility Crates
 
-**zingolib-memo** — Utilities for creating and parsing the Zcash memo field.
+**zl-memo** — Utilities for creating and parsing the Zcash memo field.
 
-**zingolib-price** — Price feed integration (Gemini exchange).
+**zl-price** — Price feed integration (Gemini exchange).
 
-**zingolib-status** — `ConfirmationStatus` type: the confirmation state of a transaction (calculated, transmitted, mempool, confirmed, etc.).
+**zl-status** — `ConfirmationStatus` type: the confirmation state of a transaction (calculated, transmitted, mempool, confirmed, etc.).

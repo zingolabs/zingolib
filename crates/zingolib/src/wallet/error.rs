@@ -154,11 +154,11 @@ pub enum WalletError {
 pub enum PriceError {
     /// Price error
     #[error("price error.")]
-    PriceError(#[from] price::PriceError),
+    PriceError(#[from] zl_price::PriceError),
     /// Every source in the three-source race failed; the report names each
     /// source's typed failure with its cause chain.
     #[error("price race failed.")]
-    RaceFailed(#[from] price::PriceRaceFailure),
+    RaceFailed(#[from] zl_price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,

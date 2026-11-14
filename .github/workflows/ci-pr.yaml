@@ -89,7 +89,7 @@ jobs:
   # six minutes a run that a dependency's rustdoc warning could fail.
   # The check and build phases are covered by the cargo-hack sweep and
   # the test archive build. The proxy crate is excluded here because it
-  # turns on the `nym` feature of zingolib-netutils, which would unify the
+  # turns on the `nym` feature of zl-netutils, which would unify the
   # nym-sdk stack into the whole build; the nym feature job lints it.
   root-lints:
     name: Format, clippy and rustdoc (root workspace)
@@ -193,7 +193,7 @@ jobs:
       # The flags are the action's defaults plus two exclusions and one
       # excluded feature. zingolib-uniffi-bindgen is a binary with no library
       # target and no features, and `--lib` fails on a package without one.
-      # zingolib-nym-proxy-ffi turns on the `nym` feature of zingolib-netutils, and
+      # zingolib-nym-proxy-ffi turns on the `nym` feature of zl-netutils, and
       # `nym` itself is excluded from the powerset, because its nym-sdk stack
       # would rebuild once per feature subset; the nym feature job below
       # checks the two crates with every feature on. The rest of netutils'
@@ -204,13 +204,13 @@ jobs:
           hack-subcommand: ${{ inputs.cargo-hack-subcommand || 'check' }}
           hack-flags: "--workspace --exclude zingolib-uniffi-bindgen --exclude zingolib-nym-proxy-ffi --exclude-features nym --feature-powerset --lib --bins --tests --target-dir target/hack"
 
-  # The `nym` feature of zingolib-netutils compiles the nym-sdk stack, and the
+  # The `nym` feature of zl-netutils compiles the nym-sdk stack, and the
   # proxy crate turns it on. The --workspace jobs above and the nextest
   # archive in test.yaml exclude the proxy crate so that feature
   # unification keeps the stack out of every other build; this job checks
   # the two crates with every feature on and runs the proxy crate's tests.
   netutils-nym:
-    name: zingolib-netutils (nym feature)
+    name: zl-netutils (nym feature)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -224,13 +224,13 @@ jobs:
 
       - name: Clippy
         run: >-
-          cargo clippy --package zingolib-netutils --package zingolib-nym-proxy-ffi
+          cargo clippy --package zl-netutils --package zingolib-nym-proxy-ffi
           --all-targets --all-features -- -D warnings
 
       # The proxy crate's live-mixnet feature builds a test that reaches the
       # real Nym network, so the proxy crate's tests run with it off.
       - name: Test
-        run: cargo test --package zingolib-netutils --all-features
+        run: cargo test --package zl-netutils --all-features
 
       - name: Test the proxy crate
         run: cargo test --package zingolib-nym-proxy-ffi
@@ -252,7 +252,7 @@ jobs:
       # rustdoc lints, so the nym feature needs its own doc gate.
       - name: Doc
         run: >-
-          cargo doc --package zingolib-netutils --package zingolib-nym-proxy-ffi
+          cargo doc --package zl-netutils --package zingolib-nym-proxy-ffi
           --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

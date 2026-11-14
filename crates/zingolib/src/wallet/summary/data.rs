@@ -6,7 +6,7 @@ use json::JsonValue;
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
-use status::confirmation_status::ConfirmationStatus;
+use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::wallet::output::SpendStatus;
 
@@ -780,8 +780,8 @@ impl std::fmt::Display for OutgoingCoinSummaries {
 mod tests {
     use super::{BasicNoteSummary, SendType, TransactionKind, TransactionSummary};
     use crate::wallet::output::SpendStatus;
-    use status::confirmation_status::ConfirmationStatus;
     use zcash_protocol::{PoolType, TxId};
+    use zl_status::confirmation_status::ConfirmationStatus;
 
     fn note(value: u64) -> BasicNoteSummary {
         BasicNoteSummary::from_parts(value, SpendStatus::Unspent, 0, None)

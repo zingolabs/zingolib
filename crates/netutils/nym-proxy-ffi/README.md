@@ -8,7 +8,7 @@ root workspace in `rust/` excludes it.
 ## Crates
 
 - `zingolib-nym-proxy-ffi` (`src/lib.rs`): wraps `NymProxy` from zingolib's
-  `zingolib-netutils`. `MixnetProxyHandle::start` joins the Nym network and
+  `zl-netutils`. `MixnetProxyHandle::start` joins the Nym network and
   opens a local SOCKS5 listener. `socks5_endpoint` and `exit_node` report
   what it bound. `stop` tears it down. A listener monitor calls
   `ProxyDeathObserver::on_death` once if the listener is lost. Builds as

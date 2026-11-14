@@ -331,9 +331,9 @@ mod resolve {
 zingolib v5.0.0 (/repo/crates/zingolib)
 zingolib feature \"nym\"
 zingolib feature \"perspective\" (*)
-zingolib-netutils v5.0.1 (/repo/crates/netutils)
-zingolib-netutils feature \"socks5-transmit\"
-zingolib-memo v0.1.1 (/repo/crates/memo)
+zl-netutils v5.0.1 (/repo/crates/netutils)
+zl-netutils feature \"socks5-transmit\"
+zl-memo v0.1.1 (/repo/crates/memo)
 [dev-dependencies]
 ";
 
@@ -344,7 +344,7 @@ zingolib-memo v0.1.1 (/repo/crates/memo)
     #[test]
     fn a_featureless_crate_is_present_and_empty() {
         let graph = resolve(LISTING);
-        assert_eq!(graph.get("zingolib-memo"), Some(&BTreeSet::new()));
+        assert_eq!(graph.get("zl-memo"), Some(&BTreeSet::new()));
     }
 
     /// HYPOTHESIS: cargo's `(*)` deduplication marker is not read as part of
@@ -364,7 +364,7 @@ zingolib-memo v0.1.1 (/repo/crates/memo)
     fn a_non_member_crate_is_audited() {
         let graph = resolve(LISTING);
         assert_eq!(
-            graph.get("zingolib-netutils").map(BTreeSet::len),
+            graph.get("zl-netutils").map(BTreeSet::len),
             Some(1),
             "a crate outside the workspace still shares the compile"
         );

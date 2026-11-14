@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exists (zingo-adrs zingolib/0063, amended 2026-11-06).
 
 ### Changed
-- BREAKING: the package is `zingolib-netutils` and its library
-  `zingolib_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- BREAKING: the package is `zl-netutils` and its library
+  `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

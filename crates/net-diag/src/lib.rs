@@ -23,7 +23,7 @@
 //! [`NetOpFailure::from_error`] (or walks a chain directly with
 //! [`chain_texts`]). This crate deliberately holds no classifiers of its
 //! own: classification belongs with the crates that own the error types
-//! (`zingolib-price` classifies `reqwest::Error`; zingolib classifies
+//! (`zl-price` classifies `reqwest::Error`; zingolib classifies
 //! `Socks5TransmitError`), and this crate holds only the taxonomy and the
 //! generic chain inspector. A *consumer* matches on the typed fields and
 //! chooses its own presentation; the `Display` rendering exists for humans
@@ -33,7 +33,7 @@
 //! keeps the taxonomy free of resolver coupling now that netutils is a member.
 //!
 //! ```
-//! use zingolib_net_diag::{NetOpFailure, NetOpStage};
+//! use zl_net_diag::{NetOpFailure, NetOpStage};
 //!
 //! // The producer side: at the seam that owns the error, name the stage
 //! // and capture the whole source() chain, one text per layer.

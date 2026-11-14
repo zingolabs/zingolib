@@ -50,7 +50,7 @@ pub enum LaunchPolicy {
 /// ```
 /// // The number of exit reservations an acquisition draws to attempt one
 /// // connection.
-/// use zingolib_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
+/// use zl_netutils::arm_race::RESERVATION_CLUTCH_SIZE;
 /// assert_eq!(RESERVATION_CLUTCH_SIZE, 4);
 /// ```
 pub const RESERVATION_CLUTCH_SIZE: usize = 4;
@@ -58,10 +58,10 @@ pub const RESERVATION_CLUTCH_SIZE: usize = 4;
 /// ```
 /// // Every Acquisition Race runs under the one hedged launch policy,
 /// // capped at the clutch size and paced by the hedge interval.
-/// use zingolib_netutils::arm_race::{
+/// use zl_netutils::arm_race::{
 ///     LaunchPolicy, RESERVATION_CLUTCH_SIZE, acquisition_launch_policy,
 /// };
-/// use zingolib_netutils::time::HEDGE_INTERVAL;
+/// use zl_netutils::time::HEDGE_INTERVAL;
 ///
 /// match acquisition_launch_policy() {
 ///     LaunchPolicy::Hedged {
