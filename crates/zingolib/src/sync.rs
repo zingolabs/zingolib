@@ -24,4 +24,4 @@ pub use pepper_sync::error::SyncModeError;
 pub use pepper_sync::keys::transparent;
 pub use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 
-pub use zingolib_status::confirmation_status::ConfirmationStatus;
+pub use zingolib_common::status::ConfirmationStatus;

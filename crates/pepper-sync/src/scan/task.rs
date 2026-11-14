@@ -17,6 +17,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingolib_netutils::lightwallet_protocol::CompactBlock;
 use zip32::AccountId;
 
+use crate::engine::{SyncStateOps, WalletTransactionOps};
 use crate::{
     client::{self, FetchRequest},
     config::PerformanceLevel,
@@ -414,15 +415,7 @@ where
                 } else if wallet.get_sync_state()?.scan_complete() {
                     // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
                     for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-                        for note in transaction.sapling_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.orchard_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.ironwood_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
+                        transaction.set_refetch_nullifier_ranges(&[]);
                     }
                     self.state.completed();
                 }
@@ -623,7 +616,7 @@ where
                         }
                         if awaiting_first_block {
                             previous_task_first_block = Some(
-                                WalletBlock::from_compact_block(
+                                crate::wallet::wallet_block_from_compact_block(
                                     &consensus_parameters,
                                     fetch_request_sender.clone(),
                                     &compact_block,
@@ -636,7 +629,7 @@ where
                             == scan_task.scan_range.block_range().end - 1
                         {
                             previous_task_last_block = Some(
-                                WalletBlock::from_compact_block(
+                                crate::wallet::wallet_block_from_compact_block(
                                     &consensus_parameters,
                                     fetch_request_sender.clone(),
                                     &compact_block,
@@ -1122,7 +1115,7 @@ impl ScanTask {
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
             Some(
-                WalletBlock::from_compact_block(
+                crate::wallet::wallet_block_from_compact_block(
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     block,
@@ -1134,7 +1127,7 @@ impl ScanTask {
         };
         let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
             Some(
-                WalletBlock::from_compact_block(
+                crate::wallet::wallet_block_from_compact_block(
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     block,

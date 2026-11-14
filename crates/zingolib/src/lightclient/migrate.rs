@@ -2020,7 +2020,7 @@ impl LightClient {
                 wallet.wallet_transactions.get(txid).is_some_and(|tx| {
                     matches!(
                         tx.status(),
-                        zingolib_status::confirmation_status::ConfirmationStatus::Calculated(_)
+                        zingolib_common::status::ConfirmationStatus::Calculated(_)
                     )
                 })
             })
@@ -2265,9 +2265,7 @@ impl LightClient {
                     statuses.iter().enumerate().find_map(|(i, status)| {
                         matches!(
                             status,
-                            Some(
-                                zingolib_status::confirmation_status::ConfirmationStatus::Failed(_)
-                            ) | None
+                            Some(zingolib_common::status::ConfirmationStatus::Failed(_)) | None
                         )
                         .then_some(txids[i])
                     }),
@@ -2371,13 +2369,13 @@ fn immediate_migration_entry_gate(
 }
 
 /// The separator between two layers of a rendered cause chain, matching the
-/// rendering `zingolib_net_diag` gives its own failure records.
+/// rendering `zingolib_netutils::diag` gives its own failure records.
 pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
 
 /// Renders every layer of a failure's cause chain into the one text a batch
 /// report carries across serde.
 fn render_cause_chain(error: &LightClientError) -> String {
-    zingolib_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
+    zingolib_netutils::diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
 }
 
 /// Records one part submission's own route evidence in the cross-session
@@ -3374,7 +3372,7 @@ mod tests {
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
-        use zingolib_status::confirmation_status::ConfirmationStatus;
+        use zingolib_common::status::ConfirmationStatus;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 

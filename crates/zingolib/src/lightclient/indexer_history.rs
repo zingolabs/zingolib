@@ -29,8 +29,8 @@ pub enum FaultDomain {
     Unknown,
 }
 
-pub(crate) fn fault_domain(stage: &zingolib_net_diag::NetOpStage) -> FaultDomain {
-    use zingolib_net_diag::NetOpStage;
+pub(crate) fn fault_domain(stage: &zingolib_netutils::diag::NetOpStage) -> FaultDomain {
+    use zingolib_netutils::diag::NetOpStage;
     match stage {
         NetOpStage::RouteResolution
         | NetOpStage::LocalProxyConnect

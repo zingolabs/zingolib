@@ -23,7 +23,7 @@ use {
     zingolib_netutils::lightwallet_protocol::SubtreeRoot,
 };
 
-pub(crate) const SHARD_HEIGHT: u8 = 16;
+pub(crate) use zingolib_common::engine::SHARD_HEIGHT;
 
 /// Required data for updating [`shardtree::ShardTree`]
 #[derive(Debug)]
@@ -824,5 +824,113 @@ mod tests {
         // Entirely below it the window is the uniform one.
         let start = *anchor_retention_window(&policy, BlockHeight::from_u32(999)).start();
         assert_eq!(start, BlockHeight::from_u32(999 - reference_blocks));
+    }
+
+    /// The checkpoint set of a synced wallet decomposes into exactly two parts:
+    /// [`SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`] rolling checkpoints, which serve ordinary reorg handling and
+    /// near-tip spends, plus [`ANCHOR_RETENTION_INTERVALS`] pinned ZIP 318 grid boundaries,
+    /// which serve pool crossings.
+    ///
+    /// The two parts are disjoint and independently bounded: pinning a boundary must not
+    /// consume a rolling slot (that would shrink the reorg window), and the rolling budget must
+    /// not displace a boundary (that would break crossings).
+    #[cfg(feature = "wallet_essentials")]
+    #[test]
+    fn checkpoint_set_is_reorg_window_plus_pinned_boundaries() {
+        use crate::shardtree_ext::ShardTreeExt as _;
+        use crate::sync::{MAX_SHARDTREE_CHECKPOINTS, SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE};
+        use crate::wallet::ShardTrees;
+        use crate::witness::{anchor_retention_window, repin_anchor_checkpoints};
+        use zcash_client_backend::data_api::anchor_retention::{
+            AnchorRetention, AnchorRetentionInterval,
+        };
+
+        const TIP: u32 = 100_000;
+        const INTERVAL: u32 = 144;
+        let policy = AnchorRetention::new(
+            BlockHeight::from_u32(90_000),
+            zcash_protocol::zip318::BlockSpacing::UNIFORM,
+            AnchorRetentionInterval::default(),
+        );
+        let mut shard_trees = ShardTrees::new();
+
+        for height in (TIP - 2000)..=TIP {
+            let height = BlockHeight::from_u32(height);
+            let window = anchor_retention_window(&policy, height);
+            repin_anchor_checkpoints(&policy, &window, shard_trees.orchard.store_mut());
+            shard_trees
+                .orchard
+                .append_checkpoint(height)
+                .expect("infallible");
+        }
+
+        let store = shard_trees.orchard.store();
+        let total = store.checkpoint_count().expect("infallible");
+        let pinned_ids = store.retained_checkpoints().expect("infallible");
+        let mut pinned = Vec::new();
+        let mut rolling = Vec::new();
+        store
+            .for_each_checkpoint(total, |id, _| {
+                if pinned_ids.contains(id) {
+                    pinned.push(u32::from(*id));
+                } else {
+                    rolling.push(u32::from(*id));
+                }
+                Ok(())
+            })
+            .expect("infallible");
+
+        assert!(
+            pinned.iter().all(|height| height % INTERVAL == 0),
+            "every pinned checkpoint must be a grid boundary, got {pinned:?}"
+        );
+        assert_eq!(rolling.last().copied(), Some(TIP));
+        assert_eq!(
+            (rolling.len(), pinned.len(), total),
+            (
+                SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE as usize,
+                ANCHOR_RETENTION_INTERVALS as usize,
+                MAX_SHARDTREE_CHECKPOINTS as usize,
+            ),
+            "(rolling, pinned, total): the pinned boundaries must not be part of the \
+             SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE total"
+        );
+
+        for height in (TIP - SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 1)..=TIP {
+            assert!(
+                store
+                    .get_checkpoint(&BlockHeight::from_u32(height))
+                    .expect("infallible")
+                    .is_some(),
+                "reorg window is missing height {height}"
+            );
+        }
+
+        // a pinned boundary inside the rolling window holds no rolling slot, so the rolling set reaches at
+        // most one height per boundary below the window
+        assert!(
+            rolling
+                .iter()
+                .all(|height| *height >= TIP - MAX_SHARDTREE_CHECKPOINTS),
+            "a rolling checkpoint survived below the reorg window: {rolling:?}"
+        );
+
+        let mut bytes = Vec::new();
+        shard_trees.write(&mut bytes).expect("write should succeed");
+        let reloaded = ShardTrees::read(bytes.as_slice()).expect("read should succeed");
+        let reloaded_store = reloaded.orchard.store();
+        for boundary in &pinned {
+            assert!(
+                reloaded_store
+                    .get_checkpoint(&BlockHeight::from_u32(*boundary))
+                    .expect("infallible")
+                    .is_some(),
+                "boundary {boundary} lost on reload; a crossing anchored there cannot be built"
+            );
+        }
+        assert_eq!(
+            reloaded_store.checkpoint_count().expect("infallible"),
+            MAX_SHARDTREE_CHECKPOINTS as usize
+        );
     }
 }

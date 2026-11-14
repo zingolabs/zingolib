@@ -14,6 +14,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zingolib_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 use zip32::AccountId;
 
+use crate::engine::ScanTargetOps;
 use crate::{
     client::FetchRequest,
     error::{ScanError, ServerError},

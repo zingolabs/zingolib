@@ -37,7 +37,7 @@ use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::memo::Memo;
 use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use zingolib_common::status::ConfirmationStatus;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::mocks::SaplingCryptoNoteBuilder;

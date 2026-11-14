@@ -18,7 +18,7 @@ use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::wallet::keys::unified::ReceiverSelection;
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use zingolib_common::status::ConfirmationStatus;
 
 use common::{
     own_orchard_receiver, received_texts, regtest_wallet, self_send, sent, zfz_self_send,

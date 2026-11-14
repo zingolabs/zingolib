@@ -103,9 +103,9 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// mixnet probe leg, and the attach readiness gate.
 pub(crate) fn socks5_transmit_stage(
     error: &zingolib_netutils::Socks5TransmitError,
-) -> zingolib_net_diag::NetOpStage {
-    use zingolib_net_diag::NetOpStage;
+) -> zingolib_netutils::diag::NetOpStage {
     use zingolib_netutils::Socks5TransmitError;
+    use zingolib_netutils::diag::NetOpStage;
     match error {
         Socks5TransmitError::ProxyUnreachable { .. } => NetOpStage::LocalProxyConnect,
         Socks5TransmitError::TunnelRefused { .. } => NetOpStage::SocksHandshake,
@@ -125,20 +125,20 @@ pub(crate) fn socks5_transmit_stage(
     }
 }
 
-/// The [`zingolib_net_diag::NetOpFailure`] record for one SOCKS5 transmit
+/// The [`zingolib_netutils::diag::NetOpFailure`] record for one SOCKS5 transmit
 /// failure against `target`: stage from [`socks5_transmit_stage`], cause
 /// chain captured layer by layer from the error's `source()` walk.
 pub(crate) fn socks5_transmit_failure(
     error: &zingolib_netutils::Socks5TransmitError,
     target: impl Into<String>,
-) -> zingolib_net_diag::NetOpFailure {
-    zingolib_net_diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
+) -> zingolib_netutils::diag::NetOpFailure {
+    zingolib_netutils::diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
 }
 
 #[cfg(all(test, feature = "nym"))]
 mod classifier_tests {
     use super::socks5_transmit_stage;
-    use zingolib_net_diag::NetOpStage;
+    use zingolib_netutils::diag::NetOpStage;
     use zingolib_netutils::{ProxyDialFailure, Socks5TransmitError, TunnelFailure};
 
     /// Every variant classifies by type alone; fabricated values cover the

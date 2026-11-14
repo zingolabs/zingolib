@@ -28,10 +28,9 @@ carry. The last section states what that asks of every pull request.
 
 A release is one or more of these, each done from one release commit:
 
-- a crate version published to crates.io, for the eight crates the
-  workspace publishes: `zingolib`, `pepper-sync`, `zingolib-netutils`,
-  `zingolib-net-diag`, `zingolib-memo`, `zingolib-status`, `zingolib-price` and
-  `zingolib-cli`.
+- a crate version published to crates.io, for the six crates the
+  workspace publishes: `zingolib`, `pepper-sync`, `zingolib-common`,
+  `zingolib-file-format`, `zingolib-netutils` and `zingolib-cli`.
 - a signed annotated tag per released crate, `<crate>_vX.Y.Z`, whose
   message is `<crate> release X.Y.Z`.
 - a publication of the Binding Layer, which zingolib/0062 defines as the
@@ -91,8 +90,8 @@ API inherits the major. A compatible bump of a dependency forces nothing:
 the requirement already admits it, and the dependent crate releases when
 its own section says so. Cargo orders the set by dependency at publish
 time, so the order needs no thought here. The current order, read from a
-dry run on 2026-10-29, is `zingo-memo`, `zingo-net-diag`, `zingo-status`,
-`zingo-netutils`, `pepper-sync`, `zingo-price`, `zingolib`, `zingo-cli`.
+dry run on 2026-10-29, is `zingo-net-diag`, `zingo-netutils`,
+`pepper-sync`, `zingo-price`, `zingolib`, `zingo-cli`.
 
 `zingolib-cli` is a crate of the set like any other, with a version of its own
 that does not track zingolib's. It stays in this workspace because it is

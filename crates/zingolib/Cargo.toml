@@ -14,7 +14,11 @@ default = []
 # that wants the editorial layer opts in, and the default build proves core
 # stands without it.
 perspective = []
-nym = ["zingolib-netutils/socks5-transmit", "zingolib-price/socks5-fetch"]
+nym = [
+    "zingolib-netutils/socks5-fetch",
+    "zingolib-netutils/socks5-transmit",
+    "dep:serde_json",
+]
 testutils = [
     "perspective",
     "zingolib-netutils/testutils",
@@ -27,12 +31,9 @@ testutils = [
 ]
 
 [dependencies]
-append-only-vec = { workspace = true }
 bech32 = { workspace = true }
 bip0039.workspace = true
-bip32 = { workspace = true, features = ["secp256k1-ffi"] }
 blake2b_simd = { workspace = true }
-bs58 = { workspace = true, features = ["check"] }
 byteorder = { workspace = true }
 chrono = { workspace = true }
 dirs.workspace = true
@@ -47,12 +48,12 @@ nonempty.workspace = true
 orchard = { workspace = true }
 pepper-sync = { workspace = true }
 portpicker = { workspace = true, optional = true }
-prost = { workspace = true }
 rand = { workspace = true }
 sapling-crypto.workspace = true
 secrecy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-shardtree = { workspace = true, features = ["legacy-api"] }
+serde_json = { workspace = true, optional = true }
+shardtree = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
@@ -60,7 +61,6 @@ tracing.workspace = true
 zcash_address = { workspace = true }
 zcash_client_backend = { workspace = true, features = [
     "unstable",
-    "unstable-serialization",
     "unstable-spanning-tree",
 ] }
 zcash_encoding = { workspace = true }
@@ -71,10 +71,9 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
-zingolib-memo = { workspace = true }
-zingolib-netutils = { workspace = true }
-zingolib-price = { workspace = true }
-zingolib-status = { workspace = true }
+zingolib-common = { workspace = true }
+zingolib-file-format = { workspace = true, features = ["legacy"] }
+zingolib-netutils = { workspace = true, features = ["diag-serde"] }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
@@ -86,7 +85,6 @@ tokio-stream = { workspace = true, optional = true }
 # zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
 # zcash_transparent that no version bump can unify with the registry stack.
 zcash_pool_migration = { version = "=0.2.0", default-features = false }
-zingolib-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }

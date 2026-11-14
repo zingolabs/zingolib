@@ -675,7 +675,7 @@ mod network_command_parsing {
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
-        use zingolib_net_diag::{NetOpFailure, NetOpStage};
+        use zingolib_netutils::diag::{NetOpFailure, NetOpStage};
 
         let live = MixnetProbe {
             host: zingolib::destination::Host::of_host_str("zec.rocks"),
@@ -1599,7 +1599,7 @@ mod pure_helpers {
 
         assert_eq!(
             render_error_chain(&wrapped),
-            zingolib_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+            zingolib_netutils::diag::chain_texts(&wrapped).join("\ncaused by: ")
         );
     }
 

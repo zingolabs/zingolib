@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
   Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
   exists (zingo-adrs zingolib/0063, amended 2026-11-06).
+- The `diag` module, the network failure taxonomy: `NetOpStage`,
+  `NetOpFailure` and `chain_texts`, moved from the `zingolib-net-diag` crate
+  (released as `zingo-net-diag` 0.1.0), which no longer exists. It is
+  compiled in every build, and the `diag-serde` feature derives serde's
+  `Serialize` and `Deserialize` on the two types.
 
 ### Changed
 - BREAKING: the package is `zingolib-netutils` and its library

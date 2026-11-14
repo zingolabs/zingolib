@@ -14,14 +14,13 @@ maintenance = { status = "actively-developed" }
 [features]
 default = ["wallet_essentials"]
 # utility not necessary for the sync engine but essential for wallets using pepper_sync::primitives for wallet functionality
-wallet_essentials = ["dep:byteorder", "dep:zcash_encoding"]
+wallet_essentials = ["zingolib-common/serialization"]
 # exposes test constructors for wallet types
-test-features = []
+test-features = ["zingolib-common/test-features"]
 
 [dependencies]
 # Zingo
-zingolib-memo.workspace = true
-zingolib-status.workspace = true
+zingolib-common.workspace = true
 zingolib-netutils.workspace = true
 
 # Zcash
@@ -30,10 +29,7 @@ orchard.workspace = true
 sapling-crypto.workspace = true
 shardtree.workspace = true
 zcash_address.workspace = true
-zcash_client_backend = { workspace = true, features = [
-    "unstable-serialization",
-] }
-zcash_encoding = { workspace = true, optional = true }
+zcash_client_backend.workspace = true
 zcash_keys.workspace = true
 zcash_note_encryption.workspace = true
 zcash_primitives.workspace = true
@@ -45,7 +41,6 @@ bip32.workspace = true
 zip32.workspace = true
 
 # Cryptography
-jubjub.workspace = true
 subtle.workspace = true
 
 # Async
@@ -69,7 +64,6 @@ rayon.workspace = true
 thiserror.workspace = true
 
 # Serialization
-byteorder = { workspace = true, optional = true }
 hex.workspace = true
 
 # Documentation
@@ -78,3 +72,4 @@ simple-mermaid.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 zcash_protocol = { workspace = true, features = [ "local-consensus"] }
+zingolib-common = { workspace = true, features = ["test-features"] }

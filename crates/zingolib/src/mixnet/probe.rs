@@ -28,7 +28,7 @@
 use std::time::{Duration, Instant};
 
 use http::Uri;
-use zingolib_net_diag::{NetOpFailure, NetOpStage};
+use zingolib_netutils::diag::{NetOpFailure, NetOpStage};
 use zingolib_netutils::{GetClientError, GrpcIndexer, Indexer as _};
 
 use crate::lightclient::indexer_history::{

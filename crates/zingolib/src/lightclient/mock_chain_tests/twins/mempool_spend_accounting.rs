@@ -1,7 +1,7 @@
 use pepper_sync::wallet::{IronwoodNote, OutputInterface, SaplingNote};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use zingolib_common::status::ConfirmationStatus;
 
 use super::funded_client;
 use crate::lightclient::LightClient;

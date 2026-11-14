@@ -173,6 +173,36 @@ jobs:
             exit 1
           fi
 
+  no-network-in-wallet-crates:
+    name: No network code in the wallet crates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+
+      - name: Reject a network dependency in the normal trees
+        run: |
+          status=0
+          forbid() {
+            crate="$1"
+            flags="$2"
+            shift 2
+            for dep in "$@"; do
+              if cargo tree --locked -p "$crate" $flags -e normal -i "$dep" > /dev/null 2>&1; then
+                echo "::error::$crate depends on $dep"
+                status=1
+              fi
+            done
+          }
+          forbid zingolib-common "" pepper-sync zingolib zingolib-netutils tokio tonic hyper reqwest lightwallet-protocol futures
+          forbid zingolib-file-format "" zingolib pepper-sync zingolib-netutils reqwest
+          forbid zingolib-file-format --no-default-features zingolib pepper-sync zingolib-netutils reqwest tonic tokio hyper lightwallet-protocol
+          exit "$status"
+
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
   cargo-hack-check:

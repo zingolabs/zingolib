@@ -6438,12 +6438,10 @@ name = "pepper-sync"
 version = "0.7.0"
 dependencies = [
  "bip32 0.6.0",
- "byteorder",
  "crossbeam-channel",
  "futures",
  "hex",
  "incrementalmerkletree",
- "jubjub",
  "memuse",
  "orchard",
  "proptest",
@@ -6458,15 +6456,13 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding",
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingolib-memo",
+ "zingolib-common",
  "zingolib-netutils",
- "zingolib-status",
  "zip32",
 ]
 
@@ -11110,12 +11106,9 @@ dependencies = [
 name = "zingolib"
 version = "8.0.0"
 dependencies = [
- "append-only-vec",
  "bech32",
  "bip0039 0.14.0",
- "bip32 0.6.0",
  "blake2b_simd",
- "bs58",
  "byteorder",
  "chrono",
  "dirs",
@@ -11131,7 +11124,6 @@ dependencies = [
  "pepper-sync",
  "portpicker",
  "proptest",
- "prost 0.14.4",
  "rand 0.10.2",
  "rand_chacha 0.10.0",
  "sapling-crypto",
@@ -11158,11 +11150,9 @@ dependencies = [
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
- "zingolib-memo",
- "zingolib-net-diag",
+ "zingolib-common",
+ "zingolib-file-format",
  "zingolib-netutils",
- "zingolib-price",
- "zingolib-status",
  "zip32",
 ]
 
@@ -11194,9 +11184,35 @@ dependencies = [
  "zingo_grpc_proxy",
  "zingo_test_vectors",
  "zingolib",
- "zingolib-net-diag",
  "zingolib-netutils",
- "zingolib-status",
+ "zip32",
+]
+
+[[package]]
+name = "zingolib-common"
+version = "0.1.0"
+dependencies = [
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "byteorder",
+ "incrementalmerkletree",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "sapling-crypto",
+ "secrecy",
+ "serde",
+ "shardtree",
+ "thiserror 2.0.19",
+ "tracing",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
  "zip32",
 ]
 
@@ -11230,20 +11246,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingolib-memo"
-version = "0.3.0"
-dependencies = [
- "zcash_address",
- "zcash_encoding",
- "zcash_keys",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingolib-net-diag"
+name = "zingolib-file-format"
 version = "0.1.0"
 dependencies = [
+ "append-only-vec",
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "blake2b_simd",
+ "bs58",
+ "byteorder",
+ "hex",
+ "incrementalmerkletree",
+ "jubjub",
+ "lightwallet-protocol",
+ "log",
+ "orchard",
+ "prost 0.14.4",
+ "sapling-crypto",
  "serde",
+ "shardtree",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zingolib-common",
+ "zip32",
 ]
 
 [[package]]
@@ -11284,7 +11315,6 @@ dependencies = [
  "tonic",
  "tower",
  "x509-parser",
- "zingolib-net-diag",
 ]
 
 [[package]]
@@ -11300,28 +11330,6 @@ dependencies = [
  "tracing-subscriber",
  "uniffi",
  "zingolib-netutils",
-]
-
-[[package]]
-name = "zingolib-price"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "zcash_encoding",
- "zingolib-net-diag",
- "zingolib-netutils",
-]
-
-[[package]]
-name = "zingolib-status"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "zcash_protocol",
 ]
 
 [[package]]

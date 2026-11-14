@@ -8,12 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `engine` module, which re-exports `zingolib_common::engine`. The sync
+  engine lives in this crate, and the wallet data it writes and its progress
+  record live in `zingolib-common`, so the operations the engine runs on them
+  are public there. The module is the one path to them, and the re-exported
+  types expose the same inherent methods as at 0.7.0. It holds one extension
+  trait per type: `SyncStateOps` (the scan-range methods of `SyncState` and
+  its scan target, initial state and transparent scan floor accessors),
+  `InitialSyncStateOps`, `ScanTargetOps`, `WalletBlockOps`,
+  `WalletTransactionOps`, `TransparentCoinOps`, `WalletNoteOps`,
+  `OutgoingNoteOps`, `KeyIdOps` and `ShardTreesOps`. A caller imports a trait
+  to call its methods. Each trait is sealed, so no other crate can implement
+  it. The module also holds `ScanTargetOrigin`, `VerifyEnd`,
+  `empty_shard_tree`, `overlaps`, `encode_orchard_receiver`, `SHARD_HEIGHT`
+  and `VERIFY_BLOCK_RANGE_SIZE`.
+- `wallet::serialization::write_string`.
+- The `test-features` feature adds
+  `WalletBlock::clear_pool_tree_bounds_for_test`,
+  `WalletTransaction::clear_pool_notes_for_test` and
+  `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
+- The wallet data types, their codecs, the key identifiers, the
+  `shardtree_ext` module, `SyncState`, `InitialSyncState`, `ScanRange`,
+  `ScanPriority`, the scan-range logic and the `config` module come from
+  `zingolib-common`. `pepper-sync` re-exports each moved item at its old
+  path, so every path that resolved at 0.7.0 resolves now.
+- The `wallet_essentials` feature enables `zingolib-common/serialization`,
+  and the `test-features` feature enables `zingolib-common/test-features`. Both
+  features gated code inside `pepper-sync` at 0.7.0.
+- **Breaking:** the `ConfirmationStatus` that `WalletTransaction::status`
+  returns and the wallet data codecs read and write is
+  `zingolib_common::status::ConfirmationStatus`, where it was
+  `zingo_status::confirmation_status::ConfirmationStatus`. The wallet's memo
+  is read with `zingolib_common::memo`, whose encoding is the one `zingo-memo`
+  0.3.0 wrote. A consumer that names the status through `zingo-status` names
+  it through `zingolib-common`.
 
 ### Deprecated
 
 ### Removed
+- The `byteorder`, `zcash_encoding` and `jubjub` dependencies, which the
+  codecs in `zingolib-common` use now.
+- The `zingo-memo` and `zingo-status` dependencies. Their code is the `memo`
+  and `status` modules of `zingolib-common`.
+- The `unstable-serialization` feature of `zcash_client_backend`, which
+  `pepper-sync` enabled in every build. A build with `wallet_essentials`
+  enables it through `zingolib-common/serialization`.
 
 ### Fixed
 - A Sync Session with `shutdown_on_completion` set no longer runs forever

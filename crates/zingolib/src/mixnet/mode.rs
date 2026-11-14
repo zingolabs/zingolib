@@ -220,7 +220,7 @@ impl StandingClient {
 
     /// Latches the failover's exhaustion — the unconsented loss of the
     /// transport — holding `cause` as the death's typed story.
-    pub(crate) fn forsake(&self, cause: zingolib_net_diag::NetOpFailure) {
+    pub(crate) fn forsake(&self, cause: zingolib_netutils::diag::NetOpFailure) {
         *self.forsaken.lock().expect("forsaken mutex") = Some(DeathReport {
             at: std::time::SystemTime::now(),
             detail: Some(cause),
@@ -680,8 +680,8 @@ mod demotion {
         let slot = attached(true);
         if let MixnetSlot::Attached(client) = &slot {
             client.condemn();
-            client.forsake(zingolib_net_diag::NetOpFailure::message(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(zingolib_netutils::diag::NetOpFailure::message(
+                zingolib_netutils::diag::NetOpStage::RouteResolution,
                 "the session's exit census",
                 "every failover birth failed its proof",
             ));

@@ -496,7 +496,7 @@ async fn self_send_to_t_displays_as_one_transaction() {
 async fn send_to_transparent_and_sapling_maintain_balance() {
     use zcash_protocol::consensus::BlockHeight;
     use zingo_test_vectors::TEST_TXID;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     use crate::testutils::{
         assert_transaction_summary_equality, assert_transaction_summary_exists,
@@ -1069,7 +1069,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 #[tokio::test]
 async fn send_survives_lost_response_and_duplicate_rejection() {
     use crate::testutils::mock_indexer::LostSendDestination;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
@@ -1130,7 +1130,7 @@ async fn send_survives_lost_response_and_duplicate_rejection() {
 #[tokio::test]
 async fn send_survives_lost_response_and_queued_duplicate_rejection() {
     use crate::testutils::mock_indexer::LostSendDestination;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
@@ -1203,7 +1203,7 @@ async fn failed_split_round_transmit_strands_calculated_transactions() {
     use zip32::AccountId;
 
     use pepper_sync::wallet::{OrchardNote, OutputInterface as _};
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     use crate::testutils::mock_indexer::LostSendDestination;
     use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
@@ -2401,7 +2401,7 @@ async fn sync_returns_while_the_indexer_refuses_the_mempool_stream() {
 async fn migrate_to_ironwood_returns_under_continuous_sync() {
     use zip32::AccountId;
 
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     use crate::testutils::mock_indexer::LostSendDestination;
     use crate::testutils::synthetic_wallet::inject_confirmed_orchard_notes;
@@ -3170,7 +3170,7 @@ mod strict_chain {
     use zaino_proto::tonic::Code;
     use zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS;
     use zcash_protocol::value::Zatoshis;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     use pepper_sync::wallet::KeyIdInterface;
     use pepper_sync::wallet::traits::SyncWallet;

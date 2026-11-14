@@ -10,49 +10,15 @@ use orchard::{
 use sapling_crypto::{
     self as sapling, NullifierDerivingKey, SaplingIvk, note_encryption::SaplingDomain,
 };
-use zcash_address::{ZcashAddress, unified::ParseError};
-use zcash_keys::{address::UnifiedAddress, keys::UnifiedFullViewingKey};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_note_encryption::Domain;
-use zcash_protocol::consensus;
 use zip32::Scope;
 
-use crate::wallet::KeyIdInterface;
+use crate::engine::KeyIdOps;
+pub(crate) use zingolib_common::engine::encode_orchard_receiver;
+pub use zingolib_common::keys::{AddressIndex, KeyId, decode_address, decode_unified_address};
 
 pub mod transparent;
-
-/// Child index for the `address_index` path level in the BIP44 hierarchy.
-pub type AddressIndex = u32;
-
-/// Unique ID for shielded keys.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct KeyId {
-    /// Account ID
-    pub account_id: zip32::AccountId,
-    /// Scope
-    pub scope: Scope,
-}
-
-impl KeyId {
-    pub(crate) fn from_parts(account_id: zip32::AccountId, scope: Scope) -> Self {
-        Self { account_id, scope }
-    }
-}
-
-impl KeyIdInterface for KeyId {
-    fn account_id(&self) -> zip32::AccountId {
-        self.account_id
-    }
-}
-
-impl memuse::DynamicUsage for KeyId {
-    fn dynamic_usage(&self) -> usize {
-        self.scope.dynamic_usage()
-    }
-
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        self.scope.dynamic_usage_bounds()
-    }
-}
 
 /// A key that can be used to perform trial decryption and nullifier
 /// computation for a `CompactSaplingOutput` or `CompactOrchardAction`.
@@ -235,58 +201,4 @@ impl ScanningKeys {
             ironwood,
         }
     }
-}
-
-pub(crate) fn encode_orchard_receiver(
-    parameters: &impl consensus::Parameters,
-    orchard_address: &orchard::Address,
-) -> Result<String, ParseError> {
-    Ok(zcash_address::unified::Encoding::encode(
-        &<zcash_address::unified::Address as zcash_address::unified::Encoding>::try_from_items(
-            zcash_address::unified::Revision::R0,
-            vec![zcash_address::unified::Uitem::Data(
-                zcash_address::unified::Receiver::Orchard(orchard_address.to_raw_address_bytes()),
-            )],
-        )?,
-        &parameters.network_type(),
-    ))
-}
-
-/// Decode string to unified address.
-// TODO: return custom error type
-pub fn decode_unified_address(
-    consensus_parameters: &impl consensus::Parameters,
-    encoded_address: &str,
-) -> std::io::Result<UnifiedAddress> {
-    if let zcash_keys::address::Address::Unified(unified_address) =
-        decode_address(consensus_parameters, encoded_address)?
-    {
-        Ok(*unified_address)
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "failed to decode unified address. incorrect address type.".to_string(),
-        ))
-    }
-}
-
-/// Decode string to [`zcash_keys::address::Address`] enum.
-pub fn decode_address(
-    consensus_parameters: &impl consensus::Parameters,
-    encoded_address: &str,
-) -> std::io::Result<zcash_keys::address::Address> {
-    ZcashAddress::try_from_encoded(encoded_address)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to decode address. {e}"),
-            )
-        })?
-        .convert_if_network::<zcash_keys::address::Address>(consensus_parameters.network_type())
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to decode address. {e}"),
-            )
-        })
 }

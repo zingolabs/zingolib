@@ -3,7 +3,7 @@
 
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zingolib_status::confirmation_status::ConfirmationStatus;
+use zingolib_common::status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
 use crate::wallet::summary::data::TransactionKind;

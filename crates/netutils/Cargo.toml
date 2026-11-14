@@ -65,7 +65,6 @@ tokio = { workspace = true, optional = true, features = [
     "io-std",
     "io-util",
 ] }
-zingolib-net-diag = { version = "0.1.0", path = "../net-diag", optional = true }
 rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 nym-socks5-proxy-helpers = { version = "=1.21.6", optional = true }
@@ -88,6 +87,7 @@ nym-lp-data = {version = "=1.21.6", optional = true }
 [features]
 globally-public-transparent = ["dep:tokio-stream"]
 ping-very-insecure = []
+diag-serde = []
 # Exposes `time::test`, the temporal parameters owned by tests. Enabled by
 # downstream crates' dev-dependencies only, never by a production build.
 testutils = []
@@ -99,19 +99,13 @@ socks5-transmit = [
     "dep:tokio-socks",
     "dep:tower",
     "dep:tokio",
-    # Transmit failures render their cause chains over the one sanctioned
-    # chain walk rather than a private copy of it. Std-only and
-    # zero-dependency, so it resolves in both this crate's own lockfile and
-    # the parent workspace's without coupling either.
-    "dep:zingolib-net-diag",
 ]
 # The wallet-side SOCKS5-dialing HTTP fetch: one conduit-guarded request,
-# classified into a typed zingolib-net-diag failure. Light in the same sense
+# classified into a typed `diag::NetOpFailure`. Light in the same sense
 # as socks5-transmit — no nym-sdk — so it resolves in the parent
 # workspace's lockfile.
 socks5-fetch = [
     "dep:reqwest",
-    "dep:zingolib-net-diag",
 ]
 nym = [
     "dep:nym-sdk",
@@ -129,10 +123,6 @@ nym = [
     # The proxy binary health-gates readiness with a real GetLightdInfo round
     # trip through the mixnet, which lives in the socks5-transmit module.
     "socks5-transmit",
-    # The provider connect race reports its exhausted attempts as typed
-    # zingolib-net-diag records (issue #2562). Std-only and zero-dependency, so
-    # it resolves in this crate's own lockfile without coupling.
-    "dep:zingolib-net-diag",
     # The following are pinned versions, we don't directly depend on them
     "dep:nym-client-core-config-types",
     "dep:nym-crypto",

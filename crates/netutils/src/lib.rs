@@ -41,6 +41,7 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 
 pub mod crypto;
 pub mod default_indexer;
+pub mod diag;
 pub mod error;
 pub mod network_access;
 

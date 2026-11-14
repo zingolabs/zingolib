@@ -366,7 +366,7 @@ mod tests {
     use zcash_primitives::transaction::TxId;
     use zcash_protocol::memo::Memo;
     use zingo_test_vectors::seeds;
-    use zingolib_status::confirmation_status::ConfirmationStatus;
+    use zingolib_common::status::ConfirmationStatus;
 
     use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
     use crate::wallet::LightWallet;

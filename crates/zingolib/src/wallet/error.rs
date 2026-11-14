@@ -4,7 +4,6 @@ use std::convert::Infallible;
 
 use pepper_sync::{error::ScanError, wallet::OutputId};
 use shardtree::error::ShardTreeError;
-use zcash_keys::keys::DerivationError;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
@@ -154,11 +153,11 @@ pub enum WalletError {
 pub enum PriceError {
     /// Price error
     #[error("price error.")]
-    PriceError(#[from] zingolib_price::PriceError),
+    PriceError(#[from] crate::price::PriceError),
     /// Every source in the three-source race failed; the report names each
     /// source's typed failure with its cause chain.
     #[error("price race failed.")]
-    RaceFailed(#[from] zingolib_price::PriceRaceFailure),
+    RaceFailed(#[from] crate::price::PriceRaceFailure),
     /// Price list not initialised
     #[error("price list not initialised. please wait for sync to obtain time of wallet birthday")]
     NotInitialised,
@@ -245,61 +244,7 @@ pub enum BalanceError {
     Overflow,
 }
 
-/// Errors associated with key and address derivation
-// TODO: make error private as contains external crate types. have public API safe higher level error type i.e. WalletError.
-#[derive(Debug, thiserror::Error)]
-pub enum KeyError {
-    /// Error associated with standard IO
-    #[error("{0}")]
-    IoError(#[from] std::io::Error),
-    /// Invalid account ID
-    #[error("Account ID should be at most 31 bits")]
-    InvalidAccountId(#[from] zip32::TryFromIntError),
-    /// Invalid account ID
-    #[error("No keys found for the given account id. Try adding the account.")]
-    NoAccountKeys,
-    /// Key derivation failed
-    #[error("Key derivation failed")]
-    KeyDerivationError(#[from] DerivationError),
-    /// Key decoding failed
-    #[error("Key decoding failed")]
-    KeyDecodingError,
-    /// Key parsing failed
-    #[error("Key parsing failed. {0}")]
-    KeyParseError(#[from] zcash_address::unified::ParseError),
-    /// No spend capability
-    #[error("No spend capability")]
-    NoSpendCapability,
-    /// No view capability
-    #[error("No view capability")]
-    NoViewCapability,
-    /// Invalid non-hardened child indexes
-    #[error("Outside range of non-hardened child indexes")]
-    InvalidNonHardenedChildIndex,
-    /// Network mismatch
-    #[error("Decoded unified full viewing key does not match current network")]
-    NetworkMismatch,
-    /// Invalid format
-    #[error("Viewing keys must be imported in the unified format")]
-    InvalidFormat,
-    /// Unified address missing shielded receiver
-    #[error("Unified address must contain a shielded receiver")]
-    UnifiedAddressError,
-    /// Transparent address generation failed. Latest transparent address has not received funds.
-    #[error(
-        "Transparent address generation failed. Latest transparent address has not received funds."
-    )]
-    GapError,
-    /// Invalid mnemonic phrase.
-    #[error("Invalid mnemonic phrase: {0}")]
-    InvalidMnemonicPhrase(#[from] bip0039::Error),
-}
-
-impl From<bip32::Error> for KeyError {
-    fn from(value: bip32::Error) -> Self {
-        Self::KeyDerivationError(DerivationError::Transparent(value))
-    }
-}
+pub use zingolib_common::keys::KeyError;
 
 #[allow(missing_docs)] // error types document themselves
 #[derive(Debug, thiserror::Error)]

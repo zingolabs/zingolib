@@ -12,7 +12,7 @@ pub trait Correspondable {
 }
 
 #[cfg(feature = "nym")]
-impl Correspondable for zingolib_price::PriceSource {
+impl Correspondable for crate::price::PriceSource {
     fn address(&self) -> Uri {
         self.url()
             .parse()

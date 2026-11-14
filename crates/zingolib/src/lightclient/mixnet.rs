@@ -20,14 +20,14 @@ pub(crate) struct PriceRun {
 
 #[cfg(feature = "nym")]
 impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
-    type Target = zingolib_price::PriceSource;
+    type Target = crate::price::PriceSource;
     type Outcome = (
-        zingolib_price::PriceSource,
-        Result<zingolib_price::Price, zingolib_price::PriceError>,
+        crate::price::PriceSource,
+        Result<zingolib_common::price::Price, crate::price::PriceError>,
     );
 
     fn targets(&self) -> Vec<Self::Target> {
-        zingolib_price::RACED_SOURCES.to_vec()
+        crate::price::RACED_SOURCES.to_vec()
     }
 
     async fn probe(
@@ -35,12 +35,12 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
         dial: zingolib_netutils::conduit::ConduitDial,
         target: Self::Target,
     ) -> Self::Outcome {
-        let outcome = zingolib_price::get_source_price(
+        let outcome = crate::price::get_source_price(
             target,
             &dial,
             target.url(),
-            zingolib_price::REQUEST_TIMEOUT,
-            zingolib_price::CONNECT_TIMEOUT,
+            crate::price::REQUEST_TIMEOUT,
+            crate::price::CONNECT_TIMEOUT,
         )
         .await;
         (target, outcome)
@@ -265,8 +265,8 @@ async fn adjudicate_standing_proof(
         if let crate::mixnet::MixnetSlot::Attached(client) =
             &*slot.lock().expect("mixnet slot mutex")
         {
-            client.forsake(zingolib_net_diag::NetOpFailure::message(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(zingolib_netutils::diag::NetOpFailure::message(
+                zingolib_netutils::diag::NetOpStage::RouteResolution,
                 "the attached transport",
                 "the exit failed under an attached session, which cannot \
                  rebirth its transport locally",
@@ -306,8 +306,8 @@ async fn adjudicate_standing_proof(
             if let crate::mixnet::MixnetSlot::Attached(client) =
                 &*slot.lock().expect("mixnet slot mutex")
             {
-                client.forsake(zingolib_net_diag::NetOpFailure::from_error(
-                    zingolib_net_diag::NetOpStage::RouteResolution,
+                client.forsake(zingolib_netutils::diag::NetOpFailure::from_error(
+                    zingolib_netutils::diag::NetOpStage::RouteResolution,
                     "the session's exit census",
                     &exhausted,
                 ));
@@ -1089,10 +1089,10 @@ impl LightClient {
 
     /// Why the transport died, while Mixnet Mode is
     /// [`Indicator::Died`](crate::mixnet::Indicator) and the watcher held a
-    /// typed cause: the [`zingolib_net_diag::NetOpFailure`] record naming the
+    /// typed cause: the [`zingolib_netutils::diag::NetOpFailure`] record naming the
     /// stage, the target, and the cause chain as a vector, so a `died`
     /// verdict carries *why* without anyone parsing prose.
-    pub fn mixnet_death_detail(&self) -> Option<zingolib_net_diag::NetOpFailure> {
+    pub fn mixnet_death_detail(&self) -> Option<zingolib_netutils::diag::NetOpFailure> {
         self.mixnet_slot
             .lock()
             .expect("mixnet slot mutex")
@@ -1242,8 +1242,8 @@ impl LightClient {
                 }
             }
         };
-        let raced = zingolib_price::first_quote(outcomes)
-            .map_err(crate::wallet::error::PriceError::from)?;
+        let raced =
+            crate::price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
@@ -1260,7 +1260,7 @@ mod tests {
         //! The price-fetch error contract: every failure reaches the API
         //! as a typed [`LightClientError`], and a nakednet leg runs only
         //! with consent. Route refusals pair with `mixnet::route`'s tests;
-        //! transport-leg failures are pinned in `zingolib-price`.
+        //! transport-leg failures are pinned in the `price` module.
         use crate::lightclient::LightClient;
         use crate::lightclient::error::LightClientError;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
@@ -1886,8 +1886,8 @@ mod tests {
                 probed: crate::mixnet::pools::MAX_PROVING_BIRTHS,
                 budget: zingolib_netutils::time::SENTINEL_BUDGET,
             };
-            client.forsake(zingolib_net_diag::NetOpFailure::from_error(
-                zingolib_net_diag::NetOpStage::RouteResolution,
+            client.forsake(zingolib_netutils::diag::NetOpFailure::from_error(
+                zingolib_netutils::diag::NetOpStage::RouteResolution,
                 "the session's exit census",
                 &exhausted,
             ));

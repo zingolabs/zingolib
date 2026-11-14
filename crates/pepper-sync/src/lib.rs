@@ -105,11 +105,12 @@ After the sync process is initialized, it will be in a state of verification, on
 #![doc = simple_mermaid::mermaid!("../diagrams/process_scan_results.mmd")]
 
 pub(crate) mod client;
-pub mod config;
+pub use zingolib_common::config;
+pub use zingolib_common::engine;
 pub mod error;
 pub mod keys;
 pub(crate) mod scan;
-pub mod shardtree_ext;
+pub use zingolib_common::shardtree_ext;
 pub mod sync;
 pub(crate) mod utils;
 pub mod wallet;
@@ -165,3 +166,17 @@ pub mod test_support {
 mod mocks;
 
 pub(crate) use wallet::SyncDomain;
+
+#[cfg(test)]
+mod shardtree_boundary {
+    use crate::shardtree_ext::{BOUNDARY_FILE, BOUNDARY_PATH, assert_raw_boolean_calls_confined};
+
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        assert_raw_boolean_calls_confined(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            Some(BOUNDARY_FILE),
+            BOUNDARY_PATH,
+        );
+    }
+}
