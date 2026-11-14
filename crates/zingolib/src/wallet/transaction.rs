@@ -63,20 +63,18 @@ impl LightWallet {
                 if released {
                     return spent_here.then_some(Ok(output));
                 }
-                output.spending_transaction().and_then(|txid| {
-                    if txid == transaction.txid() {
-                        if !spent_here {
-                            return Some(Err(SpendError::IncorrectSpendingTransaction {
-                                output_id: output.output_id(),
-                                txid,
-                            }));
-                        }
-
-                        Some(Ok(output))
-                    } else {
-                        None
-                    }
-                })
+                if spent_here {
+                    return Some(Ok(output));
+                }
+                output
+                    .spending_transaction()
+                    .is_some_and(|txid| txid == transaction.txid())
+                    .then(|| {
+                        Err(SpendError::IncorrectSpendingTransaction {
+                            output_id: output.output_id(),
+                            txid: transaction.txid(),
+                        })
+                    })
             })
             .collect::<Result<Vec<_>, SpendError>>()?;
 

@@ -18,6 +18,7 @@ use crate::testutils::synthetic_wallet;
 use crate::wallet::error::ProposeSendError;
 use crate::wallet::keys::unified::ReceiverSelection;
 
+mod property;
 mod twins;
 
 const HOSPITAL_MUSEUM: &str = zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
@@ -3403,11 +3404,15 @@ mod strict_chain {
     }
 
     fn ironwood_notes_unspent(wallet: &LightWallet) -> bool {
+        let pending_spends = pepper_sync::pending_spends(&wallet.wallet_transactions);
         wallet
             .wallet_transactions
             .values()
             .flat_map(IronwoodNote::transaction_outputs)
-            .all(|note| note.spending_transaction().is_none())
+            .all(|note| {
+                note.spending_transaction().is_none()
+                    && !pending_spends.contains_key(&note.output_id())
+            })
     }
 
     fn refund_address_count(wallet: &LightWallet) -> usize {
@@ -4001,6 +4006,90 @@ mod strict_chain {
             ConfirmationStatus::Confirmed(_)
         ));
         check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+    }
+
+    #[tokio::test]
+    async fn failed_pending_send_releases_its_inputs_until_its_block_is_scanned() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let sent = from_inputs::quick_send(
+            &mut sender,
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+        let expected = expected_after_one_send();
+
+        {
+            let mut wallet = sender.wallet().write().await;
+            pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, vec![sent[0]]);
+        }
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(sender, i: FUNDING o: 0 s: 0 t: 0);
+        assert!(ironwood_notes_unspent(&*sender.wallet().read().await));
+
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+        assert!(!ironwood_notes_unspent(&*sender.wallet().read().await));
+    }
+
+    /// A pending send the wallet declares failed, whose transaction
+    /// reappears in the mempool and then mines: the failure releases the
+    /// inputs, the mempool re-reserves them through the re-scanned record,
+    /// and the mined block records the spend.
+    #[tokio::test]
+    async fn failed_send_that_reappears_in_the_mempool_re_reserves_its_inputs() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_sender(&mut net).await;
+        let sent = from_inputs::quick_send(
+            &mut sender,
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                PAYMENT,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+
+        {
+            let mut wallet = sender.wallet().write().await;
+            pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, vec![sent[0]]);
+        }
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Failed(_)
+        ));
+        check_client_balances!(sender, i: FUNDING o: 0 s: 0 t: 0);
+
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Mempool(_)
+        ));
+        let expected = expected_after_one_send();
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+
+        net.chain.write().await.mine_mempool();
+        sender.sync_and_await().await.unwrap();
+        assert!(matches!(
+            status_of(&sender, &sent[0]).await,
+            ConfirmationStatus::Confirmed(_)
+        ));
+        check_client_balances!(sender, i: expected o: 0 s: 0 t: 0);
+        assert!(!ironwood_notes_unspent(&*sender.wallet().read().await));
     }
 
     use crate::wallet::summary::data::{SendType, TransactionKind, TransactionSummary};
@@ -4877,5 +4966,55 @@ mod boundary_pruning {
                 panic!("the anchor boundary's tree state must be unavailable")
             }
         }
+    }
+}
+
+mod reconciliation_experiment {
+    use super::*;
+    use zcash_protocol::PoolType;
+
+    use crate::testutils::invariants::wallet_reconciliation_violations;
+
+    /// The same sequence as the prefix experiment, on the fixed tree.
+    #[tokio::test]
+    async fn failed_pending_send_violation_transients_then_heals() {
+        let mut net = MockNet::launch().await;
+        let mut sender = funded_client(&mut net, &[(PoolType::ORCHARD, 300_000)], 1).await;
+        let sent = from_inputs::quick_send(
+            &mut sender,
+            vec![(
+                &synthetic_wallet::external_address(PoolType::ORCHARD),
+                10_000,
+                None,
+            )],
+        )
+        .await
+        .unwrap();
+
+        net.chain.write().await.mine_mempool();
+        {
+            let mut wallet = sender.wallet().write().await;
+            pepper_sync::set_transactions_failed(&mut wallet.wallet_transactions, vec![sent[0]]);
+        }
+        let violations = wallet_reconciliation_violations(
+            &*sender.wallet().read().await,
+            &net.chain.read().await.revealed_nullifiers(),
+        );
+        assert!(
+            !violations.is_empty(),
+            "the reconciliation invariant must flag the released mined note: {violations:?}"
+        );
+
+        net.chain.write().await.mine_mempool();
+        net.chain.write().await.mine_empty_blocks(1);
+        sender.sync_and_await().await.unwrap();
+        let violations = wallet_reconciliation_violations(
+            &*sender.wallet().read().await,
+            &net.chain.read().await.revealed_nullifiers(),
+        );
+        assert!(
+            violations.is_empty(),
+            "the scan that sees the mined block must heal the violation: {violations:?}"
+        );
     }
 }

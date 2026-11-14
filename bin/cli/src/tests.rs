@@ -319,6 +319,11 @@ mod mode_of_operation {
         }
 
         #[test]
+        fn doctor() {
+            assert_no_arg_command("doctor", CliCommand::Doctor);
+        }
+
+        #[test]
         fn confirm() {
             assert_no_arg_command("confirm", CliCommand::Confirm);
         }

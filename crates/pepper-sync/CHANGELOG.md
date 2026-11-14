@@ -8,8 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `pending_spends` reports the wallet's outputs that its pending transactions
+  spend, derived from each pending transaction's inputs every time it is
+  called.
 
 ### Changed
+- `scan_pending_transaction` records no spend on the wallet's outputs. A
+  pending transaction's spends derive through `pending_spends` from its
+  inputs, so `set_transactions_failed` releases them by the record's status
+  alone, and only the scan that finds a mined block records a spend on an
+  output. Truncation still resets recorded spends: it rescans the affected
+  blocks.
 
 ### Deprecated
 

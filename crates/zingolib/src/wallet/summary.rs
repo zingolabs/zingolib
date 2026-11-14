@@ -29,6 +29,7 @@ impl LightWallet {
         &self,
         reverse_sort: bool,
     ) -> Result<TransactionSummaries, SummaryError> {
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         let mut transaction_summaries = self
             .wallet_transactions
             .values()
@@ -52,7 +53,7 @@ impl LightWallet {
                     .ironwood_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output);
+                        let spend_status = self.output_spend_status(output, &pending_spends);
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -72,7 +73,7 @@ impl LightWallet {
                     .orchard_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output);
+                        let spend_status = self.output_spend_status(output, &pending_spends);
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -92,7 +93,7 @@ impl LightWallet {
                     .sapling_notes()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output);
+                        let spend_status = self.output_spend_status(output, &pending_spends);
 
                         let memo = if let Memo::Text(memo_text) = output.memo() {
                             Some(memo_text.to_string())
@@ -112,7 +113,7 @@ impl LightWallet {
                     .transparent_coins()
                     .iter()
                     .map(|output| {
-                        let spend_status = self.output_spend_status(output);
+                        let spend_status = self.output_spend_status(output, &pending_spends);
 
                         BasicCoinSummary::from_parts(
                             output.value(),
@@ -293,6 +294,7 @@ impl LightWallet {
     where
         N: NoteInterface<KeyId = pepper_sync::keys::KeyId>,
     {
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         let note_summaries = self
             .wallet_outputs::<N>()
             .into_iter()
@@ -301,6 +303,7 @@ impl LightWallet {
                     true
                 } else {
                     note.spending_transaction().is_none()
+                        && !pending_spends.contains_key(&note.output_id())
                 }
             })
             .map(|note| {
@@ -315,7 +318,7 @@ impl LightWallet {
                     value: note.value(),
                     status: transaction.status(),
                     block_height: transaction.status().get_height(),
-                    spend_status: self.output_spend_status(note),
+                    spend_status: self.output_spend_status(note, &pending_spends),
                     memo,
                     time: transaction.datetime(),
                     txid: note.output_id().txid(),
@@ -331,6 +334,7 @@ impl LightWallet {
 
     #[must_use]
     pub fn coin_summaries(&self, include_spent_coins: bool) -> Vec<CoinSummary> {
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         self.wallet_outputs::<TransparentCoin>()
             .into_iter()
             .filter(|&coin| {
@@ -338,6 +342,7 @@ impl LightWallet {
                     true
                 } else {
                     coin.spending_transaction().is_none()
+                        && !pending_spends.contains_key(&coin.output_id())
                 }
             })
             .map(|coin| {
@@ -347,7 +352,7 @@ impl LightWallet {
                     value: coin.value(),
                     status: transaction.status(),
                     block_height: transaction.status().get_height(),
-                    spend_status: self.output_spend_status(coin),
+                    spend_status: self.output_spend_status(coin, &pending_spends),
                     time: transaction.datetime(),
                     txid: coin.output_id().txid(),
                     output_index: coin.output_id().output_index(),

@@ -572,6 +572,7 @@ impl crate::wallet::LightWallet {
     pub(crate) fn live_v2_note_values(&self, account: zip32::AccountId) -> Vec<u64> {
         use pepper_sync::wallet::{KeyIdInterface as _, NoteInterface as _, OutputInterface as _};
 
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         self.wallet_transactions
             .values()
             .filter(|transaction| !transaction.status().is_failed())
@@ -582,6 +583,7 @@ impl crate::wallet::LightWallet {
                 note.key_id().account_id() == account
                     && note.note().version() == orchard::note::NoteVersion::V2
                     && note.spending_transaction().is_none()
+                    && !pending_spends.contains_key(&note.output_id())
             })
             .map(|note| note.value())
             .collect()
@@ -602,6 +604,7 @@ impl crate::wallet::LightWallet {
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
         // A failed transaction carries no confirmed height
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         Ok(self
             .wallet_transactions
             .values()
@@ -618,6 +621,7 @@ impl crate::wallet::LightWallet {
                 note.key_id().account_id() == account
                     && note.note().version() == orchard::note::NoteVersion::V2
                     && note.spending_transaction().is_none()
+                    && !pending_spends.contains_key(&note.output_id())
             }))
     }
 
