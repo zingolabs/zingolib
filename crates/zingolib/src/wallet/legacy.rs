@@ -26,13 +26,49 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
 };
 
-use super::{keys::legacy::WalletCapability, traits::ReadableWriteable, utils::utf8_string};
+use super::{keys::legacy::WalletCapability, traits::ReadableWriteable, utils};
+
+type DatedWitness<H> = (IncrementalWitness<H, COMMITMENT_TREE_LEVELS>, BlockHeight);
+
+fn decoded<T>(value: Option<T>, fault: &'static str) -> io::Result<T> {
+    value.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, fault))
+}
 
 fn read_orchard_nullifier(bytes: &[u8; 32]) -> io::Result<orchard::note::Nullifier> {
-    Option::from(orchard::note::Nullifier::from_bytes(bytes)).ok_or(io::Error::new(
-        io::ErrorKind::InvalidData,
+    decoded(
+        orchard::note::Nullifier::from_bytes(bytes).into_option(),
         "stored orchard nullifier is not a canonical field element",
-    ))
+    )
+}
+
+fn witness_height(top_height: u64, depth: usize) -> io::Result<BlockHeight> {
+    decoded(
+        u32::try_from(top_height)
+            .ok()
+            .zip(u32::try_from(depth).ok())
+            .and_then(|(top_height, depth)| top_height.checked_sub(depth)),
+        "stored witness cache is taller than its top height",
+    )
+    .map(BlockHeight::from)
+}
+
+fn read_witness_cache<H: HashSer + Hashable + Clone, R: Read>(
+    mut reader: R,
+    dated_witnesses: Option<&mut Vec<DatedWitness<H>>>,
+) -> io::Result<Option<Position>> {
+    let witnesses = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
+    let top_height = reader.read_u64::<LittleEndian>()?;
+    let position = witnesses.last().map(IncrementalWitness::witnessed_position);
+    let newest = witnesses.len().saturating_sub(1);
+    let dated = witnesses
+        .into_iter()
+        .enumerate()
+        .map(|(index, witness)| Ok((witness, witness_height(top_height, newest - index)?)))
+        .collect::<io::Result<Vec<_>>>()?;
+    if let Some(dated_witnesses) = dated_witnesses {
+        dated_witnesses.extend(dated);
+    }
+    Ok(position)
 }
 
 /// TODO: Add Doc Comment Here!
@@ -403,20 +439,20 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
         let value = reader.read_u64::<LittleEndian>()?;
         let rseed = read_sapling_rseed(&mut reader)?;
 
-        Ok(
+        let fvk = decoded(
             sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
                 &wallet_capability.unified_key_store,
             )
-            .expect("to get an fvk from the unified key store")
-            .fvk()
-            .vk
-            .to_payment_address(diversifier)
-            .ok_or(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "stored sapling note diversifier is not valid for the wallet's sapling viewing key",
-            ))?
-            .create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed),
+            .ok(),
+            "wallet holds no sapling viewing key for its stored sapling note",
+        )?;
+        decoded(
+            fvk.fvk().vk.to_payment_address(diversifier),
+            "stored sapling note diversifier does not map to a jubjub point",
         )
+        .map(|address| {
+            address.create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed)
+        })
     }
 
     fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
@@ -431,18 +467,15 @@ fn read_sapling_rseed<R: Read>(mut reader: R) -> io::Result<sapling_crypto::Rsee
     let mut r_bytes: [u8; 32] = [0; 32];
     reader.read_exact(&mut r_bytes)?;
 
-    let r = match note_type {
-        1 => sapling_crypto::Rseed::BeforeZip212(
-            Option::from(jubjub::Fr::from_bytes(&r_bytes)).ok_or(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "stored sapling rseed is not a canonical jubjub scalar",
-            ))?,
-        ),
-        2 => sapling_crypto::Rseed::AfterZip212(r_bytes),
-        _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Bad note type")),
-    };
-
-    Ok(r)
+    match note_type {
+        1 => decoded(
+            jubjub::Fr::from_bytes(&r_bytes).into_option(),
+            "stored sapling rseed is not a canonical jubjub scalar",
+        )
+        .map(sapling_crypto::Rseed::BeforeZip212),
+        2 => Ok(sapling_crypto::Rseed::AfterZip212(r_bytes)),
+        _ => decoded(None, "stored sapling rseed type is unknown"),
+    }
 }
 
 impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orchard::note::Note {
@@ -456,30 +489,33 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         let value = reader.read_u64::<LittleEndian>()?;
         let mut nullifier_bytes = [0; 32];
         reader.read_exact(&mut nullifier_bytes)?;
-        let rho_nullifier = Option::from(orchard::note::Rho::from_bytes(&nullifier_bytes))
-            .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Bad Nullifier"))?;
+        let rho_nullifier = decoded(
+            orchard::note::Rho::from_bytes(&nullifier_bytes).into_option(),
+            "Bad Nullifier",
+        )?;
 
         let mut random_seed_bytes = [0; 32];
         reader.read_exact(&mut random_seed_bytes)?;
-        let random_seed = Option::from(orchard::note::RandomSeed::from_bytes(
-            random_seed_bytes,
-            &rho_nullifier,
-        ))
-        .ok_or(io::Error::new(
-            io::ErrorKind::InvalidInput,
+        let random_seed = decoded(
+            orchard::note::RandomSeed::from_bytes(random_seed_bytes, &rho_nullifier).into_option(),
             "Nullifier not for note",
-        ))?;
+        )?;
 
-        let fvk = orchard::keys::FullViewingKey::try_from(&wallet_capability.unified_key_store)
-            .expect("to get an fvk from the unified key store");
-        Option::from(orchard::note::Note::from_parts(
-            fvk.address(diversifier, orchard::keys::Scope::External),
-            orchard::value::NoteValue::from_raw(value),
-            rho_nullifier,
-            random_seed,
-            orchard::note::NoteVersion::V2,
-        ))
-        .ok_or(io::Error::new(io::ErrorKind::InvalidInput, "Invalid note"))
+        let fvk = decoded(
+            orchard::keys::FullViewingKey::try_from(&wallet_capability.unified_key_store).ok(),
+            "wallet holds no orchard viewing key for its stored orchard note",
+        )?;
+        decoded(
+            orchard::note::Note::from_parts(
+                fvk.address(diversifier, orchard::keys::Scope::External),
+                orchard::value::NoteValue::from_raw(value),
+                rho_nullifier,
+                random_seed,
+                orchard::note::NoteVersion::V2,
+            )
+            .into_option(),
+            "Invalid note",
+        )
     }
 
     fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
@@ -511,11 +547,12 @@ impl TransparentOutput {
     pub fn read<R: std::io::Read>(mut reader: R) -> std::io::Result<Self> {
         let version = reader.read_u64::<byteorder::LittleEndian>()?;
 
-        let address_len = reader.read_i32::<byteorder::LittleEndian>()?;
-        let mut address_bytes = vec![0; address_len as usize];
-        reader.read_exact(&mut address_bytes)?;
-        let address = utf8_string(address_bytes)?;
-        assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
+        let address_len = reader.read_u32::<byteorder::LittleEndian>()?;
+        let address = utils::read_string_body(&mut reader, u64::from(address_len))?;
+        let address = decoded(
+            address.starts_with('t').then_some(address),
+            "stored transparent output address is not transparent",
+        )?;
 
         let mut transaction_id_bytes = [0; 32];
         reader.read_exact(&mut transaction_id_bytes)?;
@@ -640,10 +677,7 @@ impl
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            let mut discarded_bytes = vec![0u8; 169];
-            reader
-                .read_exact(&mut discarded_bytes)
-                .expect("To not used this data.");
+            reader.read_exact(&mut [0u8; 169])?;
         }
 
         let mut diversifier_bytes = [0u8; 11];
@@ -655,24 +689,7 @@ impl
         let witnessed_position = match external_version {
             5.. => Optional::read(&mut reader, <R>::read_u64::<LittleEndian>)?.map(Position::from),
             4 => Some(Position::from(reader.read_u64::<LittleEndian>()?)),
-            ..4 => {
-                let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
-
-                let top_height = reader.read_u64::<LittleEndian>()?;
-                let witnesses =
-                    WitnessCache::<sapling_crypto::Node>::new(witnesses_vec, top_height);
-
-                let pos = witnesses
-                    .last()
-                    .map(incrementalmerkletree::witness::IncrementalWitness::witnessed_position);
-                for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
-                    let height = BlockHeight::from(top_height as u32 - i as u32);
-                    if let Some(&mut ref mut wits) = inc_wit_vec {
-                        wits.push((witness, height));
-                    }
-                }
-                pos
-            }
+            ..4 => read_witness_cache(&mut reader, inc_wit_vec)?,
         };
 
         let read_nullifier = |r: &mut R| {
@@ -812,10 +829,7 @@ impl
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            let mut discarded_bytes = vec![0u8; 96];
-            reader
-                .read_exact(&mut discarded_bytes)
-                .expect("To not used this data.");
+            reader.read_exact(&mut [0u8; 96])?;
         }
 
         let mut diversifier_bytes = [0u8; 11];
@@ -827,23 +841,7 @@ impl
         let witnessed_position = match external_version {
             5.. => Optional::read(&mut reader, <R>::read_u64::<LittleEndian>)?.map(Position::from),
             4 => Some(Position::from(reader.read_u64::<LittleEndian>()?)),
-            ..4 => {
-                let witnesses_vec = Vector::read(&mut reader, |r| read_incremental_witness(r))?;
-
-                let top_height = reader.read_u64::<LittleEndian>()?;
-                let witnesses = WitnessCache::<MerkleHashOrchard>::new(witnesses_vec, top_height);
-
-                let pos = witnesses
-                    .last()
-                    .map(incrementalmerkletree::witness::IncrementalWitness::witnessed_position);
-                for (i, witness) in witnesses.witnesses.into_iter().rev().enumerate().rev() {
-                    let height = BlockHeight::from(top_height as u32 - i as u32);
-                    if let Some(&mut ref mut wits) = inc_wit_vec {
-                        wits.push((witness, height));
-                    }
-                }
-                pos
-            }
+            ..4 => read_witness_cache(&mut reader, inc_wit_vec)?,
         };
 
         let read_nullifier = |r: &mut R| {
@@ -952,10 +950,7 @@ pub struct OutgoingTxData {
 impl OutgoingTxData {
     /// Before version 0, `OutgoingTxData` didn't have a version field
     pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
-        let address_len = reader.read_u64::<LittleEndian>()?;
-        let mut address_bytes = vec![0; address_len as usize];
-        reader.read_exact(&mut address_bytes)?;
-        let address = utf8_string(address_bytes)?;
+        let address = utils::read_string(&mut reader)?;
 
         let value = reader.read_u64::<LittleEndian>()?;
 
@@ -985,10 +980,7 @@ impl OutgoingTxData {
     /// representation
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let _external_version = CompactSize::read(&mut reader)?;
-        let address_len = reader.read_u64::<LittleEndian>()?;
-        let mut address_bytes = vec![0; address_len as usize];
-        reader.read_exact(&mut address_bytes)?;
-        let address = utf8_string(address_bytes)?;
+        let address = utils::read_string(&mut reader)?;
 
         let value = reader.read_u64::<LittleEndian>()?;
 
@@ -1112,31 +1104,6 @@ fn read_shardtree<
 
 pub(crate) type SapStore = MemoryShardStore<sapling_crypto::Node, BlockHeight>;
 pub(crate) type OrchStore = MemoryShardStore<MerkleHashOrchard, BlockHeight>;
-
-/// TODO: Add Doc Comment Here!
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct WitnessCache<Node: Hashable> {
-    /// TODO: Add Doc Comment Here!
-    pub(crate) witnesses: Vec<IncrementalWitness<Node, 32>>,
-    /// TODO: Add Doc Comment Here!
-    pub top_height: u64,
-}
-
-impl<Node: Hashable> WitnessCache<Node> {
-    /// TODO: Add Doc Comment Here!
-    pub fn new(witnesses: Vec<IncrementalWitness<Node, 32>>, top_height: u64) -> Self {
-        Self {
-            witnesses,
-            top_height,
-        }
-    }
-
-    /// TODO: Add Doc Comment Here!
-    pub fn last(&self) -> Option<&IncrementalWitness<Node, 32>> {
-        self.witnesses.last()
-    }
-}
 
 impl ReadableWriteable for ConfirmationStatus {
     const VERSION: u8 = 0;
@@ -1360,5 +1327,205 @@ mod tests {
         let nullifier = read_orchard_nullifier(&canonical)
             .expect("zero is below the Pallas base field modulus, so its encoding is canonical");
         assert_eq!(nullifier.to_bytes(), canonical);
+    }
+}
+
+#[cfg(test)]
+mod corrupt_input {
+    use zcash_primitives::merkle_tree::write_incremental_witness;
+
+    use super::*;
+    use crate::{config::ChainType, wallet::keys::unified::UnifiedKeyStore};
+
+    const TRANSPARENT_OUTPUT_VERSION: u64 = 5;
+    const NOTE_WITH_DISCARDED_PREFIX: u8 = 1;
+    const NOTE_WITH_WITNESS_CACHE: u8 = 3;
+    const NOTE_CURRENT: u8 = 5;
+    const INNER_NOTE_VERSION: u8 = 1;
+    const RSEED_BEFORE_ZIP212: u8 = 1;
+    const RSEED_AFTER_ZIP212: u8 = 2;
+    const RSEED_UNKNOWN: u8 = 3;
+    const NOTE_VALUE: u64 = 1;
+    const ONE_RECORD: u8 = 1;
+    const TWO_WITNESSES: u8 = 2;
+    const TOP_HEIGHT_BELOW_WITNESS_COUNT: u64 = 0;
+
+    fn kind<T>(read: io::Result<T>) -> Option<io::ErrorKind> {
+        read.err().map(|error| error.kind())
+    }
+
+    fn message<T>(read: io::Result<T>) -> Option<String> {
+        read.err().map(|error| error.to_string())
+    }
+
+    fn transparent_output(address_len: i32, address: &[u8]) -> Vec<u8> {
+        [
+            &TRANSPARENT_OUTPUT_VERSION.to_le_bytes()[..],
+            &address_len.to_le_bytes(),
+            address,
+        ]
+        .concat()
+    }
+
+    fn sapling_note(version: u8, diversifier: sapling_crypto::Diversifier) -> Vec<u8> {
+        [
+            &[version][..],
+            &diversifier.0,
+            &[INNER_NOTE_VERSION],
+            &NOTE_VALUE.to_le_bytes(),
+            &[RSEED_AFTER_ZIP212],
+            &[u8::MIN; 32],
+        ]
+        .concat()
+    }
+
+    fn diversifier(on_curve: bool) -> io::Result<sapling_crypto::Diversifier> {
+        (u8::MIN..=u8::MAX)
+            .map(|byte| sapling_crypto::Diversifier([byte; 11]))
+            .find(|diversifier| diversifier.g_d().is_some() == on_curve)
+            .ok_or_else(|| io::Error::other("no single-byte diversifier has the wanted validity"))
+    }
+
+    fn spending_capability() -> io::Result<WalletCapability> {
+        let mut capability = WalletCapability::default();
+        capability.unified_key_store = UnifiedKeyStore::new_from_seed(
+            ChainType::Mainnet,
+            &[u8::MIN; 64],
+            zip32::AccountId::ZERO,
+        )
+        .map_err(io::Error::other)?;
+        Ok(capability)
+    }
+
+    #[test]
+    fn a_transparent_output_with_an_empty_address_is_invalid_data() {
+        assert_eq!(
+            kind(TransparentOutput::read(
+                transparent_output(0, b"").as_slice()
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn a_transparent_output_with_a_shielded_address_is_invalid_data() {
+        assert_eq!(
+            kind(TransparentOutput::read(
+                transparent_output(1, b"z").as_slice()
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn a_transparent_output_with_a_negative_address_length_is_invalid_data() {
+        assert_eq!(
+            kind(TransparentOutput::read(
+                transparent_output(-1, b"").as_slice()
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn outgoing_data_with_an_unbounded_address_length_is_invalid_data() {
+        let unbounded = u64::MAX.to_le_bytes();
+        assert_eq!(
+            kind(OutgoingTxData::read_old(unbounded.as_slice())),
+            Some(io::ErrorKind::InvalidData)
+        );
+        let versioned = [&[u8::MIN][..], &unbounded].concat();
+        assert_eq!(
+            kind(OutgoingTxData::read(versioned.as_slice())),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn a_note_truncated_in_its_discarded_prefix_is_an_unexpected_eof() {
+        let truncated = [NOTE_WITH_DISCARDED_PREFIX];
+        let capability = WalletCapability::default();
+        assert_eq!(
+            kind(SaplingNote::read(truncated.as_slice(), (&capability, None))),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
+        assert_eq!(
+            kind(OrchardNote::read(truncated.as_slice(), (&capability, None))),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
+    }
+
+    #[test]
+    fn a_sapling_note_in_a_wallet_without_a_sapling_key_is_invalid_data() -> io::Result<()> {
+        let note = sapling_note(NOTE_CURRENT, diversifier(true)?);
+        assert_eq!(
+            kind(SaplingNote::read(
+                note.as_slice(),
+                (&WalletCapability::default(), None)
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_diversifier_off_the_curve_is_reported_as_the_diversifier_fault() -> io::Result<()> {
+        let note = sapling_note(NOTE_CURRENT, diversifier(false)?);
+        assert_eq!(
+            message(SaplingNote::read(
+                note.as_slice(),
+                (&spending_capability()?, None)
+            )),
+            Some("stored sapling note diversifier does not map to a jubjub point".to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_witness_cache_taller_than_its_top_height_is_invalid_data() -> io::Result<()> {
+        let mut tree = sapling_crypto::CommitmentTree::empty();
+        tree.append(sapling_crypto::Node::empty_leaf())
+            .map_err(|()| io::Error::other("an empty tree refused its first leaf"))?;
+        let witness = IncrementalWitness::<_, COMMITMENT_TREE_LEVELS>::from_tree(tree)
+            .ok_or_else(|| io::Error::other("a one-leaf tree gave no witness"))?;
+        let mut note = sapling_note(NOTE_WITH_WITNESS_CACHE, diversifier(true)?);
+        note.push(TWO_WITNESSES);
+        write_incremental_witness(&witness, &mut note)?;
+        write_incremental_witness(&witness, &mut note)?;
+        note.extend(TOP_HEIGHT_BELOW_WITNESS_COUNT.to_le_bytes());
+        assert_eq!(
+            kind(SaplingNote::read(
+                note.as_slice(),
+                (&spending_capability()?, None)
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn every_rseed_fault_is_invalid_data() {
+        let non_canonical_scalar = [&[RSEED_BEFORE_ZIP212][..], &[u8::MAX; 32]].concat();
+        assert_eq!(
+            kind(read_sapling_rseed(non_canonical_scalar.as_slice())),
+            Some(io::ErrorKind::InvalidData)
+        );
+        let unknown_type = [&[RSEED_UNKNOWN][..], &[u8::MIN; 32]].concat();
+        assert_eq!(
+            kind(read_sapling_rseed(unknown_type.as_slice())),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn a_truncated_transaction_record_propagates_its_error() {
+        let truncated = [&[ONE_RECORD][..], &[u8::MIN; 32]].concat();
+        assert_eq!(
+            kind(TxMap::read_old(
+                truncated.as_slice(),
+                &WalletCapability::default()
+            )),
+            Some(io::ErrorKind::UnexpectedEof)
+        );
     }
 }
