@@ -31,6 +31,8 @@ use super::{error::KeyError, keys::legacy::WalletCapability, traits::ReadableWri
 type DatedWitness<H> = (IncrementalWitness<H, COMMITMENT_TREE_LEVELS>, BlockHeight);
 
 const MEMO_SIZE: usize = 512;
+const SAPLING_DISCARDED_PREFIX_SIZE: usize = 169;
+const ORCHARD_DISCARDED_PREFIX_SIZE: usize = 96;
 
 #[derive(Debug, thiserror::Error)]
 enum DecodeError {
@@ -717,7 +719,7 @@ impl
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            reader.read_exact(&mut [0u8; 169])?;
+            reader.read_exact(&mut [0u8; SAPLING_DISCARDED_PREFIX_SIZE])?;
         }
 
         let mut diversifier_bytes = [0u8; 11];
@@ -854,7 +856,7 @@ impl
         let external_version = Self::get_version(&mut reader)?;
 
         if external_version < 2 {
-            reader.read_exact(&mut [0u8; 96])?;
+            reader.read_exact(&mut [0u8; ORCHARD_DISCARDED_PREFIX_SIZE])?;
         }
 
         let mut diversifier_bytes = [0u8; 11];
@@ -1280,7 +1282,7 @@ mod tests {
     const RSEED_UNKNOWN: u8 = 3;
 
     #[test]
-    fn a_non_canonical_orchard_nullifier_is_its_own_fault() {
+    fn a_non_canonical_orchard_nullifier_is_its_own_decode_error() {
         assert!(matches!(
             orchard_nullifier(&[u8::MAX; _]),
             Err(DecodeError::OrchardNullifier)
@@ -1299,7 +1301,7 @@ mod tests {
     }
 
     #[test]
-    fn every_fault_reaches_the_caller_as_invalid_data() {
+    fn a_decode_error_reaches_the_caller_as_invalid_data() {
         assert_eq!(
             io::Error::from(DecodeError::OrchardNullifier).kind(),
             io::ErrorKind::InvalidData
@@ -1307,7 +1309,7 @@ mod tests {
     }
 
     #[test]
-    fn each_rseed_fault_is_its_own_variant() {
+    fn each_rseed_decode_error_is_its_own_variant() {
         assert!(matches!(
             sapling_rseed(RSEED_BEFORE_ZIP212, [u8::MAX; _]),
             Err(DecodeError::SaplingRseedScalar)
@@ -1319,7 +1321,7 @@ mod tests {
     }
 
     #[test]
-    fn memo_bytes_longer_than_a_memo_are_a_memo_fault() {
+    fn memo_bytes_longer_than_a_memo_are_a_memo_decode_error() {
         assert!(matches!(
             memo(&[u8::MIN; MEMO_SIZE + 1]),
             Err(DecodeError::Memo(_))
@@ -1369,6 +1371,13 @@ mod corrupt_input {
         Some(*error)
     }
 
+    fn reports_a_key_error_as_its_source<T>(read: io::Result<T>) -> bool {
+        read.err()
+            .as_ref()
+            .and_then(std::error::Error::source)
+            .is_some_and(|source| source.is::<KeyError>())
+    }
+
     fn transparent_output(address_len: i32, address: &[u8]) -> Vec<u8> {
         [
             &TRANSPARENT_OUTPUT_VERSION.to_le_bytes()[..],
@@ -1385,6 +1394,18 @@ mod corrupt_input {
             &[INNER_NOTE_VERSION],
             &NOTE_VALUE.to_le_bytes(),
             &[RSEED_AFTER_ZIP212],
+            &[u8::MIN; 32],
+        ]
+        .concat()
+    }
+
+    fn orchard_note() -> Vec<u8> {
+        [
+            &[NOTE_CURRENT][..],
+            &[u8::MIN; 11],
+            &[INNER_NOTE_VERSION],
+            &NOTE_VALUE.to_le_bytes(),
+            &[u8::MIN; 32],
             &[u8::MIN; 32],
         ]
         .concat()
@@ -1480,22 +1501,23 @@ mod corrupt_input {
     }
 
     #[test]
-    fn a_missing_sapling_key_keeps_its_key_error_as_the_source() -> io::Result<()> {
-        let note = sapling_note(NOTE_CURRENT, diversifier(true)?);
-        let error = SaplingNote::read(note.as_slice(), (&WalletCapability::default(), None)).err();
-        assert!(
-            error
-                .as_ref()
-                .and_then(|error| error.get_ref())
-                .and_then(|inner| inner.downcast_ref::<DecodeError>())
-                .and_then(std::error::Error::source)
-                .is_some_and(|source| source.is::<KeyError>())
-        );
+    fn a_missing_viewing_key_reaches_the_caller_with_its_key_error_as_the_source() -> io::Result<()>
+    {
+        let capability = WalletCapability::default();
+        let sapling = sapling_note(NOTE_CURRENT, diversifier(true)?);
+        assert!(reports_a_key_error_as_its_source(SaplingNote::read(
+            sapling.as_slice(),
+            (&capability, None)
+        )));
+        assert!(reports_a_key_error_as_its_source(OrchardNote::read(
+            orchard_note().as_slice(),
+            (&capability, None)
+        )));
         Ok(())
     }
 
     #[test]
-    fn a_diversifier_off_the_curve_is_reported_as_the_diversifier_fault() -> io::Result<()> {
+    fn a_diversifier_off_the_curve_is_the_diversifier_decode_error() -> io::Result<()> {
         let note = sapling_note(NOTE_CURRENT, diversifier(false)?);
         assert!(matches!(
             decode_error(SaplingNote::read(
