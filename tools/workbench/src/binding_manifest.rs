@@ -782,11 +782,11 @@ mod tests {
     const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     const ROOT: &str = "/host/zingolib";
     const EXPECTED_AUDITED: [&str; 5] = [
-        "zingo (zingo-ffi/lib)",
-        "pepper-sync (pepper-sync)",
-        "zingolib (zingolib)",
-        "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)",
-        "zingo-netutils (zingo-netutils)",
+        "zingolib-ffi (ffi/lib)",
+        "pepper-sync (crates/pepper-sync)",
+        "zingolib (crates/zingolib)",
+        "zingolib-nym-proxy-ffi (crates/netutils/nym-proxy-ffi)",
+        "zingolib-netutils (crates/netutils)",
     ];
 
     fn audited(items: &[&str]) -> Result<Vec<AuditedCrate>, Vec<String>> {
@@ -865,10 +865,10 @@ mod tests {
             "commit = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n",
             "[[entry]]\ncommit = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
             "[[entry]]\n[entry.digests]\n",
-            "[[entry]]\naudited = \"zingo (zingo-ffi/lib)\"\n",
+            "[[entry]]\naudited = \"zingolib-ffi (ffi/lib)\"\n",
             "[[entry]]\naudited = []\n",
-            "[[entry]]\naudited = [\"zingo\"]\n",
-            "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\", \"pepper-sync pepper-sync\"]\n",
+            "[[entry]]\naudited = [\"zingolib-ffi\"]\n",
+            "[[entry]]\naudited = [\"zingolib-ffi (ffi/lib)\", \"pepper-sync pepper-sync\"]\n",
             "[[entry]]\nandroid = [\"sha256:0\"]\n",
         ];
         for text in rejected {
@@ -877,7 +877,7 @@ mod tests {
         }
         assert!(parse("[[entry]]\nandroid = \"x\"\nandroid = \"y\"\n").is_err());
         assert!(parse(
-            "[[entry]]\naudited = [\"zingo (zingo-ffi/lib)\"]\naudited = [\"zingo (zingo-ffi/lib)\"]\n"
+            "[[entry]]\naudited = [\"zingolib-ffi (ffi/lib)\"]\naudited = [\"zingolib-ffi (ffi/lib)\"]\n"
         )
         .is_err());
         Ok(())
@@ -896,13 +896,13 @@ mod tests {
     fn an_audited_crate_round_trips_through_its_text_form_and_a_tree_line_is_made_relative(
     ) -> Result<(), Vec<String>> {
         let found = crate::required(
-            AuditedCrate::parse("zingo (zingo-ffi/lib)"),
+            AuditedCrate::parse("zingolib-ffi (ffi/lib)"),
             "audited crate in the text form",
         )?;
-        assert_eq!(found.to_string(), "zingo (zingo-ffi/lib)");
-        assert_eq!(found.dir, PathBuf::from("zingo-ffi/lib"));
-        assert_eq!(AuditedCrate::parse("zingo"), None);
-        assert_eq!(AuditedCrate::parse("zingo v2.0.0 (zingo-ffi/lib)"), None);
+        assert_eq!(found.to_string(), "zingolib-ffi (ffi/lib)");
+        assert_eq!(found.dir, PathBuf::from("ffi/lib"));
+        assert_eq!(AuditedCrate::parse("zingolib-ffi"), None);
+        assert_eq!(AuditedCrate::parse("zingolib-ffi v2.0.0 (ffi/lib)"), None);
         Ok(())
     }
 
@@ -921,12 +921,12 @@ mod tests {
             )
         };
         assert_eq!(
-            AuditedCrate::from_package(package("zingo")?, &root),
-            AuditedCrate::parse("zingo (zingo-ffi/lib)")
+            AuditedCrate::from_package(package("zingolib-ffi")?, &root),
+            AuditedCrate::parse("zingolib-ffi (ffi/lib)")
         );
         assert_eq!(AuditedCrate::from_package(package("serde")?, &root), None);
         assert_eq!(
-            AuditedCrate::from_package(package("zingo")?, Path::new(ROOT)),
+            AuditedCrate::from_package(package("zingolib-ffi")?, Path::new(ROOT)),
             None
         );
         Ok(())

@@ -2,13 +2,13 @@ use std::num::NonZeroU32;
 use std::time::Duration;
 
 use incrementalmerkletree::Position;
+use netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
+use netutils::{GrpcIndexer, Indexer};
 use pepper_sync::error::SyncError;
 use pepper_sync::wallet::ShardTrees;
 use shardtree::ShardTree;
 use shardtree::store::ShardStore;
 use zcash_protocol::ShieldedPool;
-use zingo_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
-use zingo_netutils::{GrpcIndexer, Indexer};
 use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
 use zingolib::config::{ChainType, ClientConfig, WalletConfig, construct_indexer_uri};
 use zingolib::data::PollReport;

@@ -1,8 +1,8 @@
+use netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata, CompactBlock};
+use netutils::{GrpcIndexer, Indexer};
 use pepper_sync::test_support::block;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
-use zingo_netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata, CompactBlock};
-use zingo_netutils::{GrpcIndexer, Indexer};
 use zingolib::config::{ChainType, construct_indexer_uri};
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
 
