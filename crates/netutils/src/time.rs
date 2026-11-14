@@ -125,19 +125,7 @@ pub const ATTACH_READINESS_BUDGET: Duration = Duration::from_secs(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// HYPOTHESIS: one bounded round trip fits inside the nym lifecycle
-    /// budget.
-    #[test]
-    fn the_round_trip_bound_fits_inside_the_lifecycle() {
-        assert!(
-            MIXNET_ROUND_TRIP_BOUND <= NYM_LIFECYCLE_TIMEOUT,
-            "retune the round-trip bound with the lifecycle, never apart"
-        );
-    }
-}
+mod tests;
 
 /// Bound on one ordinary unary indexer request: the wallet's default
 /// patience for a single gRPC call on the send and query paths.

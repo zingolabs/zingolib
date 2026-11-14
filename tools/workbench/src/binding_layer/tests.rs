@@ -1,0 +1,608 @@
+use super::*;
+
+#[test]
+fn the_android_workflow_runs_in_the_published_image() {
+    let workflow = include_str!("../../../../.github/workflows/binding-layer-android.yaml");
+    assert!(workflow.contains(&format!("image: {PUBLISHED_ANDROID_IMAGE}\n")));
+}
+
+#[test]
+fn the_descriptor_env_is_the_one_the_build_script_emits() {
+    let build_script = include_str!("../../../../crates/zingolib/build.rs");
+    assert!(build_script.contains(&format!(
+        "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
+    )));
+    assert!(build_script.contains("cargo:rustc-env={DESCRIPTOR_ENV}={description}"));
+    assert!(build_script.contains("#[path = \"short_commit.rs\"]\nmod short_commit;"));
+}
+
+#[test]
+fn the_descriptor_comes_from_zingolibs_build_script_message_alone() {
+    let script = |package: &str, env: &str| {
+        format!(
+            "{{\"reason\":\"build-script-executed\",\"package_id\":\"path+file:///x/{package}\",\
+                 \"linked_libs\":[],\"linked_paths\":[],\"cfgs\":[],\"env\":{env},\"out_dir\":\"/x/out\"}}\n"
+        )
+    };
+    let messages = format!(
+        "{{\"reason\":\"build-finished\",\"success\":true}}\n{}{}",
+        script(
+            "zingo-status#0.1.0",
+            "[[\"ZINGOLIB_DESCRIPTOR\",\"wrong\"]]"
+        ),
+        script(
+            "zingolib#6.0.0",
+            "[[\"OTHER\",\"1\"],[\"ZINGOLIB_DESCRIPTOR\",\"zl_6.0.0_ba7336710419c9ac\"]]"
+        )
+    );
+    assert_eq!(
+        descriptor_in_messages(&messages),
+        Ok(Some("zl_6.0.0_ba7336710419c9ac".to_string()))
+    );
+    assert_eq!(
+        descriptor_in_messages("{\"reason\":\"build-finished\",\"success\":true}\n"),
+        Ok(None)
+    );
+    assert_eq!(
+        descriptor_in_messages(&script("zingolib#6.0.0", "[]")),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_build_script_message_the_schema_rejects_is_reported_instead_of_no_descriptor() {
+    let truncated = "{\"reason\":\"build-script-executed\",\
+                         \"package_id\":\"path+file:///x/zingolib#6.0.0\"}\n";
+    let refused = descriptor_in_messages(truncated).unwrap_err();
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert!(refused[0].starts_with(UNPARSED_MESSAGE), "{refused:?}");
+    assert!(refused[0].ends_with(truncated.trim_end()), "{refused:?}");
+    assert_eq!(
+        descriptor_in_messages("not json at all\n"),
+        Ok(None),
+        "a plain text line is not a rejected message"
+    );
+}
+
+#[test]
+fn the_ndk_env_command_asks_cargo_ndk_for_one_targets_environment_as_json() {
+    assert_eq!(
+        ndk_env_command("x86_64-linux-android"),
+        [
+            "cargo",
+            "ndk-env",
+            "--target",
+            "x86_64-linux-android",
+            "--json"
+        ]
+    );
+}
+
+#[test]
+fn the_exported_environment_is_read_from_cargo_ndks_pretty_json() {
+    let json = "{\n  \"AR_x86_64-linux-android\": \"/ndk/llvm-ar\",\n  \
+            \"CFLAGS_x86_64-linux-android\": \"--target=x86_64-linux-android26 -O2\",\n  \
+            \"QUOTED\": \"a \\\"b\\\" c\\\\d\"\n}\n";
+    assert_eq!(
+        env_in_json(json),
+        Ok(vec![
+            ("AR_x86_64-linux-android".into(), "/ndk/llvm-ar".into()),
+            (
+                "CFLAGS_x86_64-linux-android".into(),
+                "--target=x86_64-linux-android26 -O2".into()
+            ),
+            ("QUOTED".into(), "a \"b\" c\\d".into()),
+        ])
+    );
+    assert_eq!(env_in_json("{\n}\n"), Ok(vec![]));
+    assert!(env_in_json("{\n  \"KEY\": 1\n}\n").is_err());
+    assert!(env_in_json("{\n  \"KEY\": \"unterminated\n}\n").is_err());
+}
+
+#[test]
+fn the_link_env_adds_cargo_ndks_linker_wrapper_variables_from_its_clang_path(
+) -> Result<(), Vec<String>> {
+    let exported = vec![
+        (
+            "CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER".to_string(),
+            "/bin/cargo-ndk".to_string(),
+        ),
+        (
+            NDK_CLANG_PATH_VARIABLE.to_string(),
+            "/ndk/clang".to_string(),
+        ),
+    ];
+    let link = ANDROID_ABIS[3].ndk_link();
+    assert_eq!(
+        link.link_target,
+        format!("--target=x86_64-linux-android{ANDROID_API_LEVEL}")
+    );
+    let env = ndk_link_env(exported.clone(), &link.link_target).map_err(|e| vec![e])?;
+    assert_eq!(&env[..2], &exported[..]);
+    assert_eq!(
+        &env[2..],
+        &[
+            (
+                NDK_LINK_CLANG_VARIABLE.to_string(),
+                "/ndk/clang".to_string()
+            ),
+            (
+                NDK_LINK_TARGET_VARIABLE.to_string(),
+                link.link_target.clone()
+            ),
+        ]
+    );
+    assert!(ndk_link_env(vec![], &link.link_target).is_err());
+    Ok(())
+}
+
+#[test]
+fn every_abi_links_through_the_clang_target_its_cc_wrapper_names() {
+    for abi in &ANDROID_ABIS {
+        assert_eq!(abi.cc(), format!("{}-clang", abi.clang_target()));
+        assert_eq!(
+            abi.ndk_link().link_target,
+            format!("--target={}", abi.clang_target())
+        );
+        assert_eq!(abi.ndk_link().env_command, ndk_env_command(abi.triple));
+    }
+}
+
+#[test]
+fn the_swift_package_names_match_its_manifest() {
+    let manifest = include_str!("../../../../bindings/swift/Package.swift");
+    assert!(manifest.contains(&format!("name: \"{SWIFT_PACKAGE}\"")));
+    assert!(manifest.contains(&format!(
+        "let builderOutput = \"{SWIFT_PACKAGE_OUTPUT_DIR}\""
+    )));
+    assert!(manifest.contains(&format!("/{}\"", swift_sources_dir())));
+    assert!(manifest.contains(&format!(
+        "linkerSettings: [.linkedFramework(\"{SWIFT_LINKED_FRAMEWORK}\")]"
+    )));
+    assert!(path::Path::new(SWIFT_PACKAGE_MANIFEST).ends_with("Package.swift"));
+}
+
+#[test]
+fn the_wallet_xcframework_is_the_binary_target_with_the_suffix() {
+    assert_eq!(
+        WALLET_XCFRAMEWORK.strip_suffix(XCFRAMEWORK_SUFFIX),
+        Some(WALLET_BINARY_TARGET)
+    );
+}
+
+#[test]
+fn the_swift_package_links_one_binary_target_so_the_app_links_one_std() {
+    let manifest = include_str!("../../../../bindings/swift/Package.swift");
+    assert_eq!(manifest.matches(".binaryTarget(").count(), 1);
+    assert!(manifest.contains(&format!("name: \"{WALLET_BINARY_TARGET}\"")));
+    assert!(manifest.contains(&format!("/{WALLET_XCFRAMEWORK}\"")));
+    assert!(manifest.contains(&format!("dependencies: [\"{WALLET_BINARY_TARGET}\"]")));
+}
+
+#[test]
+fn the_wallet_crate_offers_the_proxy_feature_the_ios_build_enables() -> Result<(), Vec<String>> {
+    let manifest: toml_edit::DocumentMut = include_str!("../../../../ffi/lib/Cargo.toml")
+        .parse()
+        .map_err(|error| {
+        vec![format!(
+            "{WALLET_CRATE_DIR}/{} does not parse: {error}",
+            crate::MANIFEST
+        )]
+    })?;
+    let [flag, feature] = PROXY_FEATURE_ARGS;
+    assert_eq!(flag, "--features");
+    let dependency = crate::required(
+        manifest
+            .get("dependencies")
+            .and_then(|table| table.get(PROXY_PACKAGE)),
+        "the proxy dependency of the wallet crate",
+    )?;
+    assert_eq!(
+        dependency
+            .get("optional")
+            .and_then(toml_edit::Item::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        dependency
+            .get("workspace")
+            .and_then(toml_edit::Item::as_bool),
+        Some(true)
+    );
+    let root: toml_edit::DocumentMut = include_str!("../../../../Cargo.toml")
+        .parse()
+        .map_err(|error| vec![format!("{} does not parse: {error}", crate::MANIFEST)])?;
+    let relative = crate::required(
+        root.get("workspace")
+            .and_then(|table| table.get("dependencies"))
+            .and_then(|table| table.get(PROXY_PACKAGE))
+            .and_then(|entry| entry.get("path"))
+            .and_then(toml_edit::Item::as_str),
+        "the proxy entry's path in the workspace dependency table",
+    )?;
+    assert_eq!(path::Path::new(relative), path::Path::new(PROXY_CRATE_DIR));
+    let enabled = crate::required(
+        manifest
+            .get("features")
+            .and_then(|table| table.get(feature))
+            .and_then(toml_edit::Item::as_array),
+        "the proxy feature of the wallet crate",
+    )?;
+    let dependency_feature = format!("dep:{PROXY_PACKAGE}");
+    assert!(enabled
+        .iter()
+        .any(|value| value.as_str() == Some(&dependency_feature)));
+    let source = include_str!("../../../../ffi/lib/src/lib.rs");
+    assert!(source.contains(&format!(
+        "#[cfg(feature = \"{feature}\")]\nextern crate {PROXY_LIB_NAME};"
+    )));
+    Ok(())
+}
+
+#[test]
+fn the_android_gradle_files_name_the_maven_publication() {
+    let manifest = include_str!("../../../../bindings/android/build.gradle.kts");
+    let settings = include_str!("../../../../bindings/android/settings.gradle.kts");
+    assert!(manifest.contains(&format!("id(\"{MAVEN_PUBLISH_PLUGIN}\")")));
+    assert!(manifest.contains(&format!("group = \"{MAVEN_GROUP}\"")));
+    assert!(manifest.contains(&format!(
+        "providers.gradleProperty(\"{MAVEN_VERSION_PROPERTY}\")"
+    )));
+    assert!(manifest.contains(&format!(
+        "layout.buildDirectory.dir(\"{MAVEN_REPOSITORY_DIR}\")"
+    )));
+    assert!(settings.contains(&format!("rootProject.name = \"{MAVEN_ARTIFACT}\"")));
+    assert!(path::Path::new(ANDROID_BUILD_DIR).starts_with("bindings/android"));
+}
+
+#[test]
+fn the_android_unit_tests_gate_on_the_suite_result() {
+    let manifest = include_str!("../../../../bindings/android/build.gradle.kts");
+    assert!(manifest.contains("finalizedBy(verifyContractTestsRan)"));
+    assert!(
+        manifest.contains("suite.parent == null && result.testCount != contractTestCount.toLong()")
+    );
+    assert!(manifest.contains("it.state.executed && !(it.state.didWork || it.state.upToDate)"));
+    assert!(!manifest.contains("reports.junitXml"));
+}
+
+#[test]
+fn the_bundle_pin_package_names_the_maven_contract() {
+    let reader = include_str!("../../../../bindings/pin/lib/maven_repository.mjs");
+    assert!(reader.contains(&format!("REPOSITORY = '{MAVEN_REPOSITORY_DIR}';")));
+    assert!(reader.contains(&format!("METADATA = '{MAVEN_METADATA_FILE}';")));
+    assert!(reader.contains(&format!("COMMIT_CHARACTERS = {MAVEN_COMMIT_LENGTH};")));
+    assert!(reader.contains(&format!("VERSION_SEPARATOR = '{MAVEN_VERSION_SEPARATOR}';")));
+    let fetch = include_str!("../../../../bindings/pin/lib/fetch_binding_layer.mjs");
+    assert!(fetch.contains(&format!("ARCHIVE_SUFFIX = '{ARCHIVE_SUFFIX}';")));
+}
+
+#[test]
+fn the_crate_version_reads_the_package_version_of_the_wallet_manifest() -> Result<(), Vec<String>> {
+    assert_eq!(
+        crate_version("[package]\nname = \"zingolib\"\nversion = \"6.0.0\"\n"),
+        Ok("6.0.0".to_string())
+    );
+    assert!(
+        crate::refused(crate_version("[package]\nname = \"zingolib\"\n"))?
+            .concat()
+            .contains("package.version")
+    );
+    assert!(crate::refused(crate_version("[package"))?
+        .concat()
+        .contains("does not parse"));
+    Ok(())
+}
+
+#[test]
+fn the_maven_version_joins_the_crate_version_and_sixteen_commit_characters() {
+    let commit = "ba7336710419c9ac1e9362ac1b4e5b0073ff477e";
+    assert_eq!(
+        maven_version("6.0.0", &format!("{commit}\n")),
+        Ok("6.0.0-ba7336710419c9ac".to_string())
+    );
+    let diagnostic = |commit: &str| {
+        maven_version("6.0.0", commit)
+            .err()
+            .unwrap_or_default()
+            .concat()
+    };
+    assert!(diagnostic("ba733").contains("full lowercase"));
+    assert!(diagnostic(&commit.to_uppercase()).contains("full lowercase"));
+}
+
+fn lexical(path: &path::Path) -> path::PathBuf {
+    let mut resolved = path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            path::Component::ParentDir => {
+                resolved.pop();
+            }
+            path::Component::CurDir => {}
+            other => resolved.push(other),
+        }
+    }
+    resolved
+}
+
+fn resolved(base: &str, relative: &str) -> path::PathBuf {
+    lexical(&path::Path::new(base).join(relative))
+}
+
+const SWIFT_CONTRACT_FIXTURE_TARGET: &str = "AppPersonalities";
+
+#[test]
+fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
+    let manifest =
+        include_str!("../../../../crates/netutils/nym-proxy-ffi/contract-tests/Package.swift");
+    assert!(manifest.contains(&format!("name: \"{SWIFT_CONTRACT_TESTS_PACKAGE}\"")));
+    assert!(manifest.contains(&format!(
+        ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
+    )));
+    assert!(manifest.contains(&format!(
+        ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\"), \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
+    )));
+    assert!(manifest.contains(&format!(
+        ".target(\n            name: \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
+    )));
+    assert!(!manifest.contains("products:"));
+    let shipped_package = crate::required(
+        path::Path::new(SWIFT_PACKAGE_MANIFEST).parent(),
+        "parent of the shipped manifest",
+    )?;
+    assert_eq!(
+        resolved(SWIFT_CONTRACT_TESTS_DIR, SWIFT_PACKAGE_FROM_CONTRACT_TESTS),
+        shipped_package
+    );
+    Ok(())
+}
+
+const SIMCTL_LISTING: &str = "== Devices ==\n\
+        -- watchOS 11.2 --\n\
+        \x20   Apple Watch Series 10 (46mm) (1111) (Shutdown)\n\
+        -- Unavailable: com.apple.CoreSimulator.SimRuntime.iOS-17-0 --\n\
+        \x20   iPhone 15 (2222) (Shutdown) (unavailable, runtime profile not found)\n\
+        -- iOS 15.5 --\n\
+        \x20   iPhone 13 (6666) (Booted)\n\
+        -- iOS 18.2 --\n\
+        \x20   iPad Pro 13-inch (M4) (3333) (Shutdown)\n\
+        \x20   iPhone 16 Pro (4444) (Shutdown)\n\
+        \x20   iPhone 16 (5555) (Booted)\n";
+
+const MINIMUM_RUNTIME: &str = "16.0";
+
+#[test]
+fn the_simulator_is_the_booted_iphone_on_a_runtime_at_or_above_the_minimum(
+) -> Result<(), Vec<String>> {
+    assert_eq!(
+        ios_simulator(SIMCTL_LISTING, MINIMUM_RUNTIME)?,
+        IosSimulator {
+            name: "iPhone 16".to_string(),
+            udid: "5555".to_string(),
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn the_simulator_is_the_first_eligible_iphone_when_none_is_booted() -> Result<(), Vec<String>> {
+    let listing = SIMCTL_LISTING.replace("(Booted)", "(Shutdown)");
+    assert_eq!(ios_simulator(&listing, MINIMUM_RUNTIME)?.udid, "4444");
+    Ok(())
+}
+
+#[test]
+fn a_runtime_version_compares_numerically_not_textually() -> Result<(), Vec<String>> {
+    let listing = SIMCTL_LISTING.replace("iOS 18.2", "iOS 100.0");
+    assert_eq!(ios_simulator(&listing, "99.0")?.udid, "5555");
+    Ok(())
+}
+
+#[test]
+fn a_listing_without_an_iphone_on_an_eligible_runtime_is_refused_with_the_listing(
+) -> Result<(), Vec<String>> {
+    let listing = "-- iOS 15.5 --\n    iPhone 13 (6666) (Booted)\n";
+    let diagnostic = crate::refused(ios_simulator(listing, MINIMUM_RUNTIME))?.concat();
+    assert!(diagnostic.contains(listing) && diagnostic.contains(MINIMUM_RUNTIME));
+    Ok(())
+}
+
+#[test]
+fn the_executed_test_count_is_the_last_one_xcodebuild_reports() -> Result<(), Vec<String>> {
+    let log = "Test Suite 'GoldenWireContractTests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.012 (0.015) seconds\n\
+            Test Suite 'All tests' passed\n\
+            \t Executed 3 tests, with 0 failures (0 unexpected) in 0.013 (0.016) seconds\n";
+    assert_eq!(executed_tests(log)?, 3);
+    assert!(crate::refused(executed_tests("** TEST SUCCEEDED **\n"))?
+        .concat()
+        .contains(XCODEBUILD_EXECUTED));
+    Ok(())
+}
+
+const XCTEST_METHOD_PREFIX: &str = "func test";
+
+const XCTEST_METHOD_PARAMETERS: &str = "()";
+
+fn xctest_methods(suite: &str) -> usize {
+    suite
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with(XCTEST_METHOD_PREFIX))
+        .filter(|line| line.contains(XCTEST_METHOD_PARAMETERS))
+        .count()
+}
+
+#[test]
+fn the_swift_contract_test_count_is_the_number_of_xctest_methods() {
+    let suite = include_str!(
+        "../../../../crates/netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
+    );
+    assert_eq!(xctest_methods(suite), SWIFT_CONTRACT_TEST_COUNT);
+    let mixed = [
+        "    func testOne() throws {",
+        "    private func testFixture() -> [UInt8] {",
+        "    // func test in a comment",
+        "    func testTwo() {",
+    ]
+    .join("\n");
+    assert_eq!(xctest_methods(&mixed), 2);
+}
+
+#[test]
+fn lexical_resolution_drops_parent_and_current_components() {
+    assert_eq!(
+        lexical(path::Path::new(
+            "/host/zingolib/bindings/android/../swift/./build"
+        )),
+        path::Path::new("/host/zingolib/bindings/swift/build")
+    );
+}
+
+#[test]
+fn the_wallet_crate_builds_no_bindgen() {
+    let manifest = include_str!("../../../../ffi/lib/Cargo.toml");
+    assert!(!manifest.contains("[[bin]]"));
+    assert!(!manifest.contains("\"cli\""));
+}
+
+#[test]
+fn wallet_args_generate_from_the_built_library_and_place_the_profile_first() {
+    let inputs = BindgenInputs {
+        language: KOTLIN,
+        profile: Profile::Release,
+        wallet_workspace: "/w/Cargo.toml",
+        target_dir: "/t",
+    };
+    let args = bindgen_args(&inputs, "/t/release/libzingo.so", "/o");
+    assert_eq!(
+        args,
+        [
+            "run",
+            "--locked",
+            "--target-dir",
+            "/t",
+            "--release",
+            crate::MANIFEST_PATH_FLAG,
+            "/w/Cargo.toml",
+            "--package",
+            "zingolib-uniffi-bindgen",
+            "--bin",
+            "zingolib-uniffi-bindgen",
+            "--",
+            "generate",
+            "--library",
+            "/t/release/libzingo.so",
+            "--language",
+            "kotlin",
+            "--out-dir",
+            "/o",
+        ]
+    );
+}
+
+#[test]
+fn binding_sets_cover_every_generation_in_every_language() {
+    assert_eq!(binding_sets().count(), GENERATIONS.len() * LANGUAGES.len());
+}
+
+#[test]
+fn an_artifact_name_round_trips_and_a_wildcard_segment_is_a_pattern() {
+    let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let bundle = artifact_name(BUNDLE_ARTIFACT, "android", commit);
+    assert_eq!(bundle, format!("binding-layer-bundle-android-{commit}"));
+    assert_eq!(
+        artifact_segment(&bundle, BUNDLE_ARTIFACT, commit),
+        Some("android")
+    );
+    let abi = artifact_name(ABI_ARTIFACT, "arm64-v8a", commit);
+    assert_eq!(
+        artifact_segment(&abi, ABI_ARTIFACT, commit),
+        Some("arm64-v8a")
+    );
+    assert_eq!(artifact_segment(&abi, BUNDLE_ARTIFACT, commit), None);
+    assert_eq!(artifact_segment(&bundle, BUNDLE_ARTIFACT, "bbbb"), None);
+    assert_eq!(
+        artifact_segment(
+            &artifact_name(BUNDLE_ARTIFACT, "", commit),
+            BUNDLE_ARTIFACT,
+            commit
+        ),
+        None
+    );
+    assert_eq!(
+        artifact_name(BUNDLE_ARTIFACT, ARTIFACT_WILDCARD, commit),
+        format!("binding-layer-bundle-*-{commit}")
+    );
+}
+
+#[test]
+fn an_ios_slice_artifact_is_never_a_bundle_of_its_commit() {
+    let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let bundle = artifact_name(BUNDLE_ARTIFACT, "ios", commit);
+    let slice = ios_slice_artifact(&bundle, "aarch64-apple-ios");
+    assert_eq!(
+        slice,
+        format!("binding-layer-bundle-ios-{commit}-slice-aarch64-apple-ios")
+    );
+    assert_eq!(
+        artifact_segment(&slice, BUNDLE_ARTIFACT, commit),
+        None,
+        "the publish downloads bundles by a pattern that ends in the commit"
+    );
+    assert_eq!(
+        ios_slice_pattern(&bundle),
+        format!("binding-layer-bundle-ios-{commit}-slice-*")
+    );
+}
+
+#[test]
+fn the_artifact_outputs_name_every_artifact_of_a_commit_once() -> Result<(), Vec<String>> {
+    let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let rendered = render_outputs(&artifact_outputs(&["android", "ios"], commit, "6.0.0")?);
+    assert_eq!(
+        rendered,
+        format!(
+            "abis=[\"arm64-v8a\",\"armeabi-v7a\",\"x86\",\"x86_64\"]\n\
+                 abi_artifacts={{\"arm64-v8a\":\"binding-layer-abi-arm64-v8a-{commit}\",\
+                 \"armeabi-v7a\":\"binding-layer-abi-armeabi-v7a-{commit}\",\
+                 \"x86\":\"binding-layer-abi-x86-{commit}\",\
+                 \"x86_64\":\"binding-layer-abi-x86_64-{commit}\"}}\n\
+                 abi_pattern=binding-layer-abi-*-{commit}\n\
+                 android_repository=bindings/android/build/repository\n\
+                 maven_version=6.0.0-aaaaaaaaaaaaaaaa\n\
+                 bundle_android=binding-layer-bundle-android-{commit}\n\
+                 bundle_ios=binding-layer-bundle-ios-{commit}\n\
+                 bundle_pattern=binding-layer-bundle-*-{commit}\n\
+                 ios_out=bindings/swift/build\n"
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn android_cc_carries_the_api_level() {
+    assert!(ANDROID_ABIS
+        .iter()
+        .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
+}
+
+// The wallet's patterns cover the proxy's exports by prefix today. The
+// hide step lists both crates' patterns, so the proxy stays exported
+// when its lib name stops sharing the prefix.
+#[test]
+fn the_wallet_export_patterns_cover_the_proxy_exports_by_prefix_alone() {
+    for (wallet, proxy) in exported_symbol_patterns(WALLET_LIB_NAME)
+        .iter()
+        .zip(exported_symbol_patterns(PROXY_LIB_NAME))
+    {
+        let stem = wallet.trim_end_matches(SYMBOL_WILDCARD);
+        assert!(proxy.starts_with(stem), "{proxy} escapes {wallet}");
+    }
+}
+
+#[test]
+fn each_generation_generates_from_its_own_crate() {
+    assert_eq!(Generation::Wallet.names().crate_dir, WALLET_CRATE_DIR);
+    assert_eq!(Generation::Proxy.names().crate_dir, PROXY_CRATE_DIR);
+}

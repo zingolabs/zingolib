@@ -741,22 +741,7 @@ fn performance_level(name: &str) -> Option<PerformanceLevel> {
 }
 
 #[cfg(test)]
-mod performance_level_tests {
-    use super::*;
-
-    #[test]
-    fn every_listed_level_round_trips_through_its_name() {
-        for (level, name) in PERFORMANCE_LEVELS {
-            assert_eq!(performance_level_name(level).unwrap(), name);
-            assert_eq!(performance_level(name), Some(level));
-        }
-    }
-
-    #[test]
-    fn a_name_outside_the_table_is_rejected() {
-        assert_eq!(performance_level("Ultra"), None);
-    }
-}
+mod performance_level_tests;
 
 struct ConnectionParams {
     chain_type: ChainType,
@@ -1101,40 +1086,7 @@ pub fn save_wallet_bytes() -> Result<Option<Vec<u8>>, ZingolibError> {
 /// must land in the variant whose routing verdict it deserves. A mixnet
 /// refusal is never-retry.
 #[cfg(test)]
-mod ffi_error_routing_tests {
-    use super::*;
-
-    #[test]
-    fn a_mixnet_refusal_maps_to_the_owned_mixnet_marker() {
-        let mapped = ffi_error(LightClientError::MixnetNotReady(
-            zingolib::mixnet::MixnetNotReady::Bootstrapping,
-        ));
-        assert!(
-            matches!(&mapped, ZingolibError::Mixnet(_)),
-            "a refusal must carry the owned mixnet marker: {mapped:?}"
-        );
-        assert!(mapped.to_string().starts_with("Error: mixnet:"));
-    }
-
-    #[test]
-    fn a_refused_vault_address_is_invalid_input_not_a_send_failure() {
-        let malformed = match ZcashAddress::try_from_encoded("not an address") {
-            Err(parse_error) => parse_error,
-            Ok(_) => unreachable!("the string holds no address encoding"),
-        };
-        for inner in [
-            WalletError::ParseError(malformed),
-            WalletError::OpReturnRecipientNotTransparent,
-        ] {
-            let mapped = ffi_error(LightClientError::SendError(SendError::OpReturn(inner)));
-            assert!(
-                matches!(&mapped, ZingolibError::InvalidInput(_)),
-                "a refused vault address is the caller's input, which the app never retries: {mapped:?}"
-            );
-            assert!(mapped.to_string().starts_with("Error: invalid input:"));
-        }
-    }
-}
+mod ffi_error_routing_tests;
 
 /// The cause-chain contract: a failure crossing the FFI carries every layer
 /// that still says something, because the layer a user can report is the only
@@ -1142,129 +1094,7 @@ mod ffi_error_routing_tests {
 /// and nothing else — no pool, no tree address — because the boundary
 /// rendered only the outermost layer.
 #[cfg(test)]
-mod cause_chain_tests {
-    use super::*;
-
-    #[test]
-    fn a_save_failure_keeps_the_cause_its_wrapper_does_not_print() {
-        let wrapped = std::io::Error::other(LightClientError::WalletError(
-            zingolib::wallet::error::WalletError::MnemonicNotFound,
-        ));
-        let text = map_wallet_save(Err(wrapped))
-            .expect_err("a failed save is an error")
-            .to_string();
-        assert!(
-            text.contains("Mnemonic not found"),
-            "the cause must survive the crossing: {text}"
-        );
-    }
-
-    #[test]
-    fn a_wallet_read_for_another_chain_opens_as_a_chain_mismatch() {
-        let mismatch = LightClientError::FileError(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            zingolib::wallet::disk::ChainMismatch {
-                saved: "mainnet".to_string(),
-                expected: "testnet".to_string(),
-            },
-        ));
-        let error = open_error(&mismatch);
-        assert!(
-            matches!(&error, ZingolibError::WalletChainMismatch(text)
-                if text.contains("wallet chain name mainnet doesn't match expected testnet")),
-            "{error:?}"
-        );
-
-        let other = LightClientError::FileError(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "invalid account id",
-        ));
-        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
-    }
-
-    #[test]
-    fn read_wallet_chain_names_the_chain_of_the_header() {
-        let mut bytes = 41u64.to_le_bytes().to_vec();
-        bytes.push(0);
-        assert_eq!(read_wallet_chain(bytes).unwrap(), "main");
-
-        let mut bytes = 41u64.to_le_bytes().to_vec();
-        bytes.push(1);
-        assert_eq!(read_wallet_chain(bytes).unwrap(), "test");
-
-        assert!(matches!(
-            read_wallet_chain(vec![1, 2, 3]),
-            Err(ZingolibError::Read(_))
-        ));
-    }
-
-    #[test]
-    fn a_seed_that_fails_its_checksum_names_the_mnemonic_error_at_init() {
-        let bad_checksum = vec!["abandon"; 24].join(" ");
-        let error = init_from_seed(bad_checksum, 1, test_connection("", "main", "Low"))
-            .expect_err("a seed with a bad checksum does not build a wallet");
-        let text = error.to_string();
-        // `LightClientError::WalletError` prints only "Wallet error."; the
-        // mnemonic cause under it is what the user has to read.
-        assert!(
-            text.contains("Mnemonic error"),
-            "the cause must survive the crossing: {text}"
-        );
-    }
-
-    #[test]
-    fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
-        let mapped = ffi_error(LightClientError::SyncError(
-            pepper_sync::error::SyncError::ChainError(1, 2, 3),
-        ));
-        let text = mapped.to_string();
-        // `LightClientError::SyncError` is declared `#[error("Sync error.")]`,
-        // with no interpolation: before the chain walk this was the entire
-        // message that crossed.
-        assert!(
-            text.contains("wallet height 1 is more than 2 blocks ahead"),
-            "the cause must survive the crossing: {text}"
-        );
-        assert!(
-            !text.contains(".:"),
-            "a layer's sentence period must not collide with the separator: {text}"
-        );
-    }
-
-    #[test]
-    fn a_transparent_wrapper_does_not_repeat_its_cause() {
-        let mapped = ffi_error(LightClientError::MixnetNotReady(
-            zingolib::mixnet::MixnetNotReady::Bootstrapping,
-        ));
-        let text = mapped.to_string();
-        assert_eq!(
-            text.matches("bootstrapping").count(),
-            1,
-            "`#[error(transparent)]` already prints its source: {text}"
-        );
-    }
-
-    #[test]
-    fn an_interpolating_wrapper_does_not_repeat_its_cause() {
-        #[derive(Debug, thiserror::Error)]
-        #[error("the leaf failed")]
-        struct Leaf;
-
-        #[derive(Debug, thiserror::Error)]
-        #[error("wallet error. {0}")]
-        struct Interpolating(#[from] Leaf);
-
-        #[derive(Debug, thiserror::Error)]
-        #[error("outer")]
-        struct Outer(#[from] Interpolating);
-
-        let text = chain_text(&Outer(Interpolating(Leaf)));
-        assert_eq!(
-            text, "outer: wallet error. the leaf failed",
-            "a variant that interpolates its source has already printed it"
-        );
-    }
-}
+mod cause_chain_tests;
 
 /// The save-path contract (zingolabs/zingo-mobile#1151; audit Issue Q), now
 /// structural at the boundary: bytes are the export, null means no save was
@@ -1272,33 +1102,7 @@ mod cause_chain_tests {
 /// wallet export beginning with "error" — is no longer representable,
 /// because no string crosses this boundary at all.
 #[cfg(test)]
-mod wallet_export_tests {
-    use super::*;
-
-    #[test]
-    fn save_failure_travels_on_the_error_channel() {
-        let error = map_wallet_save(Err(std::io::Error::other("disk full")))
-            .expect_err("a failed save must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Save(_)),
-            "the failure must be the typed Save variant: {error}"
-        );
-    }
-
-    #[test]
-    fn wallet_bytes_cross_the_data_channel_verbatim() {
-        let wallet_bytes = vec![0xde, 0xad, 0xbe, 0xef];
-        let crossed = map_wallet_save(Ok(Some(wallet_bytes.clone())))
-            .expect("wallet bytes travel on the data channel");
-        assert_eq!(crossed, Some(wallet_bytes));
-    }
-
-    #[test]
-    fn no_save_needed_crosses_as_null() {
-        let crossed = map_wallet_save(Ok(None)).expect("no-save is not a failure");
-        assert_eq!(crossed, None);
-    }
-}
+mod wallet_export_tests;
 
 /// The regtest schedule handoff: a `regtest:<schedule>` hint must carry
 /// the launched node's activation heights into the wallet verbatim
@@ -1306,150 +1110,14 @@ mod wallet_export_tests {
 /// authority), and a malformed schedule must fail at parse time, never
 /// surface later as a consensus-branch-id rejection at broadcast.
 #[cfg(test)]
-mod regtest_activation_heights_tests {
-    use super::*;
-
-    #[test]
-    fn empty_schedule_matches_the_bare_regtest_default() {
-        let parsed = parse_regtest_activation_heights("").expect("empty schedule is valid");
-        assert_eq!(parsed, ActivationHeights::default());
-    }
-
-    #[test]
-    fn fixture_schedule_parses_to_the_mixed_chain() {
-        // The harness fixture shape: pre-NU5 upgrades at 1, NU5/NU6 at 2,
-        // the NU6.x line at 5, NU7 unscheduled.
-        let parsed =
-            parse_regtest_activation_heights("all=1,nu5=2,nu6=2,nu6_1=5,nu6_2=5,nu6_3=5,nu7=off")
-                .expect("the fixture schedule is valid");
-        assert_eq!(parsed.canopy(), Some(1));
-        assert_eq!(parsed.nu5(), Some(2));
-        assert_eq!(parsed.nu6(), Some(2));
-        assert_eq!(parsed.nu6_1(), Some(5));
-        assert_eq!(parsed.nu6_2(), Some(5));
-        assert_eq!(parsed.nu6_3(), Some(5));
-        assert_eq!(parsed.nu7(), None);
-    }
-
-    #[test]
-    fn entries_apply_left_to_right_over_all() {
-        let parsed = parse_regtest_activation_heights("all=3,nu6_3=7").expect("override is valid");
-        assert_eq!(parsed.nu6(), Some(3));
-        assert_eq!(parsed.nu6_3(), Some(7));
-    }
-
-    #[test]
-    fn unknown_upgrade_is_an_error_not_a_silent_drop() {
-        let error = parse_regtest_activation_heights("nu99=1")
-            .expect_err("an unknown upgrade must be rejected");
-        assert!(error.contains("nu99"), "error names the bad key: {error}");
-    }
-
-    #[test]
-    fn malformed_height_is_an_error() {
-        let error = parse_regtest_activation_heights("nu5=soon")
-            .expect_err("a non-numeric height must be rejected");
-        assert!(error.contains("soon"), "error names the bad value: {error}");
-    }
-
-    #[test]
-    fn hint_without_schedule_prefix_still_fails_init() {
-        let error = match build_connection_params(IndexerConnection {
-            indexer: IndexerChoice::Offline,
-            chain_hint: "shmegtest".to_string(),
-            sync: SyncSettings {
-                performance_level: "Medium".to_string(),
-                min_confirmations: 1,
-            },
-        }) {
-            Err(error) => error,
-            Ok(_) => panic!("an unknown chain hint must be rejected"),
-        };
-        assert!(matches!(error, ZingolibError::Init(_)));
-    }
-}
+mod regtest_activation_heights_tests;
 
 /// The init-path data/error channel contract (zingo-mobile#1151): domain
 /// failures travel on the error channel as the typed `Init` variant, never
 /// as prose in the data channel. Every case here fails before any network
 /// dial, so the tests run host-side with no infrastructure.
 #[cfg(test)]
-mod init_error_channel_tests {
-    use super::*;
-
-    #[test]
-    fn invalid_server_uri_travels_on_the_error_channel() {
-        let _serial = lock_discipline_tests::serialized();
-        let error = init_new(
-            test_connection("http://an invalid uri with spaces", "main", "Medium"),
-            0,
-        )
-        .expect_err("an invalid lightwalletd uri must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
-        );
-    }
-
-    #[test]
-    fn invalid_performance_level_travels_on_the_error_channel() {
-        let error = init_from_seed(
-            "unvalidated at this point".to_string(),
-            1,
-            test_connection("", "main", "NotALevel"),
-        )
-        .expect_err("an invalid performance level must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
-        );
-    }
-
-    #[test]
-    fn ufvk_restore_failure_travels_on_the_error_channel() {
-        let error = init_from_ufvk(
-            "unvalidated at this point".to_string(),
-            1,
-            test_connection("", "main", "NotALevel"),
-        )
-        .expect_err("an invalid performance level must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
-        );
-    }
-
-    #[test]
-    fn reset_clears_the_pending_indexer_uri() {
-        if let Ok(mut pending) = PENDING_INDEXER_URI.write() {
-            *pending = Some(http::Uri::from_static("https://example.com:9067"));
-        }
-        reset_lightclient();
-        let pending = PENDING_INDEXER_URI.read().expect("pending uri lock");
-        assert!(
-            pending.is_none(),
-            "a client teardown must not leave a stale pending URI behind"
-        );
-    }
-
-    #[test]
-    fn unreadable_wallet_bytes_travel_on_the_error_channel() {
-        let _serial = lock_discipline_tests::serialized();
-        let error = init_from_bytes(
-            b"!!!not-a-wallet!!!".to_vec(),
-            test_connection("", "main", "Medium"),
-        )
-        .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Init(_)),
-            "the failure must be the typed Init variant: {error}"
-        );
-        assert!(
-            !error.to_string().contains("not-a-wallet"),
-            "the failure must not embed the payload it could not read: {error}"
-        );
-    }
-}
+mod init_error_channel_tests;
 
 /// The sync/rescan data/error channel contract (zingo-mobile#1151): with no
 /// initialized client, every call fails typed — never as prose in the data
@@ -1458,42 +1126,7 @@ mod init_error_channel_tests {
 /// reachable host-side. nextest runs each test in its own process, so the
 /// LIGHTCLIENT global is reliably uninitialized.
 #[cfg(test)]
-mod sync_error_channel_tests {
-    use super::*;
-
-    fn assert_uninitialized(result: Result<String, ZingolibError>, ffi: &str) {
-        let error = result.expect_err("an uninitialized client must fail typed");
-        assert!(
-            matches!(error, ZingolibError::LightclientNotInitialized),
-            "{ffi} must fail with the typed uninitialized variant: {error}"
-        );
-    }
-
-    #[test]
-    fn run_sync_fails_typed_without_a_client() {
-        assert_uninitialized(run_sync(), "run_sync");
-    }
-
-    #[test]
-    fn pause_sync_fails_typed_without_a_client() {
-        assert_uninitialized(pause_sync(), "pause_sync");
-    }
-
-    #[test]
-    fn status_sync_fails_typed_without_a_client() {
-        assert_uninitialized(status_sync(), "status_sync");
-    }
-
-    #[test]
-    fn poll_sync_fails_typed_without_a_client() {
-        assert_uninitialized(poll_sync(), "poll_sync");
-    }
-
-    #[test]
-    fn run_rescan_fails_typed_without_a_client() {
-        assert_uninitialized(run_rescan(), "run_rescan");
-    }
-}
+mod sync_error_channel_tests;
 
 /// The read-path data/error channel contract (zingo-mobile#1151): a read
 /// getter's failure travels typed on the error channel — never as prose in
@@ -1502,47 +1135,7 @@ mod sync_error_channel_tests {
 /// the uninitialized client for every getter, and the pre-dial uri parse
 /// for the server probe.
 #[cfg(test)]
-mod read_error_channel_tests {
-    use super::*;
-
-    fn assert_uninitialized(result: Result<String, ZingolibError>, ffi: &str) {
-        let error = result.expect_err("an uninitialized client must fail typed");
-        assert!(
-            matches!(error, ZingolibError::LightclientNotInitialized),
-            "{ffi} must fail with the typed uninitialized variant: {error}"
-        );
-    }
-
-    #[test]
-    fn get_balance_fails_typed_without_a_client() {
-        assert_uninitialized(get_balance(), "get_balance");
-    }
-
-    #[test]
-    fn get_spendable_balance_total_fails_typed_without_a_client() {
-        assert_uninitialized(get_spendable_balance_total(), "get_spendable_balance_total");
-    }
-
-    #[test]
-    fn get_value_transfers_fails_typed_without_a_client() {
-        assert_uninitialized(get_value_transfers(), "get_value_transfers");
-    }
-
-    #[test]
-    fn get_messages_fails_typed_without_a_client() {
-        assert_uninitialized(get_messages(String::new()), "get_messages");
-    }
-
-    #[test]
-    fn invalid_server_uri_travels_on_the_error_channel() {
-        let error = get_latest_block_server("http://an invalid uri with spaces".to_string())
-            .expect_err("an unparseable server uri must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::Read(_)),
-            "the failure must be the typed Read variant: {error}"
-        );
-    }
-}
+mod read_error_channel_tests;
 
 /// Pins the behavior of [`ffi_error`], the one funnel from zingolib's error
 /// taxonomy to the FFI's typed variants. The match itself is exhaustive, so
@@ -1554,123 +1147,7 @@ mod read_error_channel_tests {
 /// arms carry deeply nested foreign payloads and stay guarded by
 /// exhaustiveness alone.
 #[cfg(test)]
-mod error_funnel_tests {
-    use super::*;
-    use zcash_protocol::TxId;
-    use zingolib::lightclient::error::{MigrationError, TransmissionError};
-    use zingolib::wallet::error::WalletError;
-
-    /// (input, is-the-pinned-variant, the pinned variant's name).
-    type FunnelCase = (LightClientError, fn(&ZingolibError) -> bool, &'static str);
-
-    #[test]
-    fn the_funnel_maps_each_constructible_input_to_its_pinned_variant() {
-        let cases: Vec<FunnelCase> = vec![
-            (
-                LightClientError::SyncLaunchError,
-                |e| matches!(e, ZingolibError::Sync(_)),
-                "Sync",
-            ),
-            (
-                LightClientError::SyncNotRunning,
-                |e| matches!(e, ZingolibError::Sync(_)),
-                "Sync",
-            ),
-            (
-                LightClientError::SendError(SendError::NoStoredProposal),
-                |e| matches!(e, ZingolibError::Send(_)),
-                "Send",
-            ),
-            (
-                LightClientError::SendError(SendError::TransmissionError(
-                    TransmissionError::TransmissionFailed("node said no".to_string()),
-                )),
-                |e| matches!(e, ZingolibError::Send(_)),
-                "Send",
-            ),
-            (
-                LightClientError::FileError(std::io::Error::other("disk full")),
-                |e| matches!(e, ZingolibError::Save(_)),
-                "Save",
-            ),
-            (
-                LightClientError::WalletError(WalletError::MnemonicNotFound),
-                |e| matches!(e, ZingolibError::Wallet(_)),
-                "Wallet",
-            ),
-            (
-                LightClientError::Offline,
-                |e| matches!(e, ZingolibError::Offline),
-                "Offline",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::NoMigration),
-                |e| matches!(e, ZingolibError::MigrationNotInProgress),
-                "MigrationNotInProgress",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::AlreadyInProgress),
-                |e| matches!(e, ZingolibError::MigrationAlreadyInProgress),
-                "MigrationAlreadyInProgress",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::ConsentStale),
-                |e| matches!(e, ZingolibError::MigrationConsentStale(_)),
-                "MigrationConsentStale",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::CadenceFixed),
-                |e| matches!(e, ZingolibError::MigrationCadenceFixed(_)),
-                "MigrationCadenceFixed",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::PreSignedUnavailable),
-                |e| matches!(e, ZingolibError::Migration(_)),
-                "Migration",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::SplitDidNotConverge(3)),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
-                "MigrationSplit",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::SplitTransactionFailed(
-                    TxId::from_bytes([0u8; 32]),
-                )),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
-                "MigrationSplit",
-            ),
-            (
-                LightClientError::MigrationError(MigrationError::SplitConfirmationTimeout),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
-                "MigrationSplit",
-            ),
-        ];
-        for (input, is_expected, expected_name) in cases {
-            let input_text = input.to_string();
-            let mapped = ffi_error(input);
-            assert!(
-                is_expected(&mapped),
-                "{input_text:?} must map to the {expected_name} variant, got: {mapped}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_funnel_preserves_the_upstream_message_verbatim_in_the_variant() {
-        // The bridges forward the Display text as the rejection message, so
-        // the funnel must not paraphrase or truncate the upstream prose.
-        let upstream = LightClientError::SendError(SendError::TransmissionError(
-            TransmissionError::TransmissionFailed("node said no".to_string()),
-        ));
-        let upstream_text = upstream.to_string();
-        let mapped = ffi_error(upstream);
-        assert!(
-            mapped.to_string().contains(&upstream_text),
-            "the mapped error must carry the upstream text \"{upstream_text}\": {mapped}"
-        );
-    }
-}
+mod error_funnel_tests;
 
 /// The migration read-path contract: with no initialized client, the
 /// read-lock entry points fail typed — never as prose in the data channel.
@@ -1678,65 +1155,14 @@ mod error_funnel_tests {
 /// getters introduced. nextest runs each test in its own process, so the
 /// LIGHTCLIENT global is reliably uninitialized.
 #[cfg(test)]
-mod migration_error_channel_tests {
-    use super::*;
-
-    fn assert_uninitialized(result: Result<String, ZingolibError>, ffi: &str) {
-        let error = result.expect_err("an uninitialized client must fail typed");
-        assert!(
-            matches!(error, ZingolibError::LightclientNotInitialized),
-            "{ffi} must fail with the typed uninitialized variant: {error}"
-        );
-    }
-
-    #[test]
-    fn migration_status_fails_typed_without_a_client() {
-        assert_uninitialized(migration_status(), "migration_status");
-    }
-}
+mod migration_error_channel_tests;
 
 /// The parse/stub data/error channel contract: input the caller got wrong
 /// travels as the typed InvalidInput variant, and unimplemented endpoints
 /// fail typed — never `Ok("Error: ...")` prose in the data channel, which
 /// is exactly what these calls returned before the typed surface.
 #[cfg(test)]
-mod parse_and_stub_error_channel_tests {
-    use super::*;
-
-    #[test]
-    fn empty_address_travels_on_the_error_channel() {
-        let error = parse_address(String::new())
-            .expect_err("an empty address must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::InvalidInput(_)),
-            "the failure must be the typed InvalidInput variant: {error}"
-        );
-    }
-
-    #[test]
-    fn empty_ufvk_travels_on_the_error_channel() {
-        let error = parse_ufvk(String::new())
-            .expect_err("an empty viewkey must be typed, not prose in the data channel");
-        assert!(
-            matches!(error, ZingolibError::InvalidInput(_)),
-            "the failure must be the typed InvalidInput variant: {error}"
-        );
-    }
-
-    #[test]
-    fn unimplemented_option_stubs_fail_typed() {
-        for (result, ffi) in [
-            (set_option_wallet(), "set_option_wallet"),
-            (get_option_wallet(), "get_option_wallet"),
-        ] {
-            let error = result.expect_err("an unimplemented endpoint must fail typed");
-            assert!(
-                matches!(error, ZingolibError::Wallet(_)),
-                "{ffi} must fail with the typed Wallet variant: {error}"
-            );
-        }
-    }
-}
+mod parse_and_stub_error_channel_tests;
 
 #[uniffi::export]
 pub fn get_developer_donation_address() -> Result<String, ZingolibError> {
@@ -1974,199 +1400,7 @@ pub fn probe_server(server_uri: String) -> Result<String, ZingolibError> {
 }
 
 #[cfg(test)]
-mod probe_server_tests {
-    use std::io::Read;
-    use std::net::{TcpListener, TcpStream};
-    use std::time::Instant;
-
-    use zingolib::netutils::time::INDEXER_CONNECT_TIMEOUT;
-
-    use super::*;
-
-    const LOOPBACK_ANY_PORT: &str = "127.0.0.1:0";
-    const BACKLOG_FULL_SIGNAL: Duration = Duration::from_millis(250);
-    const TIMER_SLACK: Duration = Duration::from_secs(5);
-    const H2_PREFACE_LEN: usize = 24;
-    const H2_FRAME_HEADER_LEN: usize = 9;
-    const H2_HEADERS_FRAME: u8 = 0x1;
-    const READ_CHUNK: usize = 4096;
-
-    fn outcome(server: &str) -> json::JsonValue {
-        json::parse(&probe_server(server.to_string()).expect("a probe reports"))
-            .expect("a probe reports json")
-    }
-
-    fn timed_outcome(server: &str) -> (json::JsonValue, Duration) {
-        let started = Instant::now();
-        let report = outcome(server);
-        (report, started.elapsed())
-    }
-
-    fn local_listener() -> (TcpListener, u16) {
-        let listener = TcpListener::bind(LOOPBACK_ANY_PORT).expect("a local listener");
-        let port = listener.local_addr().expect("a local address").port();
-        (listener, port)
-    }
-
-    fn free_port() -> u16 {
-        local_listener().1
-    }
-
-    fn serve(handle: fn(TcpStream)) -> u16 {
-        let (listener, port) = local_listener();
-        std::thread::spawn(move || {
-            for stream in listener.incoming().flatten() {
-                handle(stream);
-            }
-        });
-        port
-    }
-
-    fn blackhole() -> (TcpListener, Vec<TcpStream>, u16) {
-        let (listener, port) = local_listener();
-        let address = listener.local_addr().expect("a local address");
-        let mut queued = Vec::new();
-        while let Ok(stream) = TcpStream::connect_timeout(&address, BACKLOG_FULL_SIGNAL) {
-            queued.push(stream);
-        }
-        (listener, queued, port)
-    }
-
-    fn read_until_headers_frame(stream: &mut TcpStream) {
-        let mut received = Vec::new();
-        let mut chunk = [0u8; READ_CHUNK];
-        loop {
-            let read = stream.read(&mut chunk).expect("the client keeps writing");
-            assert!(read > 0, "the client closed before sending a request");
-            received.extend_from_slice(&chunk[..read]);
-            let mut cursor = H2_PREFACE_LEN;
-            while received.len() >= cursor + H2_FRAME_HEADER_LEN {
-                if received[cursor + 3] == H2_HEADERS_FRAME {
-                    return;
-                }
-                let length = usize::from(received[cursor]) << 16
-                    | usize::from(received[cursor + 1]) << 8
-                    | usize::from(received[cursor + 2]);
-                cursor += H2_FRAME_HEADER_LEN + length;
-            }
-        }
-    }
-
-    fn close_after_the_request(mut stream: TcpStream) {
-        read_until_headers_frame(&mut stream);
-    }
-
-    fn never_answer(mut stream: TcpStream) {
-        let mut sink = [0u8; READ_CHUNK];
-        while matches!(stream.read(&mut sink), Ok(read) if read > 0) {}
-    }
-
-    fn assert_no_answer_after(report: &json::JsonValue, elapsed: Duration, bound: Duration) {
-        assert_eq!(report["outcome"], "noAnswer", "{report:#}");
-        assert_eq!(report["after_seconds"], bound.as_secs());
-        assert!(
-            elapsed >= bound,
-            "gave up after {elapsed:?}, before {bound:?}"
-        );
-        assert!(
-            elapsed < bound + TIMER_SLACK,
-            "gave up after {elapsed:?}, long past {bound:?}"
-        );
-    }
-
-    #[test]
-    fn an_address_without_a_host_is_invalid_input() {
-        for server in ["", "http://"] {
-            assert!(
-                matches!(
-                    probe_server(server.to_string()),
-                    Err(ZingolibError::InvalidInput(_))
-                ),
-                "{server:?} has no host"
-            );
-        }
-    }
-
-    #[test]
-    fn a_host_that_does_not_resolve_reports_unresolved() {
-        let report = outcome("https://zingo-probe.invalid:9067");
-        assert_eq!(report["outcome"], "unresolved");
-        assert_eq!(report["host"], "zingo-probe.invalid");
-        assert_eq!(report["port"], 9067);
-    }
-
-    #[test]
-    fn a_closed_port_on_a_literal_address_reports_unreachable() {
-        let report = outcome(&format!("http://127.0.0.1:{}", free_port()));
-        assert_eq!(report["outcome"], "unreachable");
-        assert_eq!(report["literal"], true);
-        assert_eq!(report["resolved"][0], "127.0.0.1");
-    }
-
-    #[test]
-    fn a_closed_port_on_a_resolved_name_reports_unreachable_with_its_addresses() {
-        let report = outcome(&format!("http://localhost:{}", free_port()));
-        assert_eq!(report["outcome"], "unreachable", "{report:#}");
-        assert_eq!(report["literal"], false);
-        assert!(
-            report["resolved"]
-                .members()
-                .any(|address| address == "127.0.0.1" || address == "::1"),
-            "{report:#}"
-        );
-    }
-
-    #[test]
-    fn a_target_that_drops_every_connection_reports_no_answer_after_the_connect_bound() {
-        let (_listener, _queued, port) = blackhole();
-        let (report, elapsed) = timed_outcome(&format!("http://127.0.0.1:{port}"));
-        assert_no_answer_after(&report, elapsed, INDEXER_CONNECT_TIMEOUT);
-    }
-
-    #[test]
-    fn a_server_that_never_answers_reports_no_answer_after_the_request_bound() {
-        let port = serve(never_answer);
-        let (report, elapsed) = timed_outcome(&format!("http://127.0.0.1:{port}"));
-        assert_no_answer_after(&report, elapsed, PROBE_REQUEST_TIMEOUT);
-    }
-
-    #[test]
-    fn a_connection_the_server_closes_mid_request_is_unreachable_not_refused() {
-        let port = serve(close_after_the_request);
-        let report = outcome(&format!("http://127.0.0.1:{port}"));
-        assert_eq!(report["outcome"], "unreachable", "{report:#}");
-    }
-
-    #[test]
-    fn a_verified_report_carries_the_server_info_as_fields() {
-        let info = data::ServerInfo {
-            version: "0.1.0".to_string(),
-            git_commit: String::new(),
-            server_uri: "http://127.0.0.1:9067".parse().expect("a server uri"),
-            vendor: "zingo-test".to_string(),
-            taddr_support: true,
-            chain_name: "regtest".to_string(),
-            sapling_activation_height: 1,
-            consensus_branch_id: String::new(),
-            latest_block_height: 7,
-        };
-        let probe = Probe::Verified {
-            target: ProbeTarget {
-                host: "127.0.0.1".to_string(),
-                port: 9067,
-                resolved: vec![std::net::Ipv4Addr::LOCALHOST.into()],
-                literal: true,
-            },
-            latency_ms: 1,
-            info: Box::new(info),
-        };
-        let report = json::parse(&probe.report().expect("a probe reports")).expect("json");
-        assert_eq!(report["details"]["vendor"], "zingo-test", "{report:#}");
-        assert_eq!(report["details"]["version"], "0.1.0");
-        assert_eq!(report["details"]["chain_name"], "regtest");
-        assert_eq!(report["details"]["latest_block_height"], 7);
-    }
-}
+mod probe_server_tests;
 
 #[uniffi::export]
 pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
@@ -2557,111 +1791,12 @@ pub fn validate_wallet_bytes(wallet_bytes: Vec<u8>) -> Result<(), ZingolibError>
 /// still yields the seed and birthday, and unreadable bytes fail on the
 /// typed Read channel.
 #[cfg(test)]
-mod wallet_salvage_tests {
-    use super::*;
-
-    fn stable_prefix() -> Vec<u8> {
-        let mut bytes = 42u64.to_le_bytes().to_vec();
-        bytes.push(0);
-        bytes.push(32);
-        bytes.extend([7u8; 32]);
-        bytes.extend(2_000_000u32.to_le_bytes());
-        bytes.push(1);
-        bytes
-    }
-
-    #[test]
-    fn a_truncated_wallet_salvages_seed_and_birthday() {
-        let salvaged = read_wallet_recovery_info(stable_prefix()).unwrap();
-        let val: serde_json::Value = serde_json::from_str(&salvaged).unwrap();
-        assert_eq!(val["birthday"], 2_000_000);
-        assert_eq!(val["no_of_accounts"], 1);
-        assert_eq!(val["seed_phrase"].as_str().unwrap().split(' ').count(), 24);
-    }
-
-    #[test]
-    fn the_cut_point_past_the_prefix_does_not_matter() {
-        let mut bytes = stable_prefix();
-        bytes.extend([0xAB; 100]);
-        let with_tail = read_wallet_recovery_info(bytes).unwrap();
-        assert_eq!(
-            with_tail,
-            read_wallet_recovery_info(stable_prefix()).unwrap()
-        );
-    }
-
-    #[test]
-    fn garbage_fails_on_the_read_channel() {
-        for garbage in [vec![0x20; 47], vec![0x28; 40]] {
-            assert!(matches!(
-                read_wallet_recovery_info(garbage),
-                Err(ZingolibError::Read(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn a_cut_inside_the_prefix_fails_on_the_read_channel() {
-        let mut bytes = stable_prefix();
-        bytes.truncate(20);
-        assert!(matches!(
-            read_wallet_recovery_info(bytes),
-            Err(ZingolibError::Read(_))
-        ));
-    }
-}
+mod wallet_salvage_tests;
 
 /// The validation contract: only bytes the full deserializer opens count as
 /// an intact wallet, regardless of which chain wrote them.
 #[cfg(test)]
-mod wallet_validation_tests {
-    use super::*;
-
-    fn saved_wallet(chain_hint: &str) -> Vec<u8> {
-        init_from_seed(
-            "hospital museum valve antique skate museum \
-             unfold vocal weird milk scale social vessel identify \
-             crowd hospital control album rib bulb path oven civil tank"
-                .to_string(),
-            2_000_000,
-            test_connection("", chain_hint, "Medium"),
-        )
-        .expect("offline init from seed");
-        save_wallet_bytes()
-            .expect("save after init")
-            .expect("an initialized wallet always yields bytes")
-    }
-
-    #[test]
-    fn a_saved_wallet_validates_and_every_truncation_fails() {
-        let _serial = lock_discipline_tests::serialized();
-        let bytes = saved_wallet("main");
-        validate_wallet_bytes(bytes.clone()).expect("the saved wallet must validate");
-
-        for cut in [0, 8, bytes.len() / 2, bytes.len() - 1] {
-            assert!(
-                matches!(
-                    validate_wallet_bytes(bytes[..cut].to_vec()),
-                    Err(ZingolibError::Read(_))
-                ),
-                "the wallet cut to {cut} of {} bytes must fail validation",
-                bytes.len()
-            );
-        }
-
-        validate_wallet_bytes(saved_wallet("test")).expect("the testnet wallet must validate");
-    }
-
-    #[test]
-    fn bytes_that_pass_the_header_heuristic_still_fail_validation() {
-        let mut bytes = 42u64.to_le_bytes().to_vec();
-        bytes.extend([0x07; 400]);
-        assert!(matches!(
-            validate_wallet_bytes(bytes),
-            Err(ZingolibError::Read(_))
-        ));
-    }
-}
+mod wallet_validation_tests;
 
 #[uniffi::export]
 pub fn change_server(choice: IndexerChoice) -> Result<String, ZingolibError> {
@@ -3209,38 +2344,7 @@ wallet_report!(
 );
 
 #[cfg(test)]
-mod refund_address_tests {
-    use super::*;
-    use zcash_transparent::keys::NonHardenedChildIndex;
-
-    #[test]
-    fn a_reserved_refund_address_reports_the_refund_scope() {
-        let id = transparent::TransparentAddressId::new(
-            AccountId::ZERO,
-            transparent::TransparentScope::Refund,
-            NonHardenedChildIndex::ZERO,
-        );
-        let encoded_address = transparent::encode_address(
-            &zingolib::config::ChainType::Mainnet,
-            TransparentAddress::PublicKeyHash([7; 20]),
-        );
-        let report = NewTransparentAddress::Created {
-            id,
-            encoded_address,
-        }
-        .report()
-        .expect("a created address always reports");
-        let parsed = json::parse(&report).expect("the report is JSON");
-        assert_eq!(parsed["account"].as_u32(), Some(0));
-        assert_eq!(parsed["address_index"].as_u32(), Some(0));
-        assert_eq!(parsed["scope"].as_str(), Some("refund"));
-        assert!(
-            parsed["encoded_address"]
-                .as_str()
-                .is_some_and(|address| address.starts_with("t1"))
-        );
-    }
-}
+mod refund_address_tests;
 
 fn ownership_report(
     ownership: Result<Option<WalletAddressRef>, wallet::error::KeyError>,
@@ -4146,41 +3250,7 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
 /// versus unconsented. A switch-off the app cannot tell apart from a death is
 /// a reconnect chasing the user's own choice to go Offline.
 #[cfg(test)]
-mod mixnet_indicator_wire_tests {
-    use super::*;
-
-    #[test]
-    fn a_deliberate_switch_off_is_its_own_string() {
-        assert_eq!(
-            mixnet_indicator_string(zingolib::mixnet::Indicator::SwitchedOff),
-            "off"
-        );
-    }
-
-    #[test]
-    fn an_unconsented_loss_and_a_never_attached_transport_both_fail_closed() {
-        for indicator in [
-            zingolib::mixnet::Indicator::Died,
-            zingolib::mixnet::Indicator::Unattached,
-        ] {
-            assert_eq!(
-                mixnet_indicator_string(indicator),
-                "died",
-                "{indicator:?} must fail closed rather than read as a resting mode"
-            );
-        }
-    }
-
-    #[test]
-    fn a_proven_transport_routes_exactly_as_ready() {
-        for indicator in [
-            zingolib::mixnet::Indicator::Ready,
-            zingolib::mixnet::Indicator::PreviouslyProvenThisEpoch,
-        ] {
-            assert_eq!(mixnet_indicator_string(indicator), "ready");
-        }
-    }
-}
+mod mixnet_indicator_wire_tests;
 
 /// Switch Mixnet Mode off deliberately, shutting the wallet's side of the
 /// transport down and landing `off` — the one indicator the app never
