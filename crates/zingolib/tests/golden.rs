@@ -19,7 +19,7 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::wallet::LightWallet;
 use zingolib::wallet::keys::unified::ReceiverSelection;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use common::{own_orchard_receiver, received, regtest_wallet, self_send, sent, zfz_self_send};
 

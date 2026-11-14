@@ -51,7 +51,7 @@ use pepper_sync::{
         OutputInterface, SaplingNote, SaplingShardStore, TransparentCoin, traits::SyncWallet,
     },
 };
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 

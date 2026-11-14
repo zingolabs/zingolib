@@ -10,6 +10,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
 
+use crate::engine::SyncStateOps;
 use crate::{
     SyncDomain,
     client::{self, FetchRequest},
@@ -24,8 +25,6 @@ use crate::{
         traits::{SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions},
     },
 };
-
-use super::state;
 
 /// The spend scan targets of each shielded pool, keyed by the nullifier of the spent note.
 pub(super) struct ShieldedSpendScanTargets {
@@ -140,11 +139,9 @@ where
     P: consensus::Parameters,
     W: SyncTransactions + SyncShardTrees,
 {
-    state::set_found_note_scan_ranges(
-        consensus_parameters,
-        wallet.get_sync_state_mut()?,
-        spend_scan_targets.scan_targets(),
-    );
+    wallet
+        .get_sync_state_mut()?
+        .set_found_note_scan_ranges(consensus_parameters, spend_scan_targets.scan_targets());
 
     update_spent_notes(wallet, spend_scan_targets, true)
 }
@@ -203,7 +200,7 @@ where
             Err(_) => match scanned_blocks.get(&block_height) {
                 Some(block) => block.clone(),
                 None => {
-                    WalletBlock::from_compact_block(
+                    crate::wallet::wallet_block_from_compact_block(
                         consensus_parameters,
                         fetch_request_sender.clone(),
                         &client::get_compact_block(fetch_request_sender.clone(), block_height)
@@ -249,16 +246,16 @@ pub(super) fn collect_derived_nullifiers<'a>(
     let sapling_nullifiers = transactions
         .clone()
         .flat_map(super::super::wallet::WalletTransaction::sapling_notes)
-        .filter_map(|note| note.nullifier)
+        .filter_map(|note| note.nullifier())
         .collect::<Vec<_>>();
     let orchard_nullifiers = transactions
         .clone()
         .flat_map(super::super::wallet::WalletTransaction::orchard_notes)
-        .filter_map(|note| note.nullifier)
+        .filter_map(|note| note.nullifier())
         .collect::<Vec<_>>();
     let ironwood_nullifiers = transactions
         .flat_map(super::super::wallet::WalletTransaction::ironwood_notes)
-        .filter_map(|note| note.nullifier)
+        .filter_map(|note| note.nullifier())
         .collect::<Vec<_>>();
 
     (sapling_nullifiers, orchard_nullifiers, ironwood_nullifiers)
@@ -452,8 +449,8 @@ pub(super) fn collect_transaction_spends(
                     wallet_transaction
                         .transparent_coins()
                         .iter()
-                        .filter(|coin| outpoints.contains(&coin.output_id))
-                        .map(|coin| coin.output_id),
+                        .filter(|coin| outpoints.contains(&coin.output_id()))
+                        .map(|coin| coin.output_id()),
                 )
                 .map(move |output_id| (output_id, txid))
         })
@@ -568,7 +565,7 @@ pub(super) fn collect_transparent_output_ids<'a>(
 ) -> Vec<OutputId> {
     transactions
         .flat_map(super::super::wallet::WalletTransaction::transparent_coins)
-        .map(|coin| coin.output_id)
+        .map(|coin| coin.output_id())
         .collect()
 }
 
@@ -593,10 +590,10 @@ pub(super) fn update_spent_coins(
         .flat_map(|tx| tx.transparent_coins_mut())
         .for_each(|coin| {
             if let Some(spending_txid) = transparent_spend_scan_targets
-                .get(&coin.output_id)
+                .get(&coin.output_id())
                 .and_then(ScanTarget::txid)
             {
-                coin.spending_transaction = Some(spending_txid);
+                coin.set_spending_transaction(Some(spending_txid));
             }
         });
 }
@@ -613,26 +610,26 @@ mod tests {
     use zcash_transparent::bundle::{Authorized, OutPoint, TxIn};
     use zcash_transparent::keys::NonHardenedChildIndex;
     use zip32::AccountId;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
+    use crate::engine::{TransparentCoinOps, WalletTransactionOps};
     use crate::keys::transparent::{TransparentAddressId, TransparentScope};
     use crate::wallet::{OutputId, TransparentCoin, WalletTransaction};
 
     #[test]
     fn pending_spends_reports_the_transparent_inputs_of_pending_records() {
         let funding_txid = TxId::from_bytes([1; 32]);
-        let coin = TransparentCoin {
-            output_id: OutputId::new(funding_txid, 0),
-            key_id: TransparentAddressId::new(
+        let coin = TransparentCoin::from_parts(
+            OutputId::new(funding_txid, 0),
+            TransparentAddressId::new(
                 AccountId::ZERO,
                 TransparentScope::External,
                 NonHardenedChildIndex::ZERO,
             ),
-            address: String::new(),
-            script: Script::default(),
-            value: zcash_protocol::value::Zatoshis::const_from_u64(100_000),
-            spending_transaction: None,
-        };
+            String::new(),
+            Script::default(),
+            zcash_protocol::value::Zatoshis::const_from_u64(100_000),
+        );
         let funding =
             WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(10.into()))
                 .with_transparent_coins_for_test(vec![coin]);
@@ -660,19 +657,19 @@ mod tests {
         .freeze()
         .unwrap();
         let pending_txid = pending_tx.txid();
-        let pending_record = WalletTransaction {
-            txid: pending_txid,
-            status: ConfirmationStatus::Calculated(11.into()),
-            transaction: pending_tx,
-            datetime: 0,
-            transparent_coins: Vec::new(),
-            sapling_notes: Vec::new(),
-            orchard_notes: Vec::new(),
-            ironwood_notes: Vec::new(),
-            outgoing_sapling_notes: Vec::new(),
-            outgoing_orchard_notes: Vec::new(),
-            outgoing_ironwood_notes: Vec::new(),
-        };
+        let pending_record = WalletTransaction::from_parts(
+            pending_txid,
+            ConfirmationStatus::Calculated(11.into()),
+            pending_tx,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
 
         let mut wallet_transactions =
             HashMap::from([(funding_txid, funding), (pending_txid, pending_record)]);

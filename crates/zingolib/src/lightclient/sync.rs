@@ -396,7 +396,7 @@ impl LightClient {
             PollReport::Ready(Err(e)) => {
                 let action = e.recovery_recommendation();
                 let description =
-                    zl_net_diag::chain_texts(&e).join(super::migrate::CAUSE_CHAIN_SEPARATOR);
+                    zl_netutils::diag::chain_texts(&e).join(super::migrate::CAUSE_CHAIN_SEPARATOR);
                 Some((action, description))
             }
             _ => None,

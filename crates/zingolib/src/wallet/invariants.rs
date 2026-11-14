@@ -9,7 +9,7 @@ use pepper_sync::wallet::{
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::value::Zatoshis;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use super::LightWallet;
 use super::balance::AccountBalance;
@@ -220,7 +220,7 @@ fn balance_lines<Op: OutputInterface>(
 #[cfg(test)]
 mod tests {
     use zcash_primitives::transaction::TxId;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     use pepper_sync::wallet::OutputInterface as _;
 

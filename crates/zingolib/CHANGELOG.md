@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URI it bound: the one the consumer named, else the chain's Default Indexer
   (zingo-adrs zingolib/0063). A chain without a Default Indexer, and no
   named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
+- `UnifiedKeyStore::determine_nth_valid_sapling_diversifier` is public.
+- `price` module, built with the `nym` feature: `PriceError`, `PriceSource`,
+  `RACED_SOURCES`, `get_source_price`, `first_quote`, `RacedPrice`,
+  `PriceRaceFailure`, `REQUEST_TIMEOUT` and `CONNECT_TIMEOUT`, the ZEC price
+  fetch. The items came from the `zl-price` crate (released as
+  `zingo-price` 0.3.0), which is retired, so `zingolib` no longer depends on
+  it. `zingolib` enables the `socks5-fetch` feature of `zl-netutils`
+  under `nym`.
 
 ### Changed
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
@@ -60,6 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read the two together, so a pending send shows its inputs spent until the
   transaction confirms or fails, where 8.0.0 stored the pending spend on the
   notes and every failure path erased it again.
+- `ChainType`, `InvalidChainType`, `ReadableWriteable`, `UnifiedKeyStore`,
+  `UnifiedAddressId`, `ReceiverSelection`, `encode_ufvk` and `KeyError` come
+  from the new `zl-common` crate. `WalletSettings`, `RecoveryInfo`,
+  `ChainMismatch`, `read_string` and `write_string` come from the new
+  `zl-file-format` crate, which also holds the wallet file reader and
+  writer that `LightWallet` calls. `zingolib` re-exports each item at its old
+  path.
+- `wallet::utils::write_string` takes `&str` where it took `&String`.
+- **Breaking:** `sync::ConfirmationStatus` re-exports
+  `zl_common::status::ConfirmationStatus` where it re-exported
+  `zingo_status::confirmation_status::ConfirmationStatus`, and the
+  `LightWallet::price_list` field is a `zl_common::price::PriceList` where
+  it was a `zingo_price::PriceList`. The wallet's memo is written with
+  `zl_common::memo`, whose encoding is the one `zingo-memo` 0.3.0 wrote. A
+  consumer that names either type through `zingo-status` or `zingo-price`
+  names it through `zingolib` or `zl-common`.
 - `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Fixed
@@ -79,6 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- **Breaking:** the `wallet::keys::legacy` module, which held the key
+  readers of the wallet file layouts below version 32, and the
+  `ReadableWriteable` impls for
+  `zingo_status::confirmation_status::ConfirmationStatus`,
+  `sapling_crypto::Note` and `orchard::note::Note`, which read the records of
+  those layouts. The `legacy` feature of `zl-file-format` holds these
+  readers as private functions, and `zingolib` exposes them at no path.
+- The `append-only-vec`, `bip32`, `bs58`, `prost`, `zingo-memo` and
+  `zingo-status` dependencies.
 
 ## [8.0.0] - 2026-10-28
 

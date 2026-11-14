@@ -5,10 +5,10 @@ pub const BINARY: &str = "dupes-gate";
 const BASELINE: &str = ".dupes-ignore.toml";
 const VERSION: &str = "0.2.1";
 const MIN_NODES: &str = "10";
-const MIN_LINES: &str = "0";
+const MIN_LINES: &str = "4";
 const THRESHOLD: &str = "0.9";
 const MAX_EXACT: &str = "0";
-const MAX_NEAR: &str = "31";
+const MAX_NEAR: &str = "19";
 const EXCLUDE: [&str; 10] = [
     "bin/cli/tests/",
     "crates/netutils/nym-proxy-ffi/tests/",
