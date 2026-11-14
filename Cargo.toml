@@ -14,7 +14,7 @@ members = [
   "ffi/lib",
   "ffi/uniffi-bindgen",
 ]
-# zingolib-netutils, its verifier shim, and the proxy crate are members since
+# zl-netutils, its verifier shim, and the proxy crate are members since
 # PR #3037. The nym-sdk stack once needed `crypto-common ^0.2` while
 # zcash_primitives 0.29 and 0.30 pinned `=0.2.0-rc.1`, which kept netutils in
 # a workspace of its own with a second lockfile (zingo-adrs zingolib/0011,
@@ -27,14 +27,14 @@ resolver = "2"
 [workspace.dependencies]
 ### Workspace
 pepper-sync = { version = "0.7.0", path = "crates/pepper-sync" }
-memo = { package = "zingolib-memo", version = "0.3.0", path = "crates/memo" }
-net-diag = { package = "zingolib-net-diag", version = "0.1.0", path = "crates/net-diag" }
+zl-memo = { version = "0.3.0", path = "crates/memo" }
+zl-net-diag = { version = "0.1.0", path = "crates/net-diag" }
 # default-features = false: the fetch machinery (socks5-fetch) is opt-in;
 # zingolib re-enables it only under its `nym` feature (the mixnet-only
 # price rule). The crate's own default keeps the fetch for standalone
 # builds and tests.
-price = { package = "zingolib-price", version = "0.3.0", path = "crates/price", default-features = false }
-status = { package = "zingolib-status", version = "0.3.0", path = "crates/status" }
+zl-price = { version = "0.3.0", path = "crates/price", default-features = false }
+zl-status = { version = "0.3.0", path = "crates/status" }
 zingolib = { version = "8.0.0", path = "crates/zingolib" }
 
 ### Tests and Integration Tests
@@ -58,7 +58,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 ### Zingo-common
-netutils = { package = "zingolib-netutils", version = "7.0.0", path = "crates/netutils", features = [
+zl-netutils = { version = "7.0.0", path = "crates/netutils", features = [
   "globally-public-transparent",
 ] }
 zingolib-nym-proxy-ffi = { version = "0.1.0", path = "crates/netutils/nym-proxy-ffi" }
@@ -120,7 +120,7 @@ http = "1"
 # aws-lc-rs is the workspace's sole rustls CryptoProvider (ring is excised);
 # prefer-post-quantum leads outbound handshakes with the X25519MLKEM768
 # hybrid group. Runtime installation is first-install-wins via
-# zingolib_netutils::crypto::ensure_default_crypto_provider, so downstream
+# zl_netutils::crypto::ensure_default_crypto_provider, so downstream
 # embedders that install their own provider first keep it.
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
 prost = "0.14"
@@ -151,7 +151,7 @@ dirs = "6"
 memuse = "0.2"
 rand = "0.10"
 
-# zingolib-netutils and child crates
+# zl-netutils and child crates
 rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
 tokio-rustls = { version = "0.26", default-features = false, features = [
   "aws_lc_rs",

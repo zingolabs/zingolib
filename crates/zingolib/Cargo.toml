@@ -14,10 +14,10 @@ default = []
 # that wants the editorial layer opts in, and the default build proves core
 # stands without it.
 perspective = []
-nym = ["netutils/socks5-transmit", "price/socks5-fetch"]
+nym = ["zl-netutils/socks5-transmit", "zl-price/socks5-fetch"]
 testutils = [
     "perspective",
-    "netutils/testutils",
+    "zl-netutils/testutils",
     "portpicker",
     "zingo_test_vectors",
     "tempfile",
@@ -71,10 +71,10 @@ zcash_primitives = { workspace = true }
 zcash_proofs = { workspace = true }
 zcash_protocol = { workspace = true }
 zcash_transparent = { workspace = true, features = ["transparent-inputs"] }
-memo = { workspace = true }
-netutils = { workspace = true }
-price = { workspace = true }
-status = { workspace = true }
+zl-memo = { workspace = true }
+zl-netutils = { workspace = true }
+zl-price = { workspace = true }
+zl-status = { workspace = true }
 zingo_common_components = { workspace = true }
 zingo_test_vectors = { workspace = true, optional = true }
 zip32.workspace = true
@@ -86,7 +86,7 @@ tokio-stream = { workspace = true, optional = true }
 # zcash_pool_migration drags git copies of zcash_primitives, zcash_protocol and
 # zcash_transparent that no version bump can unify with the registry stack.
 zcash_pool_migration = { version = "=0.2.0", default-features = false }
-net-diag = { workspace = true, features = ["serde"] }
+zl-net-diag = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 zcash_proofs = { workspace = true, features = ["download-params"] }
@@ -104,7 +104,7 @@ required-features = ["nym"]
 zingolib = { path = ".", features = ["perspective", "testutils"] }
 pepper-sync = { workspace = true, features = ["test-features"] }
 # The nym tests read their temporal parameters from `time::test`.
-netutils = { workspace = true, features = ["testutils"] }
+zl-netutils = { workspace = true, features = ["testutils"] }
 # `test-util` enables paused-time tests (`start_paused`) for the attached-
 # transport falsifiers; dev-only, so the shipped graph is unchanged.
 tokio = { workspace = true, features = ["full", "test-util"] }

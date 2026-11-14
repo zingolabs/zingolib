@@ -63,7 +63,7 @@ use crate::wallet::migration::{
 pub mod transmission_grpc;
 pub mod transmission_route;
 
-use netutils::time::CONFIRMATION_POLL_INTERVAL;
+use zl_netutils::time::CONFIRMATION_POLL_INTERVAL;
 /// Give up waiting for a note-splitting round after this many polls.
 const MAX_CONFIRMATION_POLLS: usize = 720;
 /// A migration replans after every round. A real plan converges in
@@ -2020,7 +2020,7 @@ impl LightClient {
                 wallet.wallet_transactions.get(txid).is_some_and(|tx| {
                     matches!(
                         tx.status(),
-                        status::confirmation_status::ConfirmationStatus::Calculated(_)
+                        zl_status::confirmation_status::ConfirmationStatus::Calculated(_)
                     )
                 })
             })
@@ -2265,7 +2265,9 @@ impl LightClient {
                     statuses.iter().enumerate().find_map(|(i, status)| {
                         matches!(
                             status,
-                            Some(status::confirmation_status::ConfirmationStatus::Failed(_)) | None
+                            Some(zl_status::confirmation_status::ConfirmationStatus::Failed(
+                                _
+                            )) | None
                         )
                         .then_some(txids[i])
                     }),
@@ -2369,13 +2371,13 @@ fn immediate_migration_entry_gate(
 }
 
 /// The separator between two layers of a rendered cause chain, matching the
-/// rendering `zingolib_net_diag` gives its own failure records.
+/// rendering `zl_net_diag` gives its own failure records.
 pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
 
 /// Renders every layer of a failure's cause chain into the one text a batch
 /// report carries across serde.
 fn render_cause_chain(error: &LightClientError) -> String {
-    net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
+    zl_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
 }
 
 /// Records one part submission's own route evidence in the cross-session
@@ -3369,10 +3371,10 @@ mod tests {
     #[tokio::test]
     async fn mid_round_status_projects_over_pending_outputs() {
         use pepper_sync::wallet::{OutputId, WalletTransaction};
-        use status::confirmation_status::ConfirmationStatus;
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 

@@ -29,8 +29,8 @@ carry. The last section states what that asks of every pull request.
 A release is one or more of these, each done from one release commit:
 
 - a crate version published to crates.io, for the eight crates the
-  workspace publishes: `zingolib`, `pepper-sync`, `zingolib-netutils`,
-  `zingolib-net-diag`, `zingolib-memo`, `zingolib-status`, `zingolib-price` and
+  workspace publishes: `zingolib`, `pepper-sync`, `zl-netutils`,
+  `zl-net-diag`, `zl-memo`, `zl-status`, `zl-price` and
   `zingolib-cli`.
 - a signed annotated tag per released crate, `<crate>_vX.Y.Z`, whose
   message is `<crate> release X.Y.Z`.
@@ -77,7 +77,7 @@ Decide each bump by Semantic Versioning, with these house rules:
   markers decide.
 - `cargo-semver-checks` confirms a crate's own API against the previous
   release. Run it from a detached worktree of the candidate commit with
-  `--baseline-rev <crate>_v<previous>`. `zingolib-netutils` needs
+  `--baseline-rev <crate>_v<previous>`. `zl-netutils` needs
   `--only-explicit-features`, because the baseline's `nym` feature does not
   build on its own.
 
@@ -91,8 +91,8 @@ API inherits the major. A compatible bump of a dependency forces nothing:
 the requirement already admits it, and the dependent crate releases when
 its own section says so. Cargo orders the set by dependency at publish
 time, so the order needs no thought here. The current order, read from a
-dry run on 2026-10-29, is `zingolib-memo`, `zingolib-net-diag`,
-`zingolib-status`, `zingolib-netutils`, `pepper-sync`, `zingolib-price`,
+dry run on 2026-10-29, is `zl-memo`, `zl-net-diag`,
+`zl-status`, `zl-netutils`, `pepper-sync`, `zl-price`,
 `zingolib`, `zingolib-cli`.
 
 `zingolib-cli` is a crate of the set like any other, with a version of its own

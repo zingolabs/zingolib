@@ -10,7 +10,7 @@ pub const MAINNET_DEFAULT_INDEXER: &str = "https://mainnet.zainod.zingolabs.dev:
 pub const TESTNET_DEFAULT_INDEXER: &str = "https://testnet.zec.rocks:443";
 
 /// ```
-/// use zingolib_netutils::default_indexer::{
+/// use zl_netutils::default_indexer::{
 ///     IndexerChain, MAINNET_DEFAULT_INDEXER, TESTNET_DEFAULT_INDEXER, default_indexer,
 /// };
 ///

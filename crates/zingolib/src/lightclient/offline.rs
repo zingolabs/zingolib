@@ -176,7 +176,7 @@ mod test {
     async fn offline_calculate_signs_and_transmit_refuses() {
         use crate::testutils::lightclient::from_inputs;
         use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
-        use status::confirmation_status::ConfirmationStatus;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(100_000)

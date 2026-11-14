@@ -607,13 +607,13 @@ mod tests {
 
     use super::pending_spends;
     use super::*;
-    use status::confirmation_status::ConfirmationStatus;
     use zcash_primitives::transaction::{TransactionData, TxVersion};
     use zcash_protocol::consensus::BranchId;
     use zcash_transparent::address::Script;
     use zcash_transparent::bundle::{Authorized, OutPoint, TxIn};
     use zcash_transparent::keys::NonHardenedChildIndex;
     use zip32::AccountId;
+    use zl_status::confirmation_status::ConfirmationStatus;
 
     use crate::keys::transparent::{TransparentAddressId, TransparentScope};
     use crate::wallet::{OutputId, TransparentCoin, WalletTransaction};

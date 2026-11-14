@@ -1,6 +1,6 @@
 [package]
-name = "zingolib-memo"
-description = "Utilities for procedural creation and parsing of the Memo field for ZCash."
+name = "zl-memo"
+description = "Utilities for procedural creation and parsing of the Memo field for ZCash. Part of zingolib."
 authors = ["<zingo@zingolabs.org>"]
 version = "0.3.0"
 edition = "2024"

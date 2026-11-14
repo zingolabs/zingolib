@@ -18,13 +18,13 @@ use zcash_keys::address::UnifiedAddress;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::address::TransparentAddress;
 
-use netutils::Indexer as _;
 use pepper_sync::{
     error::SyncError,
     keys::transparent::TransparentAddressId,
     sync::{SyncResult, SyncStatus},
     wallet::SyncMode,
 };
+use zl_netutils::Indexer as _;
 
 use crate::{
     config::{ChainType, ClientConfig, WalletConfig},
@@ -60,7 +60,7 @@ mod darkside;
 #[cfg(test)]
 mod mock_chain_tests;
 
-pub use netutils::time::DEFAULT_REQUEST_TIMEOUT;
+pub use zl_netutils::time::DEFAULT_REQUEST_TIMEOUT;
 
 /// Wallet struct owned by a [`crate::lightclient::LightClient`], with metadata and immutable wallet data stored outside
 /// the read/write lock.
@@ -112,7 +112,7 @@ pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
     pub usd: f32,
     /// The price source whose answer won the race.
-    pub source: price::PriceSource,
+    pub source: zl_price::PriceSource,
     /// Wall-clock time from dispatching the race to the winning answer,
     /// tunnel traversal included on the mixnet route.
     pub round_trip: std::time::Duration,
@@ -136,11 +136,11 @@ pub enum ChooseIndexerError {
     #[error(transparent)]
     NoDefaultIndexer(#[from] crate::config::NoDefaultIndexer),
     #[error(transparent)]
-    Connect(#[from] netutils::GetClientError),
+    Connect(#[from] zl_netutils::GetClientError),
 }
 
 pub struct LightClient {
-    network: netutils::NetworkAccess,
+    network: zl_netutils::NetworkAccess,
     wallet: WalletMeta,
     sync_mode: Arc<AtomicU8>,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
@@ -245,7 +245,7 @@ impl LightClient {
     #[allow(clippy::result_large_err)]
     pub async fn new(config: ClientConfig, overwrite: bool) -> Result<Self, LightClientError> {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        netutils::ensure_default_crypto_provider();
+        zl_netutils::ensure_default_crypto_provider();
 
         let wallet = match config.wallet_config() {
             WalletConfig::Read => {
@@ -272,7 +272,7 @@ impl LightClient {
         };
 
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        netutils::ensure_default_crypto_provider();
+        zl_netutils::ensure_default_crypto_provider();
 
         let network = Self::network_access_from(&config).await?;
 
@@ -290,7 +290,7 @@ impl LightClient {
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
-            transmit_retry_interval: netutils::time::TRANSMIT_RETRY_INTERVAL,
+            transmit_retry_interval: zl_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -320,9 +320,9 @@ impl LightClient {
     /// never written unless a test saves explicitly.
     #[cfg(any(test, feature = "testutils"))]
     pub async fn new_for_test(wallet: crate::wallet::LightWallet) -> Self {
-        netutils::ensure_default_crypto_provider();
+        zl_netutils::ensure_default_crypto_provider();
         LightClient {
-            network: netutils::NetworkAccess::offline(crate::config::default_indexer_for(
+            network: zl_netutils::NetworkAccess::offline(crate::config::default_indexer_for(
                 &wallet.chain_type(),
             )),
             wallet: WalletMeta::new(
@@ -342,7 +342,7 @@ impl LightClient {
             // Synthetic test wallets have no durable directory; the default
             // handle records nowhere and loads empty.
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
-            transmit_retry_interval: netutils::time::TRANSMIT_RETRY_INTERVAL,
+            transmit_retry_interval: zl_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -398,7 +398,7 @@ impl LightClient {
         config: ClientConfig,
     ) -> Result<Self, LightClientError> {
         // For https URIs GrpcIndexer::new pre-builds a TLS endpoint, which requires a rustls CryptoProvider.
-        netutils::ensure_default_crypto_provider();
+        zl_netutils::ensure_default_crypto_provider();
 
         let wallet = LightWallet::read(BufReader::new(reader), config.chain_type())
             .map_err(LightClientError::FileError)?;
@@ -419,7 +419,7 @@ impl LightClient {
             batch_progress: migrate::BatchProgressHandle::default(),
             transmit_progress: transmit::TransmitProgressHandle::default(),
             indexer_history: indexer_history::IndexerHistoryHandle::default(),
-            transmit_retry_interval: netutils::time::TRANSMIT_RETRY_INTERVAL,
+            transmit_retry_interval: zl_netutils::time::TRANSMIT_RETRY_INTERVAL,
             #[cfg(feature = "nym")]
             mixnet_slot: std::sync::Arc::new(std::sync::Mutex::new(
                 crate::mixnet::MixnetSlot::Unattached,
@@ -575,10 +575,10 @@ impl LightClient {
 
     async fn network_access_from(
         config: &ClientConfig,
-    ) -> Result<netutils::NetworkAccess, netutils::GetClientError> {
+    ) -> Result<zl_netutils::NetworkAccess, zl_netutils::GetClientError> {
         match config.indexer_uri() {
-            Some(uri) => netutils::NetworkAccess::online(uri).await,
-            None => Ok(netutils::NetworkAccess::offline(
+            Some(uri) => zl_netutils::NetworkAccess::online(uri).await,
+            None => Ok(zl_netutils::NetworkAccess::offline(
                 crate::config::default_indexer_for(&config.chain_type()),
             )),
         }
@@ -599,7 +599,7 @@ impl LightClient {
     pub async fn set_indexer_uri(
         &mut self,
         server: http::Uri,
-    ) -> Result<(), netutils::GetClientError> {
+    ) -> Result<(), zl_netutils::GetClientError> {
         self.network.connect_to(server).await
     }
 
@@ -635,7 +635,7 @@ impl LightClient {
     /// ```
     pub async fn go_online(&mut self) -> Result<http::Uri, ChooseIndexerError> {
         self.network.go_online().await.map_err(|error| match error {
-            netutils::GetClientError::NoIndexerUri => {
+            zl_netutils::GetClientError::NoIndexerUri => {
                 ChooseIndexerError::NoDefaultIndexer(crate::config::NoDefaultIndexer {
                     chain: self.chain_type(),
                 })
@@ -648,7 +648,7 @@ impl LightClient {
     pub fn set_indexer_uri_lazy(
         &mut self,
         server: http::Uri,
-    ) -> Result<(), netutils::GetClientError> {
+    ) -> Result<(), zl_netutils::GetClientError> {
         debug_assert!(
             tokio::runtime::Handle::try_current().is_ok(),
             "set_indexer_uri_lazy needs a tokio runtime context"
@@ -666,7 +666,7 @@ impl LightClient {
         self.network.go_offline();
     }
 
-    fn require_indexer(&self) -> Result<&netutils::GrpcIndexer, LightClientError> {
+    fn require_indexer(&self) -> Result<&zl_netutils::GrpcIndexer, LightClientError> {
         self.network.indexer().ok_or(LightClientError::Offline)
     }
 

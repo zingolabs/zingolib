@@ -21,7 +21,7 @@ const UNRELEASED: &str = "## [Unreleased]";
 const NEXT_RELEASE: &str = "\n## [";
 const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 2] = [
     ("crates/price/CHANGELOG.md", "feature"),
-    ("crates/pepper-sync/CHANGELOG.md", "zingolib-"),
+    ("crates/pepper-sync/CHANGELOG.md", "zl-"),
 ];
 
 fn text(relative: &str) -> Result<String, Vec<String>> {

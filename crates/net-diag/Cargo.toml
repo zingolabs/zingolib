@@ -1,8 +1,8 @@
 [package]
-name = "zingolib-net-diag"
+name = "zl-net-diag"
 version = "0.1.0"
 edition = "2024"
-description = "The shared network-failure taxonomy: typed stages and failure records for covered network operations (docs/agents/net-diag-design.md)."
+description = "The shared network-failure taxonomy: typed stages and failure records for covered network operations (docs/agents/net-diag-design.md). Part of zingolib."
 authors = ["zingo@zingolabs.org"]
 repository = "https://github.com/zingolabs/zingolib"
 homepage = "https://github.com/zingolabs/zingolib"

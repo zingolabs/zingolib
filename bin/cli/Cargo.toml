@@ -32,7 +32,7 @@ nakednet-test-mode = []
 [dependencies]
 pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-# No direct zingolib-netutils dependency: this consumer funnels through
+# No direct zl-netutils dependency: this consumer funnels through
 # zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
 # dev-dependency below reaches netutils' test scaffolding directly, which
 # ships nothing and creates no duplicate copy.
@@ -51,7 +51,7 @@ json = { workspace = true }
 log = { workspace = true }
 nonempty = { workspace = true }
 rustyline = { workspace = true }
-status = { workspace = true }
+zl-status = { workspace = true }
 shellwords = { workspace = true }
 # macros + time back the transmit heartbeat's select!/interval; rt-multi-thread
 # backs the command runtime (previously inherited via feature unification).
@@ -59,7 +59,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
 thiserror.workspace = true
-net-diag.workspace = true
+zl-net-diag.workspace = true
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -69,10 +69,10 @@ zingolib = { workspace = true, features = ["testutils"] }
 zingo_test_vectors = { workspace = true }
 # The heartbeat and log-file tests read their temporal parameters from
 # `time::test`.
-netutils = { workspace = true, features = ["testutils"] }
+zl-netutils = { workspace = true, features = ["testutils"] }
 # test-util powers the paused-clock heartbeat tests.
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
-net-diag.workspace = true
+zl-net-diag.workspace = true
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

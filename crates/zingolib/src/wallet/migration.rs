@@ -210,7 +210,7 @@ mod tests {
             "pause_sync",
             "resume_sync",
             "GrpcIndexer",
-            "netutils",
+            "zl_netutils",
         ];
         for module in ["parts", "transmission", "schedule", "store", "reconcile"] {
             let path = format!(

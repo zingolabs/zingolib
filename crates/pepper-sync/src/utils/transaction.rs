@@ -1,8 +1,8 @@
-use netutils::lightwallet_protocol::CompactTx;
 use zcash_protocol::{ShieldedPool, TxId};
+use zl_netutils::lightwallet_protocol::CompactTx;
 
 #[cfg(test)]
-use netutils::lightwallet_protocol::{
+use zl_netutils::lightwallet_protocol::{
     CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend,
 };
 

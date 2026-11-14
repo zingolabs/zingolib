@@ -2,7 +2,7 @@
 //! place.
 //!
 //! Every timeout, cadence, pause, and window that tunes a mechanism in a
-//! crate depending on `zingolib-netutils` lives here, so a retune moves one
+//! crate depending on `zl-netutils` lives here, so a retune moves one
 //! number per physical fact and a reader surveys every knob on one page
 //! (issue #2565). Each constant documents the physical quantity it names;
 //! two call sites share a constant only when they bound the *same*
@@ -11,9 +11,9 @@
 //! live in the `test` submodule, which `cfg(test)` exposes to this crate's
 //! own tests and the `testutils` feature exposes to downstream test code.
 //!
-//! The one production exception dependency direction forces: `zingolib-price`
+//! The one production exception dependency direction forces: `zl-price`
 //! sits below the wallet with no dependency on this crate, so
-//! `zingolib_price::REQUEST_TIMEOUT` (20 s) and `zingolib_price::CONNECT_TIMEOUT`
+//! `zl_price::REQUEST_TIMEOUT` (20 s) and `zl_price::CONNECT_TIMEOUT`
 //! (10 s) stay there, role-tuned to a decorative datum under the mobile
 //! UI's 25-second watchdog.
 #![forbid(unsafe_code)]
@@ -87,7 +87,7 @@ pub const ANNOUNCEMENT_DEVIATIONS: u32 = 4;
 /// refused long before the lifecycle budget.
 ///
 /// ```
-/// use zingolib_netutils::time::{
+/// use zl_netutils::time::{
 ///     ANNOUNCEMENT_DEVIATIONS, EXIT_ANNOUNCEMENT_GRACE, NYM_LIFECYCLE_TIMEOUT,
 ///     OBSERVED_ANNOUNCEMENT_DEVIATION, OBSERVED_ANNOUNCEMENT_MEAN,
 /// };
@@ -254,7 +254,7 @@ pub const SPEED_ACQUISITION_PROOFS: u64 = 10;
 /// // ten expected proof cycles, each an unremarkable bootstrap's exit
 /// // announcement plus the Sentinel exchange (105 seconds, ruled
 /// // 2026-08-14 and retuned when the grace was measured).
-/// use zingolib_netutils::time::{
+/// use zl_netutils::time::{
 ///     EXIT_ANNOUNCEMENT_GRACE, SENTINEL_BUDGET, SPEED_ACQUISITION_DEADLINE,
 ///     SPEED_ACQUISITION_PROOFS,
 /// };
@@ -274,7 +274,7 @@ pub const SPEED_ACQUISITION_DEADLINE: Duration = Duration::from_millis(
 /// // One Nym network epoch: the hourly topology rotation after which an
 /// // observation about an Exit Node describes a network that no longer
 /// // exists.
-/// use zingolib_netutils::time::NYM_EPOCH;
+/// use zl_netutils::time::NYM_EPOCH;
 /// assert_eq!(NYM_EPOCH, std::time::Duration::from_secs(60 * 60));
 /// ```
 // TODO: implement sensitivity to, and policy around, real Nym epoch
@@ -290,7 +290,7 @@ pub const CLIENT_ROTATION_MIN: Duration = Duration::from_secs(5 * 60);
 /// The longest, so no exit observes more than this much of one session.
 ///
 /// ```
-/// use zingolib_netutils::time::{CLIENT_ROTATION_MAX, CLIENT_ROTATION_MIN, NYM_EPOCH};
+/// use zl_netutils::time::{CLIENT_ROTATION_MAX, CLIENT_ROTATION_MIN, NYM_EPOCH};
 ///
 /// assert!(CLIENT_ROTATION_MIN < CLIENT_ROTATION_MAX);
 /// // A rotation bounds exposure more tightly than an epoch does, which is

@@ -4,11 +4,11 @@ use std::io::Write as _;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use netutils::Indexer as _;
-use netutils::default_indexer;
 use zingolib::config::{ClientConfig, WalletConfig};
 use zingolib::lightclient::LightClient;
 use zingolib::wallet::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery, WalletSettings};
+use zl_netutils::Indexer as _;
+use zl_netutils::default_indexer;
 
 /// The number of blocks below the live tip the guarded sync scans.
 const GUARD_WINDOW: u32 = 5_000;
@@ -46,7 +46,7 @@ async fn syncing_the_top_window_holds_this_machines_baseline() {
         .and_then(|raw| raw.parse().ok())
         .unwrap_or(REGRESSION_TOLERANCE);
 
-    netutils::ensure_default_crypto_provider();
+    zl_netutils::ensure_default_crypto_provider();
     let tip = tokio::time::timeout(
         Duration::from_secs(TIP_QUERY_SECS),
         query_tip(indexer.clone()),
@@ -116,7 +116,7 @@ async fn syncing_the_top_window_holds_this_machines_baseline() {
 
 /// The pinned indexer's current chain height over nakednet.
 async fn query_tip(indexer: http::Uri) -> u32 {
-    let mut grpc = netutils::GrpcIndexer::new(indexer)
+    let mut grpc = zl_netutils::GrpcIndexer::new(indexer)
         .await
         .expect("the indexer client builds");
     let block = grpc

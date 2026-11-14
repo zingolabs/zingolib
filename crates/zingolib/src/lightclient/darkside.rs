@@ -24,10 +24,10 @@
 //! (formerly blocked on the pepper-sync `darkside_test` feature
 //! question, zingolabs/zingolib#2447. That feature is now deleted).
 
-use status::confirmation_status::ConfirmationStatus;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::BlockHeight;
+use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::check_client_balances;
 use crate::testutils::lightclient::{from_inputs, get_base_address};

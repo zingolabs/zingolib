@@ -1,4 +1,4 @@
-# zingolib-netutils
+# zl-netutils
 
 *Test counts reflect the `dev` branch and update on each push.*
 
@@ -25,7 +25,7 @@ an additional dependency.
 ## Usage
 
 ```rust
-use zingolib_netutils::{GrpcIndexer, Indexer};
+use zl_netutils::{GrpcIndexer, Indexer};
 
 let uri: http::Uri = "https://mainnet.zainod.zingolabs.dev:443".parse()?;
 let indexer = GrpcIndexer::new(uri)?;

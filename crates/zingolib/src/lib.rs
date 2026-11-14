@@ -24,9 +24,9 @@ pub mod mocks;
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils;
 
-pub use ::netutils::default_indexer;
-pub use ::netutils::ensure_default_crypto_provider;
 pub use zingo_common_components::protocol::ActivationHeights;
+pub use zl_netutils::default_indexer;
+pub use zl_netutils::ensure_default_crypto_provider;
 
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
