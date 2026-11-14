@@ -202,16 +202,29 @@ mod tests {
     /// never synchronize). The migration modules that run on the transmission
     /// path must have no dependency edge to the sync engine or the network
     /// client. The only permitted pepper-sync surface is wallet data types.
+    const FORBIDDEN: [&str; 6] = [
+        "pepper_sync::sync",
+        "sync_and_await",
+        "pause_sync",
+        "resume_sync",
+        "GrpcIndexer",
+        "netutils",
+    ];
+    const FUNNEL_IMPORT: &str = "use crate::netutils::Indexer;";
+    const CRATE_IMPORT: &str = "use zl_netutils::Indexer;";
+
+    fn forbidden_reference(source: &str) -> Option<&'static str> {
+        FORBIDDEN.into_iter().find(|needle| source.contains(needle))
+    }
+
+    #[test]
+    fn a_network_client_import_is_forbidden_through_the_crate_and_the_funnel() {
+        assert!(forbidden_reference(CRATE_IMPORT).is_some());
+        assert!(forbidden_reference(FUNNEL_IMPORT).is_some());
+    }
+
     #[test]
     fn transmission_path_has_no_sync_dependency() {
-        let forbidden = [
-            "pepper_sync::sync",
-            "sync_and_await",
-            "pause_sync",
-            "resume_sync",
-            "GrpcIndexer",
-            "zl_netutils",
-        ];
         for module in ["parts", "transmission", "schedule", "store", "reconcile"] {
             let path = format!(
                 "{}/src/wallet/migration/{module}.rs",
@@ -220,13 +233,12 @@ mod tests {
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue; // modules land tranche by tranche
             };
-            for needle in forbidden {
-                assert!(
-                    !source.contains(needle),
-                    "{path} references `{needle}`: the migration transmission path must remain \
-                     decoupled from the sync engine"
-                );
-            }
+            assert_eq!(
+                forbidden_reference(&source),
+                None,
+                "{path}: the migration transmission path must remain decoupled from the sync \
+                 engine"
+            );
         }
     }
 }

@@ -37,7 +37,7 @@ Zingolib test tasks
 Test front door — `makers test "$@"` is a containerized
 `cargo nextest run "$@"`, so every nextest idiom passes through:
   makers test                 the whole workspace
-  makers test -p zl-memo   one package
+  makers test -p zl-memo      one package
   makers test some_test_name  positional test-name filter
   makers test --no-fail-fast  any nextest flag
 
@@ -306,7 +306,7 @@ container_nextest_run "$@"
 # every nextest idiom passes through untouched:
 #
 #   makers test                     the whole workspace
-#   makers test -p zl-memo       one package
+#   makers test -p zl-memo          one package
 #   makers test some_test_name      positional test-name filter
 #
 # Two reserved first words expand to canned invocations:

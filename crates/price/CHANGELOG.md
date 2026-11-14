@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - BREAKING: the package is `zl-price` and its library
   `zl_price`, renamed from `zingo-price` and `zingo_price`.
-- BREAKING: the cargo feature `zingo-netutils` is `zl-netutils`.
 
 ### Deprecated
 
 ### Removed
+- BREAKING: the cargo feature `zingo-netutils` is removed. It gated no
+  code. The feature `socks5-fetch` enables the fetch and its dependencies.
 
 ### Fixed
 
