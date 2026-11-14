@@ -123,7 +123,13 @@ async fn sole_transparent_coin(client: &LightClient) -> (OutputId, SpendStatus) 
     let coin = coins
         .first()
         .expect("the length assertion above leaves exactly one coin");
-    (coin.output_id(), wallet.output_spend_status(*coin))
+    (
+        coin.output_id(),
+        wallet.output_spend_status(
+            *coin,
+            &pepper_sync::pending_spends(&wallet.wallet_transactions),
+        ),
+    )
 }
 
 async fn send_orchard_back_and_forth(

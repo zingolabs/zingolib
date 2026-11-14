@@ -350,6 +350,14 @@ async fn current_price(_lightclient: &mut LightClient) -> Result<String, Command
     )
 }
 
+async fn doctor(lightclient: &mut LightClient) -> Result<String, CommandError> {
+    let violations = lightclient.wallet().read().await.invariant_violations();
+    if violations.is_empty() {
+        return Ok("no violations".to_string());
+    }
+    Ok(format!("{}\nremedy: rescan", violations.join("\n")))
+}
+
 async fn delete(lightclient: &mut LightClient) -> Result<String, CommandError> {
     match lightclient.delete_wallet_file().await {
         Ok(()) => Ok(object! {
@@ -2254,6 +2262,14 @@ pub(crate) enum CliCommand {
     )]
     Delete,
     #[command(
+        about = "Check the wallet against its invariants.",
+        long_about = indoc! {r"
+            Check the loaded wallet against its invariants and print each
+            violated one, followed by the remedy. Works offline.
+        "}
+    )]
+    Doctor,
+    #[command(
         about = "Send all Orchard funds into the Ironwood pool now (immediate ZIP 318 path).",
         long_about = indoc! {r"
             Send every spendable Orchard note into the Ironwood pool now, ZIP 318's
@@ -2785,6 +2801,7 @@ impl CliCommand {
             CliCommand::CurrentPrice => "CurrentPrice",
             CliCommand::Decline => "Decline",
             CliCommand::Delete => "Delete",
+            CliCommand::Doctor => "Doctor",
             CliCommand::Drain { .. } => "Drain",
             CliCommand::ExportUfvk => "ExportUfvk",
             CliCommand::Height => "Height",
@@ -2873,6 +2890,7 @@ impl CliCommand {
             | CliCommand::Confirm
             | CliCommand::Decline
             | CliCommand::Delete
+            | CliCommand::Doctor
             | CliCommand::Drain { .. }
             | CliCommand::ExportUfvk
             | CliCommand::Height
@@ -2914,6 +2932,7 @@ impl CliCommand {
     /// class the Online consent covers and the readiness gate holds.
     pub(crate) fn transmits(&self) -> bool {
         match self {
+            CliCommand::Doctor => false,
             CliCommand::Confirm
             | CliCommand::CurrentPrice
             | CliCommand::Migrate
@@ -3090,6 +3109,7 @@ fn every_command() -> Vec<CliCommand> {
         CliCommand::CurrentPrice,
         CliCommand::Decline,
         CliCommand::Delete,
+        CliCommand::Doctor,
         CliCommand::Drain {
             sub: DrainSubCommand::Plan,
         },
@@ -3301,6 +3321,7 @@ async fn run_parsed(
         CliCommand::CurrentPrice => current_price(lightclient).await,
         CliCommand::Decline => decline(lightclient).await,
         CliCommand::Delete => delete(lightclient).await,
+        CliCommand::Doctor => doctor(lightclient).await,
         CliCommand::Drain { sub } => drain(sub, lightclient).await,
         CliCommand::ExportUfvk => export_ufvk(lightclient).await,
         CliCommand::Height => height(lightclient).await,

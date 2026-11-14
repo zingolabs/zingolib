@@ -1013,6 +1013,11 @@ impl MockChain {
     }
 
     /// The height of the chain tip (0 on an empty chain).
+    /// The nullifiers of every transaction mined into a block.
+    pub fn revealed_nullifiers(&self) -> BTreeSet<PoolNullifier> {
+        self.revealed_nullifiers.clone()
+    }
+
     pub fn tip(&self) -> u32 {
         self.blocks.len() as u32
     }

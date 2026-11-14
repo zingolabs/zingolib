@@ -1,7 +1,6 @@
 //! Module for reading and updating wallet data related to spending
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-
 use tokio::sync::mpsc;
 
 use incrementalmerkletree::{Hashable, Position};
@@ -36,11 +35,6 @@ pub(super) struct ShieldedSpendScanTargets {
 }
 
 impl ShieldedSpendScanTargets {
-    /// Whether every pool is without a spend.
-    pub(super) fn is_empty(&self) -> bool {
-        self.scan_targets().next().is_none()
-    }
-
     /// Moves the spend scan targets of each pool in `other` into the same pool here.
     fn append(&mut self, other: &mut Self) {
         self.sapling.append(&mut other.sapling);
@@ -409,6 +403,91 @@ fn remove_spent_note_marks<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     }
 }
 
+pub(super) fn collect_transaction_spends(
+    transaction: &WalletTransaction,
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+) -> Vec<(OutputId, TxId)> {
+    let txid = transaction.txid();
+    let transaction = transaction.transaction();
+
+    let mut sapling_nullifiers = BTreeSet::new();
+    let mut orchard_nullifiers = BTreeSet::new();
+    let mut ironwood_nullifiers = BTreeSet::new();
+    let mut outpoints = BTreeSet::new();
+    if let Some(bundle) = transaction.sapling_bundle() {
+        for spend in bundle.shielded_spends() {
+            sapling_nullifiers.insert(*spend.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.orchard_bundle() {
+        for action in bundle.actions() {
+            orchard_nullifiers.insert(*action.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.ironwood_bundle() {
+        for action in bundle.actions() {
+            ironwood_nullifiers.insert(*action.nullifier());
+        }
+    }
+    if let Some(bundle) = transaction.transparent_bundle() {
+        for input in &bundle.vin {
+            outpoints.insert(OutputId::from(input.prevout()));
+        }
+    }
+
+    wallet_transactions
+        .values()
+        .flat_map(|wallet_transaction| {
+            matched_note_ids(wallet_transaction.sapling_notes(), &sapling_nullifiers)
+                .into_iter()
+                .chain(matched_note_ids(
+                    wallet_transaction.orchard_notes(),
+                    &orchard_nullifiers,
+                ))
+                .chain(matched_note_ids(
+                    wallet_transaction.ironwood_notes(),
+                    &ironwood_nullifiers,
+                ))
+                .chain(
+                    wallet_transaction
+                        .transparent_coins()
+                        .iter()
+                        .filter(|coin| outpoints.contains(&coin.output_id))
+                        .map(|coin| coin.output_id),
+                )
+                .map(move |output_id| (output_id, txid))
+        })
+        .collect()
+}
+
+/// The ids of the wallet notes whose nullifiers are in `targets`.
+fn matched_note_ids<N: NoteInterface>(
+    notes: &[N],
+    targets: &BTreeSet<N::Nullifier>,
+) -> Vec<OutputId> {
+    notes
+        .iter()
+        .filter(|note| {
+            note.nullifier()
+                .is_some_and(|nullifier| targets.contains(&nullifier))
+        })
+        .map(|note| note.output_id())
+        .collect()
+}
+
+/// The wallet's outputs its pending transactions spend, with the spending txid.
+pub fn pending_spends(
+    wallet_transactions: &HashMap<TxId, WalletTransaction>,
+) -> HashMap<OutputId, TxId> {
+    let mut spends = HashMap::new();
+    for transaction in wallet_transactions.values() {
+        if transaction.status().is_pending() {
+            spends.extend(collect_transaction_spends(transaction, wallet_transactions));
+        }
+    }
+    spends
+}
+
 /// Locates the spends of the wallet's coins for [`apply_transparent_spends`] to record in the wallet.
 ///
 /// The wallet is only read, so a failed server request leaves it as it is. The data the scan is about to add to
@@ -520,4 +599,96 @@ pub(super) fn update_spent_coins(
                 coin.spending_transaction = Some(spending_txid);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::pending_spends;
+    use super::*;
+    use zcash_primitives::transaction::{TransactionData, TxVersion};
+    use zcash_protocol::consensus::BranchId;
+    use zcash_transparent::address::Script;
+    use zcash_transparent::bundle::{Authorized, OutPoint, TxIn};
+    use zcash_transparent::keys::NonHardenedChildIndex;
+    use zingo_status::confirmation_status::ConfirmationStatus;
+    use zip32::AccountId;
+
+    use crate::keys::transparent::{TransparentAddressId, TransparentScope};
+    use crate::wallet::{OutputId, TransparentCoin, WalletTransaction};
+
+    #[test]
+    fn pending_spends_reports_the_transparent_inputs_of_pending_records() {
+        let funding_txid = TxId::from_bytes([1; 32]);
+        let coin = TransparentCoin {
+            output_id: OutputId::new(funding_txid, 0),
+            key_id: TransparentAddressId::new(
+                AccountId::ZERO,
+                TransparentScope::External,
+                NonHardenedChildIndex::ZERO,
+            ),
+            address: String::new(),
+            script: Script::default(),
+            value: zcash_protocol::value::Zatoshis::const_from_u64(100_000),
+            spending_transaction: None,
+        };
+        let funding =
+            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(10.into()))
+                .with_transparent_coins_for_test(vec![coin]);
+
+        let vin = vec![TxIn::from_parts(
+            OutPoint::new([1; 32], 0),
+            Script::default(),
+            u32::MAX,
+        )];
+        let bundle = zcash_transparent::bundle::Bundle {
+            vin,
+            vout: Vec::new(),
+            authorization: Authorized,
+        };
+        let pending_tx = TransactionData::from_parts(
+            TxVersion::V4,
+            BranchId::Sapling,
+            0,
+            BlockHeight::from_u32(11),
+            Some(bundle),
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap();
+        let pending_txid = pending_tx.txid();
+        let pending_record = WalletTransaction {
+            txid: pending_txid,
+            status: ConfirmationStatus::Calculated(11.into()),
+            transaction: pending_tx,
+            datetime: 0,
+            transparent_coins: Vec::new(),
+            sapling_notes: Vec::new(),
+            orchard_notes: Vec::new(),
+            ironwood_notes: Vec::new(),
+            outgoing_sapling_notes: Vec::new(),
+            outgoing_orchard_notes: Vec::new(),
+            outgoing_ironwood_notes: Vec::new(),
+        };
+
+        let mut wallet_transactions =
+            HashMap::from([(funding_txid, funding), (pending_txid, pending_record)]);
+        let spends = pending_spends(&wallet_transactions);
+        assert_eq!(
+            spends.get(&OutputId::new(funding_txid, 0)),
+            Some(&pending_txid)
+        );
+
+        // Only pending records reserve their inputs: the same transaction
+        // confirmed reports nothing, because a confirmed transaction's spends
+        // are recorded on the outputs by the scan that found its block.
+        wallet_transactions
+            .get_mut(&pending_txid)
+            .unwrap()
+            .update_status(ConfirmationStatus::Confirmed(12.into()), 0, false);
+        assert!(pending_spends(&wallet_transactions).is_empty());
+    }
 }

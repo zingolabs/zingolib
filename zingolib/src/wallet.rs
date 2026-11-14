@@ -33,6 +33,7 @@ pub mod utils;
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
 pub mod disk;
+pub mod invariants;
 pub mod keys;
 pub mod locks;
 pub mod migration;
