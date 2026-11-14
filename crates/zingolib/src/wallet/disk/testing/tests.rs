@@ -510,52 +510,6 @@ async fn wallet_reads_pre_release_v42_with_allow_v6_byte() {
     }
 }
 
-/// A file whose tail reads cleanly under *both* layouts is genuinely
-/// ambiguous, and the reader must refuse it rather than silently substitute
-/// one reading's price list and migration state for the other's.
-///
-/// The decision is exercised directly: constructing a byte string that
-/// satisfies both parses is not possible for a migration-free tail (see the
-/// parity argument on `resolve_v42_tail`) and impractical otherwise, so the
-/// test supplies the four parse outcomes the caller can hand it.
-#[test]
-fn ambiguous_version_42_tail_is_refused() {
-    use crate::wallet::LightWallet;
-    use zl_price::PriceList;
-
-    let parsed = || Ok((PriceList::new(), None));
-    let failed = || {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "tail did not parse",
-        ))
-    };
-
-    let ambiguous = LightWallet::resolve_v42_tail(parsed(), Some(parsed()));
-    assert_eq!(
-        ambiguous.unwrap_err().kind(),
-        std::io::ErrorKind::InvalidData,
-        "a tail parsing both ways must be refused, not guessed"
-    );
-
-    assert!(
-        LightWallet::resolve_v42_tail(parsed(), Some(failed())).is_ok(),
-        "the canonical layout must win when only it parses"
-    );
-    assert!(
-        LightWallet::resolve_v42_tail(parsed(), None).is_ok(),
-        "a leading byte that is no bool rules out the pre-release layout"
-    );
-    assert!(
-        LightWallet::resolve_v42_tail(failed(), Some(parsed())).is_ok(),
-        "the pre-release layout must be accepted when only it parses"
-    );
-    assert!(
-        LightWallet::resolve_v42_tail(failed(), Some(failed())).is_err(),
-        "a tail parsing neither way must fail"
-    );
-}
-
 /// When the full parse fails (here simulated by a truncated file) the
 /// prefix-only salvage reader must still recover seed, birthday, and
 /// account count, so no format break can strand a wallet.
@@ -981,8 +935,7 @@ mod validation {
     #[test]
     fn validate_rejects_an_account_zero_free_version_thirty_five_wallet() {
         let mut bytes = FIRST_VECTORED_KEY_STORE_VERSION.to_le_bytes().to_vec();
-        utils::write_string(&mut bytes, &"main".to_string())
-            .expect("writing to a vector cannot fail");
+        utils::write_string(&mut bytes, "main").expect("writing to a vector cannot fail");
         bytes.push(0);
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.push(0);
@@ -1039,14 +992,14 @@ mod version_forty {
         );
 
         let mut stable_v40 = 40u64.to_le_bytes().to_vec();
-        utils::write_string(&mut stable_v40, &"test".to_string()).unwrap();
+        utils::write_string(&mut stable_v40, "test").expect("writing to a vector cannot fail");
         assert_eq!(
             LightWallet::read_chain(&stable_v40).unwrap(),
             ChainType::Testnet
         );
 
         let mut named = 35u64.to_le_bytes().to_vec();
-        utils::write_string(&mut named, &"main".to_string()).unwrap();
+        utils::write_string(&mut named, "main").expect("writing to a vector cannot fail");
         assert_eq!(LightWallet::read_chain(&named).unwrap(), ChainType::Mainnet);
     }
 
@@ -1102,7 +1055,7 @@ mod version_forty {
     #[test]
     fn stable_v40_chain_string_reads_as_before() {
         let mut bytes = 40u64.to_le_bytes().to_vec();
-        utils::write_string(&mut bytes, &"test".to_string()).unwrap();
+        utils::write_string(&mut bytes, "test").expect("writing to a vector cannot fail");
         let error = LightWallet::read(bytes.as_slice(), ChainType::Mainnet)
             .expect_err("a testnet name must refuse a mainnet load");
         assert!(

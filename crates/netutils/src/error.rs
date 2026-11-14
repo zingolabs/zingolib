@@ -36,7 +36,7 @@ pub enum GetClientError {
 pub enum NymProxyError {
     /// Failed to build the Nym mixnet client. The cause rides in
     /// `source()`, not the message, so a chain walk
-    /// ([`zl_net_diag::chain_texts`]) sees one text per layer.
+    /// ([`crate::diag::chain_texts`]) sees one text per layer.
     #[error("failed to build Nym client")]
     Build(#[source] Box<nym_sdk::Error>),
 
@@ -62,7 +62,7 @@ pub enum NymProxyError {
     AttemptTimeout(u64),
 
     /// Every raced connect attempt failed. Each attempt is a typed
-    /// [`zl_net_diag::NetOpFailure`] — the stage, the shortened Exit Node
+    /// [`crate::diag::NetOpFailure`] — the stage, the shortened Exit Node
     /// name as the target, and the cause chain as a vector — so a consumer
     /// dispatches on fields (every Exit Node timed out, versus one refused
     /// and the rest were never launched) instead of parsing prose. The
@@ -76,14 +76,14 @@ pub enum NymProxyError {
         /// The number of distinct Exit Nodes contacted.
         attempts: usize,
         /// Every attempt's failure, in completion order.
-        failures: Vec<zl_net_diag::NetOpFailure>,
+        failures: Vec<crate::diag::NetOpFailure>,
     },
 }
 
 /// The `Display` joining of the typed attempt records, semicolon-separated
 /// in completion order. Rendering only; consumers dispatch on the records.
 #[cfg(feature = "nym")]
-fn join_failures(failures: &[zl_net_diag::NetOpFailure]) -> String {
+fn join_failures(failures: &[crate::diag::NetOpFailure]) -> String {
     failures
         .iter()
         .map(ToString::to_string)
@@ -107,7 +107,7 @@ mod tests {
     #[cfg(feature = "nym")]
     #[test]
     fn attempts_exhausted_renders_each_typed_attempt() {
-        use zl_net_diag::{NetOpFailure, NetOpStage};
+        use crate::diag::{NetOpFailure, NetOpStage};
 
         let error = NymProxyError::AttemptsExhausted {
             attempts: 2,

@@ -891,7 +891,7 @@ impl crate::wallet::LightWallet {
             &ufvks,
             self,
             transaction,
-            zl_status::confirmation_status::ConfirmationStatus::Calculated(target_height),
+            zl_common::status::ConfirmationStatus::Calculated(target_height),
             timestamp,
         ) {
             Ok(()) => (),

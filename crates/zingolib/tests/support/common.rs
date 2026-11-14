@@ -11,7 +11,7 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use zingolib::wallet::LightWallet;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 pub fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
     SyntheticWalletBuilder::new(mnemonic_phrase).build()

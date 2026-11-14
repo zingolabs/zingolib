@@ -1,26 +1,10 @@
 [[ignore]]
-fingerprint = "04ccd537783aba4a"
-reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/keys/legacy.rs:231"
-
-[[ignore]]
-fingerprint = "07c488acb074d2b7"
-reason = "baseline at 639986655: exact group of 3, first member zingo-ffi/lib/src/lib.rs:2774"
-
-[[ignore]]
 fingerprint = "091894c21bf110c2"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/output/query.rs:78"
 
 [[ignore]]
 fingerprint = "0925f8bb5566196f"
 reason = "baseline at 639986655: exact group of 4, first member zingo-netutils/src/lib.rs:487"
-
-[[ignore]]
-fingerprint = "0a6428a3529d3611"
-reason = "baseline at 639986655: exact group of 4, first member zingo-status/src/confirmation_status.rs:47"
-
-[[ignore]]
-fingerprint = "0d5d42338cddb6e2"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:222"
 
 [[ignore]]
 fingerprint = "0dbbb2ab4e7c93ea"
@@ -31,20 +15,8 @@ fingerprint = "0df789c7a8d20ac0"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1588"
 
 [[ignore]]
-fingerprint = "11252e9d93eb7b0e"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/supervisor.rs:628"
-
-[[ignore]]
 fingerprint = "13202addd62f3769"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/zcb_traits.rs:750"
-
-[[ignore]]
-fingerprint = "144266425fb0c492"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/mixnet/pools.rs:44"
-
-[[ignore]]
-fingerprint = "1520ca8cb5fa2bba"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1022"
 
 [[ignore]]
 fingerprint = "15454e94f5e4376a"
@@ -53,26 +25,6 @@ reason = "baseline at 639986655: exact group of 26, first member zingolib/src/de
 [[ignore]]
 fingerprint = "166354c92b9bfd68"
 reason = "baseline at 639986655: exact group of 10, first member zingolib/src/wallet/legacy.rs:1059"
-
-[[ignore]]
-fingerprint = "171a8a4f8a349fd3"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/mixnet/supervisor.rs:318"
-
-[[ignore]]
-fingerprint = "186f3f184d9f81a1"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync/transparent.rs:122"
-
-[[ignore]]
-fingerprint = "188b60c293172fff"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/migration/store.rs:281"
-
-[[ignore]]
-fingerprint = "18fe8abe270fabc9"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient.rs:734"
-
-[[ignore]]
-fingerprint = "1bbca816b2ec1c40"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:2956"
 
 [[ignore]]
 fingerprint = "1c39211b8970cfa4"
@@ -87,16 +39,8 @@ fingerprint = "1eee3061850146e7"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:59"
 
 [[ignore]]
-fingerprint = "1fd36445ad0fd9b7"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/compact_blocks.rs:295"
-
-[[ignore]]
 fingerprint = "203297359627d7fa"
 reason = "baseline at 639986655: exact group of 4, first member zingolib/src/lightclient/select.rs:241"
-
-[[ignore]]
-fingerprint = "20baea512be6d939"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:63"
 
 [[ignore]]
 fingerprint = "216e94f16edc52f6"
@@ -107,36 +51,16 @@ fingerprint = "2239f3057e351d56"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:273"
 
 [[ignore]]
-fingerprint = "2607fa7eb44bd4e9"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:613"
-
-[[ignore]]
 fingerprint = "2772c6ff6cc95c03"
 reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/socks5_transmit.rs:299"
-
-[[ignore]]
-fingerprint = "29c6bbb40196ca9b"
-reason = "baseline at 639986655: exact group of 21, first member zingolib/src/destination/servers.rs:237"
 
 [[ignore]]
 fingerprint = "2df2b10dcb0eb304"
 reason = "baseline at 639986655: exact group of 7, first member zingo-ffi/lib/src/lib.rs:1664"
 
 [[ignore]]
-fingerprint = "304d6697576925b5"
-reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:1144"
-
-[[ignore]]
-fingerprint = "3116c114198dab7b"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/propose.rs:267"
-
-[[ignore]]
 fingerprint = "369b3cd62cd00084"
 reason = "baseline at 639986655: exact group of 5, first member zingolib/src/destination/servers.rs:133"
-
-[[ignore]]
-fingerprint = "3782a89834d85ad8"
-reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:166"
 
 [[ignore]]
 fingerprint = "37edd506e77e9ac1"
@@ -151,20 +75,8 @@ fingerprint = "3bbfb700abee883b"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys.rs:457"
 
 [[ignore]]
-fingerprint = "3ebb41d4a3a1e708"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan/task.rs:52"
-
-[[ignore]]
 fingerprint = "4062d60357e0f982"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:1789"
-
-[[ignore]]
-fingerprint = "41f590364d21bf92"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/migration/store.rs:224"
-
-[[ignore]]
-fingerprint = "43d930c7ce4981df"
-reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:257"
 
 [[ignore]]
 fingerprint = "4569961eeeff56d4"
@@ -175,20 +87,8 @@ fingerprint = "47000db2742e9bc8"
 reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/output/query.rs:18"
 
 [[ignore]]
-fingerprint = "4c488a71ad31cf3f"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/transactions.rs:310"
-
-[[ignore]]
 fingerprint = "4c5cbce858d6a433"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:148"
-
-[[ignore]]
-fingerprint = "4d02a8f27798edf7"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/transmit.rs:83"
-
-[[ignore]]
-fingerprint = "4eb880ca525129f2"
-reason = "baseline at 639986655: exact group of 7, first member zingolib/src/lightclient/sync.rs:156"
 
 [[ignore]]
 fingerprint = "537f75d83f9aa526"
@@ -199,10 +99,6 @@ fingerprint = "5ace608d9c3fb51c"
 reason = "baseline at 639986655: exact group of 4, first member zingolib/src/wallet/zcb_traits.rs:88"
 
 [[ignore]]
-fingerprint = "5b2f404762aec4ca"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mixnet.rs:49"
-
-[[ignore]]
 fingerprint = "5b73616495457736"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:172"
 
@@ -211,28 +107,12 @@ fingerprint = "5e05ef4adb26709e"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/perspective/finsight.rs:68"
 
 [[ignore]]
-fingerprint = "5e7bb5c1a2d48aad"
-reason = "baseline at 639986655: exact group of 9, first member zingolib/src/lightclient.rs:478"
-
-[[ignore]]
-fingerprint = "5e96c843c293ab15"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/legacy.rs:370"
-
-[[ignore]]
 fingerprint = "62c194186215cf1c"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/zcb_traits.rs:770"
 
 [[ignore]]
 fingerprint = "636ffb32a09b2fa2"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/unified.rs:337"
-
-[[ignore]]
-fingerprint = "64b35ea43aee9c6f"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:250"
-
-[[ignore]]
-fingerprint = "66229d808c4cfe00"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective.rs:376"
 
 [[ignore]]
 fingerprint = "6b31fa28e613abd8"
@@ -247,16 +127,8 @@ fingerprint = "6bc66deaaa267325"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/migration/reconcile.rs:445"
 
 [[ignore]]
-fingerprint = "6ded5fbcdf9e4aa2"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/mixnet.rs:1013"
-
-[[ignore]]
 fingerprint = "6e5032ef2bd8c4d0"
 reason = "baseline at 639986655: exact group of 13, first member zingo-netutils/src/lib.rs:525"
-
-[[ignore]]
-fingerprint = "6eafc82959da93a6"
-reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:202"
 
 [[ignore]]
 fingerprint = "6efc0da5dd21b3f3"
@@ -267,24 +139,12 @@ fingerprint = "70a3a8dd94bda489"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/data.rs:77"
 
 [[ignore]]
-fingerprint = "74873d6bb0dae68a"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/legacy.rs:374"
-
-[[ignore]]
 fingerprint = "75ab971b4a707cff"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/data/proposal.rs:159"
 
 [[ignore]]
-fingerprint = "7663bf784706fd59"
-reason = "baseline at 639986655: exact group of 3, first member zingolib/src/destination.rs:93"
-
-[[ignore]]
 fingerprint = "7a35caa5975ccdc5"
 reason = "baseline at 639986655: exact group of 4, first member zingo-cli/src/commands.rs:382"
-
-[[ignore]]
-fingerprint = "7d7bae7431fdd11a"
-reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/sync.rs:1304"
 
 [[ignore]]
 fingerprint = "7da511a685a5c3d6"
@@ -311,44 +171,16 @@ fingerprint = "8119909ebf73188a"
 reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:895"
 
 [[ignore]]
-fingerprint = "818d2225b1331e6b"
-reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:2440"
-
-[[ignore]]
 fingerprint = "82adb0bf22f46525"
 reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/sync.rs:35"
-
-[[ignore]]
-fingerprint = "84ae0955384dbeda"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:394"
-
-[[ignore]]
-fingerprint = "8866f7dd0b2bcb39"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/transactions.rs:55"
-
-[[ignore]]
-fingerprint = "8a840004aff68030"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:117"
 
 [[ignore]]
 fingerprint = "8cdd64394c3b1751"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient/mixnet.rs:1047"
 
 [[ignore]]
-fingerprint = "8e50a1eed2fa1481"
-reason = "baseline at 639986655: exact group of 5, first member zingolib/src/lightclient/transmit.rs:54"
-
-[[ignore]]
 fingerprint = "92d452d6560102c0"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1961"
-
-[[ignore]]
-fingerprint = "9301625cdf47d79d"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/zcb_traits.rs:164"
-
-[[ignore]]
-fingerprint = "972c59ab2359ef72"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync.rs:1206"
 
 [[ignore]]
 fingerprint = "9755ff9cb034efa6"
@@ -357,14 +189,6 @@ reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/
 [[ignore]]
 fingerprint = "9a51c97c519be6ce"
 reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:308"
-
-[[ignore]]
-fingerprint = "9b653f0d6dfc9d82"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:242"
-
-[[ignore]]
-fingerprint = "9cc08286a1028dc3"
-reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:1132"
 
 [[ignore]]
 fingerprint = "9d63899e2bb6d8c5"
@@ -395,40 +219,12 @@ fingerprint = "ae890ccd1b72bf4f"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:621"
 
 [[ignore]]
-fingerprint = "af61350530a15bb6"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:898"
-
-[[ignore]]
-fingerprint = "b2876b9031ed4f65"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/sync/state.rs:183"
-
-[[ignore]]
-fingerprint = "b3c6cb32ddf2f3dc"
-reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/lib.rs:136"
-
-[[ignore]]
 fingerprint = "b58897e7f9bc3d81"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet.rs:81"
 
 [[ignore]]
-fingerprint = "b71eda4df3009ffb"
-reason = "baseline at 639986655: exact group of 10, first member zingolib/src/lightclient/indexer_history.rs:152"
-
-[[ignore]]
 fingerprint = "b8db8e63c0c999cf"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/keys.rs:129"
-
-[[ignore]]
-fingerprint = "b979aab4b40a487d"
-reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/lib.rs:330"
-
-[[ignore]]
-fingerprint = "b984056ac42bc9f5"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/keys/unified.rs:101"
-
-[[ignore]]
-fingerprint = "bad298d4651c2b6c"
-reason = "baseline at 639986655: exact group of 4, first member zingolib/src/lightclient/transmit.rs:64"
 
 [[ignore]]
 fingerprint = "bc1c399af51c0eda"
@@ -447,48 +243,12 @@ fingerprint = "bc97950bdb628945"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:795"
 
 [[ignore]]
-fingerprint = "bed8b4d09031ea2f"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate.rs:335"
-
-[[ignore]]
-fingerprint = "bfac13e2d248150d"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/scan/compact_blocks/runners.rs:286"
-
-[[ignore]]
 fingerprint = "c12497acc24751a7"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1135"
 
 [[ignore]]
-fingerprint = "c1b8ec3d746a55da"
-reason = "baseline at 639986655: exact group of 8, first member zingolib/src/lightclient.rs:494"
-
-[[ignore]]
-fingerprint = "c34dd676b8a85852"
-reason = "baseline at 639986655: exact group of 7, first member pepper-sync/src/wallet.rs:1148"
-
-[[ignore]]
-fingerprint = "cc515ede6837b405"
-reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/build-binding-layer.rs:217"
-
-[[ignore]]
-fingerprint = "ce572481e79539cc"
-reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/migrate/transmission_route.rs:58"
-
-[[ignore]]
 fingerprint = "ce91a4c6b5bc9c12"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/config.rs:180"
-
-[[ignore]]
-fingerprint = "cf6b7b8c4963c095"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet/serialization.rs:903"
-
-[[ignore]]
-fingerprint = "cfcd4d4317acc64b"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1900"
-
-[[ignore]]
-fingerprint = "d0f576cb647a2aff"
-reason = "baseline at 639986655: exact group of 29, first member zingolib/src/wallet.rs:284"
 
 [[ignore]]
 fingerprint = "d31e82c99ac43416"
@@ -499,24 +259,12 @@ fingerprint = "d4942cf32cb7ae12"
 reason = "baseline at 639986655: exact group of 4, first member zingo-memo/src/lib.rs:161"
 
 [[ignore]]
-fingerprint = "d519519496c992a4"
-reason = "baseline at 639986655: exact group of 4, first member pepper-sync/src/wallet.rs:550"
-
-[[ignore]]
-fingerprint = "d60dcdc86075134e"
-reason = "baseline at 639986655: exact group of 4, first member zingo-status/src/confirmation_status.rs:72"
-
-[[ignore]]
 fingerprint = "d6ebfaed898d50a2"
 reason = "baseline at 639986655: exact group of 2, first member zingo-price/src/lib.rs:781"
 
 [[ignore]]
 fingerprint = "dd90c94728b5d786"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lightclient.rs:752"
-
-[[ignore]]
-fingerprint = "de61ebbd2c24c242"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:113"
 
 [[ignore]]
 fingerprint = "ded031ee1e74ed39"
@@ -543,24 +291,8 @@ fingerprint = "e99d8291efafcfd9"
 reason = "baseline at 639986655: exact group of 6, first member zingo-ffi/lib/src/lib.rs:2313"
 
 [[ignore]]
-fingerprint = "ec90e619d80df75d"
-reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:2441"
-
-[[ignore]]
-fingerprint = "ec94a0ecdc792b75"
-reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/exit.rs:197"
-
-[[ignore]]
-fingerprint = "edd476f140e540fc"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/scan/transactions.rs:59"
-
-[[ignore]]
 fingerprint = "ee525bcf794e2d1c"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/wallet.rs:1640"
-
-[[ignore]]
-fingerprint = "efc866f9a72b6488"
-reason = "baseline at 639986655: exact group of 4, first member zingolib/src/data/proposal.rs:109"
 
 [[ignore]]
 fingerprint = "f1f496cb19e7a753"
@@ -575,14 +307,6 @@ fingerprint = "f378d9b9fe7b334d"
 reason = "baseline at 639986655: exact group of 7, first member zingolib/src/wallet/sync.rs:31"
 
 [[ignore]]
-fingerprint = "f4a309b32b0ff1c0"
-reason = "baseline at 639986655: exact group of 2, first member zingo-ffi/lib/src/lib.rs:1638"
-
-[[ignore]]
-fingerprint = "f8c511c898dbbb62"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/sync.rs:2314"
-
-[[ignore]]
 fingerprint = "f9634fe019dcad24"
 reason = "baseline at 639986655: exact group of 5, first member zingolib/src/config.rs:443"
 
@@ -591,15 +315,7 @@ fingerprint = "fa0e37ea9673bc95"
 reason = "baseline at 639986655: exact group of 3, first member zingolib/src/wallet/keys/unified.rs:396"
 
 [[ignore]]
-fingerprint = "fd4f05e86db5c1b7"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/keys.rs:105"
-
-[[ignore]]
 fingerprint = "624700e8593e4294"
-reason = "trait delegation pair: one type implementing two traits cannot share the impl, so the Sapling prover adapter's SpendProver and OutputProver methods delegate identically"
-
-[[ignore]]
-fingerprint = "ab76baf131af1b5d"
 reason = "trait delegation pair: one type implementing two traits cannot share the impl, so the Sapling prover adapter's SpendProver and OutputProver methods delegate identically"
 
 [[ignore]]
@@ -607,21 +323,9 @@ fingerprint = "5fa706d93b4b84d6"
 reason = "FFI export pair send/preview_send: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
 
 [[ignore]]
-fingerprint = "a64e7fbc9ad3d25f"
-reason = "FFI export pair send/preview_send, the lock closures (zingolib#3104)"
-
-[[ignore]]
 fingerprint = "186f0ce75040647b"
 reason = "FFI export pair send_all/preview_send_all: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
 
 [[ignore]]
-fingerprint = "a6187a2ebbec45af"
-reason = "FFI export pair send_all/preview_send_all, the lock closures (zingolib#3104)"
-
-[[ignore]]
 fingerprint = "951708b4f685840f"
 reason = "FFI export pair shield/preview_shield: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
-
-[[ignore]]
-fingerprint = "ac5a148388d91457"
-reason = "FFI export pair shield/preview_shield, the lock closures (zingolib#3104)"

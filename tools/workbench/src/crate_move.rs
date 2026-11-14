@@ -19,10 +19,7 @@ const SECTION_OPEN: char = '[';
 const DIRECTORY_SECTION_CLOSE: &str = "/*]";
 const UNRELEASED: &str = "## [Unreleased]";
 const NEXT_RELEASE: &str = "\n## [";
-const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 2] = [
-    ("crates/price/CHANGELOG.md", "feature"),
-    ("crates/pepper-sync/CHANGELOG.md", "zl-"),
-];
+const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 1] = [("crates/pepper-sync/CHANGELOG.md", "zl-")];
 
 fn text(relative: &str) -> Result<String, Vec<String>> {
     read(&repo_root()?.join(relative))

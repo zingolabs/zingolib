@@ -30,7 +30,8 @@ use crate::wallet::{
 use crate::witness::LocatedTreeData;
 use crate::{SyncDomain, client, sync::set_transactions_failed_unchecked};
 
-use super::{FetchRequest, ScanTarget, witness};
+use super::{FetchRequest, ScanTarget};
+use crate::witness;
 
 /// Trait for interfacing wallet with the sync engine.
 pub trait SyncWallet {
