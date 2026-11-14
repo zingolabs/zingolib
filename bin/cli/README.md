@@ -44,7 +44,7 @@ binary, and places the proxy beside the CLI, where a session that goes online
 finds it.
 
 The proxy is the reason for the task. `nym-proxy` is a binary of
-`zingolib-netutils` behind its `nym` feature (ADR 0011), so a bare
+`zl-netutils` behind its `nym` feature (ADR 0011), so a bare
 `cargo build -p zingolib-cli` never produces it, and a CLI that finds no proxy
 cannot go online.
 

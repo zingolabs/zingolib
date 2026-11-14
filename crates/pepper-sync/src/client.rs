@@ -17,7 +17,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use netutils::{
+use zl_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
         BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
@@ -29,13 +29,13 @@ use crate::{
     witness::Frontiers,
 };
 
-use netutils::lightwallet_protocol::SubtreeRoot;
+use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
-use netutils::time::STREAM_MSG_TIMEOUT;
+use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
 async fn next_stream_item<T>(
     stream: &mut tonic::Streaming<T>,
@@ -510,9 +510,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use netutils::lightwallet_protocol::TreeState;
     use tokio::sync::mpsc;
     use zcash_protocol::local_consensus::LocalNetwork;
+    use zl_netutils::lightwallet_protocol::TreeState;
 
     use super::*;
 

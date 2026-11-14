@@ -135,7 +135,7 @@ mod progress_heartbeat {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
+    use zl_netutils::time::PROGRESS_HEARTBEAT_INTERVAL;
 
     use super::super::*;
 
@@ -674,8 +674,8 @@ mod network_command_parsing {
     #[cfg(feature = "nym")]
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
-        use net_diag::{NetOpFailure, NetOpStage};
         use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
+        use zl_net_diag::{NetOpFailure, NetOpStage};
 
         let live = MixnetProbe {
             host: zingolib::destination::Host::of_host_str("zec.rocks"),
@@ -1605,7 +1605,7 @@ mod pure_helpers {
 
         assert_eq!(
             render_error_chain(&wrapped),
-            net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+            zl_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
         );
     }
 

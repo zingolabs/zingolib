@@ -232,7 +232,7 @@ pub enum SessionStartError {
 mod wire_contract {
     use std::time::{Duration, UNIX_EPOCH};
 
-    use net_diag::{NetOpFailure, NetOpStage};
+    use zl_net_diag::{NetOpFailure, NetOpStage};
 
     use super::MixnetStatus;
     use crate::mixnet::{DeathReport, Indicator};

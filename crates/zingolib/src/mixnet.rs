@@ -10,7 +10,7 @@
 pub mod acquire;
 
 /// Exit identity, defined below the seam (ADR 0046).
-pub use netutils::exit::{BlankExitNodeId, ExitNodeId};
+pub use zl_netutils::exit::{BlankExitNodeId, ExitNodeId};
 
 pub(crate) use crate::lightclient::indexer_history::fault_domain;
 
@@ -58,13 +58,13 @@ pub use route::{
 };
 
 /// Conduit, defined below the seam (ADR 0046).
-pub use netutils::conduit::MixnetConduit;
+pub use zl_netutils::conduit::MixnetConduit;
 
 pub use supervisor::{DeathReport, MixnetProxy, MixnetProxyError};
 
 /// The temporal calibration a consumer of the mixnet transport reads from
 /// the wallet, so a user interface paces itself from the same source of
-/// truth as the gates (`zingolib_netutils::time`) instead of pinning copies
+/// truth as the gates (`zl_netutils::time`) instead of pinning copies
 /// across the FFI, where no compiler catches drift (issue #2564). Field
 /// names match the constants they carry.
 
@@ -89,21 +89,23 @@ pub struct MixnetTiming {
 /// record.
 pub fn mixnet_timing() -> MixnetTiming {
     MixnetTiming {
-        attach_readiness_budget: netutils::time::ATTACH_READINESS_BUDGET,
-        mixnet_round_trip_bound: netutils::time::MIXNET_ROUND_TRIP_BOUND,
-        client_rotation_min: netutils::time::CLIENT_ROTATION_MIN,
-        client_rotation_max: netutils::time::CLIENT_ROTATION_MAX,
+        attach_readiness_budget: zl_netutils::time::ATTACH_READINESS_BUDGET,
+        mixnet_round_trip_bound: zl_netutils::time::MIXNET_ROUND_TRIP_BOUND,
+        client_rotation_min: zl_netutils::time::CLIENT_ROTATION_MIN,
+        client_rotation_max: zl_netutils::time::CLIENT_ROTATION_MAX,
     }
 }
 
 /// The taxonomy stage of a SOCKS5 transmit failure
 /// (`docs/agents/net-diag-design.md`): a pure, typed match over the error's
 /// variants — no substring inspection anywhere. This is the one classifier
-/// for [`netutils::Socks5TransmitError`], shared by the send, the
+/// for [`zl_netutils::Socks5TransmitError`], shared by the send, the
 /// mixnet probe leg, and the attach readiness gate.
-pub(crate) fn socks5_transmit_stage(error: &netutils::Socks5TransmitError) -> net_diag::NetOpStage {
-    use net_diag::NetOpStage;
-    use netutils::Socks5TransmitError;
+pub(crate) fn socks5_transmit_stage(
+    error: &zl_netutils::Socks5TransmitError,
+) -> zl_net_diag::NetOpStage {
+    use zl_net_diag::NetOpStage;
+    use zl_netutils::Socks5TransmitError;
     match error {
         Socks5TransmitError::ProxyUnreachable { .. } => NetOpStage::LocalProxyConnect,
         Socks5TransmitError::TunnelRefused { .. } => NetOpStage::SocksHandshake,
@@ -123,21 +125,21 @@ pub(crate) fn socks5_transmit_stage(error: &netutils::Socks5TransmitError) -> ne
     }
 }
 
-/// The [`net_diag::NetOpFailure`] record for one SOCKS5 transmit
+/// The [`zl_net_diag::NetOpFailure`] record for one SOCKS5 transmit
 /// failure against `target`: stage from [`socks5_transmit_stage`], cause
 /// chain captured layer by layer from the error's `source()` walk.
 pub(crate) fn socks5_transmit_failure(
-    error: &netutils::Socks5TransmitError,
+    error: &zl_netutils::Socks5TransmitError,
     target: impl Into<String>,
-) -> net_diag::NetOpFailure {
-    net_diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
+) -> zl_net_diag::NetOpFailure {
+    zl_net_diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
 }
 
 #[cfg(all(test, feature = "nym"))]
 mod classifier_tests {
     use super::socks5_transmit_stage;
-    use net_diag::NetOpStage;
-    use netutils::{ProxyDialFailure, Socks5TransmitError, TunnelFailure};
+    use zl_net_diag::NetOpStage;
+    use zl_netutils::{ProxyDialFailure, Socks5TransmitError, TunnelFailure};
 
     /// Every variant classifies by type alone; fabricated values cover the
     /// whole table.
@@ -172,7 +174,7 @@ mod classifier_tests {
             (
                 Socks5TransmitError::Rpc {
                     destination: "zec.rocks:443".into(),
-                    status: netutils::Status::unavailable("overloaded"),
+                    status: zl_netutils::Status::unavailable("overloaded"),
                 },
                 NetOpStage::RemoteHttp,
             ),

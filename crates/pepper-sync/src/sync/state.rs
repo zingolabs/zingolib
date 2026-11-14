@@ -30,7 +30,7 @@ use super::{ScanPriority, VERIFY_BLOCK_RANGE_SIZE, held_at, overlaps};
 
 const NARROW_SCAN_AREA: u32 = 1_000;
 
-use netutils::lightwallet_protocol::SubtreeRoot;
+use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 /// Used to determine which end of the scan range is verified.
 pub(super) enum VerifyEnd {
@@ -1623,9 +1623,9 @@ mod tests {
 
     mod scan_targets {
         use sapling_crypto::value::NoteValue;
-        use status::confirmation_status::ConfirmationStatus;
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::memo::Memo;
+        use zl_status::confirmation_status::ConfirmationStatus;
 
         use super::*;
         use crate::wallet::{OutputId, ScanTargetOrigin, WalletNote, WalletTransaction};

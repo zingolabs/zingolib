@@ -4210,8 +4210,8 @@ dependencies = [
  "zcash_protocol",
  "zingo_test_vectors",
  "zingolib",
- "zingolib-netutils",
  "zip32",
+ "zl-netutils",
 ]
 
 [[package]]
@@ -6464,10 +6464,10 @@ dependencies = [
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
- "zingolib-memo",
- "zingolib-netutils",
- "zingolib-status",
  "zip32",
+ "zl-memo",
+ "zl-netutils",
+ "zl-status",
 ]
 
 [[package]]
@@ -11158,12 +11158,12 @@ dependencies = [
  "zingo_common_components",
  "zingo_test_vectors",
  "zingolib",
- "zingolib-memo",
- "zingolib-net-diag",
- "zingolib-netutils",
- "zingolib-price",
- "zingolib-status",
  "zip32",
+ "zl-memo",
+ "zl-net-diag",
+ "zl-netutils",
+ "zl-price",
+ "zl-status",
 ]
 
 [[package]]
@@ -11194,10 +11194,10 @@ dependencies = [
  "zingo_grpc_proxy",
  "zingo_test_vectors",
  "zingolib",
- "zingolib-net-diag",
- "zingolib-netutils",
- "zingolib-status",
  "zip32",
+ "zl-net-diag",
+ "zl-netutils",
+ "zl-status",
 ]
 
 [[package]]
@@ -11230,7 +11230,56 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingolib-memo"
+name = "zingolib-nym-proxy-ffi"
+version = "0.1.0"
+dependencies = [
+ "android_logger 0.15.1",
+ "log",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-socks",
+ "tracing",
+ "tracing-subscriber",
+ "uniffi",
+ "zl-netutils",
+]
+
+[[package]]
+name = "zingolib-uniffi-bindgen"
+version = "0.1.0"
+dependencies = [
+ "uniffi",
+]
+
+[[package]]
+name = "zip32"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "601ab4bc5f8312fa39f5411e07eb66b538687064c6e936b34eaa78f1e99ebe4d"
+dependencies = [
+ "bech32",
+ "blake2b_simd",
+ "memuse",
+ "subtle 2.6.1",
+ "zcash_spec",
+ "zeroize",
+]
+
+[[package]]
+name = "zip321"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6960586c9e1a91c734e9175913e22b88f2df11617f1decdefb15dd971ffd383"
+dependencies = [
+ "base64 0.22.1",
+ "nom",
+ "percent-encoding",
+ "zcash_address",
+ "zcash_protocol",
+]
+
+[[package]]
+name = "zl-memo"
 version = "0.3.0"
 dependencies = [
  "zcash_address",
@@ -11240,14 +11289,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "zingolib-net-diag"
+name = "zl-net-diag"
 version = "0.1.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "zingolib-netutils"
+name = "zl-netutils"
 version = "7.0.0"
 dependencies = [
  "futures-channel",
@@ -11284,26 +11333,11 @@ dependencies = [
  "tonic",
  "tower",
  "x509-parser",
- "zingolib-net-diag",
+ "zl-net-diag",
 ]
 
 [[package]]
-name = "zingolib-nym-proxy-ffi"
-version = "0.1.0"
-dependencies = [
- "android_logger 0.15.1",
- "log",
- "thiserror 2.0.19",
- "tokio",
- "tokio-socks",
- "tracing",
- "tracing-subscriber",
- "uniffi",
- "zingolib-netutils",
-]
-
-[[package]]
-name = "zingolib-price"
+name = "zl-price"
 version = "0.3.0"
 dependencies = [
  "byteorder",
@@ -11312,49 +11346,15 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "zcash_encoding",
- "zingolib-net-diag",
- "zingolib-netutils",
+ "zl-net-diag",
+ "zl-netutils",
 ]
 
 [[package]]
-name = "zingolib-status"
+name = "zl-status"
 version = "0.3.0"
 dependencies = [
  "byteorder",
- "zcash_protocol",
-]
-
-[[package]]
-name = "zingolib-uniffi-bindgen"
-version = "0.1.0"
-dependencies = [
- "uniffi",
-]
-
-[[package]]
-name = "zip32"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "601ab4bc5f8312fa39f5411e07eb66b538687064c6e936b34eaa78f1e99ebe4d"
-dependencies = [
- "bech32",
- "blake2b_simd",
- "memuse",
- "subtle 2.6.1",
- "zcash_spec",
- "zeroize",
-]
-
-[[package]]
-name = "zip321"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6960586c9e1a91c734e9175913e22b88f2df11617f1decdefb15dd971ffd383"
-dependencies = [
- "base64 0.22.1",
- "nom",
- "percent-encoding",
- "zcash_address",
  "zcash_protocol",
 ]
 

@@ -34,7 +34,7 @@ pub enum MixnetRoute {
     /// Route over nakednet. Reached only under [`TransmitPolicy::Nakednet`].
     Nakednet,
     /// Route through the session's conduit.
-    Mixnet(netutils::conduit::MixnetConduit),
+    Mixnet(zl_netutils::conduit::MixnetConduit),
 }
 
 /// A mixnet-covered surface was attempted while the mixnet was unavailable.
@@ -70,8 +70,8 @@ pub enum MixnetNotReady {
 // holding that one for the supersession to reach it (ADR 0048).
 pub fn resolve_mixnet_only_route(
     mode: Indicator,
-    conduit: Option<netutils::conduit::MixnetConduit>,
-) -> Result<netutils::conduit::MixnetConduit, MixnetNotReady> {
+    conduit: Option<zl_netutils::conduit::MixnetConduit>,
+) -> Result<zl_netutils::conduit::MixnetConduit, MixnetNotReady> {
     match mode {
         // A disable leaves no transport behind, so it refuses as the
         // ground state does.
@@ -94,7 +94,7 @@ pub fn resolve_mixnet_only_route(
 pub fn resolve_send_route(
     policy: TransmitPolicy,
     mode: Indicator,
-    conduit: Option<netutils::conduit::MixnetConduit>,
+    conduit: Option<zl_netutils::conduit::MixnetConduit>,
 ) -> Result<MixnetRoute, MixnetNotReady> {
     match policy {
         TransmitPolicy::Nakednet => Ok(MixnetRoute::Nakednet),
@@ -106,8 +106,8 @@ pub fn resolve_send_route(
 mod tests {
     use super::*;
 
-    fn conduit() -> netutils::conduit::MixnetConduit {
-        netutils::conduit::MixnetConduit::over(
+    fn conduit() -> zl_netutils::conduit::MixnetConduit {
+        zl_netutils::conduit::MixnetConduit::over(
             "127.0.0.1:9050".parse().expect("the test address parses"),
         )
     }

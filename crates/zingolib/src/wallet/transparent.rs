@@ -326,7 +326,7 @@ impl LightWallet {
             &ufvks,
             self,
             transaction,
-            status::confirmation_status::ConfirmationStatus::Calculated(target_height),
+            zl_status::confirmation_status::ConfirmationStatus::Calculated(target_height),
             timestamp,
         ) {
             Ok(()) => (),

@@ -1,6 +1,6 @@
 [package]
-name = "zingolib-price"
-description = "Crate for fetching ZEC prices."
+name = "zl-price"
+description = "Crate for fetching ZEC prices. Part of zingolib."
 authors = ["<zingo@zingolabs.org>"]
 version = "0.3.0"
 edition = "2024"
@@ -9,7 +9,7 @@ homepage = "https://github.com/zingolabs/zingolib"
 license = "MIT"
 
 [features]
-# The fetch machinery: the conduit-guarded HTTP leg in zingolib-netutils. On by
+# The fetch machinery: the conduit-guarded HTTP leg in zl-netutils. On by
 # default so the standalone crate builds and tests its whole surface;
 # zingolib depends on this crate with default features off and re-enables
 # the fetch only under its `nym` feature, per the mixnet-only price rule
@@ -18,15 +18,15 @@ license = "MIT"
 # feature the crate is the storage-only price data model.
 default = ["socks5-fetch"]
 socks5-fetch = [
-    "netutils/socks5-fetch",
-    "dep:netutils",
+    "zl-netutils/socks5-fetch",
+    "dep:zl-netutils",
     "dep:serde",
     "dep:serde_json",
 
     "dep:thiserror",
-    "dep:net-diag",
+    "dep:zl-net-diag",
 ]
-zingolib-netutils = ["dep:netutils"]
+zl-netutils = ["dep:zl-netutils"]
 
 [dependencies]
 zcash_encoding = { workspace = true }
@@ -35,9 +35,9 @@ byteorder = { workspace = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
-net-diag = { workspace = true, optional = true }
-netutils = { package = "zingolib-netutils", version = "7.0.0", path = "../netutils", optional = true }
+zl-net-diag = { workspace = true, optional = true }
+zl-netutils = { version = "7.0.0", path = "../netutils", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
-netutils = { package = "zingolib-netutils", path = "../netutils", features = ["socks5-fetch"] }
+zl-netutils = { path = "../netutils", features = ["socks5-fetch"] }

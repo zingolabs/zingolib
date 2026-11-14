@@ -18,9 +18,9 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use netutils::lightwallet_protocol::TreeState;
-use price::PriceList;
 use zingo_common_components::protocol::ActivationHeights;
+use zl_netutils::lightwallet_protocol::TreeState;
+use zl_price::PriceList;
 
 use super::keys::unified::{ReceiverSelection, UnifiedAddressId};
 use super::{LightWallet, RecoveryInfo, error::KeyError};
@@ -196,7 +196,7 @@ impl LightWallet {
     /// Changes in version 45:
     /// `SyncState` serialized version 5, which appends the transparent scan
     /// floor.
-    /// The readers of the pepper-sync, zingolib-status and zingolib-price types
+    /// The readers of the pepper-sync, zl-status and zl-price types
     /// embedded in the wallet file refuse a serialized version above the one
     /// they write. Builds before version 45 read those types at any version,
     /// so 44 and 45 were each minted for a change to one of them. A build that

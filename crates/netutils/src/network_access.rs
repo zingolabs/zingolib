@@ -3,7 +3,7 @@ use http::Uri;
 use crate::{GetClientError, GrpcIndexer};
 
 /// ```
-/// use zingolib_netutils::{GetClientError, NetworkAccess};
+/// use zl_netutils::{GetClientError, NetworkAccess};
 ///
 /// // The lazy `indexer` still needs a runtime to live in.
 /// # tokio::runtime::Builder::new_current_thread().enable_all().build().expect("a current-thread runtime builds in a doc-test").block_on(async {

@@ -153,7 +153,7 @@ const DISPATCH_CHAIN_SEPARATOR: &str = "\ncaused by: ";
 /// Renders `error` and then every link of its source chain, one `caused
 /// by:` line per link, over the one sanctioned chain walk.
 pub(crate) fn render_error_chain(error: &(impl std::error::Error + 'static)) -> String {
-    net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
+    zl_net_diag::chain_texts(error).join(DISPATCH_CHAIN_SEPARATOR)
 }
 
 pub(crate) fn io_error_with_chain(
@@ -958,7 +958,7 @@ async fn transmit(
             .filter(|(_, transaction)| {
                 matches!(
                     transaction.status(),
-                    status::confirmation_status::ConfirmationStatus::Calculated(_)
+                    zl_status::confirmation_status::ConfirmationStatus::Calculated(_)
                 )
             })
             .map(|(txid, transaction)| (transaction.status().get_height(), *txid))

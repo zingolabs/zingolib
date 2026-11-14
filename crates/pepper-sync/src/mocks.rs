@@ -8,10 +8,10 @@ use crate::wallet::{
     },
 };
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
-use netutils::lightwallet_protocol::SubtreeRoot;
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
+use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {

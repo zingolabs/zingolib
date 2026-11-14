@@ -35,7 +35,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed());
@@ -52,7 +52,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after_or_at(&9.into()));
@@ -77,7 +77,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_after(&9.into()));
@@ -102,7 +102,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before_or_at(&9.into()));
@@ -128,7 +128,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_confirmed_before(&9.into()));
@@ -153,7 +153,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(10.into()).is_pending_before(&9.into()));
@@ -184,7 +184,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(ConfirmationStatus::Calculated(1.into()).is_pending());
@@ -205,7 +205,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// assert!(!ConfirmationStatus::Calculated(1.into()).is_failed());
@@ -223,7 +223,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(16.into());
@@ -243,7 +243,7 @@ impl ConfirmationStatus {
     /// # Examples
     ///
     /// ```
-    /// use zingolib_status::confirmation_status::ConfirmationStatus;
+    /// use zl_status::confirmation_status::ConfirmationStatus;
     /// use zcash_protocol::consensus::BlockHeight;
     ///
     /// let status = ConfirmationStatus::Confirmed(15.into());

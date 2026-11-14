@@ -40,8 +40,8 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
-use net_diag::{NetOpFailure, NetOpStage};
 use nym_sdk::mixnet::{MixnetClientBuilder, Socks5, Socks5MixnetClient};
+use zl_net_diag::{NetOpFailure, NetOpStage};
 
 use crate::arm_race::acquisition_launch_policy;
 use crate::arm_race::{LaunchPolicy, RaceAction, RaceEvent, RaceProgress, RaceState};
@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     // Integration tests below require a live Nym network. Run with:
-    //   cargo test --package zingolib-netutils --features nym -- --ignored
+    //   cargo test --package zl-netutils --features nym -- --ignored
 
     /// Start the embedded proxy and verify it reports a valid localhost address.
     #[tokio::test(flavor = "multi_thread")]

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invariant: outputs stored under foreign txids, spends recorded on
   transactions that do not carry the input, spends released by failed
   transactions, and balance lines that disagree with the raw notes. The
-  zingo-cli `doctor` command prints the list and its remedy.
+  zingolib-cli `doctor` command prints the list and its remedy.
 - `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
   carry the UTF-8 text of each OP_RETURN output of the transaction, in output
   order, and their JSON carries it as `op_return_data`. A Maya or THORChain
@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Indexer URI, so `go_online` dials the same indexer again, and
   `choose_indexer(IndexerChoice::Offline)` is the same act. A failed
   `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
-  client holds a `zingolib_netutils::NetworkAccess`, which owns `indexer_uri`
+  client holds a `zl_netutils::NetworkAccess`, which owns `indexer_uri`
   and `indexer` together.
 - A pending transaction's spends of the wallet's notes derive from the
   transaction's inputs each time they are read (`pepper_sync::pending_spends`),

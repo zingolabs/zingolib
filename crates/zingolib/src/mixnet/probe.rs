@@ -28,8 +28,8 @@
 use std::time::{Duration, Instant};
 
 use http::Uri;
-use net_diag::{NetOpFailure, NetOpStage};
-use netutils::{GetClientError, GrpcIndexer, Indexer as _};
+use zl_net_diag::{NetOpFailure, NetOpStage};
+use zl_netutils::{GetClientError, GrpcIndexer, Indexer as _};
 
 use crate::lightclient::indexer_history::{
     AttemptKind, AttemptRoute, FailureKind, IndexerAttempt, IndexerHistoryHandle, now_unix_secs,
@@ -46,7 +46,7 @@ pub struct ProbeSuccess {
 }
 
 impl ProbeSuccess {
-    fn of(info: &netutils::lightwallet_protocol::LightdInfo) -> Self {
+    fn of(info: &zl_netutils::lightwallet_protocol::LightdInfo) -> Self {
         ProbeSuccess {
             chain: info.chain_name.clone(),
             height: info.block_height,
@@ -94,7 +94,7 @@ async fn mixnet_leg(
     host: &crate::destination::Host,
 ) -> ProbeLeg {
     let started = Instant::now();
-    let outcome = netutils::Socks5Indexer::new(socks5_addr, indexer.clone(), timeout)
+    let outcome = zl_netutils::Socks5Indexer::new(socks5_addr, indexer.clone(), timeout)
         .get_lightd_info()
         .await
         .map(|info| ProbeSuccess::of(&info))
@@ -320,7 +320,7 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 mod tests {
     use super::*;
 
-    use netutils::time::test::FAST_STAGE_BOUND;
+    use zl_netutils::time::test::FAST_STAGE_BOUND;
 
     fn uri(text: &str) -> Uri {
         text.parse().expect("static uri")
@@ -387,8 +387,8 @@ mod tests {
     #[ignore = "contacts the live Default Indexer over nakednet; the nightly runs it"]
     async fn live_staged_probe_smoke() {
         let probe = probe_sync_server(
-            &uri(netutils::default_indexer::MAINNET_DEFAULT_INDEXER),
-            netutils::time::test::LIVE_STAGE_BOUND,
+            &uri(zl_netutils::default_indexer::MAINNET_DEFAULT_INDEXER),
+            zl_netutils::time::test::LIVE_STAGE_BOUND,
         )
         .await;
         assert_eq!(probe.stages.len(), 3, "all stages ran: {probe:?}");

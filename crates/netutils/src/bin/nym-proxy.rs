@@ -30,7 +30,7 @@
 
 use std::io::Write as _;
 use tokio::io::AsyncReadExt as _;
-use zingolib_netutils::{
+use zl_netutils::{
     NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, NymProxy, SOCKS5_ADDR_LINE_PREFIX,
 };
 
@@ -53,7 +53,7 @@ enum ProxyExit {
     Arguments(#[from] ArgumentsError),
     /// The mixnet refused the discovery or the bootstrap.
     #[error(transparent)]
-    Nym(#[from] zingolib_netutils::NymProxyError),
+    Nym(#[from] zl_netutils::NymProxyError),
     /// The interrupt handler could not be installed.
     #[error("the interrupt handler failed")]
     Interrupt(#[source] std::io::Error),

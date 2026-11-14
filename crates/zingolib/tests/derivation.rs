@@ -7,7 +7,6 @@
 mod common;
 
 use pepper_sync::wallet::{IronwoodNote, OutputId, WalletTransaction};
-use status::confirmation_status::ConfirmationStatus;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -19,6 +18,7 @@ use zingolib::perspective::value_transfer::{
     SelfSendValueTransfer, SentValueTransfer, ValueTransferKind, ValueTransfers,
 };
 use zingolib::wallet::keys::unified::ReceiverSelection;
+use zl_status::confirmation_status::ConfirmationStatus;
 
 use common::{
     own_orchard_receiver, received_texts, regtest_wallet, self_send, sent, zfz_self_send,

@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
-- BREAKING: the package is `zingolib-price` and its library
-  `zingolib_price`, renamed from `zingo-price` and `zingo_price`.
-- BREAKING: the cargo feature `zingo-netutils` is `zingolib-netutils`.
+- BREAKING: the package is `zl-price` and its library
+  `zl_price`, renamed from `zingo-price` and `zingo_price`.
+- BREAKING: the cargo feature `zingo-netutils` is `zl-netutils`.
 
 ### Deprecated
 

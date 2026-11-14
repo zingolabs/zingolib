@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 /// Exit Pool, defined below the seam (ADR 0046).
-pub(crate) use netutils::exit as exit_pool;
+pub(crate) use zl_netutils::exit as exit_pool;
 
 use std::time::{Duration, Instant};
 
@@ -290,8 +290,9 @@ impl Pools {
                 return Err(acquire::TransportError::DiedBeforeUse);
             };
             let evidence =
-                netutils::sentinel::probe_sentinel(socks5, netutils::time::SENTINEL_BUDGET).await;
-            if let netutils::sentinel::ExitEvidence::Answered { millis } = evidence {
+                zl_netutils::sentinel::probe_sentinel(socks5, zl_netutils::time::SENTINEL_BUDGET)
+                    .await;
+            if let zl_netutils::sentinel::ExitEvidence::Answered { millis } = evidence {
                 self.remember(
                     lease.node().clone(),
                     exit_pool::ExitNodeHealthVerdict::EpochProven,
@@ -313,7 +314,7 @@ impl Pools {
         }
         Err(acquire::TransportError::NoProvenExit {
             probed: MAX_PROVING_BIRTHS,
-            budget: netutils::time::SENTINEL_BUDGET,
+            budget: zl_netutils::time::SENTINEL_BUDGET,
         })
     }
 }
@@ -475,12 +476,12 @@ mod bind_failure_absorption {
         ) -> Result<crate::mixnet::MixnetProxy, acquire::TransportError> {
             self.acquisitions.fetch_add(1, Ordering::AcqRel);
             Err(acquire::TransportError::NotReady {
-                budget: netutils::time::NYM_LIFECYCLE_TIMEOUT,
+                budget: zl_netutils::time::NYM_LIFECYCLE_TIMEOUT,
             })
         }
 
-        fn rotation_verdict(&self) -> netutils::provider::RotationVerdict {
-            netutils::provider::RotationVerdict::Never
+        fn rotation_verdict(&self) -> zl_netutils::provider::RotationVerdict {
+            zl_netutils::provider::RotationVerdict::Never
         }
     }
 

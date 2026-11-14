@@ -5,14 +5,14 @@ use std::future::Future;
 
 use nonempty::NonEmpty;
 
-use netutils::Indexer as _;
-use netutils::lightwallet_protocol::{RawTransaction, TxFilter};
-use status::confirmation_status::ConfirmationStatus;
 use zcash_client_backend::data_api::wallet::TargetHeight;
 use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zl_netutils::Indexer as _;
+use zl_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
+use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
@@ -34,7 +34,7 @@ fn record_send_attempt(
     host: &crate::destination::Host,
     route: AttemptRoute,
     started: std::time::Instant,
-    outcome: &Result<String, net_diag::NetOpFailure>,
+    outcome: &Result<String, zl_net_diag::NetOpFailure>,
     fault_domain: Option<FaultDomain>,
 ) {
     history.record(&IndexerAttempt {
@@ -55,7 +55,7 @@ fn record_send_attempt(
 #[error("{host}: {failure}")]
 pub(crate) struct TransmitError {
     host: String,
-    failure: net_diag::NetOpFailure,
+    failure: zl_net_diag::NetOpFailure,
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -85,7 +85,7 @@ pub struct TransmitReport {
 pub(crate) fn resolve_transmit_route(
     has_indexer: bool,
     route: Result<crate::mixnet::MixnetRoute, crate::mixnet::MixnetNotReady>,
-) -> Result<Option<netutils::conduit::ConduitDial>, LightClientError> {
+) -> Result<Option<zl_netutils::conduit::ConduitDial>, LightClientError> {
     use crate::mixnet::{MixnetNotReady, MixnetRoute};
     match (has_indexer, route) {
         // The guard rides out to the caller, which holds it for the send.
@@ -162,25 +162,25 @@ fn retarget_for_offline_signing<NoteRef: Clone>(
 }
 
 /// A gRPC indexer as a [`TransmitTarget`].
-struct NakednetTarget(netutils::GrpcIndexer);
+struct NakednetTarget(zl_netutils::GrpcIndexer);
 
 impl NakednetTarget {
     fn failure(
-        status: &netutils::Status,
+        status: &zl_netutils::Status,
         host: &crate::destination::Host,
-    ) -> net_diag::NetOpFailure {
-        net_diag::NetOpFailure::from_error(net_diag::NetOpStage::RemoteHttp, host, status)
+    ) -> zl_net_diag::NetOpFailure {
+        zl_net_diag::NetOpFailure::from_error(zl_net_diag::NetOpStage::RemoteHttp, host, status)
     }
 }
 
 impl TransmitTarget for NakednetTarget {
-    type Failure = netutils::Status;
+    type Failure = zl_netutils::Status;
 
     fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> impl Future<Output = Result<String, netutils::Status>> + Send {
+    ) -> impl Future<Output = Result<String, zl_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
         async move {
@@ -209,18 +209,18 @@ impl TransmitTarget for NakednetTarget {
     }
 }
 
-/// A [`netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
+/// A [`zl_netutils::Socks5Indexer`] is the mixnet [`TransmitTarget`]:
 /// one Destination that submits and delivery-checks over its own tunnel,
 /// running the same [`resilient_transmit`] policy as the nakednet wire.
 #[cfg(feature = "nym")]
-impl TransmitTarget for netutils::Socks5Indexer {
-    type Failure = netutils::Socks5TransmitError;
+impl TransmitTarget for zl_netutils::Socks5Indexer {
+    type Failure = zl_netutils::Socks5TransmitError;
 
     async fn submit(
         &self,
         raw_tx: &[u8],
         height: u64,
-    ) -> Result<String, netutils::Socks5TransmitError> {
+    ) -> Result<String, zl_netutils::Socks5TransmitError> {
         self.send_transaction(raw_tx, height).await
     }
 
@@ -288,20 +288,22 @@ struct TransmitContext<'a> {
 enum SessionTarget {
     Nakednet(NakednetTarget),
     #[cfg(feature = "nym")]
-    Mixnet(netutils::Socks5Indexer),
+    Mixnet(zl_netutils::Socks5Indexer),
 }
 
 impl SessionTarget {
     #[cfg_attr(not(feature = "nym"), allow(unused_variables))]
-    fn of(wire: Wire, indexer: netutils::GrpcIndexer, indexer_uri: http::Uri) -> Self {
+    fn of(wire: Wire, indexer: zl_netutils::GrpcIndexer, indexer_uri: http::Uri) -> Self {
         match wire {
             Wire::Nakednet => SessionTarget::Nakednet(NakednetTarget(indexer)),
             #[cfg(feature = "nym")]
-            Wire::Mixnet { shared_socks5 } => SessionTarget::Mixnet(netutils::Socks5Indexer::new(
-                shared_socks5,
-                indexer_uri,
-                DEFAULT_REQUEST_TIMEOUT,
-            )),
+            Wire::Mixnet { shared_socks5 } => {
+                SessionTarget::Mixnet(zl_netutils::Socks5Indexer::new(
+                    shared_socks5,
+                    indexer_uri,
+                    DEFAULT_REQUEST_TIMEOUT,
+                ))
+            }
             #[cfg(all(feature = "nym", any(test, feature = "testutils")))]
             Wire::MixnetOverMock { .. } => SessionTarget::Nakednet(NakednetTarget(indexer)),
         }
@@ -363,7 +365,7 @@ async fn transmit_to<T, F>(
 ) -> Result<(String, TransmitRoute), TransmitError>
 where
     T: TransmitTarget + Sync,
-    F: Fn(&T::Failure, &crate::destination::Host) -> net_diag::NetOpFailure,
+    F: Fn(&T::Failure, &crate::destination::Host) -> zl_net_diag::NetOpFailure,
 {
     let started = std::time::Instant::now();
     let outcome = resilient_transmit(
@@ -1097,8 +1099,8 @@ mod transmit_error_seam {
     #[test]
     fn send_attempt_failure_is_classified_from_the_record() {
         let history = IndexerHistoryHandle::default();
-        let failure = net_diag::NetOpFailure::message(
-            net_diag::NetOpStage::RemoteConnect,
+        let failure = zl_net_diag::NetOpFailure::message(
+            zl_net_diag::NetOpStage::RemoteConnect,
             "indexer.example",
             "connection refused",
         );
@@ -1122,10 +1124,10 @@ mod transmit_error_seam {
 
 #[cfg(test)]
 mod built_transaction_shape {
-    use status::confirmation_status::ConfirmationStatus;
     use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zingo_common_components::protocol::ActivationHeights;
+    use zl_status::confirmation_status::ConfirmationStatus;
 
     use crate::lightclient::LightClient;
     use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};

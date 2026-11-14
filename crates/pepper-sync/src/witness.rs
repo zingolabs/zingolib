@@ -8,19 +8,19 @@ use incrementalmerkletree::{
     Position, Retention,
     frontier::{CommitmentTree, Frontier},
 };
-use netutils::lightwallet_protocol::TreeState;
 use orchard::tree::MerkleHashOrchard;
 use sapling_crypto::Node;
 use shardtree::LocatedPrunableTree;
 use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
 use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
 use zcash_protocol::consensus::BlockHeight;
+use zl_netutils::lightwallet_protocol::TreeState;
 
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
 use {
-    crate::error::ServerError, netutils::lightwallet_protocol::SubtreeRoot,
-    shardtree::store::ShardStore, subtle::CtOption,
+    crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
+    zl_netutils::lightwallet_protocol::SubtreeRoot,
 };
 
 pub(crate) const SHARD_HEIGHT: u8 = 16;

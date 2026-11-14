@@ -47,14 +47,14 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use netutils::time::{
-    ATTACH_LISTENER_RETRY_PAUSE, ATTACH_WATCHDOG_INTERVAL, LOOPBACK_DIAL_BOUND,
-    MIXNET_ROUND_TRIP_BOUND,
-};
-use netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::task::JoinHandle;
+use zl_netutils::time::{
+    ATTACH_LISTENER_RETRY_PAUSE, ATTACH_WATCHDOG_INTERVAL, LOOPBACK_DIAL_BOUND,
+    MIXNET_ROUND_TRIP_BOUND,
+};
+use zl_netutils::{NYM_EXIT_LINE_PREFIX, NYM_STATUS_LINE_PREFIX, SOCKS5_ADDR_LINE_PREFIX};
 
 use crate::mixnet::Indicator;
 use crate::mixnet::acquire;
@@ -154,7 +154,7 @@ pub struct DeathReport {
     pub at: std::time::SystemTime,
     /// The typed cause, when one was held.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub detail: Option<net_diag::NetOpFailure>,
+    pub detail: Option<zl_net_diag::NetOpFailure>,
 }
 
 /// The serde codec carrying [`DeathReport::at`] as checked milliseconds
@@ -347,7 +347,7 @@ impl MixnetProxy {
     /// Why the transport died — the failed stage, its target, and the cause
     /// chain — while the mode is [`Indicator::Died`] and the watcher held a
     /// typed cause, and `None` otherwise.
-    pub fn death_detail(&self) -> Option<net_diag::NetOpFailure> {
+    pub fn death_detail(&self) -> Option<zl_net_diag::NetOpFailure> {
         // Derived from the one latch, so this accessor and death_report
         // cannot disagree (the #2569 review).
         self.death_report().and_then(|report| report.detail)
@@ -393,9 +393,9 @@ impl MixnetProxy {
 async fn attach_readiness(
     socks5_addr: SocketAddr,
     indexer: http::Uri,
-) -> Result<(), net_diag::NetOpFailure> {
+) -> Result<(), zl_net_diag::NetOpFailure> {
     let indexer_text = indexer.to_string();
-    let probe = netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
+    let probe = zl_netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
     let mut last_failure = None;
     for attempt in 0..ATTACH_HEALTH_ATTEMPTS {
         if attempt > 0 {
@@ -406,11 +406,11 @@ async fn attach_readiness(
             Err(error) => {
                 let stage = crate::mixnet::socks5_transmit_stage(&error);
                 let target = match stage {
-                    net_diag::NetOpStage::LocalProxyConnect
-                    | net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
+                    zl_net_diag::NetOpStage::LocalProxyConnect
+                    | zl_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
                     _ => indexer_text.clone(),
                 };
-                last_failure = Some(net_diag::NetOpFailure::from_error(stage, target, &error));
+                last_failure = Some(zl_net_diag::NetOpFailure::from_error(stage, target, &error));
             }
         }
     }
@@ -439,11 +439,11 @@ async fn drive_attached_state<RFut, P, PFut>(
     interval: Duration,
     publisher: StatusPublisher,
 ) where
-    RFut: Future<Output = Result<(), net_diag::NetOpFailure>>,
+    RFut: Future<Output = Result<(), zl_net_diag::NetOpFailure>>,
     P: FnMut() -> PFut,
     PFut: Future<Output = bool>,
 {
-    let die = |state: &Arc<Mutex<ProxyState>>, cause: net_diag::NetOpFailure| {
+    let die = |state: &Arc<Mutex<ProxyState>>, cause: zl_net_diag::NetOpFailure| {
         let mut guarded = state.lock().expect("proxy state mutex");
         guarded.mode = Indicator::Died;
         guarded.socks5_addr = None;
@@ -472,8 +472,8 @@ async fn drive_attached_state<RFut, P, PFut>(
         if !watchdog().await {
             die(
                 &state,
-                net_diag::NetOpFailure::message(
-                    net_diag::NetOpStage::LocalProxyConnect,
+                zl_net_diag::NetOpFailure::message(
+                    zl_net_diag::NetOpStage::LocalProxyConnect,
                     socks5_addr.to_string(),
                     "the listener watchdog could not dial the attached endpoint",
                 ),
@@ -528,8 +528,8 @@ async fn drive_state<R: AsyncRead + Unpin>(
                     guarded.bootstrap_detail = None;
                     guarded.death = Some(DeathReport {
                         at: std::time::SystemTime::now(),
-                        detail: Some(net_diag::NetOpFailure::message(
-                            net_diag::NetOpStage::ProxyLaunch,
+                        detail: Some(zl_net_diag::NetOpFailure::message(
+                            zl_net_diag::NetOpStage::ProxyLaunch,
                             addr,
                             format!(
                                 "the nym-proxy announced an unparseable SOCKS5 address: {error}"
@@ -605,7 +605,7 @@ async fn collect_stderr<R: AsyncRead + Unpin>(
 /// The typed cause for a child that exited before speaking the wallet's
 /// stdout protocol: the launch arguments it may not have understood and the
 /// stderr it left behind.
-fn launch_failure_report(launch: &LaunchContext) -> net_diag::NetOpFailure {
+fn launch_failure_report(launch: &LaunchContext) -> zl_net_diag::NetOpFailure {
     let mut cause_chain = vec![
         "the nym-proxy exited during launch without speaking the wallet's stdout protocol; \
          an installed binary older than the wallet may not understand the launch arguments \
@@ -615,8 +615,8 @@ fn launch_failure_report(launch: &LaunchContext) -> net_diag::NetOpFailure {
     ];
     let tail = launch.stderr_tail.lock().expect("stderr tail mutex");
     cause_chain.extend(tail.iter().map(|line| format!("stderr: {line}")));
-    net_diag::NetOpFailure {
-        stage: net_diag::NetOpStage::ProxyLaunch,
+    zl_net_diag::NetOpFailure {
+        stage: zl_net_diag::NetOpStage::ProxyLaunch,
         target: launch.binary.clone(),
         cause_chain,
     }
@@ -743,7 +743,7 @@ pub(crate) async fn await_ready_endpoint(
             };
             if addressed && exit_deadline.is_none() {
                 exit_deadline =
-                    Some(tokio::time::Instant::now() + netutils::time::EXIT_ANNOUNCEMENT_GRACE);
+                    Some(tokio::time::Instant::now() + zl_netutils::time::EXIT_ANNOUNCEMENT_GRACE);
             }
             let changed = match exit_deadline {
                 Some(deadline) => {
@@ -751,7 +751,7 @@ pub(crate) async fn await_ready_endpoint(
                         Ok(changed) => changed,
                         Err(_elapsed) => {
                             return Err(acquire::TransportError::NotReady {
-                                budget: netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+                                budget: zl_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
                             });
                         }
                     }
@@ -798,7 +798,7 @@ where
 {
     let mut receiver = publisher.subscribe();
     let proxy = acquirer.acquire(clutch, publisher).await?;
-    match await_ready_endpoint(&mut receiver, netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
+    match await_ready_endpoint(&mut receiver, zl_netutils::time::NYM_LIFECYCLE_TIMEOUT).await {
         Ok((_addr, exits)) => Ok((proxy, exits)),
         Err(cause) => {
             proxy.stop().await;
@@ -831,7 +831,7 @@ mod tests {
             path: "/no/such/nym-proxy".to_string(),
             source: std::io::Error::other(DETAIL),
         };
-        let chain = net_diag::chain_texts(&failure);
+        let chain = zl_net_diag::chain_texts(&failure);
         assert_eq!(
             chain.join("\n").matches(DETAIL).count(),
             DETAIL_RENDERINGS,
@@ -877,9 +877,9 @@ mod tests {
     }
 
     /// A fabricated readiness failure for the attach falsifiers.
-    fn readiness_failure(text: &str) -> net_diag::NetOpFailure {
-        net_diag::NetOpFailure::message(
-            net_diag::NetOpStage::TunnelTransport,
+    fn readiness_failure(text: &str) -> zl_net_diag::NetOpFailure {
+        zl_net_diag::NetOpFailure::message(
+            zl_net_diag::NetOpStage::TunnelTransport,
             "zec.rocks:443",
             text,
         )
@@ -1018,7 +1018,7 @@ mod tests {
         assert_eq!(s.socks5_addr, None);
         let death = s.death.expect("the defect latches a death report");
         let detail = death.detail.expect("the death carries the typed cause");
-        assert_eq!(detail.stage, net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.stage, zl_net_diag::NetOpStage::ProxyLaunch);
         assert_eq!(detail.target, "not-a-socket");
     }
 
@@ -1168,7 +1168,7 @@ mod tests {
             .as_ref()
             .and_then(|report| report.detail.as_ref())
             .expect("a pre-protocol death carries the launch diagnosis");
-        assert_eq!(detail.stage, net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.stage, zl_net_diag::NetOpStage::ProxyLaunch);
         assert_eq!(detail.target, "/opt/zingo/nym-proxy");
         assert!(
             detail
@@ -1419,7 +1419,7 @@ mod tests {
                 proxy.mode(),
                 proxy
                     .socks5_addr()
-                    .map(netutils::conduit::MixnetConduit::over)
+                    .map(zl_netutils::conduit::MixnetConduit::over)
             ),
             Err(MixnetNotReady::Died),
             "a died attachment must refuse, never route"
@@ -1444,7 +1444,7 @@ mod tests {
             None,
         ));
         let (addr, exits) =
-            await_ready_endpoint(&mut receiver, netutils::time::NYM_LIFECYCLE_TIMEOUT)
+            await_ready_endpoint(&mut receiver, zl_netutils::time::NYM_LIFECYCLE_TIMEOUT)
                 .await
                 .expect("the announced exit reaches the parked waiter");
         assert_eq!(
@@ -1475,20 +1475,20 @@ mod tests {
             death: None,
         });
         let started = tokio::time::Instant::now();
-        let refusal = await_ready_endpoint(&mut receiver, netutils::time::NYM_LIFECYCLE_TIMEOUT)
+        let refusal = await_ready_endpoint(&mut receiver, zl_netutils::time::NYM_LIFECYCLE_TIMEOUT)
             .await
             .expect_err("no exit ever arrives");
         assert!(
             matches!(
                 refusal,
                 acquire::TransportError::NotReady { budget }
-                    if budget == netutils::time::EXIT_ANNOUNCEMENT_GRACE
+                    if budget == zl_netutils::time::EXIT_ANNOUNCEMENT_GRACE
             ),
             "the refusal names the grace it exceeded, got: {refusal}"
         );
         assert_eq!(
             started.elapsed(),
-            netutils::time::EXIT_ANNOUNCEMENT_GRACE,
+            zl_netutils::time::EXIT_ANNOUNCEMENT_GRACE,
             "the wait ends at the grace, never at the lifecycle budget"
         );
     }
@@ -1626,7 +1626,7 @@ mod tests {
     fn the_readiness_budget_is_the_sum_of_its_gate() {
         let attempts = u32::try_from(ATTACH_HEALTH_ATTEMPTS).expect("a small count");
         assert_eq!(
-            netutils::time::ATTACH_READINESS_BUDGET,
+            zl_netutils::time::ATTACH_READINESS_BUDGET,
             MIXNET_ROUND_TRIP_BOUND * attempts + ATTACH_LISTENER_RETRY_PAUSE * (attempts - 1),
             "retune the budget with its gate, never apart"
         );

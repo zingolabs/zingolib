@@ -2,8 +2,8 @@
 
 use std::any::Any;
 
-use netutils::lightwallet_protocol;
 use tokio::task::JoinError;
+use zl_netutils::lightwallet_protocol;
 
 pub mod proposal;
 

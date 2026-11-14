@@ -657,7 +657,7 @@ impl Indexer for GrpcIndexer {
 
 #[cfg(test)]
 mod tests {
-    //! Unit and integration-style tests for `zingolib-netutils`.
+    //! Unit and integration-style tests for `zl-netutils`.
     //!
     //! These tests focus on:
     //! - TLS test asset sanity (`test-data/localhost.pem` + `.key`)

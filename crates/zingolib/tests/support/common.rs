@@ -4,7 +4,6 @@
 use std::str::FromStr as _;
 
 use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
-use status::confirmation_status::ConfirmationStatus;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -12,6 +11,7 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use zingolib::wallet::LightWallet;
+use zl_status::confirmation_status::ConfirmationStatus;
 
 pub fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
     SyntheticWalletBuilder::new(mnemonic_phrase).build()
