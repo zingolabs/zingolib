@@ -26,20 +26,20 @@ use zcash_protocol::{
     memo::{Memo, MemoBytes},
 };
 
-use super::{keys::legacy::WalletCapability, traits::ReadableWriteable, utils};
+use super::{error::KeyError, keys::legacy::WalletCapability, traits::ReadableWriteable, utils};
 
 type DatedWitness<H> = (IncrementalWitness<H, COMMITMENT_TREE_LEVELS>, BlockHeight);
 
 const MEMO_SIZE: usize = 512;
 
-#[derive(Debug, PartialEq, thiserror::Error)]
-enum Fault {
+#[derive(Debug, thiserror::Error)]
+enum DecodeError {
     #[error("stored orchard nullifier is not a canonical field element")]
     OrchardNullifier,
     #[error("stored witness cache is taller than its top height")]
     WitnessCacheHeight,
     #[error("wallet holds no sapling viewing key for its stored sapling note")]
-    SaplingViewingKey,
+    SaplingViewingKey(#[source] KeyError),
     #[error("stored sapling note diversifier does not map to a jubjub point")]
     SaplingDiversifier,
     #[error("stored sapling rseed is not a canonical jubjub scalar")]
@@ -51,13 +51,13 @@ enum Fault {
     #[error("Nullifier not for note")]
     OrchardRandomSeed,
     #[error("wallet holds no orchard viewing key for its stored orchard note")]
-    OrchardViewingKey,
+    OrchardViewingKey(#[source] KeyError),
     #[error("Invalid note")]
     OrchardNote,
     #[error("stored transparent output address is not transparent")]
     TransparentAddress,
-    #[error("Couldn't create memo: {0}")]
-    Memo(zcash_protocol::memo::Error),
+    #[error("Couldn't create memo")]
+    Memo(#[source] zcash_protocol::memo::Error),
     #[error("Can't read {0} because of incorrect version")]
     Version(&'static str),
     #[error("Bad confirmation status")]
@@ -70,40 +70,40 @@ enum Fault {
     ShardRoot(Address),
 }
 
-impl From<Fault> for io::Error {
-    fn from(fault: Fault) -> Self {
-        io::Error::new(io::ErrorKind::InvalidData, fault)
+impl From<DecodeError> for io::Error {
+    fn from(error: DecodeError) -> Self {
+        io::Error::new(io::ErrorKind::InvalidData, error)
     }
 }
 
-fn orchard_nullifier(bytes: &[u8; 32]) -> Result<orchard::note::Nullifier, Fault> {
+fn orchard_nullifier(bytes: &[u8; 32]) -> Result<orchard::note::Nullifier, DecodeError> {
     orchard::note::Nullifier::from_bytes(bytes)
         .into_option()
-        .ok_or(Fault::OrchardNullifier)
+        .ok_or(DecodeError::OrchardNullifier)
 }
 
-fn witness_height(top_height: u64, depth: usize) -> Result<BlockHeight, Fault> {
+fn witness_height(top_height: u64, depth: usize) -> Result<BlockHeight, DecodeError> {
     u32::try_from(top_height)
         .ok()
         .zip(u32::try_from(depth).ok())
         .and_then(|(top_height, depth)| top_height.checked_sub(depth))
         .map(BlockHeight::from)
-        .ok_or(Fault::WitnessCacheHeight)
+        .ok_or(DecodeError::WitnessCacheHeight)
 }
 
-fn sapling_rseed(note_type: u8, bytes: [u8; 32]) -> Result<sapling_crypto::Rseed, Fault> {
+fn sapling_rseed(note_type: u8, bytes: [u8; 32]) -> Result<sapling_crypto::Rseed, DecodeError> {
     match note_type {
         1 => jubjub::Fr::from_bytes(&bytes)
             .into_option()
             .map(sapling_crypto::Rseed::BeforeZip212)
-            .ok_or(Fault::SaplingRseedScalar),
+            .ok_or(DecodeError::SaplingRseedScalar),
         2 => Ok(sapling_crypto::Rseed::AfterZip212(bytes)),
-        unknown => Err(Fault::SaplingRseedType(unknown)),
+        unknown => Err(DecodeError::SaplingRseedType(unknown)),
     }
 }
 
-fn memo(bytes: &[u8]) -> Result<Memo, Fault> {
-    let bytes = MemoBytes::from_bytes(bytes).map_err(Fault::Memo)?;
+fn memo(bytes: &[u8]) -> Result<Memo, DecodeError> {
+    let bytes = MemoBytes::from_bytes(bytes).map_err(DecodeError::Memo)?;
     Ok(Memo::try_from(bytes.clone()).unwrap_or(Memo::Future(bytes)))
 }
 
@@ -260,7 +260,7 @@ impl TxMap {
     pub fn read<R: Read>(mut reader: R, wallet_capability: &WalletCapability) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
-            return Err(Fault::Version("wallettxns").into());
+            return Err(DecodeError::Version("wallettxns").into());
         }
 
         let mut witness_trees = wallet_capability.get_trees_witness_trees();
@@ -500,12 +500,12 @@ impl ReadableWriteable<(sapling_crypto::Diversifier, &WalletCapability)> for sap
         let fvk = sapling_crypto::zip32::DiversifiableFullViewingKey::try_from(
             &wallet_capability.unified_key_store,
         )
-        .map_err(|_| Fault::SaplingViewingKey)?;
+        .map_err(DecodeError::SaplingViewingKey)?;
         let address = fvk
             .fvk()
             .vk
             .to_payment_address(diversifier)
-            .ok_or(Fault::SaplingDiversifier)?;
+            .ok_or(DecodeError::SaplingDiversifier)?;
         Ok(address.create_note(sapling_crypto::value::NoteValue::from_raw(value), rseed))
     }
 
@@ -537,16 +537,16 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
         reader.read_exact(&mut nullifier_bytes)?;
         let rho_nullifier = orchard::note::Rho::from_bytes(&nullifier_bytes)
             .into_option()
-            .ok_or(Fault::OrchardRho)?;
+            .ok_or(DecodeError::OrchardRho)?;
 
         let mut random_seed_bytes = [0; 32];
         reader.read_exact(&mut random_seed_bytes)?;
         let random_seed = orchard::note::RandomSeed::from_bytes(random_seed_bytes, &rho_nullifier)
             .into_option()
-            .ok_or(Fault::OrchardRandomSeed)?;
+            .ok_or(DecodeError::OrchardRandomSeed)?;
 
         let fvk = orchard::keys::FullViewingKey::try_from(&wallet_capability.unified_key_store)
-            .map_err(|_| Fault::OrchardViewingKey)?;
+            .map_err(DecodeError::OrchardViewingKey)?;
         Ok(orchard::note::Note::from_parts(
             fvk.address(diversifier, orchard::keys::Scope::External),
             orchard::value::NoteValue::from_raw(value),
@@ -555,7 +555,7 @@ impl ReadableWriteable<(orchard::keys::Diversifier, &WalletCapability)> for orch
             orchard::note::NoteVersion::V2,
         )
         .into_option()
-        .ok_or(Fault::OrchardNote)?)
+        .ok_or(DecodeError::OrchardNote)?)
     }
 
     fn write<W: Write>(&self, mut _writer: W, _input: ()) -> io::Result<()> {
@@ -592,7 +592,7 @@ impl TransparentOutput {
         let address = address
             .starts_with('t')
             .then_some(address)
-            .ok_or(Fault::TransparentAddress)?;
+            .ok_or(DecodeError::TransparentAddress)?;
 
         let mut transaction_id_bytes = [0; 32];
         reader.read_exact(&mut transaction_id_bytes)?;
@@ -1050,7 +1050,7 @@ fn read_shardtree<
         let root_addr = Address::from_parts(level, index);
         let shard = read_shard(r)?;
 
-        Ok(LocatedPrunableTree::from_parts(root_addr, shard).map_err(Fault::ShardRoot)?)
+        Ok(LocatedPrunableTree::from_parts(root_addr, shard).map_err(DecodeError::ShardRoot)?)
     })?;
     let mut store = MemoryShardStore::empty();
     for shard in shards {
@@ -1063,7 +1063,7 @@ fn read_shardtree<
             1 => shardtree::store::TreeState::AtPosition(Position::from(
                 r.read_u64::<LittleEndian>()?,
             )),
-            otherwise => return Err(Fault::TreeState(otherwise).into()),
+            otherwise => return Err(DecodeError::TreeState(otherwise).into()),
         };
         let marks_removed = Vector::read(r, |r| r.read_u64::<LittleEndian>().map(Position::from))?;
         Ok((
@@ -1095,7 +1095,7 @@ impl ReadableWriteable for ConfirmationStatus {
             1 => Ok(Self::Transmitted(height)),
             2 => Ok(Self::Mempool(height)),
             3 => Ok(Self::Confirmed(height)),
-            _ => Err(Fault::ConfirmationStatus.into()),
+            _ => Err(DecodeError::ConfirmationStatus.into()),
         }
     }
 
@@ -1146,7 +1146,7 @@ impl WalletOptions {
             0 => MemoDownloadOption::NoMemos,
             1 => MemoDownloadOption::WalletMemos,
             2 => MemoDownloadOption::AllMemos,
-            v => return Err(Fault::MemoDownloadOption(v).into()),
+            v => return Err(DecodeError::MemoDownloadOption(v).into()),
         };
 
         let transaction_size_filter = if external_version > 1 {
@@ -1200,7 +1200,7 @@ impl WalletZecPriceInfo {
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
-            return Err(Fault::Version("ZecPriceInfo").into());
+            return Err(DecodeError::Version("ZecPriceInfo").into());
         }
 
         // The "current" zec price is not persisted, since it is almost certainly outdated
@@ -1281,47 +1281,64 @@ mod tests {
 
     #[test]
     fn a_non_canonical_orchard_nullifier_is_its_own_fault() {
-        assert_eq!(
-            orchard_nullifier(&[u8::MAX; _]).err(),
-            Some(Fault::OrchardNullifier)
-        );
+        assert!(matches!(
+            orchard_nullifier(&[u8::MAX; _]),
+            Err(DecodeError::OrchardNullifier)
+        ));
     }
 
     #[test]
     fn a_canonical_orchard_nullifier_round_trips() {
         let canonical = [u8::MIN; _];
         assert_eq!(
-            orchard_nullifier(&canonical).map(|nullifier| nullifier.to_bytes()),
-            Ok(canonical)
+            orchard_nullifier(&canonical)
+                .ok()
+                .map(|nullifier| nullifier.to_bytes()),
+            Some(canonical)
         );
     }
 
     #[test]
     fn every_fault_reaches_the_caller_as_invalid_data() {
         assert_eq!(
-            io::Error::from(Fault::OrchardNullifier).kind(),
+            io::Error::from(DecodeError::OrchardNullifier).kind(),
             io::ErrorKind::InvalidData
         );
     }
 
     #[test]
     fn each_rseed_fault_is_its_own_variant() {
-        assert_eq!(
-            sapling_rseed(RSEED_BEFORE_ZIP212, [u8::MAX; _]).err(),
-            Some(Fault::SaplingRseedScalar)
-        );
-        assert_eq!(
-            sapling_rseed(RSEED_UNKNOWN, [u8::MIN; _]).err(),
-            Some(Fault::SaplingRseedType(RSEED_UNKNOWN))
-        );
+        assert!(matches!(
+            sapling_rseed(RSEED_BEFORE_ZIP212, [u8::MAX; _]),
+            Err(DecodeError::SaplingRseedScalar)
+        ));
+        assert!(matches!(
+            sapling_rseed(RSEED_UNKNOWN, [u8::MIN; _]),
+            Err(DecodeError::SaplingRseedType(found)) if found == RSEED_UNKNOWN
+        ));
     }
 
     #[test]
     fn memo_bytes_longer_than_a_memo_are_a_memo_fault() {
         assert!(matches!(
             memo(&[u8::MIN; MEMO_SIZE + 1]),
-            Err(Fault::Memo(_))
+            Err(DecodeError::Memo(_))
         ));
+    }
+
+    #[test]
+    fn a_memo_error_prints_its_own_layer_and_keeps_the_cause_as_its_source() {
+        let error = memo(&[u8::MIN; MEMO_SIZE + 1]).err();
+        assert_eq!(
+            error.as_ref().map(ToString::to_string).as_deref(),
+            Some("Couldn't create memo")
+        );
+        assert!(
+            error
+                .as_ref()
+                .and_then(std::error::Error::source)
+                .is_some_and(|source| source.is::<zcash_protocol::memo::Error>())
+        );
     }
 }
 
@@ -1347,9 +1364,9 @@ mod corrupt_input {
         read.err().map(|error| error.kind())
     }
 
-    fn fault<T>(read: io::Result<T>) -> Option<Fault> {
-        let fault = read.err()?.into_inner()?.downcast::<Fault>().ok()?;
-        Some(*fault)
+    fn decode_error<T>(read: io::Result<T>) -> Option<DecodeError> {
+        let error = read.err()?.into_inner()?.downcast::<DecodeError>().ok()?;
+        Some(*error)
     }
 
     fn transparent_output(address_len: i32, address: &[u8]) -> Vec<u8> {
@@ -1463,15 +1480,30 @@ mod corrupt_input {
     }
 
     #[test]
+    fn a_missing_sapling_key_keeps_its_key_error_as_the_source() -> io::Result<()> {
+        let note = sapling_note(NOTE_CURRENT, diversifier(true)?);
+        let error = SaplingNote::read(note.as_slice(), (&WalletCapability::default(), None)).err();
+        assert!(
+            error
+                .as_ref()
+                .and_then(|error| error.get_ref())
+                .and_then(|inner| inner.downcast_ref::<DecodeError>())
+                .and_then(std::error::Error::source)
+                .is_some_and(|source| source.is::<KeyError>())
+        );
+        Ok(())
+    }
+
+    #[test]
     fn a_diversifier_off_the_curve_is_reported_as_the_diversifier_fault() -> io::Result<()> {
         let note = sapling_note(NOTE_CURRENT, diversifier(false)?);
-        assert_eq!(
-            fault(SaplingNote::read(
+        assert!(matches!(
+            decode_error(SaplingNote::read(
                 note.as_slice(),
                 (&spending_capability()?, None)
             )),
-            Some(Fault::SaplingDiversifier)
-        );
+            Some(DecodeError::SaplingDiversifier)
+        ));
         Ok(())
     }
 
