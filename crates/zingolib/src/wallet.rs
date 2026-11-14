@@ -1,7 +1,6 @@
 //! Core module, containing `crate::wallet::LightWallet` with methods for all wallet functionality.
 
 use std::collections::{BTreeMap, HashMap};
-use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
@@ -17,7 +16,7 @@ use pepper_sync::{
     keys::transparent::TransparentAddressId,
     wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
 };
-use zl_price::PriceList;
+use zl_common::price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
@@ -26,7 +25,6 @@ use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
 pub mod expiry;
-pub(crate) mod legacy;
 pub mod traits;
 pub mod utils;
 
@@ -50,52 +48,7 @@ mod zcb_traits;
 pub use pepper_sync::config::{
     PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
 };
-
-/// Wallet settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WalletSettings {
-    /// Sync configuration.
-    pub sync_config: pepper_sync::config::SyncConfig,
-    /// Minimum confirmations.
-    pub min_confirmations: NonZeroU32,
-}
-
-impl Default for WalletSettings {
-    fn default() -> Self {
-        Self {
-            sync_config: SyncConfig::default(),
-            min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
-        }
-    }
-}
-
-/// Provides necessary information to recover the wallet without the wallet file.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct RecoveryInfo {
-    /// 24-word mnemonic phrase.
-    pub seed_phrase: String,
-    /// Block height wallet was created.
-    pub birthday: u64,
-    /// Number of accounts in use.
-    pub no_of_accounts: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub birthday_adjusted_from: Option<u64>,
-}
-
-impl std::fmt::Display for RecoveryInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Wallet backup info:
-{{
-    seed phrase: {}
-    birthday: {}
-    no_of_accounts: {}
-}}",
-            self.seed_phrase, self.birthday, self.no_of_accounts,
-        )
-    }
-}
+pub use zl_file_format::{RecoveryInfo, WalletSettings};
 
 /// Base data required to construct a new [`crate::wallet::LightWallet`].
 pub(crate) struct WalletBase {
@@ -623,5 +576,19 @@ mod tests {
         ];
         let anchor = orchard::Anchor::from(MerkleHashOrchard::from_bytes(&anchor).unwrap());
         assert_eq!(orchard::Anchor::from(orchard_tree.root()), anchor);
+    }
+}
+
+#[cfg(test)]
+mod shardtree_boundary {
+    use pepper_sync::shardtree_ext::{DOWNSTREAM_BOUNDARY_PATH, assert_raw_boolean_calls_confined};
+
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        assert_raw_boolean_calls_confined(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            None,
+            DOWNSTREAM_BOUNDARY_PATH,
+        );
     }
 }

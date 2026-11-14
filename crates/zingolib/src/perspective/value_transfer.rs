@@ -7,7 +7,7 @@ use json::JsonValue;
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use crate::wallet::summary::data::{TransactionSummary, display_pools, pools_to_json};
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 /// Value transfer kind.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

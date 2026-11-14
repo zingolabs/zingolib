@@ -6438,12 +6438,10 @@ name = "pepper-sync"
 version = "0.7.0"
 dependencies = [
  "bip32 0.6.0",
- "byteorder",
  "crossbeam-channel",
  "futures",
  "hex",
  "incrementalmerkletree",
- "jubjub",
  "memuse",
  "orchard",
  "proptest",
@@ -6458,16 +6456,14 @@ dependencies = [
  "tracing",
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding",
  "zcash_keys",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
  "zip32",
- "zl-memo",
+ "zl-common",
  "zl-netutils",
- "zl-status",
 ]
 
 [[package]]
@@ -11110,12 +11106,9 @@ dependencies = [
 name = "zingolib"
 version = "8.0.0"
 dependencies = [
- "append-only-vec",
  "bech32",
  "bip0039 0.14.0",
- "bip32 0.6.0",
  "blake2b_simd",
- "bs58",
  "byteorder",
  "chrono",
  "dirs",
@@ -11131,7 +11124,6 @@ dependencies = [
  "pepper-sync",
  "portpicker",
  "proptest",
- "prost 0.14.4",
  "rand 0.10.2",
  "rand_chacha 0.10.0",
  "sapling-crypto",
@@ -11159,11 +11151,9 @@ dependencies = [
  "zingo_test_vectors",
  "zingolib",
  "zip32",
- "zl-memo",
- "zl-net-diag",
+ "zl-common",
+ "zl-file-format",
  "zl-netutils",
- "zl-price",
- "zl-status",
 ]
 
 [[package]]
@@ -11195,9 +11185,7 @@ dependencies = [
  "zingo_test_vectors",
  "zingolib",
  "zip32",
- "zl-net-diag",
  "zl-netutils",
- "zl-status",
 ]
 
 [[package]]
@@ -11279,20 +11267,64 @@ dependencies = [
 ]
 
 [[package]]
-name = "zl-memo"
-version = "0.3.0"
+name = "zl-common"
+version = "0.1.0"
 dependencies = [
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "byteorder",
+ "incrementalmerkletree",
+ "jubjub",
+ "memuse",
+ "orchard",
+ "sapling-crypto",
+ "secrecy",
+ "serde",
+ "shardtree",
+ "thiserror 2.0.19",
+ "tracing",
  "zcash_address",
+ "zcash_client_backend",
  "zcash_encoding",
  "zcash_keys",
+ "zcash_primitives",
  "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zip32",
 ]
 
 [[package]]
-name = "zl-net-diag"
+name = "zl-file-format"
 version = "0.1.0"
 dependencies = [
+ "append-only-vec",
+ "bip0039 0.14.0",
+ "bip32 0.6.0",
+ "blake2b_simd",
+ "bs58",
+ "byteorder",
+ "hex",
+ "incrementalmerkletree",
+ "jubjub",
+ "lightwallet-protocol",
+ "log",
+ "orchard",
+ "prost 0.14.4",
+ "sapling-crypto",
  "serde",
+ "shardtree",
+ "thiserror 2.0.19",
+ "zcash_address",
+ "zcash_client_backend",
+ "zcash_encoding",
+ "zcash_keys",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+ "zingo_common_components",
+ "zip32",
+ "zl-common",
 ]
 
 [[package]]
@@ -11333,29 +11365,6 @@ dependencies = [
  "tonic",
  "tower",
  "x509-parser",
- "zl-net-diag",
-]
-
-[[package]]
-name = "zl-price"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "zcash_encoding",
- "zl-net-diag",
- "zl-netutils",
-]
-
-[[package]]
-name = "zl-status"
-version = "0.3.0"
-dependencies = [
- "byteorder",
- "zcash_protocol",
 ]
 
 [[package]]

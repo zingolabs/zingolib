@@ -63,7 +63,7 @@ pub enum TransportError {
         /// kept as a source so the typed failure reaches a caller whole
         /// rather than flattened into this message.
         #[source]
-        detail: Option<zl_net_diag::NetOpFailure>,
+        detail: Option<zl_netutils::diag::NetOpFailure>,
     },
     /// The transport's status channel closed before readiness.
     #[error("the pool transport's status channel closed")]
@@ -321,7 +321,7 @@ mod tests {
     fn a_discovery_spawn_failure_renders_its_detail_once() {
         const DETAIL: &str = "the discover binary is absent";
         let failure = TransportError::DiscoverySpawn(std::io::Error::other(DETAIL));
-        let chain = zl_net_diag::chain_texts(&failure);
+        let chain = zl_netutils::diag::chain_texts(&failure);
         assert_eq!(
             chain.join("\n").matches(DETAIL).count(),
             DETAIL_RENDERINGS,

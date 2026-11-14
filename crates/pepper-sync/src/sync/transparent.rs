@@ -11,6 +11,7 @@ use zip32::AccountId;
 
 use crate::client::{self, FetchRequest};
 use crate::config::TransparentAddressDiscovery;
+use crate::engine::{ScanTargetOps, SyncStateOps};
 use crate::error::SyncError;
 use crate::keys;
 use crate::keys::transparent::{TransparentAddressId, TransparentScope};
@@ -46,7 +47,7 @@ pub(crate) async fn address_discovery<W: SyncWallet>(
     let transparent_scan_floor = wallet_guard
         .get_sync_state()
         .map_err(SyncError::WalletError)?
-        .transparent_scan_floor;
+        .transparent_scan_floor();
     drop(wallet_guard);
     let mut scan_targets: BTreeSet<ScanTarget> = BTreeSet::new();
     let block_range = Range {

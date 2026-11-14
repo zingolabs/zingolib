@@ -13,6 +13,8 @@ pub mod lightclient;
 pub mod netutils;
 #[cfg(feature = "perspective")]
 pub mod perspective;
+#[cfg(feature = "nym")]
+pub mod price;
 pub mod sync;
 pub mod utils;
 pub mod wallet;

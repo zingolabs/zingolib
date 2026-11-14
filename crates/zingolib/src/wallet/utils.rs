@@ -1,54 +1,14 @@
 //! TODO: Add Mod Description Here!
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sapling_crypto::{
     bundle as sapling_bundle, circuit as sapling_circuit, keys as sapling_keys,
     prover as sapling_prover, value as sapling_value,
 };
-use std::{
-    io::{self, Read, Write},
-    path::PathBuf,
-};
+use std::path::PathBuf;
 use zcash_primitives::transaction::TxId;
 use zcash_proofs::prover;
 use zcash_protocol::memo::MemoBytes;
 
-pub(crate) const MAX_STRING_LENGTH: u64 = 1 << 16;
-
-/// ```
-/// use zingolib::wallet::utils::{read_string, write_string};
-///
-/// let mut encoded = Vec::new();
-/// write_string(&mut encoded, &"main".to_string()).unwrap();
-/// assert_eq!(read_string(encoded.as_slice()).unwrap(), "main");
-///
-/// let unbounded_length = u64::MAX.to_le_bytes();
-/// assert!(read_string(unbounded_length.as_slice()).is_err());
-/// ```
-pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
-    let str_len = reader.read_u64::<LittleEndian>()?;
-    read_string_body(reader, str_len)
-}
-
-pub(crate) fn read_string_body<R: Read>(mut reader: R, str_len: u64) -> io::Result<String> {
-    if str_len > MAX_STRING_LENGTH {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("string length {str_len} exceeds the wallet-file maximum {MAX_STRING_LENGTH}"),
-        ));
-    }
-    let mut str_bytes = vec![0; str_len as usize];
-    reader.read_exact(&mut str_bytes)?;
-
-    String::from_utf8(str_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
-}
-
-/// TODO: Add Doc Comment Here!
-pub fn write_string<W: Write>(mut writer: W, s: &String) -> io::Result<()> {
-    // Strings are written as len + utf8
-    writer.write_u64::<LittleEndian>(s.len() as u64)?;
-    writer.write_all(s.as_bytes())
-}
+pub use zl_file_format::strings::{read_string, write_string};
 
 /// Failure to interpret a memo string.
 ///

@@ -235,7 +235,7 @@ mod tests {
     use pepper_sync::wallet::WalletTransaction;
     use zcash_primitives::transaction::TxId;
     use zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     use crate::{
         config::{ChainType, WalletConfig},
