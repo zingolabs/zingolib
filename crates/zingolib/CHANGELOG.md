@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   send mined at a height the wallet had already scanned (its block invisible
   to a forward scan after a fork) left the spent note standing in the balance
   as spendable.
+- Reading a wallet file below version 32 returns an `InvalidData` or
+  `UnexpectedEof` error where it panicked, when the file stores a corrupt
+  orchard nullifier, sapling rseed, sapling diversifier, address string or
+  witness-cache height, when a note is truncated, and when the wallet holds no
+  viewing key for a stored note's pool.
 
 ### Deprecated
 
