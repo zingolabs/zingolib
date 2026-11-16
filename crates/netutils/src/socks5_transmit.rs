@@ -32,7 +32,8 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
 use lightwallet_protocol::{
-    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter,
+    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, StandardFee,
+    TxFilter,
 };
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
@@ -308,6 +309,16 @@ impl Socks5Indexer {
     pub async fn get_lightd_info(&self) -> Result<LightdInfo, Socks5TransmitError> {
         self.round_trip(Empty {}, |mut client, request| async move {
             client.get_lightd_info(request).await
+        })
+        .await
+    }
+
+    /// Fetches the indexer's standard fee report through the proxy, the
+    /// backend `getstandardfee` marginal fee. Backends predating the RPC
+    /// answer `Unimplemented`.
+    pub async fn get_standard_fee(&self) -> Result<StandardFee, Socks5TransmitError> {
+        self.round_trip(Empty {}, |mut client, request| async move {
+            client.get_standard_fee(request).await
         })
         .await
     }
