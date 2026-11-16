@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes them back. A version 42 file whose tail begins with byte 0 or 1
   parses both with and without a migration section, so `RawMigration`
   refuses it as ambiguous.
-- `legacy` feature, on by default. It adds the readers of the layouts below
+- `legacy` feature, off by default. It adds the readers of the layouts below
   version 32 and the dependencies they need, among them `lightwallet-protocol`,
   `prost` and `zcash_client_backend`. A build without it returns from
   `WalletFile::read` and `read_chain` an `InvalidData` error that names the
