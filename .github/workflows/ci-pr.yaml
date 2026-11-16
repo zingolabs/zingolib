@@ -183,25 +183,11 @@ jobs:
 
       - name: Setup Rust and the cargo cache
         uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
 
       - name: Reject a network dependency in the normal trees
-        run: |
-          status=0
-          forbid() {
-            crate="$1"
-            flags="$2"
-            shift 2
-            for dep in "$@"; do
-              if cargo tree --locked -p "$crate" $flags -e normal -i "$dep" > /dev/null 2>&1; then
-                echo "::error::$crate depends on $dep"
-                status=1
-              fi
-            done
-          }
-          forbid zl-common "" pepper-sync zingolib zl-netutils tokio tonic hyper reqwest lightwallet-protocol futures
-          forbid zl-file-format "" zingolib pepper-sync zl-netutils reqwest
-          forbid zl-file-format --no-default-features zingolib pepper-sync zl-netutils reqwest tonic tokio hyper lightwallet-protocol
-          exit "$status"
+        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin no-network-gate
 
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
