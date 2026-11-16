@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GrpcIndexer::uri` is removed. The value is connected by construction and
   holds the live client alone; the URI lives in the `NetworkAccess` beside
   it.
+- `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Deprecated
 

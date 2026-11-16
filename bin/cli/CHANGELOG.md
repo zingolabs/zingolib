@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `https://testnet.zec.rocks:443`, testnet's Default Indexer, when no
   `--server` or `change_server` named one. Before, testnet consent without
   a named server refused.
+- The mainnet Default Indexer moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Deprecated
 

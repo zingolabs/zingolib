@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read the two together, so a pending send shows its inputs spent until the
   transaction confirms or fails, where 8.0.0 stored the pending spend on the
   notes and every failure path erased it again.
+- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### Fixed
 - A transaction the wallet believes failed, whose block later reaches the
