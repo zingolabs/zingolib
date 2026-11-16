@@ -517,8 +517,8 @@ fn read_sapling_note<R: Read>(
 ) -> io::Result<sapling_crypto::Note> {
     let _version = read_version(
         &mut reader,
-        SAPLING_NOTE_VERSION,
         std::any::type_name::<sapling_crypto::Note>(),
+        SAPLING_NOTE_VERSION,
     )?;
     let value = reader.read_u64::<LittleEndian>()?;
     let rseed = read_sapling_rseed(&mut reader)?;
@@ -554,8 +554,8 @@ fn read_orchard_note<R: Read>(
 ) -> io::Result<orchard::note::Note> {
     let _version = read_version(
         &mut reader,
-        ORCHARD_NOTE_VERSION,
         std::any::type_name::<orchard::note::Note>(),
+        ORCHARD_NOTE_VERSION,
     )?;
     let value = reader.read_u64::<LittleEndian>()?;
     let mut nullifier_bytes = [0; 32];
@@ -1109,8 +1109,8 @@ const CONFIRMATION_STATUS_VERSION: u8 = 0;
 fn read_confirmation_status<R: Read>(mut reader: R) -> io::Result<ConfirmationStatus> {
     let _external_version = read_version(
         &mut reader,
-        CONFIRMATION_STATUS_VERSION,
         std::any::type_name::<ConfirmationStatus>(),
+        CONFIRMATION_STATUS_VERSION,
     )?;
     let status = reader.read_u8()?;
     let height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);

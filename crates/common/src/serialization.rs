@@ -19,30 +19,37 @@ pub trait ReadableWriteable<ReadInput = (), WriteInput = ()>: Sized {
     /// struct version. Else, returns an `io::Error` with `io::ErrorKind::InvalidData`.
     #[instrument(level = "info", skip(reader))]
     fn get_version<R: Read>(reader: R) -> io::Result<u8> {
-        read_version(reader, Self::VERSION, std::any::type_name::<Self>())
+        read_version(reader, std::any::type_name::<Self>(), Self::VERSION)
     }
 }
 
 /// - Reads one byte from `reader`.
-/// - Emits an `ERROR` tracing event when that byte is above `version`.
-pub fn read_version<R: Read>(mut reader: R, version: u8, type_name: &str) -> io::Result<u8> {
-    let external_version = reader.read_u8()?;
-    if external_version > version {
+/// - Emits an `ERROR` tracing event when that byte is above `current_version`.
+pub fn read_version<R: Read>(
+    mut reader: R,
+    type_name: &str,
+    current_version: u8,
+) -> io::Result<u8> {
+    let version = reader.read_u8()?;
+    if version > current_version {
         event!(
             Level::ERROR,
             where = type_name,
-            got_version = external_version,
-            expected_version = version,
+            got_version = version,
+            expected_version = current_version,
             kind = ?io::ErrorKind::InvalidData,
-            msg = "Struct version is from a future version of zingo"
+            msg = "serialized version was written by a newer build"
         );
-        Err(io::Error::new(
+        return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Struct version \"{external_version}\" is from future version of zingo",),
-        ))
-    } else {
-        Ok(external_version)
+            format!(
+                "{type_name} serialized version {version} was written by a newer build. this build reads up to \
+                 version {current_version}."
+            ),
+        ));
     }
+
+    Ok(version)
 }
 
 impl ReadableWriteable for orchard::keys::SpendingKey {
@@ -105,5 +112,36 @@ impl ReadableWriteable for orchard::keys::FullViewingKey {
 
     fn write<W: Write>(&self, writer: W, _input: ()) -> io::Result<()> {
         self.write(writer)
+    }
+}
+
+#[cfg(test)]
+mod read_version_tests {
+    use std::io;
+
+    use super::read_version;
+
+    const TYPE_NAME: &str = "Type";
+    const ARBITRARY_CURRENT_VERSION: u8 = 2;
+
+    #[test]
+    fn accepts_versions_up_to_the_current_version() {
+        for version in [0, ARBITRARY_CURRENT_VERSION] {
+            assert_eq!(
+                read_version([version].as_slice(), TYPE_NAME, ARBITRARY_CURRENT_VERSION).ok(),
+                Some(version)
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_a_version_above_the_current_version() {
+        let newer = [ARBITRARY_CURRENT_VERSION + 1];
+        assert_eq!(
+            read_version(newer.as_slice(), TYPE_NAME, ARBITRARY_CURRENT_VERSION)
+                .err()
+                .map(|error| error.kind()),
+            Some(io::ErrorKind::InvalidData)
+        );
     }
 }

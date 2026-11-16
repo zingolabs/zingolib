@@ -35,6 +35,7 @@ use crate::{
         KeyId, decode_unified_address,
         transparent::{TransparentAddressId, TransparentScope},
     },
+    serialization::read_version,
     status::ConfirmationStatus,
     sync::{InitialSyncState, ScanPriority, ScanRange, SyncState},
     wallet::{ScanTarget, ScanTargetPools},
@@ -59,29 +60,6 @@ fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
 pub fn write_string<W: Write>(mut writer: W, str: &str) -> std::io::Result<()> {
     writer.write_u64::<LittleEndian>(str.len() as u64)?;
     writer.write_all(str.as_bytes())
-}
-
-/// Reads the serialized version of the type named `type_name`.
-///
-/// A version above `current_version`, the version this build writes, was written by a newer build in a layout this
-/// build cannot read. It is refused so the newer layout is never read as an older one.
-pub(crate) fn read_version<R: Read>(
-    mut reader: R,
-    type_name: &str,
-    current_version: u8,
-) -> std::io::Result<u8> {
-    let version = reader.read_u8()?;
-    if version > current_version {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "{type_name} serialized version {version} was written by a newer build. this build reads up to \
-                 version {current_version}."
-            ),
-        ));
-    }
-
-    Ok(version)
 }
 
 impl ScanTarget {
@@ -1518,35 +1496,6 @@ mod tests {
                 .kind(),
             std::io::ErrorKind::InvalidData
         );
-    }
-
-    mod read_version {
-        use super::super::read_version;
-
-        /// The current version of a made-up type. It follows no type's serialized version.
-        const ARBITRARY_CURRENT_VERSION: u8 = 2;
-
-        #[test]
-        fn accepts_versions_up_to_the_current_version() {
-            for version in [0, ARBITRARY_CURRENT_VERSION] {
-                assert_eq!(
-                    read_version([version].as_slice(), "Type", ARBITRARY_CURRENT_VERSION)
-                        .expect("a version up to the current version is accepted"),
-                    version
-                );
-            }
-        }
-
-        #[test]
-        fn refuses_a_version_above_the_current_version() {
-            let error = read_version(
-                [ARBITRARY_CURRENT_VERSION + 1].as_slice(),
-                "Type",
-                ARBITRARY_CURRENT_VERSION,
-            )
-            .expect_err("a version above the current version is refused");
-            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        }
     }
 
     /// Each reader is given only a serialized version above the one its type writes. A reader that refuses the
