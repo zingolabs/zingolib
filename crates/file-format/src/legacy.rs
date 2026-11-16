@@ -1111,7 +1111,7 @@ fn read_confirmation_status<R: Read>(mut reader: R) -> io::Result<ConfirmationSt
         &mut reader,
         CONFIRMATION_STATUS_VERSION,
         std::any::type_name::<ConfirmationStatus>(),
-    );
+    )?;
     let status = reader.read_u8()?;
     let height = BlockHeight::from_u32(reader.read_u32::<LittleEndian>()?);
     match status {
@@ -1249,6 +1249,36 @@ mod tests {
 
     const RSEED_BEFORE_ZIP212: u8 = 1;
     const RSEED_UNKNOWN: u8 = 3;
+    const CONFIRMED_STATUS: u8 = 3;
+    const CONFIRMED_HEIGHT: u32 = 7;
+
+    fn confirmation_status_record(version: u8) -> Vec<u8> {
+        let mut record = vec![version, CONFIRMED_STATUS];
+        record.extend(CONFIRMED_HEIGHT.to_le_bytes());
+        record
+    }
+
+    #[test]
+    fn a_confirmation_status_of_the_written_version_reads() {
+        let record = confirmation_status_record(CONFIRMATION_STATUS_VERSION);
+        assert_eq!(
+            read_confirmation_status(record.as_slice()).ok(),
+            Some(ConfirmationStatus::Confirmed(BlockHeight::from_u32(
+                CONFIRMED_HEIGHT
+            )))
+        );
+    }
+
+    #[test]
+    fn a_confirmation_status_of_a_later_version_is_refused() {
+        let record = confirmation_status_record(CONFIRMATION_STATUS_VERSION + 1);
+        assert_eq!(
+            read_confirmation_status(record.as_slice())
+                .err()
+                .map(|error| error.kind()),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
 
     #[test]
     fn a_non_canonical_orchard_nullifier_is_its_own_decode_error() {
