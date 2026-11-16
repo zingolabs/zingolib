@@ -172,6 +172,8 @@ pub struct WalletFileRef<'a, M> {
 }
 
 pub trait MigrationSection: Sized {
+    const VALIDATES_ITS_BYTES: bool;
+
     fn read<R: Read>(reader: R, chain: ChainType) -> io::Result<Self>;
 
     fn write<W: Write>(&self, writer: W) -> io::Result<()>;
@@ -181,6 +183,8 @@ pub trait MigrationSection: Sized {
 pub struct RawMigration(pub Vec<u8>);
 
 impl MigrationSection for RawMigration {
+    const VALIDATES_ITS_BYTES: bool = false;
+
     fn read<R: Read>(mut reader: R, _chain: ChainType) -> io::Result<Self> {
         let mut section = Vec::new();
         reader.read_to_end(&mut section)?;

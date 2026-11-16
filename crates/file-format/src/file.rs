@@ -837,16 +837,7 @@ impl<M: MigrationSection> WalletFile<M> {
             let mut tail = Vec::new();
             reader.read_to_end(&mut tail)?;
 
-            let canonical = Self::read_price_and_migration(&tail, chain_type);
-            // The extra byte of the pre-release layout is a bool, so only 0
-            // or 1 can begin one; any other leading byte rules that layout
-            // out without a second parse.
-            let pre_release = match tail.first() {
-                Some(0 | 1) => Some(Self::read_price_and_migration(&tail[1..], chain_type)),
-                _ => None,
-            };
-
-            Self::resolve_v42_tail(canonical, pre_release)?
+            Self::read_v42_tail(&tail, chain_type)?
         } else {
             let price_list = if version >= 34 {
                 PriceList::read(&mut reader)?
@@ -881,6 +872,21 @@ impl<M: MigrationSection> WalletFile<M> {
             price_list,
             migration,
         }))
+    }
+
+    fn read_v42_tail(tail: &[u8], chain_type: ChainType) -> io::Result<WalletTail<M>> {
+        let canonical = Self::read_price_and_migration(tail, chain_type);
+        // The extra byte of the pre-release layout is a bool, so only 0
+        // or 1 can begin one; any other leading byte rules that layout
+        // out without a second parse.
+        let pre_release = match tail.first() {
+            Some(0 | 1) if M::VALIDATES_ITS_BYTES => {
+                Some(Self::read_price_and_migration(&tail[1..], chain_type))
+            }
+            _ => None,
+        };
+
+        Self::resolve_v42_tail(canonical, pre_release)
     }
 
     /// Chooses between the two readings of a version 42 file tail.
@@ -1021,6 +1027,39 @@ pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
 #[cfg(test)]
 mod tests {
     use crate::{RawMigration, WalletFile};
+
+    #[test]
+    fn a_raw_section_reads_a_version_42_tail_in_the_canonical_layout_alone() -> std::io::Result<()>
+    {
+        use zl_common::{chain::ChainType, price::PriceList};
+
+        const SOME: u8 = 1;
+        const ONE_PRICE_ENTRY: [u8; 8] = [0; 8];
+        let mut tail = Vec::new();
+        PriceList::new().write(&mut tail)?;
+        tail.push(SOME);
+        let section_start = tail.len();
+        tail.extend(ONE_PRICE_ENTRY);
+        tail.push(SOME);
+
+        assert!(
+            WalletFile::<RawMigration>::read_price_and_migration(&tail[1..], ChainType::Mainnet)
+                .is_ok(),
+            "the tail also parses one byte later, so two readings would refuse it"
+        );
+
+        let (price_list, migration) =
+            WalletFile::<RawMigration>::read_v42_tail(&tail, ChainType::Mainnet)?;
+        assert!(
+            price_list.daily_prices().is_empty(),
+            "the canonical reading holds the empty price list that was written"
+        );
+        assert_eq!(
+            migration,
+            Some(RawMigration(tail[section_start..].to_vec()))
+        );
+        Ok(())
+    }
 
     /// A file whose tail reads cleanly under *both* layouts is genuinely
     /// ambiguous, and the reader must refuse it rather than silently substitute

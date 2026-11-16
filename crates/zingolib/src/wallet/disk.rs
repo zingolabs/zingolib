@@ -13,6 +13,8 @@ use crate::wallet::migration::{MigrationState, store};
 pub use zl_file_format::ChainMismatch;
 
 impl MigrationSection for MigrationState {
+    const VALIDATES_ITS_BYTES: bool = true;
+
     fn read<R: Read>(reader: R, chain: ChainType) -> io::Result<Self> {
         store::read(reader, chain)
     }
