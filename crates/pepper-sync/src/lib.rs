@@ -106,7 +106,7 @@ After the sync process is initialized, it will be in a state of verification, on
 
 pub(crate) mod client;
 pub use zl_common::config;
-pub use zl_common::engine;
+pub(crate) use zl_common::engine;
 pub mod error;
 pub mod keys;
 pub(crate) mod scan;

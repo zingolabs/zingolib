@@ -52,9 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `config` module of `pepper-sync` 0.7.0, which re-exports it at its old
   path.
 - `engine` module, which holds the operations that the sync engine of
-  `pepper-sync` runs on the wallet data and the progress record, and which
-  `pepper-sync` re-exports in `pepper_sync::engine`. It holds one sealed
-  extension trait per type, which no other crate can implement:
+  `pepper-sync` runs on the wallet data and the progress record. The module
+  is public only because the engine lives in another crate. It is hidden
+  from the documentation and `pepper-sync` does not re-export it, but a
+  crate that imports one of its traits can still call the operations, and a
+  call from outside the engine can break the invariants of the progress
+  record. It holds one sealed extension trait per type, which no other crate
+  can implement:
   `SyncStateOps`, `InitialSyncStateOps`, `ScanTargetOps`, `WalletBlockOps`,
   `WalletTransactionOps`, `TransparentCoinOps`, `WalletNoteOps`,
   `OutgoingNoteOps`, `KeyIdOps` and `ShardTreesOps`. It also holds

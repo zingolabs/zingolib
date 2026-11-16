@@ -11,20 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pending_spends` reports the wallet's outputs that its pending transactions
   spend, derived from each pending transaction's inputs every time it is
   called.
-- `engine` module, which re-exports `zl_common::engine`. The sync
-  engine lives in this crate, and the wallet data it writes and its progress
-  record live in `zl-common`, so the operations the engine runs on them
-  are public there. The module is the one path to them, and the re-exported
-  types expose the same inherent methods as at 0.7.0. It holds one extension
-  trait per type: `SyncStateOps` (the scan-range methods of `SyncState` and
-  its scan target, initial state and transparent scan floor accessors),
-  `InitialSyncStateOps`, `ScanTargetOps`, `WalletBlockOps`,
-  `WalletTransactionOps`, `TransparentCoinOps`, `WalletNoteOps`,
-  `OutgoingNoteOps`, `KeyIdOps` and `ShardTreesOps`. A caller imports a trait
-  to call its methods. Each trait is sealed, so no other crate can implement
-  it. The module also holds `ScanTargetOrigin`, `VerifyEnd`,
-  `empty_shard_tree`, `overlaps`, `encode_orchard_receiver`, `SHARD_HEIGHT`
-  and `VERIFY_BLOCK_RANGE_SIZE`.
 - `wallet::serialization::write_string`.
 - The `test-features` feature adds
   `WalletBlock::clear_pool_tree_bounds_for_test`,

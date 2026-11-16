@@ -2,6 +2,7 @@
 
 pub mod chain;
 pub mod config;
+#[doc(hidden)]
 pub mod engine;
 pub mod keys;
 pub mod memo;
