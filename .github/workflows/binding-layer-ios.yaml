@@ -113,7 +113,7 @@ jobs:
             >> "$GITHUB_ENV"
 
       # The wallet library carries the proxy crate under the wallet crate's
-      # `zingo-nym-proxy-ffi` feature, so the one archive holds one Rust std
+      # `zingolib-nym-proxy-ffi` feature, so the one archive holds one Rust std
       # and the app links one `rust_eh_personality` beside its C++ and
       # Objective-C ones: compact unwind encodes three routines at most.
       - name: Build the wallet library for the target
