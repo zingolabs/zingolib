@@ -8,9 +8,9 @@ context.
 ## Wallet-library domain
 
 The domain of the shipped artifacts: the wallet, its keys, pools,
-sync engine, send flow, and consumers (zingo-mobile, zingo-cli).
+sync engine, send flow, and consumers (zingo-mobile, zingolib-cli).
 
-- Glossary: [`zingolib/CONTEXT.md`](zingolib/CONTEXT.md)
+- Glossary: [`crates/zingolib/CONTEXT.md`](crates/zingolib/CONTEXT.md)
 
 ## Test infrastructure
 

@@ -1,0 +1,16 @@
+[package]
+name = "zingolib-uniffi-bindgen"
+version = "0.1.0"
+edition = "2024"
+description = "Project-local uniffi-bindgen for the wallet and the Nym proxy shim."
+publish = false
+
+# One binary generates both crates' bindings in library mode from their
+# compiled libraries.
+[[bin]]
+name = "zingolib-uniffi-bindgen"
+path = "src/bin/zingolib-uniffi-bindgen.rs"
+
+[dependencies]
+# The workspace pin, shared by `zingolib-ffi` (ffi/lib) and `zingolib-nym-proxy-ffi`.
+uniffi = { workspace = true, features = ["cli"] }

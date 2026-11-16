@@ -19,7 +19,7 @@ echo "Building runtime image..."
 docker build -f "$DOCKERFILE" "$REPO_ROOT" \
 	--platform "$PLATFORM" \
 	--target runtime \
-	--output type=oci,rewrite-timestamp=true,force-compression=true,dest=$OCI_OUTPUT/zingo-cli.tar,name=zingo-cli \
+	--output type=oci,rewrite-timestamp=true,force-compression=true,dest=$OCI_OUTPUT/zingolib-cli.tar,name=zingolib-cli \
 	"$@"
 
 # Extract binary locally from export stage

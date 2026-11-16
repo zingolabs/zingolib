@@ -23,6 +23,8 @@ pub mod binding_manifest;
 pub mod binding_publish;
 pub mod cache_families;
 pub mod closed_pr_runs;
+#[cfg(test)]
+mod crate_move;
 pub mod dupes_gate;
 pub mod nextest_ceilings;
 pub mod orasust;
@@ -845,8 +847,8 @@ mod tests {
     fn the_manifest_above_a_nested_member_source_is_that_member() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert_eq!(
-            manifest_above(&root.join("zingo-ffi/lib/src"))?,
-            root.join("zingo-ffi/lib").join(MANIFEST)
+            manifest_above(&root.join("ffi/lib/src"))?,
+            root.join("ffi/lib").join(MANIFEST)
         );
         assert_eq!(manifest_above(&root.join("docs"))?, root.join(MANIFEST));
         Ok(())
@@ -856,7 +858,7 @@ mod tests {
     fn a_virtual_manifest_declares_no_package() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert!(!declares_a_package(&root.join(MANIFEST))?);
-        assert!(declares_a_package(&root.join("zingo-cli").join(MANIFEST))?);
+        assert!(declares_a_package(&root.join("bin/cli").join(MANIFEST))?);
         Ok(())
     }
 
@@ -864,7 +866,7 @@ mod tests {
     fn the_root_workspace_members_include_the_nested_ones() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         let members = workspace_members(&root.join(MANIFEST))?;
-        for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
+        for member in ["ffi/lib", "ffi/uniffi-bindgen", "bin/cli"] {
             assert!(
                 members.contains(&root.join(member).join(MANIFEST)),
                 "{member}"
@@ -933,8 +935,8 @@ mod tests {
     fn a_deleted_file_resolves_through_its_nearest_existing_directory() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert_eq!(
-            existing_dir_of(&root, Path::new("zingo-cli/src/gone/file.rs")),
-            root.join("zingo-cli/src")
+            existing_dir_of(&root, Path::new("bin/cli/src/gone/file.rs")),
+            root.join("bin/cli/src")
         );
         assert_eq!(existing_dir_of(&root, Path::new("README.md")), root);
         Ok(())
