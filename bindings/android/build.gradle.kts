@@ -19,7 +19,7 @@ group = "org.zingolabs"
 version = bindingLayerVersion.getOrElse(unversioned)
 
 val zingolibRoot: File = rootDir.resolve("../..")
-val proxyCrate: File = zingolibRoot.resolve("zingo-netutils/nym-proxy-ffi")
+val proxyCrate: File = zingolibRoot.resolve("crates/netutils/nym-proxy-ffi")
 val contractTests: File = proxyCrate.resolve("contract-tests/kotlin")
 val goldenDir: File = proxyCrate.resolve("test-data/golden")
 val testAnnotation = Regex("""@Test\b""")

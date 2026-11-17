@@ -5,16 +5,16 @@ pub const BINARY: &str = "dupes-gate";
 const BASELINE: &str = ".dupes-ignore.toml";
 const VERSION: &str = "0.2.1";
 const MIN_NODES: &str = "10";
-const MIN_LINES: &str = "0";
+const MIN_LINES: &str = "4";
 const THRESHOLD: &str = "0.9";
 const MAX_EXACT: &str = "0";
-const MAX_NEAR: &str = "31";
+const MAX_NEAR: &str = "19";
 const EXCLUDE: [&str; 10] = [
-    "zingo-cli/tests/",
-    "zingo-netutils/nym-proxy-ffi/tests/",
-    "zingolib/src/testutils/",
-    "zingolib/src/wallet/disk/testing/",
-    "zingolib/tests/",
+    "bin/cli/tests/",
+    "crates/netutils/nym-proxy-ffi/tests/",
+    "crates/zingolib/src/testutils/",
+    "crates/zingolib/src/wallet/disk/testing/",
+    "crates/zingolib/tests/",
     "/mocks.rs",
     "/testing.rs",
     "/tests.rs",
@@ -434,18 +434,18 @@ mod tests {
     fn no_pattern_matches_a_parent_directory_or_a_longer_name() {
         let checkout = "/home/someone/testing/target/tests/zls";
         for production in [
-            "zingolib/src/lib.rs",
-            "zingolib/src/requests.rs",
-            "zingo-cli/src/attesting.rs",
-            "pepper-sync/src/stocks.rs",
+            "crates/zingolib/src/lib.rs",
+            "crates/zingolib/src/requests.rs",
+            "bin/cli/src/attesting.rs",
+            "crates/pepper-sync/src/stocks.rs",
         ] {
             let path = format!("{checkout}/{production}");
             assert!(!is_excluded(&path, &EXCLUDE), "{path} is excluded");
         }
         for test in [
-            "zingo-ffi/lib/src/lock_discipline_tests.rs",
-            "zingolib/src/wallet/disk/testing.rs",
-            "zingo-cli/src/tests.rs",
+            "ffi/lib/src/lock_discipline_tests.rs",
+            "crates/zingolib/src/wallet/disk/testing.rs",
+            "bin/cli/src/tests.rs",
         ] {
             let path = format!("{checkout}/{test}");
             assert!(is_excluded(&path, &EXCLUDE), "{path} is not excluded");

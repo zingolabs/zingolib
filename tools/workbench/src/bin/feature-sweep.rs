@@ -208,8 +208,8 @@ mod tests {
     fn a_base_value_is_not_read_as_a_crate() -> Result<(), Vec<String>> {
         assert!(parse(&words("--base main"))?.crates.is_empty());
         assert_eq!(
-            parse(&words("--base main zingo-cli"))?.crates,
-            vec!["zingo-cli".to_string()]
+            parse(&words("--base main zingolib-cli"))?.crates,
+            vec!["zingolib-cli".to_string()]
         );
         Ok(())
     }
@@ -233,8 +233,8 @@ mod tests {
     #[test]
     fn a_lone_separator_passes_through_from_cargo_make() -> Result<(), Vec<String>> {
         assert_eq!(
-            parse(&words("-- zingo-cli"))?.crates,
-            vec!["zingo-cli".to_string()]
+            parse(&words("-- zingolib-cli"))?.crates,
+            vec!["zingolib-cli".to_string()]
         );
         Ok(())
     }
