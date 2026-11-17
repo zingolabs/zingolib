@@ -24,8 +24,8 @@ mod legacy;
 pub mod strings;
 
 pub use file::{
-    ChainMismatch, MAX_RECOVERABLE_BIRTHDAY, MAX_RECOVERABLE_VERSION, read_chain,
-    read_recovery_info, serialized_version,
+    AmbiguousV42Tail, ChainMismatch, MAX_RECOVERABLE_BIRTHDAY, MAX_RECOVERABLE_VERSION, V42Layout,
+    read_chain, read_recovery_info, serialized_version,
 };
 
 /// Wallet settings.

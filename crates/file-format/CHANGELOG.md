@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both layouts, because the bytes do not say which build wrote it.
   `RawMigration` accepts any bytes, so it refuses more version 42 files as
   ambiguous than an implementation that validates its section.
+- `AmbiguousV42Tail`, the error that `WalletFile::read` returns inside its
+  `io::Error` for a version 42 file whose tail parses in both layouts, so a
+  caller can downcast to it. `WalletFile::read_with_v42_layout` reads such a
+  file in the `V42Layout` the caller names, `Canonical` or `PreRelease`, and
+  reads every other version as `WalletFile::read` does.
 - `legacy` feature, off by default. It adds the readers of the layouts below
   version 32 and the dependencies they need, among them `lightwallet-protocol`,
   `prost` and `zcash_client_backend`. A build without it returns from

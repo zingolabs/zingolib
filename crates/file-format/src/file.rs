@@ -78,12 +78,7 @@ impl<M> V42Tail<M> {
     fn into_tail(self) -> io::Result<WalletTail<M>> {
         match self {
             Self::Canonical(tail) | Self::PreRelease(tail) => Ok(tail),
-            Self::Ambiguous => Err(Error::new(
-                ErrorKind::InvalidData,
-                "ambiguous version 42 wallet file: its tail parses as both the \
-                 canonical and the pre-release layout, so which build wrote it \
-                 cannot be determined; recover the seed with recovery_info",
-            )),
+            Self::Ambiguous => Err(Error::new(ErrorKind::InvalidData, AmbiguousV42Tail)),
             Self::Unreadable {
                 canonical,
                 pre_release,
@@ -94,6 +89,28 @@ impl<M> V42Tail<M> {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum V42Layout {
+    Canonical,
+    PreRelease,
+}
+
+#[derive(Debug)]
+pub struct AmbiguousV42Tail;
+
+impl std::fmt::Display for AmbiguousV42Tail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "ambiguous version 42 wallet file: its tail parses as both the \
+             canonical and the pre-release layout, so which build wrote it \
+             cannot be determined; read it with read_with_v42_layout, or \
+             recover the seed with recovery_info",
+        )
+    }
+}
+
+impl std::error::Error for AmbiguousV42Tail {}
 
 enum V40ChainField {
     Tag(u8),
@@ -403,14 +420,30 @@ pub fn read_chain(bytes: &[u8]) -> io::Result<ChainType> {
 impl<M: MigrationSection> WalletFile<M> {
     /// Deserialize into `reader`
     // TODO: update to return WalletError
-    pub fn read<R: Read>(mut reader: R, chain_type: ChainType) -> io::Result<Self> {
+    pub fn read<R: Read>(reader: R, chain_type: ChainType) -> io::Result<Self> {
+        Self::read_resolving_v42(reader, chain_type, None)
+    }
+
+    pub fn read_with_v42_layout<R: Read>(
+        reader: R,
+        chain_type: ChainType,
+        layout: V42Layout,
+    ) -> io::Result<Self> {
+        Self::read_resolving_v42(reader, chain_type, Some(layout))
+    }
+
+    fn read_resolving_v42<R: Read>(
+        mut reader: R,
+        chain_type: ChainType,
+        v42_layout: Option<V42Layout>,
+    ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         info!("Reading wallet version {version}");
         match version {
             ..32 => Self::read_v0(reader, chain_type, version),
             // 43 is a burned version number with the final 42 layout; see
             // the `serialized_version` docs and ADR 0015.
-            32..=45 => Self::read_v32(reader, chain_type, version),
+            32..=45 => Self::read_v32(reader, chain_type, version, v42_layout),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 format!(
@@ -656,7 +689,12 @@ impl<M: MigrationSection> WalletFile<M> {
         Ok(lw)
     }
 
-    fn read_v32<R: Read>(mut reader: R, chain_type: ChainType, version: u64) -> io::Result<Self> {
+    fn read_v32<R: Read>(
+        mut reader: R,
+        chain_type: ChainType,
+        version: u64,
+        v42_layout: Option<V42Layout>,
+    ) -> io::Result<Self> {
         let dev_v40_grammar = if version >= 41 {
             let saved_network = chain_type_from_tag(reader.read_u8()?)?;
             check_saved_chain(&saved_network.to_string(), &chain_type)?;
@@ -884,7 +922,7 @@ impl<M: MigrationSection> WalletFile<M> {
             let mut tail = Vec::new();
             reader.read_to_end(&mut tail)?;
 
-            Self::read_v42_tail(&tail, chain_type).into_tail()?
+            Self::read_v42_tail_as(&tail, chain_type, v42_layout)?
         } else {
             let price_list = if version >= 34 {
                 PriceList::read(&mut reader)?
@@ -919,6 +957,18 @@ impl<M: MigrationSection> WalletFile<M> {
             price_list,
             migration,
         }))
+    }
+
+    fn read_v42_tail_as(
+        tail: &[u8],
+        chain_type: ChainType,
+        layout: Option<V42Layout>,
+    ) -> io::Result<WalletTail<M>> {
+        match layout {
+            None => Self::read_v42_tail(tail, chain_type).into_tail(),
+            Some(V42Layout::Canonical) => Self::read_price_and_migration(tail, chain_type),
+            Some(V42Layout::PreRelease) => Self::read_pre_release_tail(tail, chain_type),
+        }
     }
 
     fn read_v42_tail(tail: &[u8], chain_type: ChainType) -> V42Tail<M> {
@@ -1044,7 +1094,7 @@ pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
 
 #[cfg(test)]
 mod tests {
-    use super::V42Tail;
+    use super::{AmbiguousV42Tail, V42Layout, V42Tail};
     use crate::{RawMigration, WalletFile};
     use zl_common::{chain::ChainType, price::PriceList};
 
@@ -1080,6 +1130,41 @@ mod tests {
         };
         assert!(price_list.time_historical_prices_last_updated().is_some());
         assert_eq!(migration, Some(RawMigration(SECTION.to_vec())));
+    }
+
+    #[test]
+    fn a_named_layout_reads_a_version_42_tail_that_parses_both_ways() {
+        const SECTION_FILLER: u8 = 7;
+        let mut section = vec![SECTION_FILLER; DAILY_PRICE_ENTRY.len()];
+        section.push(SOME);
+        section.push(SECTION_FILLER);
+
+        let mut tail = vec![PRICE_LIST_VERSION, NONE, NONE, NO_DAILY_PRICES, SOME];
+        tail.extend(&section);
+
+        let read_as = |layout| {
+            WalletFile::<RawMigration>::read_v42_tail_as(&tail, ChainType::Mainnet, layout)
+        };
+
+        let refusal = read_as(None).expect_err("an opaque section lets both layouts parse");
+        assert!(
+            refusal
+                .get_ref()
+                .is_some_and(|inner| inner.is::<AmbiguousV42Tail>())
+        );
+
+        let (price_list, migration) = read_as(Some(V42Layout::Canonical))
+            .expect("the tail was built in the canonical layout");
+        assert!(price_list.daily_prices().is_empty());
+        assert_eq!(migration, Some(RawMigration(section.clone())));
+
+        let (price_list, migration) = read_as(Some(V42Layout::PreRelease))
+            .expect("the tail was built to parse in the pre-release layout too");
+        assert_eq!(
+            price_list.daily_prices().len(),
+            usize::from(ONE_DAILY_PRICE)
+        );
+        assert_eq!(migration, Some(RawMigration(vec![SECTION_FILLER])));
     }
 
     #[test]
