@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Breaking:** `testutils::mock_indexer::Fault::ResetStream` ends a stream
+  with a status of the given gRPC code after the given number of items. An
+  exhaustive match on `Fault` needs an arm for it.
 - `LightWallet::invariant_violations` reports every violated wallet
   invariant: outputs stored under foreign txids, spends recorded on
   transactions that do not carry the input, spends released by failed
