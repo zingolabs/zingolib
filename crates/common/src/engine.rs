@@ -110,34 +110,37 @@ pub trait ScanTargetOps: sealed::Sealed {
     fn origin(&self) -> ScanTargetOrigin;
 }
 
+pub struct WalletBlockParts {
+    pub block_height: BlockHeight,
+    pub block_hash: BlockHash,
+    pub prev_hash: BlockHash,
+    pub time: u32,
+    pub txids: Vec<TxId>,
+    pub tree_bounds: TreeBounds,
+}
+
 pub trait WalletBlockOps: sealed::Sealed {
     #[must_use]
-    fn from_parts(
-        block_height: BlockHeight,
-        block_hash: BlockHash,
-        prev_hash: BlockHash,
-        time: u32,
-        txids: Vec<TxId>,
-        tree_bounds: TreeBounds,
-    ) -> Self;
+    fn from_parts(parts: WalletBlockParts) -> Self;
+}
+
+pub struct WalletTransactionParts {
+    pub txid: TxId,
+    pub status: ConfirmationStatus,
+    pub transaction: zcash_primitives::transaction::Transaction,
+    pub datetime: u32,
+    pub transparent_coins: Vec<TransparentCoin>,
+    pub sapling_notes: Vec<SaplingNote>,
+    pub orchard_notes: Vec<OrchardNote>,
+    pub ironwood_notes: Vec<IronwoodNote>,
+    pub outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
+    pub outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
+    pub outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
 }
 
 pub trait WalletTransactionOps: sealed::Sealed {
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    fn from_parts(
-        txid: TxId,
-        status: ConfirmationStatus,
-        transaction: zcash_primitives::transaction::Transaction,
-        datetime: u32,
-        transparent_coins: Vec<TransparentCoin>,
-        sapling_notes: Vec<SaplingNote>,
-        orchard_notes: Vec<OrchardNote>,
-        ironwood_notes: Vec<IronwoodNote>,
-        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-        outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
-    ) -> Self;
+    fn from_parts(parts: WalletTransactionParts) -> Self;
     fn set_refetch_nullifier_ranges(&mut self, refetch_nullifier_ranges: &[Range<BlockHeight>]);
 }
 
@@ -253,16 +256,19 @@ pub trait SyncStateOps: sealed::Sealed {
     );
 }
 
+#[derive(Debug, Clone)]
+pub struct InitialSyncStateParts {
+    pub sync_start_height: BlockHeight,
+    pub wallet_tree_bounds: TreeBounds,
+    pub previously_scanned_blocks: u32,
+    pub previously_scanned_sapling_outputs: u32,
+    pub previously_scanned_orchard_outputs: u32,
+    pub previously_scanned_ironwood_outputs: u32,
+}
+
 pub trait InitialSyncStateOps: sealed::Sealed {
     #[must_use]
-    fn from_parts(
-        sync_start_height: BlockHeight,
-        wallet_tree_bounds: TreeBounds,
-        previously_scanned_blocks: u32,
-        previously_scanned_sapling_outputs: u32,
-        previously_scanned_orchard_outputs: u32,
-        previously_scanned_ironwood_outputs: u32,
-    ) -> Self;
+    fn from_parts(parts: InitialSyncStateParts) -> Self;
     #[must_use]
     fn sync_start_height(&self) -> BlockHeight;
     #[must_use]

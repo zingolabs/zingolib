@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, ops::Range};
 use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
 
 use crate::{
-    engine::{InitialSyncStateOps, SyncStateOps, overlaps},
+    engine::{InitialSyncStateOps, InitialSyncStateParts, SyncStateOps, overlaps},
     wallet::{ScanTarget, TreeBounds},
 };
 
@@ -208,28 +208,14 @@ impl ScanRange {
 /// All fields will be reset when a new sync session starts.
 #[derive(Debug, Clone)]
 pub struct InitialSyncState {
-    /// One block above the fully scanned wallet height at start of sync session.
-    ///
-    /// If chain height is not larger than fully scanned height when sync is called, this value will be set to chain
-    /// height instead.
-    pub(crate) sync_start_height: BlockHeight,
-    /// The tree sizes of the fully scanned height and chain tip at start of sync session.
-    pub(crate) wallet_tree_bounds: TreeBounds,
-    /// Total number of blocks scanned in previous sync sessions.
-    pub(crate) previously_scanned_blocks: u32,
-    /// Total number of sapling outputs scanned in previous sync sessions.
-    pub(crate) previously_scanned_sapling_outputs: u32,
-    /// Total number of orchard outputs scanned in previous sync sessions.
-    pub(crate) previously_scanned_orchard_outputs: u32,
-    /// Total number of ironwood outputs scanned in previous sync sessions.
-    pub(crate) previously_scanned_ironwood_outputs: u32,
+    pub(crate) parts: InitialSyncStateParts,
 }
 
 impl InitialSyncState {
     /// Create new `InitialSyncState`
     #[must_use]
     pub fn new() -> Self {
-        InitialSyncState {
+        Self::from_parts(InitialSyncStateParts {
             sync_start_height: 0.into(),
             wallet_tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 0,
@@ -243,51 +229,37 @@ impl InitialSyncState {
             previously_scanned_sapling_outputs: 0,
             previously_scanned_orchard_outputs: 0,
             previously_scanned_ironwood_outputs: 0,
-        }
+        })
     }
 }
 
 impl InitialSyncStateOps for InitialSyncState {
-    fn from_parts(
-        sync_start_height: BlockHeight,
-        wallet_tree_bounds: TreeBounds,
-        previously_scanned_blocks: u32,
-        previously_scanned_sapling_outputs: u32,
-        previously_scanned_orchard_outputs: u32,
-        previously_scanned_ironwood_outputs: u32,
-    ) -> Self {
-        Self {
-            sync_start_height,
-            wallet_tree_bounds,
-            previously_scanned_blocks,
-            previously_scanned_sapling_outputs,
-            previously_scanned_orchard_outputs,
-            previously_scanned_ironwood_outputs,
-        }
+    fn from_parts(parts: InitialSyncStateParts) -> Self {
+        Self { parts }
     }
 
     fn sync_start_height(&self) -> BlockHeight {
-        self.sync_start_height
+        self.parts.sync_start_height
     }
 
     fn wallet_tree_bounds(&self) -> TreeBounds {
-        self.wallet_tree_bounds
+        self.parts.wallet_tree_bounds
     }
 
     fn previously_scanned_blocks(&self) -> u32 {
-        self.previously_scanned_blocks
+        self.parts.previously_scanned_blocks
     }
 
     fn previously_scanned_sapling_outputs(&self) -> u32 {
-        self.previously_scanned_sapling_outputs
+        self.parts.previously_scanned_sapling_outputs
     }
 
     fn previously_scanned_orchard_outputs(&self) -> u32 {
-        self.previously_scanned_orchard_outputs
+        self.parts.previously_scanned_orchard_outputs
     }
 
     fn previously_scanned_ironwood_outputs(&self) -> u32 {
-        self.previously_scanned_ironwood_outputs
+        self.parts.previously_scanned_ironwood_outputs
     }
 }
 

@@ -59,7 +59,7 @@ impl SyncStateOps for SyncState {
 
     /// - Replaces the tree bounds of the initial sync state.
     fn set_wallet_tree_bounds(&mut self, wallet_tree_bounds: TreeBounds) {
-        self.initial_sync_state.wallet_tree_bounds = wallet_tree_bounds;
+        self.initial_sync_state.parts.wallet_tree_bounds = wallet_tree_bounds;
     }
 
     /// Returns the `scan_targets` for a given `block_range` from the wallet's [`crate::sync::SyncState`]

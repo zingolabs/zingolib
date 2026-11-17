@@ -22,7 +22,8 @@ use crate::status::ConfirmationStatus;
 use crate::{
     engine::{
         self, OutgoingNoteOps, ScanTargetOps, ScanTargetOrigin, ShardTreesOps, TransparentCoinOps,
-        WalletBlockOps, WalletNoteOps, WalletTransactionOps, empty_shard_tree,
+        WalletBlockOps, WalletBlockParts, WalletNoteOps, WalletTransactionOps,
+        WalletTransactionParts, empty_shard_tree,
     },
     keys::{KeyId, transparent::TransparentAddressId},
     witness,
@@ -294,14 +295,15 @@ pub struct WalletBlock {
 }
 
 impl WalletBlockOps for WalletBlock {
-    fn from_parts(
-        block_height: BlockHeight,
-        block_hash: BlockHash,
-        prev_hash: BlockHash,
-        time: u32,
-        txids: Vec<TxId>,
-        tree_bounds: TreeBounds,
-    ) -> Self {
+    fn from_parts(parts: WalletBlockParts) -> Self {
+        let WalletBlockParts {
+            block_height,
+            block_hash,
+            prev_hash,
+            time,
+            txids,
+            tree_bounds,
+        } = parts;
         Self {
             block_height,
             block_hash,
@@ -367,19 +369,20 @@ pub struct WalletTransaction {
 }
 
 impl WalletTransactionOps for WalletTransaction {
-    fn from_parts(
-        txid: TxId,
-        status: ConfirmationStatus,
-        transaction: zcash_primitives::transaction::Transaction,
-        datetime: u32,
-        transparent_coins: Vec<TransparentCoin>,
-        sapling_notes: Vec<SaplingNote>,
-        orchard_notes: Vec<OrchardNote>,
-        ironwood_notes: Vec<IronwoodNote>,
-        outgoing_sapling_notes: Vec<OutgoingSaplingNote>,
-        outgoing_orchard_notes: Vec<OutgoingOrchardNote>,
-        outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
-    ) -> Self {
+    fn from_parts(parts: WalletTransactionParts) -> Self {
+        let WalletTransactionParts {
+            txid,
+            status,
+            transaction,
+            datetime,
+            transparent_coins,
+            sapling_notes,
+            orchard_notes,
+            ironwood_notes,
+            outgoing_sapling_notes,
+            outgoing_orchard_notes,
+            outgoing_ironwood_notes,
+        } = parts;
         Self {
             txid,
             status,

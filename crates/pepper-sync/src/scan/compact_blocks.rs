@@ -18,7 +18,7 @@ use zcash_transparent::address::Script;
 use zip32::AccountId;
 use zl_netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
 
-use crate::engine::{ScanTargetOps, WalletBlockOps};
+use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
@@ -178,17 +178,17 @@ where
             );
         }
 
-        let wallet_block = WalletBlock::from_parts(
+        let wallet_block = WalletBlock::from_parts(WalletBlockParts {
             block_height,
             block_hash,
-            block::get_compact_prev_hash(block),
-            block.time,
-            block
+            prev_hash: block::get_compact_prev_hash(block),
+            time: block.time,
+            txids: block
                 .vtx
                 .iter()
                 .map(transaction::get_compact_txid)
                 .collect(),
-            TreeBounds {
+            tree_bounds: TreeBounds {
                 sapling_initial_tree_size,
                 sapling_final_tree_size,
                 orchard_initial_tree_size,
@@ -196,7 +196,7 @@ where
                 ironwood_initial_tree_size,
                 ironwood_final_tree_size,
             },
-        );
+        });
 
         check_tree_size(block, &wallet_block)?;
 
@@ -715,13 +715,13 @@ mod tests {
     use super::*;
 
     fn wallet_block_with_ironwood_size(size: u32) -> WalletBlock {
-        WalletBlock::from_parts(
-            BlockHeight::from_u32(100),
-            BlockHash([1; 32]),
-            BlockHash([0; 32]),
-            0,
-            vec![],
-            TreeBounds {
+        WalletBlock::from_parts(WalletBlockParts {
+            block_height: BlockHeight::from_u32(100),
+            block_hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
+            time: 0,
+            txids: vec![],
+            tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 10,
                 sapling_final_tree_size: 10,
                 orchard_initial_tree_size: 10,
@@ -729,7 +729,7 @@ mod tests {
                 ironwood_initial_tree_size: size,
                 ironwood_final_tree_size: size,
             },
-        )
+        })
     }
 
     fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {

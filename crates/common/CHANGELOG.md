@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OutgoingNoteOps`, `KeyIdOps` and `ShardTreesOps`. It also holds
   `ScanTargetOrigin`, `VerifyEnd`, `empty_shard_tree`, `overlaps`,
   `encode_orchard_receiver`, `SHARD_HEIGHT` and `VERIFY_BLOCK_RANGE_SIZE`.
+  `WalletBlockParts`, `WalletTransactionParts` and `InitialSyncStateParts`
+  name the fields that the `from_parts` constructor of each record takes.
   The other modules expose the paths and the inherent methods that
   `pepper-sync` 0.7.0 exposed.
 - `serialization` feature, on by default in the crate and enabled by the

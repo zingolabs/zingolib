@@ -13,7 +13,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use crate::engine::{InitialSyncStateOps, SyncStateOps};
+use crate::engine::{InitialSyncStateOps, InitialSyncStateParts, SyncStateOps};
 use crate::{
     client::{self, FetchRequest},
     error::{ServerError, SyncError},
@@ -343,13 +343,13 @@ where
     wallet
         .get_sync_state_mut()
         .map_err(SyncError::WalletError)?
-        .set_initial_sync_state(InitialSyncState::from_parts(
-            if chain_height > fully_scanned_height {
+        .set_initial_sync_state(InitialSyncState::from_parts(InitialSyncStateParts {
+            sync_start_height: if chain_height > fully_scanned_height {
                 fully_scanned_height + 1
             } else {
                 chain_height
             },
-            TreeBounds {
+            wallet_tree_bounds: TreeBounds {
                 sapling_initial_tree_size: 0,
                 sapling_final_tree_size: 0,
                 orchard_initial_tree_size: 0,
@@ -361,7 +361,7 @@ where
             previously_scanned_sapling_outputs,
             previously_scanned_orchard_outputs,
             previously_scanned_ironwood_outputs,
-        ));
+        }));
 
     update_wallet_tree_bounds(wallet, tree_bounds)
 }

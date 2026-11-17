@@ -2942,7 +2942,7 @@ mod test {
     /// holds state above the height and cannot roll back to it forces
     /// the clear-and-rescan path.
     mod truncation {
-        use crate::engine::{ScanTargetOps, SyncStateOps, WalletBlockOps};
+        use crate::engine::{ScanTargetOps, SyncStateOps, WalletBlockOps, WalletBlockParts};
         use std::collections::BTreeMap;
 
         use zcash_primitives::{block::BlockHash, transaction::TxId};
@@ -2958,13 +2958,13 @@ mod test {
 
         /// A wallet block carrying only what truncation reads: its height.
         fn block(height: u32) -> WalletBlock {
-            WalletBlock::from_parts(
-                BlockHeight::from_u32(height),
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
-                TreeBounds {
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
                     sapling_initial_tree_size: 0,
                     sapling_final_tree_size: 0,
                     orchard_initial_tree_size: 0,
@@ -2972,7 +2972,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            )
+            })
         }
 
         /// A wallet synced through height 10 with a birthday of 6: one
@@ -3347,7 +3347,10 @@ mod test {
     /// Each pool contributes a distinct count, so dropping any pool
     /// from any consumer changes an asserted value.
     mod sync_status_pool_accounting {
-        use crate::engine::{InitialSyncStateOps, SyncStateOps, WalletBlockOps};
+        use crate::engine::{
+            InitialSyncStateOps, InitialSyncStateParts, SyncStateOps, WalletBlockOps,
+            WalletBlockParts,
+        };
         use std::collections::BTreeMap;
 
         use zcash_primitives::block::BlockHash;
@@ -3362,14 +3365,14 @@ mod test {
         /// A wallet block carrying only what tree-bounds accounting
         /// reads: its height and tree sizes.
         fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
-            WalletBlock::from_parts(
-                BlockHeight::from_u32(height),
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
                 tree_bounds,
-            )
+            })
         }
 
         /// Tree bounds whose initial and final sizes coincide, for
@@ -3397,19 +3400,21 @@ mod test {
             // Session denominators: 10 sapling + 20 orchard + 40
             // ironwood outputs between the wallet bounds, 70 in all.
             sync_state.set_initial_sync_state(InitialSyncState::from_parts(
-                BlockHeight::from_u32(1_000),
-                TreeBounds {
-                    sapling_initial_tree_size: 100,
-                    sapling_final_tree_size: 110,
-                    orchard_initial_tree_size: 200,
-                    orchard_final_tree_size: 220,
-                    ironwood_initial_tree_size: 300,
-                    ironwood_final_tree_size: 340,
+                InitialSyncStateParts {
+                    sync_start_height: BlockHeight::from_u32(1_000),
+                    wallet_tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: 100,
+                        sapling_final_tree_size: 110,
+                        orchard_initial_tree_size: 200,
+                        orchard_final_tree_size: 220,
+                        ironwood_initial_tree_size: 300,
+                        ironwood_final_tree_size: 340,
+                    },
+                    previously_scanned_blocks: NOTHING_PREVIOUSLY_SCANNED,
+                    previously_scanned_sapling_outputs: 1,
+                    previously_scanned_orchard_outputs: 2,
+                    previously_scanned_ironwood_outputs: 3,
                 },
-                NOTHING_PREVIOUSLY_SCANNED,
-                1,
-                2,
-                3,
             ));
 
             let wallet_blocks = BTreeMap::from([
@@ -3461,19 +3466,21 @@ mod test {
             // The span: ten orchard outputs between the recorded tree bounds.
             // A baseline above that span, which the engine never records.
             sync_state.set_initial_sync_state(InitialSyncState::from_parts(
-                BlockHeight::from_u32(1_000),
-                TreeBounds {
-                    sapling_initial_tree_size: 100,
-                    sapling_final_tree_size: 100,
-                    orchard_initial_tree_size: 200,
-                    orchard_final_tree_size: 210,
-                    ironwood_initial_tree_size: 300,
-                    ironwood_final_tree_size: 300,
+                InitialSyncStateParts {
+                    sync_start_height: BlockHeight::from_u32(1_000),
+                    wallet_tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: 100,
+                        sapling_final_tree_size: 100,
+                        orchard_initial_tree_size: 200,
+                        orchard_final_tree_size: 210,
+                        ironwood_initial_tree_size: 300,
+                        ironwood_final_tree_size: 300,
+                    },
+                    previously_scanned_blocks: NOTHING_PREVIOUSLY_SCANNED,
+                    previously_scanned_sapling_outputs: NOTHING_PREVIOUSLY_SCANNED,
+                    previously_scanned_orchard_outputs: 70,
+                    previously_scanned_ironwood_outputs: NOTHING_PREVIOUSLY_SCANNED,
                 },
-                NOTHING_PREVIOUSLY_SCANNED,
-                NOTHING_PREVIOUSLY_SCANNED,
-                70,
-                NOTHING_PREVIOUSLY_SCANNED,
             ));
 
             let wallet_blocks = BTreeMap::from([
@@ -3509,7 +3516,10 @@ mod test {
     /// the total counts report the scanned span, untouched by the
     /// stale session baseline.
     mod sync_status_stale_initial_state {
-        use crate::engine::{InitialSyncStateOps, SyncStateOps, WalletBlockOps};
+        use crate::engine::{
+            InitialSyncStateOps, InitialSyncStateParts, SyncStateOps, WalletBlockOps,
+            WalletBlockParts,
+        };
         use std::collections::BTreeMap;
 
         use zcash_primitives::block::BlockHash;
@@ -3564,14 +3574,14 @@ mod test {
         /// A wallet block carrying only what tree-bounds accounting
         /// reads: its height and tree sizes.
         fn block(height: u32, tree_bounds: TreeBounds) -> WalletBlock {
-            WalletBlock::from_parts(
-                BlockHeight::from_u32(height),
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
                 tree_bounds,
-            )
+            })
         }
 
         /// Tree bounds whose initial and final sizes coincide, for
@@ -3605,19 +3615,22 @@ mod test {
                 ),
             ]);
             sync_state.set_initial_sync_state(InitialSyncState::from_parts(
-                BlockHeight::from_u32(BIRTHDAY_HEIGHT),
-                TreeBounds {
-                    sapling_initial_tree_size: SAPLING_INITIAL_TREE_SIZE,
-                    sapling_final_tree_size: SAPLING_INITIAL_TREE_SIZE + SAPLING_TOTAL_OUTPUTS,
-                    orchard_initial_tree_size: ORCHARD_INITIAL_TREE_SIZE,
-                    orchard_final_tree_size: ORCHARD_INITIAL_TREE_SIZE + ORCHARD_TOTAL_OUTPUTS,
-                    ironwood_initial_tree_size: IRONWOOD_INITIAL_TREE_SIZE,
-                    ironwood_final_tree_size: IRONWOOD_INITIAL_TREE_SIZE + IRONWOOD_TOTAL_OUTPUTS,
+                InitialSyncStateParts {
+                    sync_start_height: BlockHeight::from_u32(BIRTHDAY_HEIGHT),
+                    wallet_tree_bounds: TreeBounds {
+                        sapling_initial_tree_size: SAPLING_INITIAL_TREE_SIZE,
+                        sapling_final_tree_size: SAPLING_INITIAL_TREE_SIZE + SAPLING_TOTAL_OUTPUTS,
+                        orchard_initial_tree_size: ORCHARD_INITIAL_TREE_SIZE,
+                        orchard_final_tree_size: ORCHARD_INITIAL_TREE_SIZE + ORCHARD_TOTAL_OUTPUTS,
+                        ironwood_initial_tree_size: IRONWOOD_INITIAL_TREE_SIZE,
+                        ironwood_final_tree_size: IRONWOOD_INITIAL_TREE_SIZE
+                            + IRONWOOD_TOTAL_OUTPUTS,
+                    },
+                    previously_scanned_blocks: STALE_PREVIOUSLY_SCANNED_BLOCKS,
+                    previously_scanned_sapling_outputs: STALE_PREVIOUSLY_SCANNED_OUTPUTS,
+                    previously_scanned_orchard_outputs: STALE_PREVIOUSLY_SCANNED_OUTPUTS,
+                    previously_scanned_ironwood_outputs: STALE_PREVIOUSLY_SCANNED_OUTPUTS,
                 },
-                STALE_PREVIOUSLY_SCANNED_BLOCKS,
-                STALE_PREVIOUSLY_SCANNED_OUTPUTS,
-                STALE_PREVIOUSLY_SCANNED_OUTPUTS,
-                STALE_PREVIOUSLY_SCANNED_OUTPUTS,
             ));
 
             let wallet_blocks = BTreeMap::from([
@@ -4083,7 +4096,7 @@ mod test {
     /// a coin in full to an external recipient is therefore known to the wallet only as the pending record created
     /// when it was sent.
     mod transparent_spend_without_change {
-        use crate::engine::{ScanTargetOps, TransparentCoinOps, WalletBlockOps};
+        use crate::engine::{ScanTargetOps, TransparentCoinOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
         use tokio::sync::mpsc;
@@ -4154,13 +4167,13 @@ mod test {
         fn scanned_blocks() -> BTreeMap<BlockHeight, WalletBlock> {
             BTreeMap::from([(
                 SPEND_HEIGHT,
-                WalletBlock::from_parts(
-                    SPEND_HEIGHT,
-                    BlockHash([0; 32]),
-                    BlockHash([0; 32]),
-                    0,
-                    Vec::new(),
-                    TreeBounds {
+                WalletBlock::from_parts(WalletBlockParts {
+                    block_height: SPEND_HEIGHT,
+                    block_hash: BlockHash([0; 32]),
+                    prev_hash: BlockHash([0; 32]),
+                    time: 0,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
                         sapling_initial_tree_size: 0,
                         sapling_final_tree_size: 0,
                         orchard_initial_tree_size: 0,
@@ -4168,7 +4181,7 @@ mod test {
                         ironwood_initial_tree_size: 0,
                         ironwood_final_tree_size: 0,
                     },
-                ),
+                }),
             )])
         }
 
@@ -5176,7 +5189,7 @@ mod test {
 
     /// Scan results are added to the wallet together, once every server request the update depends on is answered.
     mod scan_results_wallet_update {
-        use crate::engine::{ScanTargetOps, WalletBlockOps};
+        use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, BTreeSet, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
@@ -5271,13 +5284,13 @@ mod test {
 
         /// The block at `SPEND_HEIGHT`, which holds the first orchard note commitment of the chain.
         fn block_at_spend_height() -> WalletBlock {
-            WalletBlock::from_parts(
-                SPEND_HEIGHT,
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
-                TreeBounds {
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: SPEND_HEIGHT,
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
                     sapling_initial_tree_size: 0,
                     sapling_final_tree_size: 0,
                     orchard_initial_tree_size: 0,
@@ -5285,7 +5298,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            )
+            })
         }
 
         /// The scan ranges of a wallet scanned up to `SPEND_HEIGHT`, with the block at `SPEND_HEIGHT` in the given
@@ -5318,13 +5331,13 @@ mod test {
 
         /// The block at `FUNDING_HEIGHT`, which adds no note commitments.
         fn block_at_funding_height() -> WalletBlock {
-            WalletBlock::from_parts(
-                FUNDING_HEIGHT,
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
-                TreeBounds {
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: FUNDING_HEIGHT,
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
                     sapling_initial_tree_size: 0,
                     sapling_final_tree_size: 0,
                     orchard_initial_tree_size: 0,
@@ -5332,7 +5345,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            )
+            })
         }
 
         /// The scan ranges of a wallet scanned up to `SPEND_HEIGHT` except for the block at `FUNDING_HEIGHT`, which
@@ -5743,7 +5756,7 @@ mod test {
 
     /// A scan fails the continuity check when the first block of its scan range does not follow the block below it.
     mod hash_discontinuity {
-        use crate::engine::WalletBlockOps;
+        use crate::engine::{WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
         use tokio::sync::mpsc;
@@ -5778,13 +5791,13 @@ mod test {
         fn block(height: u32) -> (BlockHeight, WalletBlock) {
             (
                 BlockHeight::from_u32(height),
-                WalletBlock::from_parts(
-                    BlockHeight::from_u32(height),
-                    BlockHash([0; 32]),
-                    BlockHash([0; 32]),
-                    0,
-                    Vec::new(),
-                    TreeBounds {
+                WalletBlock::from_parts(WalletBlockParts {
+                    block_height: BlockHeight::from_u32(height),
+                    block_hash: BlockHash([0; 32]),
+                    prev_hash: BlockHash([0; 32]),
+                    time: 0,
+                    txids: Vec::new(),
+                    tree_bounds: TreeBounds {
                         sapling_initial_tree_size: 0,
                         sapling_final_tree_size: 0,
                         orchard_initial_tree_size: 0,
@@ -5792,7 +5805,7 @@ mod test {
                         ironwood_initial_tree_size: 0,
                         ironwood_final_tree_size: 0,
                     },
-                ),
+                }),
             )
         }
 
@@ -6078,7 +6091,7 @@ mod test {
     }
 
     mod pool_rescan {
-        use crate::engine::{ScanTargetOps, SyncStateOps, WalletBlockOps};
+        use crate::engine::{ScanTargetOps, SyncStateOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
@@ -6109,13 +6122,13 @@ mod test {
         };
 
         fn block(height: u32) -> WalletBlock {
-            WalletBlock::from_parts(
-                BlockHeight::from_u32(height),
-                BlockHash([0; 32]),
-                BlockHash([0; 32]),
-                0,
-                Vec::new(),
-                TreeBounds {
+            WalletBlock::from_parts(WalletBlockParts {
+                block_height: BlockHeight::from_u32(height),
+                block_hash: BlockHash([0; 32]),
+                prev_hash: BlockHash([0; 32]),
+                time: 0,
+                txids: Vec::new(),
+                tree_bounds: TreeBounds {
                     sapling_initial_tree_size: 0,
                     sapling_final_tree_size: 0,
                     orchard_initial_tree_size: 0,
@@ -6123,7 +6136,7 @@ mod test {
                     ironwood_initial_tree_size: 0,
                     ironwood_final_tree_size: 0,
                 },
-            )
+            })
         }
 
         /// Answers tree state requests with empty note commitment trees, omitting the ironwood tree state below the

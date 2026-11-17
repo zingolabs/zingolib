@@ -16,7 +16,7 @@ use zl_netutils::lightwallet_protocol::CompactBlock;
 
 #[cfg(any(test, feature = "test-features"))]
 use crate::engine::SyncStateOps;
-use crate::engine::WalletBlockOps;
+use crate::engine::{WalletBlockOps, WalletBlockParts};
 use crate::{
     client::FetchRequest,
     error::{ServerError, SyncModeError},
@@ -115,18 +115,18 @@ pub(crate) async fn wallet_block_from_compact_block(
     let tree_bounds =
         calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;
 
-    Ok(WalletBlock::from_parts(
-        block::get_compact_height(block),
-        block::get_compact_hash(block),
-        block::get_compact_prev_hash(block),
-        block.time,
-        block
+    Ok(WalletBlock::from_parts(WalletBlockParts {
+        block_height: block::get_compact_height(block),
+        block_hash: block::get_compact_hash(block),
+        prev_hash: block::get_compact_prev_hash(block),
+        time: block.time,
+        txids: block
             .vtx
             .iter()
             .map(transaction::get_compact_txid)
             .collect(),
         tree_bounds,
-    ))
+    }))
 }
 
 /// Reduces the wallet to what a build that never tracked `pool` would have

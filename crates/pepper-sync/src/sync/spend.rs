@@ -612,7 +612,7 @@ mod tests {
     use zip32::AccountId;
     use zl_common::status::ConfirmationStatus;
 
-    use crate::engine::{TransparentCoinOps, WalletTransactionOps};
+    use crate::engine::{TransparentCoinOps, WalletTransactionOps, WalletTransactionParts};
     use crate::keys::transparent::{TransparentAddressId, TransparentScope};
     use crate::wallet::{OutputId, TransparentCoin, WalletTransaction};
 
@@ -657,19 +657,19 @@ mod tests {
         .freeze()
         .unwrap();
         let pending_txid = pending_tx.txid();
-        let pending_record = WalletTransaction::from_parts(
-            pending_txid,
-            ConfirmationStatus::Calculated(11.into()),
-            pending_tx,
-            0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        );
+        let pending_record = WalletTransaction::from_parts(WalletTransactionParts {
+            txid: pending_txid,
+            status: ConfirmationStatus::Calculated(11.into()),
+            transaction: pending_tx,
+            datetime: 0,
+            transparent_coins: Vec::new(),
+            sapling_notes: Vec::new(),
+            orchard_notes: Vec::new(),
+            ironwood_notes: Vec::new(),
+            outgoing_sapling_notes: Vec::new(),
+            outgoing_orchard_notes: Vec::new(),
+            outgoing_ironwood_notes: Vec::new(),
+        });
 
         let mut wallet_transactions =
             HashMap::from([(funding_txid, funding), (pending_txid, pending_record)]);
