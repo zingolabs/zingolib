@@ -643,13 +643,20 @@ mod tests {
         assert_eq!(failure.report(), expected);
     }
 
+    const LOOPBACK_ANY_PORT: &str = "127.0.0.1:0";
+
+    async fn loopback_listener() -> std::io::Result<(TcpListener, std::net::SocketAddr)> {
+        let listener = TcpListener::bind(LOOPBACK_ANY_PORT).await?;
+        let address = listener.local_addr()?;
+        Ok((listener, address))
+    }
+
     /// Serves exactly one Gemini-shaped trades response over plain HTTP and
     /// returns the URL to hit it. One connection, then the socket closes.
-    async fn spawn_trades_server(body: &'static str) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    async fn spawn_trades_server(body: &'static str) -> std::io::Result<String> {
+        let (listener, addr) = loopback_listener().await?;
         tokio::spawn(async move {
-            let (mut sock, _) = listener.accept().await.unwrap();
+            let (mut sock, _) = listener.accept().await?;
             // Drain the request headers; the content is irrelevant to the stub.
             let mut buf = [0u8; 2048];
             let _ = sock.read(&mut buf).await;
@@ -658,10 +665,10 @@ mod tests {
                 body.len(),
                 body
             );
-            sock.write_all(response.as_bytes()).await.unwrap();
-            sock.flush().await.unwrap();
+            sock.write_all(response.as_bytes()).await?;
+            sock.flush().await
         });
-        format!("http://{addr}/v1/trades/zecusd")
+        Ok(format!("http://{addr}/v1/trades/zecusd"))
     }
 
     /// The nakednet fetch (`socks5_proxy = None`) performs the real HTTP round
@@ -669,7 +676,7 @@ mod tests {
     /// the eleven trades (index 5 of the sorted list). Eleven deliberately
     /// out-of-order prices 100..=110 make the median 105 and prove the sort.
     #[tokio::test]
-    async fn nakednet_fetch_returns_median_price() {
+    async fn nakednet_fetch_returns_median_price() -> std::io::Result<()> {
         let body = r#"[
             {"price":"110","timestamp":1},
             {"price":"100","timestamp":2},
@@ -683,7 +690,7 @@ mod tests {
             {"price":"104","timestamp":10},
             {"price":"106","timestamp":11}
         ]"#;
-        let url = spawn_trades_server(body).await;
+        let url = spawn_trades_server(body).await?;
 
         let price =
             get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
@@ -694,6 +701,7 @@ mod tests {
             price.price_usd, 105.0,
             "the returned price is the median (index 5) of the eleven sorted trades"
         );
+        Ok(())
     }
 
     /// Smoke test against a real price source over nakednet. Ignored by
@@ -717,9 +725,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_black_holed_server_times_out_typed_within_the_bound() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/v1/trades/zecusd", listener.local_addr().unwrap());
+    async fn a_black_holed_server_times_out_typed_within_the_bound() -> std::io::Result<()> {
+        let (listener, address) = loopback_listener().await?;
+        let url = format!("http://{address}/v1/trades/zecusd");
         // Keep the listener alive but never accept-and-answer.
         let hold = tokio::spawn(async move {
             let _sock = listener.accept().await;
@@ -745,6 +753,7 @@ mod tests {
             other => panic!("expected a typed RequestFailed, got {other}"),
         }
         hold.abort();
+        Ok(())
     }
 
     /// A dead SOCKS5 proxy (the port is closed when the fetch dials it)
@@ -753,12 +762,9 @@ mod tests {
     /// connect failure from a TLS or HTTP failure by fields instead of
     /// parsing prose.
     #[tokio::test]
-    async fn a_dead_proxy_failure_is_typed_with_its_source_intact() {
+    async fn a_dead_proxy_failure_is_typed_with_its_source_intact() -> std::io::Result<()> {
         // Bind then drop, so the port is closed when the fetch dials it.
-        let closed = {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.local_addr().unwrap()
-        };
+        let closed = std::net::TcpListener::bind(LOOPBACK_ANY_PORT)?.local_addr()?;
 
         let short = Duration::from_millis(300);
         let error = fetch_through_proxy(
@@ -792,17 +798,18 @@ mod tests {
             }
             other => panic!("expected a typed RequestFailed, got {other}"),
         }
+        Ok(())
     }
 
     /// A structurally short trades response is a typed refusal, never an
     /// index panic (the design's median-guard requirement).
     #[tokio::test]
-    async fn fewer_trades_than_requested_is_a_typed_refusal() {
+    async fn fewer_trades_than_requested_is_a_typed_refusal() -> std::io::Result<()> {
         let body = r#"[
             {"price":"110","timestamp":1},
             {"price":"100","timestamp":2}
         ]"#;
-        let url = spawn_trades_server(body).await;
+        let url = spawn_trades_server(body).await?;
 
         let error =
             get_source_price_untunneled(PriceSource::Gemini, &url, TEST_TIMEOUT, TEST_TIMEOUT)
@@ -812,6 +819,7 @@ mod tests {
             matches!(error, PriceError::InsufficientTrades { received: 2 }),
             "the refusal must be typed with the received count: {error}"
         );
+        Ok(())
     }
 
     /// Eleven Kraken-shaped trades around a 43.00 median. Trade entries are
@@ -883,12 +891,10 @@ mod tests {
     }
 
     /// A server that answers every connection with this body, until dropped.
-    async fn spawn_answering_server(body: &'static str) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
+    async fn spawn_answering_server(body: &'static str) -> std::io::Result<String> {
+        let (listener, address) = loopback_listener().await?;
         tokio::spawn(async move {
-            loop {
-                let (mut sock, _) = listener.accept().await.unwrap();
+            while let Ok((mut sock, _)) = listener.accept().await {
                 let mut buf = [0u8; 2048];
                 let _ = sock.read(&mut buf).await;
                 let response = format!(
@@ -899,18 +905,17 @@ mod tests {
                 let _ = sock.write_all(response.as_bytes()).await;
             }
         });
-        url
+        Ok(format!("http://{address}/"))
     }
 
     /// A server that accepts and never answers, until dropped.
-    async fn spawn_silent_server() -> String {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
+    async fn spawn_silent_server() -> std::io::Result<String> {
+        let (listener, address) = loopback_listener().await?;
         tokio::spawn(async move {
             let _sock = listener.accept().await;
             std::future::pending::<()>().await;
         });
-        url
+        Ok(format!("http://{address}/"))
     }
 
     /// HYPOTHESIS: the first source that answered supplies the quote, and
@@ -918,9 +923,9 @@ mod tests {
     /// reported. Falsified if a later answer wins or a failure survives a
     /// success.
     #[tokio::test]
-    async fn the_first_answer_supplies_the_quote() {
-        let garbage = spawn_answering_server("not json at all").await;
-        let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await;
+    async fn the_first_answer_supplies_the_quote() -> std::io::Result<()> {
+        let garbage = spawn_answering_server("not json at all").await?;
+        let kraken = spawn_answering_server(KRAKEN_ELEVEN_TRADES).await?;
         let short = Duration::from_millis(500);
 
         let refused =
@@ -934,6 +939,7 @@ mod tests {
         .expect("one healthy source supplies the quote");
         assert_eq!(won.source, PriceSource::Kraken);
         assert_eq!(won.price.price_usd, 43.00);
+        Ok(())
     }
 
     /// HYPOTHESIS: when no source answered, the report carries every
@@ -941,10 +947,10 @@ mod tests {
     /// diagnosable per operator rather than as one opaque refusal.
     /// Falsified if a failure or a name leaves the report.
     #[tokio::test]
-    async fn a_run_where_every_source_fails_reports_them_all() {
-        let garbage_one = spawn_answering_server("not json at all").await;
-        let garbage_two = spawn_answering_server(r#"{"unexpected":true}"#).await;
-        let silent = spawn_silent_server().await;
+    async fn a_run_where_every_source_fails_reports_them_all() -> std::io::Result<()> {
+        let garbage_one = spawn_answering_server("not json at all").await?;
+        let garbage_two = spawn_answering_server(r#"{"unexpected":true}"#).await?;
+        let silent = spawn_silent_server().await?;
         let short = Duration::from_millis(300);
 
         let mut outcomes = Vec::new();
@@ -972,5 +978,6 @@ mod tests {
                 "the rendered report must name {name}: {failure}"
             );
         }
+        Ok(())
     }
 }
