@@ -2421,7 +2421,7 @@ mod tests {
         assert_eq!(generations.len(), binding_layer::GENERATIONS.len());
         assert!(generations
             .iter()
-            .all(|command| command.contains("--package zingo-uniffi-bindgen")));
+            .all(|command| command.contains("--package zingolib-uniffi-bindgen")));
         assert!(generations
             .iter()
             .all(|command| !command

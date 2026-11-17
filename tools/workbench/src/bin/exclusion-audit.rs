@@ -33,7 +33,7 @@
 //! down.
 //!
 //! Invoked as `makers exclusion-audit`, optionally with candidates:
-//! `makers exclusion-audit zingo-cli`.
+//! `makers exclusion-audit zingolib-cli`.
 
 #![forbid(unsafe_code)]
 
@@ -328,12 +328,12 @@ mod resolve {
     use super::*;
 
     const LISTING: &str = "\
-zingolib v5.0.0 (/repo/zingolib)
+zingolib v5.0.0 (/repo/crates/zingolib)
 zingolib feature \"nym\"
 zingolib feature \"perspective\" (*)
-zingo-netutils v5.0.1 (/repo/zingo-netutils)
-zingo-netutils feature \"socks5-transmit\"
-zingo-memo v0.1.1 (/repo/zingo-memo)
+zl-netutils v5.0.1 (/repo/crates/netutils)
+zl-netutils feature \"socks5-transmit\"
+zl-memo v0.1.1 (/repo/crates/memo)
 [dev-dependencies]
 ";
 
@@ -344,7 +344,7 @@ zingo-memo v0.1.1 (/repo/zingo-memo)
     #[test]
     fn a_featureless_crate_is_present_and_empty() {
         let graph = resolve(LISTING);
-        assert_eq!(graph.get("zingo-memo"), Some(&BTreeSet::new()));
+        assert_eq!(graph.get("zl-memo"), Some(&BTreeSet::new()));
     }
 
     /// HYPOTHESIS: cargo's `(*)` deduplication marker is not read as part of
@@ -364,7 +364,7 @@ zingo-memo v0.1.1 (/repo/zingo-memo)
     fn a_non_member_crate_is_audited() {
         let graph = resolve(LISTING);
         assert_eq!(
-            graph.get("zingo-netutils").map(BTreeSet::len),
+            graph.get("zl-netutils").map(BTreeSet::len),
             Some(1),
             "a crate outside the workspace still shares the compile"
         );
