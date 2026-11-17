@@ -9,8 +9,8 @@
 use super::error::LightClientError;
 use super::{LightClient, MixnetPriceFetch};
 
-/// The price census as one fetch on the fetch exit: every source raced
-/// through one Exit Node, settled on the first quote.
+/// The price source list as one fetch on the fetch exit: one request to
+/// every source through one Exit Node, complete on the first quote.
 #[cfg(feature = "nym")]
 struct PriceTargets;
 
@@ -30,7 +30,7 @@ impl crate::mixnet::fetch::FetchTargets for PriceTargets {
         crate::price::RACED_SOURCES.to_vec()
     }
 
-    async fn probe(
+    async fn request(
         &self,
         dial: zl_netutils::conduit::ConduitDial,
         target: Self::Target,
@@ -46,7 +46,7 @@ impl crate::mixnet::fetch::FetchTargets for PriceTargets {
         (target, response)
     }
 
-    fn answered(&self, responses: &[Self::Response]) -> bool {
+    fn has_response(&self, responses: &[Self::Response]) -> bool {
         responses.iter().any(|(_, response)| response.is_ok())
     }
 }
@@ -1147,7 +1147,7 @@ impl LightClient {
 
     /// Runs `targets` on the fetch exit: over a client created for this
     /// run while the session has an acquirer, over the session's conduit
-    /// otherwise. Mixnet-only: a ready mixnet carries it, every other
+    /// otherwise. Mixnet-only: it runs on a ready mixnet, every other
     /// state refuses with a typed
     /// [`MixnetNotReady`](crate::mixnet::MixnetNotReady), and the transmit
     /// policy has no effect. `speed_failure` types a run that reached no
@@ -1162,20 +1162,17 @@ impl LightClient {
         let run = crate::mixnet::fetch::FetchRun::new(self.exit_pools.clone(), targets);
 
         if self.exit_pools.acquirer().is_some() {
-            let (responses, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
+            let (responses, used) = crate::mixnet::speed::run_speed_prioritized(&run)
                 .await
                 .map_err(speed_failure)?;
-            let dial = spent
-                .addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or_default();
-            crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
+            let dial = used.addr().map(|addr| addr.to_string()).unwrap_or_default();
+            crate::mixnet::speed::SpeedPrioritized::release(&run, used);
             Ok((responses, dial))
         } else {
             let conduit = zl_netutils::conduit::MixnetConduit::over(socks5_addr);
-            match crate::mixnet::speed::run_wave(&run, &conduit).await {
-                crate::mixnet::speed::WaveEnd::Settled(responses)
-                | crate::mixnet::speed::WaveEnd::Exhausted(responses) => {
+            match crate::mixnet::speed::run_batch(&run, &conduit).await {
+                crate::mixnet::speed::BatchEnd::Completed(responses)
+                | crate::mixnet::speed::BatchEnd::Exhausted(responses) => {
                     Ok((responses, socks5_addr.to_string()))
                 }
             }
@@ -1203,7 +1200,7 @@ impl LightClient {
     }
 
     /// GET `url` over the mixnet and return its body as text, on the terms
-    /// of `run_fetch`: the fetch exit carries it, consecutive
+    /// of `run_fetch`: it runs on the fetch exit, consecutive
     /// fetches never share a client, and no nakednet leg exists. `url`
     /// must be `https` on port 443, the one shape the exit policy admits;
     /// any other shape refuses before the route is resolved. `timeout`

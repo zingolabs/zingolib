@@ -2963,7 +2963,7 @@ pub fn zec_price() -> Result<String, ZingolibError> {
 
 /// GET `url` over the mixnet and report its body as text, with the local
 /// SOCKS5 endpoint it traveled through and the round trip in milliseconds.
-/// The fetch rides the fetch exit, never the Standing Client's, so a
+/// The fetch uses the fetch exit, never the Standing Client's, so a
 /// consumer's third-party lookups stay unlinked from wallet traffic. `url`
 /// must be `https` on port 443; `timeout_ms` bounds the whole request.
 /// Refuses while Mixnet Mode is not ready, with no nakednet leg.

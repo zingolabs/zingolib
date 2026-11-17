@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
   port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
   body as text, the local SOCKS5 endpoint it traveled through, and the round
-  trip. It rides the fetch exit the price fetch uses, creates a client per
+  trip. It uses the fetch exit of the price fetch, creates a client per
   run after boot's conduit is spent, and refuses in every mixnet state but
   ready, with no nakednet leg. A consumer fetches its own third-party data
   (a forex table) through it instead of asking this crate for more
@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
+- **Breaking:** `mixnet::speed::WAVE_WIDTH` is
+  `mixnet::speed::MAX_CONCURRENT_REQUESTS`. The value is unchanged: four
+  requests in flight through one Nym client.
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
   returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
   selection checks a reservation in constant time. A consumer that indexed

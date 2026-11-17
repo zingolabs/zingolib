@@ -3,9 +3,9 @@
 //! nakednet leg and without sharing the Standing Client's exit.
 //!
 //! The price fetch is one use of the same run: `FetchRun` contains the
-//! exit acquisition, the disposal, and the narration that every fetch on
-//! the fetch exit shares, and `FetchTargets` supplies what one fetch
-//! races and how it reads the responses.
+//! exit acquisition, the release, and the failure handling that every
+//! fetch on the fetch exit shares, and `FetchTargets` supplies what one
+//! fetch sends requests to and how it reads the responses.
 
 #![forbid(unsafe_code)]
 
@@ -19,40 +19,41 @@ use crate::mixnet::acquire::TransportError;
 use crate::mixnet::pools::Pools;
 use crate::mixnet::pools::exit_pool::ExitNodeHealthVerdict;
 use crate::mixnet::roles::Role;
-use crate::mixnet::speed::{Member, SpeedError, SpeedPrioritized, SpeedProgress};
+use crate::mixnet::speed::{Member, SpeedError, SpeedPrioritized};
 
 /// The client-side bound on establishing one fetch connection alone,
 /// so a request timeout above it still refuses an exit that never
 /// completes the handshake.
 pub const FETCH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// What one fetch on the fetch exit races, and how it reads the responses.
+/// What one fetch on the fetch exit sends requests to, and how it reads
+/// the responses.
 pub(crate) trait FetchTargets: Send + Sync {
-    /// What this fetch races: a price source, a consumer's URL.
+    /// What this fetch sends requests to: a price source, a consumer's URL.
     type Target: Send;
 
-    /// What one target returns, whether it answered or failed.
+    /// What one target returns, whether it responded or failed.
     type Response: Send;
 
     /// The label the run logs under.
     fn log_label(&self) -> &'static str;
 
-    /// The targets this fetch races, in the order the wave takes them.
+    /// The targets of this fetch, in the order the batch takes them.
     fn targets(&self) -> Vec<Self::Target>;
 
-    /// Fetches one target through `dial`'s conduit.
-    fn probe(
+    /// Sends one request to `target` through `dial`'s conduit.
+    fn request(
         &self,
         dial: ConduitDial,
         target: Self::Target,
     ) -> impl std::future::Future<Output = Self::Response> + Send;
 
-    /// Whether any target answered, which both settles the wave and
-    /// proves the exit alive.
-    fn answered(&self, responses: &[Self::Response]) -> bool;
+    /// Whether any target responded, which both completes the batch and
+    /// shows the exit is alive.
+    fn has_response(&self, responses: &[Self::Response]) -> bool;
 }
 
-/// A fetch on the fetch exit: one speed-priority wave over a client
+/// A fetch on the fetch exit: one speed-priority batch over a client
 /// created for this run, so consecutive fetches never share a client.
 pub(crate) struct FetchRun<F> {
     pools: Arc<Pools>,
@@ -60,12 +61,13 @@ pub(crate) struct FetchRun<F> {
 }
 
 impl<F: FetchTargets> FetchRun<F> {
-    /// A run taking its transport from `pools` and racing `targets`.
+    /// A run that takes its transport from `pools` and sends requests to
+    /// `targets`.
     pub(crate) fn new(pools: Arc<Pools>, targets: F) -> Self {
         FetchRun { pools, targets }
     }
 
-    fn retire(&self, member: Member, health: ExitNodeHealthVerdict) {
+    fn close_with_health(&self, member: Member, health: ExitNodeHealthVerdict) {
         self.pools.remember(member.node().clone(), health);
         tokio::spawn(async move {
             member.retire().await;
@@ -75,22 +77,26 @@ impl<F: FetchTargets> FetchRun<F> {
 
 impl<F: FetchTargets> SpeedPrioritized for FetchRun<F> {
     type Target = F::Target;
-    type Outcome = F::Response;
+    type Response = F::Response;
+
+    fn log_label(&self) -> &'static str {
+        self.targets.log_label()
+    }
 
     fn targets(&self) -> Vec<Self::Target> {
         self.targets.targets()
     }
 
-    async fn probe(&self, dial: ConduitDial, target: Self::Target) -> Self::Outcome {
-        self.targets.probe(dial, target).await
+    async fn request(&self, dial: ConduitDial, target: Self::Target) -> Self::Response {
+        self.targets.request(dial, target).await
     }
 
-    fn settled(&self, responses: &[Self::Outcome]) -> bool {
-        SpeedPrioritized::answered(self, responses)
+    fn is_complete(&self, responses: &[Self::Response]) -> bool {
+        SpeedPrioritized::has_response(self, responses)
     }
 
-    fn answered(&self, responses: &[Self::Outcome]) -> bool {
-        self.targets.answered(responses)
+    fn has_response(&self, responses: &[Self::Response]) -> bool {
+        self.targets.has_response(responses)
     }
 
     fn acquire(
@@ -109,21 +115,17 @@ impl<F: FetchTargets> SpeedPrioritized for FetchRun<F> {
         }
     }
 
-    fn dispose(&self, spent: Member) {
-        self.retire(spent, ExitNodeHealthVerdict::EpochProven);
+    fn release(&self, used: Member) {
+        self.close_with_health(used, ExitNodeHealthVerdict::EpochProven);
     }
 
-    fn abandon(&self, dead: Member) {
+    fn mark_exit_failed(&self, failed: Member) {
         tracing::warn!(
-            "{}: exit {:?} abandoned, no target answered",
+            "{}: no target responded through exit {}, marking it failed",
             self.targets.log_label(),
-            dead.node()
+            failed.node()
         );
-        self.retire(dead, ExitNodeHealthVerdict::Failed);
-    }
-
-    fn narrate(&self, phase: SpeedProgress) {
-        tracing::info!("{}: {phase:?}", self.targets.log_label());
+        self.close_with_health(failed, ExitNodeHealthVerdict::Failed);
     }
 }
 
@@ -149,7 +151,7 @@ impl FetchTargets for UrlFetch {
         vec![self.url.clone()]
     }
 
-    async fn probe(&self, dial: ConduitDial, target: Self::Target) -> Self::Response {
+    async fn request(&self, dial: ConduitDial, target: Self::Target) -> Self::Response {
         dial.fetch_text(
             &target.to_string(),
             self.timeout,
@@ -158,7 +160,7 @@ impl FetchTargets for UrlFetch {
         .await
     }
 
-    fn answered(&self, responses: &[Self::Response]) -> bool {
+    fn has_response(&self, responses: &[Self::Response]) -> bool {
         responses.iter().any(Result::is_ok)
     }
 }
@@ -169,7 +171,7 @@ impl FetchTargets for UrlFetch {
 pub struct MixnetFetch {
     /// The response body as text.
     pub body: String,
-    /// Wall-clock time from dispatch to the answer, tunnel traversal
+    /// Wall-clock time from dispatch to the response, tunnel traversal
     /// included.
     pub round_trip: Duration,
     /// The local SOCKS5 endpoint the fetch traveled through.
@@ -179,22 +181,22 @@ pub struct MixnetFetch {
 /// Why a fetch over the mixnet returned no body.
 #[derive(Debug, thiserror::Error)]
 pub enum MixnetFetchError {
-    /// A URL outside the one endpoint shape the exit policy carries.
+    /// A URL outside the one endpoint shape the exit policy allows.
     #[error("fetch targets must be https on port 443; got '{0}'")]
     Ineligible(http::Uri),
-    /// The run acquired no transport, or every exit it drew carried
-    /// nothing.
+    /// The run acquired no transport, or no target responded through any
+    /// exit it drew.
     #[error("the fetch reached no exit.")]
     Speed(#[source] SpeedError),
     /// The request traveled and failed at a typed stage.
     #[error("the fetch failed.")]
     Request(#[source] Box<Socks5FetchError>),
-    /// The wave ended with no response for the one URL.
+    /// The batch ended with no response for the one URL.
     #[error("the fetch produced no response.")]
     NoResponse,
 }
 
-/// The body among a single-URL wave's responses, or the typed failure.
+/// The body among a single-URL batch's responses, or the typed failure.
 pub(crate) fn first_body(
     responses: Vec<Result<String, Socks5FetchError>>,
 ) -> Result<String, MixnetFetchError> {
@@ -214,18 +216,18 @@ mod tests {
     }
 
     #[test]
-    fn a_url_fetch_races_its_one_url() {
+    fn a_url_fetch_has_its_one_url_as_target() {
         let fetch = UrlFetch {
             url: uri("https://example.test/rates"),
             timeout: Duration::from_secs(5),
         };
         assert_eq!(fetch.targets(), vec![uri("https://example.test/rates")]);
-        assert!(!fetch.answered(&[]));
-        assert!(fetch.answered(&[Ok("{}".to_string())]));
+        assert!(!fetch.has_response(&[]));
+        assert!(fetch.has_response(&[Ok("{}".to_string())]));
     }
 
     #[test]
-    fn an_empty_wave_is_a_typed_absence() {
+    fn an_empty_batch_is_a_typed_absence() {
         assert!(matches!(
             first_body(Vec::new()),
             Err(MixnetFetchError::NoResponse)
