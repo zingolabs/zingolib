@@ -55,7 +55,7 @@ where
     // `NotAboveNewest` is impossible on an empty checkpoint store.
     assert_eq!(
         tree.append_checkpoint(BlockHeight::from_u32(0))
-            .expect("should never fail"),
+            .expect("an empty tree holds no node that a first checkpoint could conflict with"),
         CheckpointAppendOutcome::Appended
     );
 

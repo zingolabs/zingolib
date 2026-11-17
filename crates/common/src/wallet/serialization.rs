@@ -48,6 +48,22 @@ use super::{
     WalletBlock, WalletNote, WalletTransaction,
 };
 
+const SAPLING_RSEED: &str = "Sapling random seed";
+const ORCHARD_ADDRESS: &str = "Orchard address";
+const ORCHARD_RHO: &str = "Orchard rho";
+const ORCHARD_RSEED: &str = "Orchard random seed";
+const ORCHARD_NULLIFIER: &str = "Orchard nullifier";
+const ORCHARD_NOTE: &str = "Orchard note";
+
+fn decoded<T>(value: Option<T>, what: &str) -> std::io::Result<T> {
+    value.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("the serialized bytes hold no valid {what}"),
+        )
+    })
+}
+
 fn read_string<R: Read>(mut reader: R) -> std::io::Result<String> {
     let str_len = reader.read_u64::<LittleEndian>()?;
     let mut str_bytes = vec![0; str_len as usize];
@@ -540,9 +556,10 @@ impl SaplingNote {
         let mut rseed_bytes = [0u8; 32];
         reader.read_exact(&mut rseed_bytes)?;
         let rseed = match rseed_zip212 {
-            0 => sapling_crypto::Rseed::BeforeZip212(
-                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
-            ),
+            0 => sapling_crypto::Rseed::BeforeZip212(decoded(
+                jubjub::Fr::from_bytes(&rseed_bytes).into_option(),
+                SAPLING_RSEED,
+            )?),
             1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
             _ => {
                 return Err(std::io::Error::new(
@@ -668,23 +685,32 @@ fn read_orchard_protocol_note<R: Read, P>(
 
     let mut address_bytes = [0u8; 43];
     reader.read_exact(&mut address_bytes)?;
-    let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
-        .expect("should be a valid address");
+    let recipient = decoded(
+        orchard::Address::from_raw_address_bytes(&address_bytes).into_option(),
+        ORCHARD_ADDRESS,
+    )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
     let mut rho_bytes = [0u8; 32];
     reader.read_exact(&mut rho_bytes)?;
-    let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
+    let rho = decoded(
+        orchard::note::Rho::from_bytes(&rho_bytes).into_option(),
+        ORCHARD_RHO,
+    )?;
     let mut rseed_bytes = [0u8; 32];
     reader.read_exact(&mut rseed_bytes)?;
-    let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
-        .expect("should be valid random seed bytes");
+    let rseed = decoded(
+        orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho).into_option(),
+        ORCHARD_RSEED,
+    )?;
 
     let nullifier = Optional::read(&mut reader, |r| {
         let mut nullifier_bytes = [0u8; 32];
         r.read_exact(&mut nullifier_bytes)?;
 
-        Ok(orchard::note::Nullifier::from_bytes(&nullifier_bytes)
-            .expect("should be valid nullfiier bytes"))
+        decoded(
+            orchard::note::Nullifier::from_bytes(&nullifier_bytes).into_option(),
+            ORCHARD_NULLIFIER,
+        )
     })?;
     let position = Optional::read(&mut reader, |r| {
         Ok(Position::from(r.read_u64::<LittleEndian>()?))
@@ -704,8 +730,11 @@ fn read_orchard_protocol_note<R: Read, P>(
     Ok(WalletNote {
         output_id: OutputId::new(txid, output_index),
         key_id: KeyId::from_parts(account_id, scope),
-        note: orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
-            .expect("should be a valid orchard note"),
+        note: decoded(
+            orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
+                .into_option(),
+            ORCHARD_NOTE,
+        )?,
         nullifier,
         position,
         memo,
@@ -823,9 +852,10 @@ impl OutgoingSaplingNote {
         let mut rseed_bytes = [0u8; 32];
         reader.read_exact(&mut rseed_bytes)?;
         let rseed = match rseed_zip212 {
-            0 => sapling_crypto::Rseed::BeforeZip212(
-                jubjub::Fr::from_bytes(&rseed_bytes).expect("should read valid jubjub bytes"),
-            ),
+            0 => sapling_crypto::Rseed::BeforeZip212(decoded(
+                jubjub::Fr::from_bytes(&rseed_bytes).into_option(),
+                SAPLING_RSEED,
+            )?),
             1 => sapling_crypto::Rseed::AfterZip212(rseed_bytes),
             _ => {
                 return Err(std::io::Error::new(
@@ -937,16 +967,23 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
 
     let mut address_bytes = [0u8; 43];
     reader.read_exact(&mut address_bytes)?;
-    let recipient = orchard::Address::from_raw_address_bytes(&address_bytes)
-        .expect("should be a valid address");
+    let recipient = decoded(
+        orchard::Address::from_raw_address_bytes(&address_bytes).into_option(),
+        ORCHARD_ADDRESS,
+    )?;
     let value = orchard::value::NoteValue::from_raw(reader.read_u64::<LittleEndian>()?);
     let mut rho_bytes = [0u8; 32];
     reader.read_exact(&mut rho_bytes)?;
-    let rho = orchard::note::Rho::from_bytes(&rho_bytes).expect("should be valid rho bytes");
+    let rho = decoded(
+        orchard::note::Rho::from_bytes(&rho_bytes).into_option(),
+        ORCHARD_RHO,
+    )?;
     let mut rseed_bytes = [0u8; 32];
     reader.read_exact(&mut rseed_bytes)?;
-    let rseed = orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho)
-        .expect("should be valid random seed bytes");
+    let rseed = decoded(
+        orchard::note::RandomSeed::from_bytes(rseed_bytes, &rho).into_option(),
+        ORCHARD_RSEED,
+    )?;
 
     let mut memo_bytes = [0u8; 512];
     reader.read_exact(&mut memo_bytes)?;
@@ -966,8 +1003,11 @@ fn read_orchard_protocol_outgoing_note<R: Read, P>(
     Ok(OutgoingNote {
         output_id: OutputId::new(txid, output_index),
         key_id: KeyId::from_parts(account_id, scope),
-        note: orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
-            .expect("should be a valid orchard note"),
+        note: decoded(
+            orchard::note::Note::from_parts(recipient, value, rho, rseed, note_version)
+                .into_option(),
+            ORCHARD_NOTE,
+        )?,
         memo,
         recipient_full_unified_address: recipient_unified_address,
         marker: std::marker::PhantomData,
@@ -1414,6 +1454,28 @@ mod tests {
 
     // checkpoints appended past the rolling window, so pruning has run before a round trip
     const APPENDED: u32 = SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE + 49;
+
+    const NON_CANONICAL_FIELD_ELEMENT: [u8; 32] = [u8::MAX; 32];
+
+    #[test]
+    fn a_non_canonical_orchard_rho_is_invalid_data() {
+        let rho = orchard::note::Rho::from_bytes(&NON_CANONICAL_FIELD_ELEMENT).into_option();
+        assert_eq!(
+            decoded(rho, ORCHARD_RHO).err().map(|error| error.kind()),
+            Some(std::io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn a_non_canonical_sapling_random_seed_is_invalid_data() {
+        let rseed = jubjub::Fr::from_bytes(&NON_CANONICAL_FIELD_ELEMENT).into_option();
+        assert_eq!(
+            decoded(rseed, SAPLING_RSEED)
+                .err()
+                .map(|error| error.kind()),
+            Some(std::io::ErrorKind::InvalidData)
+        );
+    }
 
     fn written(scan_target: &ScanTarget) -> Vec<u8> {
         let mut bytes = Vec::new();

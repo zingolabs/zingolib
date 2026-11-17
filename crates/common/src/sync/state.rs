@@ -833,11 +833,11 @@ impl SyncState {
                 Range {
                     start: target_ranges
                         .first()
-                        .expect("should not be empty in this scope")
+                        .expect("this branch runs only when target_ranges is not empty")
                         .start,
                     end: target_ranges
                         .last()
-                        .expect("should not be empty in this scope")
+                        .expect("this branch runs only when target_ranges is not empty")
                         .end,
                 }
             }
