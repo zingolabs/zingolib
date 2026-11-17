@@ -78,55 +78,6 @@ impl std::fmt::Display for RecoveryInfo {
 pub struct WalletFile<M>(WalletFileParts<M>);
 
 impl<M> WalletFile<M> {
-    pub fn read_version(&self) -> u64 {
-        self.0.read_version
-    }
-    pub fn chain_type(&self) -> ChainType {
-        self.0.chain_type
-    }
-    pub fn mnemonic(&self) -> Option<&Mnemonic> {
-        self.0.mnemonic.as_ref()
-    }
-    pub fn birthday(&self) -> BlockHeight {
-        self.0.birthday
-    }
-    pub fn unified_key_store(&self) -> &BTreeMap<zip32::AccountId, UnifiedKeyStore> {
-        &self.0.unified_key_store
-    }
-    pub fn unified_addresses(&self) -> &BTreeMap<UnifiedAddressId, UnifiedAddress> {
-        &self.0.unified_addresses
-    }
-    pub fn transparent_addresses(&self) -> &BTreeMap<TransparentAddressId, String> {
-        &self.0.transparent_addresses
-    }
-    pub fn wallet_blocks(&self) -> &BTreeMap<BlockHeight, WalletBlock> {
-        &self.0.wallet_blocks
-    }
-    pub fn wallet_transactions(&self) -> &HashMap<TxId, WalletTransaction> {
-        &self.0.wallet_transactions
-    }
-    pub fn nullifier_map(&self) -> &NullifierMap {
-        &self.0.nullifier_map
-    }
-    pub fn outpoint_map(&self) -> &BTreeMap<OutputId, ScanTarget> {
-        &self.0.outpoint_map
-    }
-    pub fn shard_trees(&self) -> &ShardTrees {
-        &self.0.shard_trees
-    }
-    pub fn sync_state(&self) -> &SyncState {
-        &self.0.sync_state
-    }
-    pub fn wallet_settings(&self) -> &WalletSettings {
-        &self.0.wallet_settings
-    }
-    pub fn price_list(&self) -> &PriceList {
-        &self.0.price_list
-    }
-    pub fn migration(&self) -> Option<&M> {
-        self.0.migration.as_ref()
-    }
-
     pub fn into_parts(self) -> WalletFileParts<M> {
         self.0
     }
@@ -205,7 +156,7 @@ mod tests {
     use zl_common::wallet::{NullifierMap, ShardTrees};
 
     #[test]
-    fn accessors_read_what_into_parts_returns() {
+    fn into_parts_returns_what_the_writer_wrote() {
         const BIRTHDAY: u32 = 1_000_000;
         const SECTION: [u8; 3] = [7, 8, 9];
         let chain_type = ChainType::Mainnet;
@@ -235,15 +186,12 @@ mod tests {
                 .expect("the bytes were written by the writer of this crate")
         };
 
-        let file = read();
         let parts = read().into_parts();
 
-        assert_eq!(file.read_version(), parts.read_version);
-        assert_eq!(file.chain_type(), parts.chain_type);
-        assert_eq!(file.mnemonic(), parts.mnemonic.as_ref());
-        assert_eq!(file.birthday(), parts.birthday);
-        assert_eq!(file.wallet_settings(), &parts.wallet_settings);
-        assert_eq!(file.migration(), parts.migration.as_ref());
+        assert_eq!(parts.chain_type, chain_type);
+        assert!(parts.mnemonic.is_none());
+        assert_eq!(parts.birthday, BlockHeight::from_u32(BIRTHDAY));
+        assert_eq!(parts.wallet_settings, WalletSettings::default());
         assert_eq!(parts.migration, Some(RawMigration(SECTION.to_vec())));
     }
 
