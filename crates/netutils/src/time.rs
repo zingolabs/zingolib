@@ -11,11 +11,10 @@
 //! live in the `test` submodule, which `cfg(test)` exposes to this crate's
 //! own tests and the `testutils` feature exposes to downstream test code.
 //!
-//! The one production exception dependency direction forces: `zl-price`
-//! sits below the wallet with no dependency on this crate, so
-//! `zl_price::REQUEST_TIMEOUT` (20 s) and `zl_price::CONNECT_TIMEOUT`
-//! (10 s) stay there, role-tuned to a decorative datum under the mobile
-//! UI's 25-second watchdog.
+//! The one production exception: `zingolib::price::REQUEST_TIMEOUT` (20 s) and
+//! `zingolib::price::CONNECT_TIMEOUT` (10 s) stay in the `price` module of
+//! `zingolib`, role-tuned to a decorative datum under the mobile UI's
+//! 25-second watchdog.
 #![forbid(unsafe_code)]
 
 use std::time::Duration;

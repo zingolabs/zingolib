@@ -17,7 +17,6 @@ use zip32::DiversifierIndex;
 
 use super::{LightWallet, error::KeyError};
 
-pub mod legacy;
 pub mod unified;
 
 /// The transparent address a wallet stores encoded, decoded for `network`.

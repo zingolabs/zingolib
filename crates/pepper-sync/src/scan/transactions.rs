@@ -29,15 +29,19 @@ use zcash_transparent::bundle::{
     Authorization as TransparentAuthorization, Bundle as TransparentBundle, TxIn,
 };
 use zip32::AccountId;
-use zl_memo::ParsedMemo;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::memo::ParsedMemo;
+use zl_common::status::ConfirmationStatus;
 
+use crate::engine::{
+    KeyIdOps, OutgoingNoteOps, ScanTargetOps, TransparentCoinOps, WalletNoteOps,
+    WalletTransactionOps, WalletTransactionParts,
+};
 use crate::{
     client::{self, FetchRequest},
     error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
-        IronwoodNote, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
+        IronwoodNote, NoteInterface, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
         OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
         ScanTarget, ScanTargetOrigin, TransparentCoin, WalletBlock, WalletNote, WalletTransaction,
     },
@@ -155,7 +159,7 @@ pub(crate) async fn scan_transactions(
         let wallet_block = if let Some(wallet_block) = wallet_blocks.get(&block_height) {
             wallet_block.clone()
         } else {
-            WalletBlock::from_compact_block(
+            crate::wallet::wallet_block_from_compact_block(
                 consensus_parameters,
                 fetch_request_sender.clone(),
                 &client::get_compact_block(fetch_request_sender.clone(), block_height).await?,
@@ -415,7 +419,7 @@ pub(crate) fn scan_transaction(
         add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
-    Ok(WalletTransaction {
+    Ok(WalletTransaction::from_parts(WalletTransactionParts {
         txid,
         status,
         transaction,
@@ -427,7 +431,7 @@ pub(crate) fn scan_transaction(
         outgoing_sapling_notes,
         outgoing_orchard_notes,
         outgoing_ironwood_notes,
-    })
+    }))
 }
 
 fn add_unified_ovk(
@@ -460,14 +464,13 @@ fn scan_incoming_coins<P: consensus::Parameters>(
                         .expect("output indexes should be valid u32"),
                 );
 
-                transparent_coins.push(TransparentCoin {
+                transparent_coins.push(TransparentCoin::from_parts(
                     output_id,
-                    key_id: *key_id,
-                    address: address.clone(),
-                    script: output.script_pubkey().clone(),
-                    value: output.value(),
-                    spending_transaction: None,
-                });
+                    *key_id,
+                    address.clone(),
+                    output.script_pubkey().clone(),
+                    output.value(),
+                ));
             }
         }
     }
@@ -504,17 +507,14 @@ where
                     .map(|(nf, pos)| (Some(*nf), Some(*pos)))
                     .ok_or(ScanError::DecryptedNoteDataNotFound(output_id))
             })?;
-            wallet_notes.push(WalletNote {
+            wallet_notes.push(WalletNote::from_parts(
                 output_id,
-                key_id: key_ids[key_index],
+                key_ids[key_index],
                 note,
                 nullifier,
                 position,
-                memo: Memo::from_bytes(memo_bytes.as_ref())?,
-                spending_transaction: None,
-                refetch_nullifier_ranges: Vec::new(),
-                marker: std::marker::PhantomData,
-            });
+                Memo::from_bytes(memo_bytes.as_ref())?,
+            ));
         }
     }
 
@@ -542,19 +542,17 @@ where
             &output.value_commitment(),
             &output.out_ciphertext(),
         ) {
-            outgoing_notes.push(OutgoingNote {
-                output_id: OutputId::new(
+            outgoing_notes.push(OutgoingNote::from_parts(
+                OutputId::new(
                     txid,
                     output_index
                         .try_into()
                         .expect("output indexes should be valid u32"),
                 ),
-                key_id: key_ids[key_index],
+                key_ids[key_index],
                 note,
-                memo: Memo::from_bytes(memo_bytes.as_ref())?,
-                recipient_full_unified_address: None,
-                marker: std::marker::PhantomData,
-            });
+                Memo::from_bytes(memo_bytes.as_ref())?,
+            ));
         }
     }
 
@@ -583,12 +581,15 @@ fn try_output_recovery_with_ovks<D: Domain, Output: ShieldedOutput<D>>(
     None
 }
 
-fn parse_encoded_memos<N, Nf: Copy, P>(wallet_notes: &[WalletNote<N, Nf, P>]) -> Vec<ParsedMemo> {
+fn parse_encoded_memos<N, Nf: Copy, P>(wallet_notes: &[WalletNote<N, Nf, P>]) -> Vec<ParsedMemo>
+where
+    WalletNote<N, Nf, P>: NoteInterface,
+{
     wallet_notes
         .iter()
         .filter_map(|note| {
-            if let Memo::Arbitrary(ref encoded_memo_bytes) = note.memo {
-                match zl_memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()) {
+            if let Memo::Arbitrary(encoded_memo_bytes) = note.memo() {
+                match zl_common::memo::parse_zingo_memo(*encoded_memo_bytes.as_ref()) {
                     Ok(encoded_memo) => Some(encoded_memo),
                     Err(e) => {
                         tracing::error!("Failed to decode memo data. {e}");
@@ -641,7 +642,7 @@ where
                 }
             })
             .for_each(|note| {
-                note.recipient_full_unified_address = Some(unified_address.clone());
+                note.set_recipient_full_unified_address(Some(unified_address.clone()));
             });
     }
 

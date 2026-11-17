@@ -154,7 +154,7 @@ pub struct DeathReport {
     pub at: std::time::SystemTime,
     /// The typed cause, when one was held.
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub detail: Option<zl_net_diag::NetOpFailure>,
+    pub detail: Option<zl_netutils::diag::NetOpFailure>,
 }
 
 /// The serde codec carrying [`DeathReport::at`] as checked milliseconds
@@ -347,7 +347,7 @@ impl MixnetProxy {
     /// Why the transport died — the failed stage, its target, and the cause
     /// chain — while the mode is [`Indicator::Died`] and the watcher held a
     /// typed cause, and `None` otherwise.
-    pub fn death_detail(&self) -> Option<zl_net_diag::NetOpFailure> {
+    pub fn death_detail(&self) -> Option<zl_netutils::diag::NetOpFailure> {
         // Derived from the one latch, so this accessor and death_report
         // cannot disagree (the #2569 review).
         self.death_report().and_then(|report| report.detail)
@@ -393,7 +393,7 @@ impl MixnetProxy {
 async fn attach_readiness(
     socks5_addr: SocketAddr,
     indexer: http::Uri,
-) -> Result<(), zl_net_diag::NetOpFailure> {
+) -> Result<(), zl_netutils::diag::NetOpFailure> {
     let indexer_text = indexer.to_string();
     let probe = zl_netutils::Socks5Indexer::new(socks5_addr, indexer, MIXNET_ROUND_TRIP_BOUND);
     let mut last_failure = None;
@@ -406,11 +406,13 @@ async fn attach_readiness(
             Err(error) => {
                 let stage = crate::mixnet::socks5_transmit_stage(&error);
                 let target = match stage {
-                    zl_net_diag::NetOpStage::LocalProxyConnect
-                    | zl_net_diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
+                    zl_netutils::diag::NetOpStage::LocalProxyConnect
+                    | zl_netutils::diag::NetOpStage::SocksHandshake => socks5_addr.to_string(),
                     _ => indexer_text.clone(),
                 };
-                last_failure = Some(zl_net_diag::NetOpFailure::from_error(stage, target, &error));
+                last_failure = Some(zl_netutils::diag::NetOpFailure::from_error(
+                    stage, target, &error,
+                ));
             }
         }
     }
@@ -439,11 +441,11 @@ async fn drive_attached_state<RFut, P, PFut>(
     interval: Duration,
     publisher: StatusPublisher,
 ) where
-    RFut: Future<Output = Result<(), zl_net_diag::NetOpFailure>>,
+    RFut: Future<Output = Result<(), zl_netutils::diag::NetOpFailure>>,
     P: FnMut() -> PFut,
     PFut: Future<Output = bool>,
 {
-    let die = |state: &Arc<Mutex<ProxyState>>, cause: zl_net_diag::NetOpFailure| {
+    let die = |state: &Arc<Mutex<ProxyState>>, cause: zl_netutils::diag::NetOpFailure| {
         let mut guarded = state.lock().expect("proxy state mutex");
         guarded.mode = Indicator::Died;
         guarded.socks5_addr = None;
@@ -472,8 +474,8 @@ async fn drive_attached_state<RFut, P, PFut>(
         if !watchdog().await {
             die(
                 &state,
-                zl_net_diag::NetOpFailure::message(
-                    zl_net_diag::NetOpStage::LocalProxyConnect,
+                zl_netutils::diag::NetOpFailure::message(
+                    zl_netutils::diag::NetOpStage::LocalProxyConnect,
                     socks5_addr.to_string(),
                     "the listener watchdog could not dial the attached endpoint",
                 ),
@@ -528,8 +530,8 @@ async fn drive_state<R: AsyncRead + Unpin>(
                     guarded.bootstrap_detail = None;
                     guarded.death = Some(DeathReport {
                         at: std::time::SystemTime::now(),
-                        detail: Some(zl_net_diag::NetOpFailure::message(
-                            zl_net_diag::NetOpStage::ProxyLaunch,
+                        detail: Some(zl_netutils::diag::NetOpFailure::message(
+                            zl_netutils::diag::NetOpStage::ProxyLaunch,
                             addr,
                             format!(
                                 "the nym-proxy announced an unparseable SOCKS5 address: {error}"
@@ -605,7 +607,7 @@ async fn collect_stderr<R: AsyncRead + Unpin>(
 /// The typed cause for a child that exited before speaking the wallet's
 /// stdout protocol: the launch arguments it may not have understood and the
 /// stderr it left behind.
-fn launch_failure_report(launch: &LaunchContext) -> zl_net_diag::NetOpFailure {
+fn launch_failure_report(launch: &LaunchContext) -> zl_netutils::diag::NetOpFailure {
     let mut cause_chain = vec![
         "the nym-proxy exited during launch without speaking the wallet's stdout protocol; \
          an installed binary older than the wallet may not understand the launch arguments \
@@ -615,8 +617,8 @@ fn launch_failure_report(launch: &LaunchContext) -> zl_net_diag::NetOpFailure {
     ];
     let tail = launch.stderr_tail.lock().expect("stderr tail mutex");
     cause_chain.extend(tail.iter().map(|line| format!("stderr: {line}")));
-    zl_net_diag::NetOpFailure {
-        stage: zl_net_diag::NetOpStage::ProxyLaunch,
+    zl_netutils::diag::NetOpFailure {
+        stage: zl_netutils::diag::NetOpStage::ProxyLaunch,
         target: launch.binary.clone(),
         cause_chain,
     }
@@ -831,7 +833,7 @@ mod tests {
             path: "/no/such/nym-proxy".to_string(),
             source: std::io::Error::other(DETAIL),
         };
-        let chain = zl_net_diag::chain_texts(&failure);
+        let chain = zl_netutils::diag::chain_texts(&failure);
         assert_eq!(
             chain.join("\n").matches(DETAIL).count(),
             DETAIL_RENDERINGS,
@@ -877,9 +879,9 @@ mod tests {
     }
 
     /// A fabricated readiness failure for the attach falsifiers.
-    fn readiness_failure(text: &str) -> zl_net_diag::NetOpFailure {
-        zl_net_diag::NetOpFailure::message(
-            zl_net_diag::NetOpStage::TunnelTransport,
+    fn readiness_failure(text: &str) -> zl_netutils::diag::NetOpFailure {
+        zl_netutils::diag::NetOpFailure::message(
+            zl_netutils::diag::NetOpStage::TunnelTransport,
             "zec.rocks:443",
             text,
         )
@@ -1018,7 +1020,7 @@ mod tests {
         assert_eq!(s.socks5_addr, None);
         let death = s.death.expect("the defect latches a death report");
         let detail = death.detail.expect("the death carries the typed cause");
-        assert_eq!(detail.stage, zl_net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.stage, zl_netutils::diag::NetOpStage::ProxyLaunch);
         assert_eq!(detail.target, "not-a-socket");
     }
 
@@ -1168,7 +1170,7 @@ mod tests {
             .as_ref()
             .and_then(|report| report.detail.as_ref())
             .expect("a pre-protocol death carries the launch diagnosis");
-        assert_eq!(detail.stage, zl_net_diag::NetOpStage::ProxyLaunch);
+        assert_eq!(detail.stage, zl_netutils::diag::NetOpStage::ProxyLaunch);
         assert_eq!(detail.target, "/opt/zingo/nym-proxy");
         assert!(
             detail

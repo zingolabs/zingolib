@@ -11,22 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pending_spends` reports the wallet's outputs that its pending transactions
   spend, derived from each pending transaction's inputs every time it is
   called.
+- `wallet::serialization::write_string`.
+- The `test-features` feature adds
+  `WalletBlock::clear_pool_tree_bounds_for_test`,
+  `WalletTransaction::clear_pool_notes_for_test` and
+  `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
-- BREAKING: the crate depends on `zl-memo`, `zl-status` and
-  `zl-netutils`, renamed from `zingo-memo`, `zingo-status` and
-  `zingo-netutils`. A consumer that names a type of those crates moves to
-  the new package names.
+- BREAKING: the crate depends on `zl-netutils`, renamed from
+  `zingo-netutils`. A consumer that names a type of that crate moves to
+  the new package name.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status
   alone, and only the scan that finds a mined block records a spend on an
   output. Truncation still resets recorded spends: it rescans the affected
   blocks.
+- The wallet data types, their codecs, the key identifiers, the
+  `shardtree_ext` module, `SyncState`, `InitialSyncState`, `ScanRange`,
+  `ScanPriority`, the scan-range logic and the `config` module come from
+  `zl-common`. `pepper-sync` re-exports each moved item at its old
+  path, so every path that resolved at 0.7.0 resolves now.
+- The `wallet_essentials` feature enables `zl-common/serialization`,
+  and the `test-features` feature enables `zl-common/test-features`. Both
+  features gated code inside `pepper-sync` at 0.7.0.
+- **Breaking:** the `ConfirmationStatus` that `WalletTransaction::status`
+  returns and the wallet data codecs read and write is
+  `zl_common::status::ConfirmationStatus`, where it was
+  `zingo_status::confirmation_status::ConfirmationStatus`. The wallet's memo
+  is read with `zl_common::memo`, whose encoding is the one `zingo-memo`
+  0.3.0 wrote. A consumer that names the status through `zingo-status` names
+  it through `zl-common`.
 
 ### Deprecated
 
 ### Removed
+- The `byteorder`, `zcash_encoding` and `jubjub` dependencies, which the
+  codecs in `zl-common` use now.
+- The `zingo-memo` and `zingo-status` dependencies. Their code is the `memo`
+  and `status` modules of `zl-common`.
+- The `unstable-serialization` feature of `zcash_client_backend`, which
+  `pepper-sync` enabled in every build. A build with `wallet_essentials`
+  enables it through `zl-common/serialization`.
 
 ### Fixed
 - A Sync Session with `shutdown_on_completion` set no longer runs forever

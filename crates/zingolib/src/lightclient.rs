@@ -113,7 +113,7 @@ pub struct MixnetPriceFetch {
     /// The current ZEC price in USD.
     pub usd: f32,
     /// The price source whose answer won the race.
-    pub source: zl_price::PriceSource,
+    pub source: crate::price::PriceSource,
     /// Wall-clock time from dispatching the race to the winning answer,
     /// tunnel traversal included on the mixnet route.
     pub round_trip: std::time::Duration,

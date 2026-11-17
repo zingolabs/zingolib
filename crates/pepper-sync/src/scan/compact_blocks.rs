@@ -18,6 +18,7 @@ use zcash_transparent::address::Script;
 use zip32::AccountId;
 use zl_netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
 
+use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
@@ -177,7 +178,7 @@ where
             );
         }
 
-        let wallet_block = WalletBlock {
+        let wallet_block = WalletBlock::from_parts(WalletBlockParts {
             block_height,
             block_hash,
             prev_hash: block::get_compact_prev_hash(block),
@@ -195,7 +196,7 @@ where
                 ironwood_initial_tree_size,
                 ironwood_final_tree_size,
             },
-        };
+        });
 
         check_tree_size(block, &wallet_block)?;
 
@@ -714,7 +715,7 @@ mod tests {
     use super::*;
 
     fn wallet_block_with_ironwood_size(size: u32) -> WalletBlock {
-        WalletBlock {
+        WalletBlock::from_parts(WalletBlockParts {
             block_height: BlockHeight::from_u32(100),
             block_hash: BlockHash([1; 32]),
             prev_hash: BlockHash([0; 32]),
@@ -728,7 +729,7 @@ mod tests {
                 ironwood_initial_tree_size: size,
                 ironwood_final_tree_size: size,
             },
-        }
+        })
     }
 
     fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {

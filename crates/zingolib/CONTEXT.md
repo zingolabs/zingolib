@@ -373,8 +373,8 @@
 
 ## Utility Crates
 
-**zl-memo** — Utilities for creating and parsing the Zcash memo field.
+**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `WalletTransaction`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
 
-**zl-price** — Price feed integration (Gemini exchange).
+**zl-file-format** — A published crates.io library split out of zingolib. Holds the Wallet File as one data type with the readers of every Wallet Version and the writer of the current one.
 
-**zl-status** — `ConfirmationStatus` type: the confirmation state of a transaction (calculated, transmitted, mempool, confirmed, etc.).
+**price module** — The ZEC price fetch: the price sources, their parsers and one source's fetch over the conduit. It is the `price` module of zingolib, built only with the `nym` feature. The `Price` and `PriceList` it fetches into live in zl-common.

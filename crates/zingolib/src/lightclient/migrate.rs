@@ -2021,7 +2021,7 @@ impl LightClient {
                 wallet.wallet_transactions.get(txid).is_some_and(|tx| {
                     matches!(
                         tx.status(),
-                        zl_status::confirmation_status::ConfirmationStatus::Calculated(_)
+                        zl_common::status::ConfirmationStatus::Calculated(_)
                     )
                 })
             })
@@ -2266,9 +2266,7 @@ impl LightClient {
                     statuses.iter().enumerate().find_map(|(i, status)| {
                         matches!(
                             status,
-                            Some(zl_status::confirmation_status::ConfirmationStatus::Failed(
-                                _
-                            )) | None
+                            Some(zl_common::status::ConfirmationStatus::Failed(_)) | None
                         )
                         .then_some(txids[i])
                     }),
@@ -2373,13 +2371,13 @@ fn immediate_migration_entry_gate(
 }
 
 /// The separator between two layers of a rendered cause chain, matching the
-/// rendering `zl_net_diag` gives its own failure records.
+/// rendering `zl_netutils::diag` gives its own failure records.
 pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
 
 /// Renders every layer of a failure's cause chain into the one text a batch
 /// report carries across serde.
 fn render_cause_chain(error: &LightClientError) -> String {
-    zl_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
+    zl_netutils::diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
 }
 
 /// Records one part submission's own route evidence in the cross-session
@@ -3376,7 +3374,7 @@ mod tests {
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
-        use zl_status::confirmation_status::ConfirmationStatus;
+        use zl_common::status::ConfirmationStatus;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 

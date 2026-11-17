@@ -173,6 +173,22 @@ jobs:
             exit 1
           fi
 
+  no-network-in-wallet-crates:
+    name: No network code in the wallet crates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
+
+      - name: Reject a network dependency in the normal trees
+        run: cargo run --quiet --manifest-path tools/workbench/Cargo.toml --bin no-network-gate
+
   # On a pull_request event the inputs are empty, so each expression
   # below falls back to the check.
   cargo-hack-check:

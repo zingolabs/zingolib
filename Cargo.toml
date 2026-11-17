@@ -3,10 +3,8 @@ members = [
   "libtonode-tests",
   "crates/pepper-sync",
   "bin/cli",
-  "crates/memo",
-  "crates/net-diag",
-  "crates/price",
-  "crates/status",
+  "crates/common",
+  "crates/file-format",
   "crates/zingolib",
   "crates/netutils",
   "crates/netutils/webpki-verifier-shim",
@@ -27,14 +25,8 @@ resolver = "2"
 [workspace.dependencies]
 ### Workspace
 pepper-sync = { version = "0.7.0", path = "crates/pepper-sync" }
-zl-memo = { version = "0.3.0", path = "crates/memo" }
-zl-net-diag = { version = "0.1.0", path = "crates/net-diag" }
-# default-features = false: the fetch machinery (socks5-fetch) is opt-in;
-# zingolib re-enables it only under its `nym` feature (the mixnet-only
-# price rule). The crate's own default keeps the fetch for standalone
-# builds and tests.
-zl-price = { version = "0.3.0", path = "crates/price", default-features = false }
-zl-status = { version = "0.3.0", path = "crates/status" }
+zl-common = { version = "0.1.0", path = "crates/common", default-features = false }
+zl-file-format = { version = "0.1.0", path = "crates/file-format", default-features = false }
 zingolib = { version = "8.0.0", path = "crates/zingolib" }
 
 ### Tests and Integration Tests

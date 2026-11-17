@@ -311,7 +311,7 @@ impl LightWallet {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let uas_bytes = match zl_memo::create_wallet_internal_memo(
+        let uas_bytes = match zl_common::memo::create_wallet_internal_memo(
             &self.chain_type,
             recipient_uas.as_slice(),
         ) {
@@ -333,7 +333,7 @@ impl LightWallet {
         Your wallet will display an incorrect sent-to address. This is a visual error only.\n\
         The correct address was sent to."
                 );
-                [0; zl_memo::MEMO_LEN]
+                [0; zl_common::memo::MEMO_LEN]
             }
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))

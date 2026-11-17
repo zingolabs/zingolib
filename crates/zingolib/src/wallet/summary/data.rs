@@ -6,7 +6,7 @@ use json::JsonValue;
 use zcash_protocol::{PoolType, TxId, consensus::BlockHeight};
 
 use pepper_sync::keys::transparent::TransparentScope;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use crate::wallet::output::SpendStatus;
 
@@ -781,7 +781,7 @@ mod tests {
     use super::{BasicNoteSummary, SendType, TransactionKind, TransactionSummary};
     use crate::wallet::output::SpendStatus;
     use zcash_protocol::{PoolType, TxId};
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     fn note(value: u64) -> BasicNoteSummary {
         BasicNoteSummary::from_parts(value, SpendStatus::Unspent, 0, None)

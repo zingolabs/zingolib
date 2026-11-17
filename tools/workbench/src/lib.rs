@@ -27,6 +27,7 @@ pub mod closed_pr_runs;
 mod crate_move;
 pub mod dupes_gate;
 pub mod nextest_ceilings;
+pub mod no_network_gate;
 pub mod orasust;
 pub mod panic_strategy;
 pub mod runner_labels;

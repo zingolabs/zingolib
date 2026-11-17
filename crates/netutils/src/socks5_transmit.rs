@@ -184,7 +184,7 @@ const TRANSMIT_CHAIN_SEPARATOR: &str = ": ";
 /// Renders `error` with its complete `source()` chain, which the top-level
 /// `Display` of transport errors (tonic's "transport error") otherwise hides.
 fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
-    zl_net_diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
+    crate::diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
 }
 
 /// How a post-tunnel RPC status reads for the failover policy.
@@ -544,7 +544,7 @@ mod tests {
 
         assert_eq!(
             error_chain(&error),
-            zl_net_diag::chain_texts(&error).join(": ")
+            crate::diag::chain_texts(&error).join(": ")
         );
     }
 

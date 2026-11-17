@@ -89,7 +89,10 @@ async fn price_rounds_report_their_outcomes() {
             // failures live further down the chain: walk every layer.
             Err(e) => (
                 None,
-                Some((mode_tally(&e), zl_net_diag::chain_texts(&e).join(" <- "))),
+                Some((
+                    mode_tally(&e),
+                    zl_netutils::diag::chain_texts(&e).join(" <- "),
+                )),
             ),
         };
         println!(
@@ -191,17 +194,17 @@ fn speed_mode(failure: &zingolib::mixnet::speed::SpeedError) -> String {
 /// One source's failure named by its own kind, and for a transport failure
 /// by the stage it reached, which is what separates a tunnel that carried
 /// nothing from an operator that refused.
-fn source_mode(failure: &zl_price::PriceError) -> String {
+fn source_mode(failure: &zingolib::price::PriceError) -> String {
     match failure {
-        zl_price::PriceError::RequestFailed { failure, .. } => {
+        zingolib::price::PriceError::RequestFailed { failure, .. } => {
             format!("at {}", failure.stage)
         }
-        zl_price::PriceError::InsufficientTrades { .. } => "too few trades".to_string(),
-        zl_price::PriceError::DeserializationFailed(_) => "undecodable body".to_string(),
-        zl_price::PriceError::ParseError(_) => "unparsable number".to_string(),
-        zl_price::PriceError::PriceListNotInitialized => "no price list".to_string(),
-        zl_price::PriceError::InvalidPrice => "invalid price".to_string(),
-        zl_price::PriceError::SourceReportedError(_) => "source refused".to_string(),
-        zl_price::PriceError::UnexpectedShape(_) => "unexpected shape".to_string(),
+        zingolib::price::PriceError::InsufficientTrades { .. } => "too few trades".to_string(),
+        zingolib::price::PriceError::DeserializationFailed(_) => "undecodable body".to_string(),
+        zingolib::price::PriceError::ParseError(_) => "unparsable number".to_string(),
+        zingolib::price::PriceError::PriceListNotInitialized => "no price list".to_string(),
+        zingolib::price::PriceError::InvalidPrice => "invalid price".to_string(),
+        zingolib::price::PriceError::SourceReportedError(_) => "source refused".to_string(),
+        zingolib::price::PriceError::UnexpectedShape(_) => "unexpected shape".to_string(),
     }
 }

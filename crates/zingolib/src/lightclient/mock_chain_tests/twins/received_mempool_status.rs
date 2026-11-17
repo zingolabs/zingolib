@@ -1,5 +1,5 @@
 use zcash_protocol::PoolType;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use super::{FUNDING, funded_client};
 use crate::lightclient::LightClient;
