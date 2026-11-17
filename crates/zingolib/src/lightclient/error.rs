@@ -67,7 +67,7 @@ pub enum LightClientError {
     IneligibleProbeTarget(http::Uri),
     /// A consumer's fetch over the mixnet returned no body.
     #[cfg(feature = "nym")]
-    #[error("Mixnet fetch error.")]
+    #[error(transparent)]
     MixnetFetch(#[from] crate::mixnet::fetch::MixnetFetchError),
 }
 

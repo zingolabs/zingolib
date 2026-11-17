@@ -90,8 +90,8 @@ pub enum MixnetFetchError {
     #[error("the fetch acquired no client.")]
     Transport(#[source] TransportError),
     /// The request failed.
-    #[error("the fetch failed.")]
-    Request(#[source] Box<Socks5FetchError>),
+    #[error(transparent)]
+    Request(Box<Socks5FetchError>),
     /// The body is larger than [`FETCH_BODY_LIMIT`].
     #[error("the response body is larger than {limit} bytes")]
     BodyTooLarge {

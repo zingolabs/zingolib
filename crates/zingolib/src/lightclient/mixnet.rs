@@ -1384,6 +1384,11 @@ mod tests {
                 ),
                 "the refusal must report the timeout: {error}"
             );
+            assert_eq!(
+                error.to_string(),
+                crate::mixnet::fetch::MixnetFetchError::ZeroTimeout.to_string(),
+                "the wrapper adds no text of its own"
+            );
         }
 
         /// A URL that the exit policy does not allow is refused before the route
