@@ -53,10 +53,7 @@ enum V42Tail<M> {
     Canonical(WalletTail<M>),
     PreRelease(WalletTail<M>),
     Ambiguous,
-    Unreadable {
-        canonical: Error,
-        pre_release: Error,
-    },
+    Unreadable(UnreadableV42Tail),
 }
 
 impl<M> V42Tail<M> {
@@ -68,10 +65,10 @@ impl<M> V42Tail<M> {
             (Ok(_), Ok(_)) => Self::Ambiguous,
             (Ok(canonical), Err(_)) => Self::Canonical(canonical),
             (Err(_), Ok(pre_release)) => Self::PreRelease(pre_release),
-            (Err(canonical), Err(pre_release)) => Self::Unreadable {
+            (Err(canonical), Err(pre_release)) => Self::Unreadable(UnreadableV42Tail {
                 canonical,
                 pre_release,
-            },
+            }),
         }
     }
 
@@ -79,13 +76,9 @@ impl<M> V42Tail<M> {
         match self {
             Self::Canonical(tail) | Self::PreRelease(tail) => Ok(tail),
             Self::Ambiguous => Err(Error::new(ErrorKind::InvalidData, AmbiguousV42Tail)),
-            Self::Unreadable {
-                canonical,
-                pre_release,
-            } => Err(Error::new(
-                canonical.kind(),
-                format!("{canonical}; read as the pre-release version 42 layout: {pre_release}"),
-            )),
+            Self::Unreadable(unreadable) => {
+                Err(Error::new(unreadable.canonical.kind(), unreadable))
+            }
         }
     }
 }
@@ -111,6 +104,24 @@ impl std::fmt::Display for AmbiguousV42Tail {
 }
 
 impl std::error::Error for AmbiguousV42Tail {}
+
+#[derive(Debug)]
+pub struct UnreadableV42Tail {
+    pub canonical: Error,
+    pub pre_release: Error,
+}
+
+impl std::fmt::Display for UnreadableV42Tail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}; read as the pre-release version 42 layout: {}",
+            self.canonical, self.pre_release
+        )
+    }
+}
+
+impl std::error::Error for UnreadableV42Tail {}
 
 enum V40ChainField {
     Tag(u8),
@@ -1094,7 +1105,8 @@ pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AmbiguousV42Tail, V42Layout, V42Tail};
+    use super::{AmbiguousV42Tail, UnreadableV42Tail, V42Layout, V42Tail, chain_mismatch};
+    use crate::ChainMismatch;
     use crate::{RawMigration, WalletFile};
     use zl_common::{chain::ChainType, price::PriceList};
 
@@ -1227,8 +1239,33 @@ mod tests {
         ));
         assert!(matches!(
             V42Tail::from_readings(failed(), failed()),
-            V42Tail::Unreadable { .. }
+            V42Tail::Unreadable(_)
         ));
+    }
+
+    #[test]
+    fn an_unreadable_version_42_tail_keeps_the_error_of_each_reading() {
+        const PRE_RELEASE_FAILURE: &str = "tail did not parse";
+        let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
+        let canonical_kind = canonical.kind();
+        let pre_release = std::io::Error::other(PRE_RELEASE_FAILURE);
+
+        let refusal = V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
+            .into_tail()
+            .expect_err("a tail that parses in neither layout is refused");
+
+        assert_eq!(refusal.kind(), canonical_kind);
+        let unreadable = refusal
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<UnreadableV42Tail>())
+            .expect("into_tail wraps the two errors in an UnreadableV42Tail");
+        assert!(
+            unreadable
+                .canonical
+                .get_ref()
+                .is_some_and(|inner| inner.is::<ChainMismatch>())
+        );
+        assert_eq!(unreadable.pre_release.to_string(), PRE_RELEASE_FAILURE);
     }
 
     #[test]
@@ -1240,10 +1277,10 @@ mod tests {
         assert!(V42Tail::PreRelease(tail()).into_tail().is_ok());
         assert!(V42Tail::<RawMigration>::Ambiguous.into_tail().is_err());
         assert!(
-            V42Tail::<RawMigration>::Unreadable {
+            V42Tail::<RawMigration>::Unreadable(UnreadableV42Tail {
                 canonical: failed(),
                 pre_release: failed(),
-            }
+            })
             .into_tail()
             .is_err()
         );

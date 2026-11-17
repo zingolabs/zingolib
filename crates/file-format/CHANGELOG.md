@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller can downcast to it. `WalletFile::read_with_v42_layout` reads such a
   file in the `V42Layout` the caller names, `Canonical` or `PreRelease`, and
   reads every other version as `WalletFile::read` does.
+- `UnreadableV42Tail`, the error that `WalletFile::read` returns inside its
+  `io::Error` for a version 42 file whose tail parses in neither layout. Its
+  `canonical` and `pre_release` fields hold the error of each reading
+  unchanged, so a caller can downcast to it and then to the cause of either
+  reading. The `io::Error` keeps the kind of the canonical error.
 - `legacy` feature, off by default. It adds the readers of the layouts below
   version 32 and the dependencies they need, among them `lightwallet-protocol`,
   `prost` and `zcash_client_backend`. A build without it returns from
