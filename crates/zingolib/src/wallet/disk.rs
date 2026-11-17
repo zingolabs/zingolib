@@ -127,6 +127,7 @@ impl LightWallet {
             price_list,
             migration,
             send_proposal: None,
+            standard_fee: None,
             output_locks: crate::wallet::locks::OutputLocks::default(),
             save_required: false,
         }

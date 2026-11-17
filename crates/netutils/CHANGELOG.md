@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (released as `zingo-net-diag` 0.1.0), which no longer exists. It is
   compiled in every build, and the `diag-serde` feature derives serde's
   `Serialize` and `Deserialize` on the two types.
+- `Indexer::get_standard_fee` and `Socks5Indexer::get_standard_fee`, the
+  `GetStandardFee` RPC beside `get_lightd_info` on both transport routes.
+  It returns the backend's `StandardFee`: the ZIP 317 marginal fee,
+  zatoshis per logical action, the backend's `getstandardfee` RPC reports,
+  with the fee-estimator version. Backends predating the RPC answer
+  `Unimplemented`. The trait method is new and required, so out-of-tree
+  `Indexer` implementors must add it.
 
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
