@@ -48,6 +48,53 @@ use {
 /// the optional Orchard→Ironwood migration section.
 type WalletTail<M> = (PriceList, Option<M>);
 
+#[derive(Debug)]
+enum V42Tail<M> {
+    Canonical(WalletTail<M>),
+    PreRelease(WalletTail<M>),
+    Ambiguous,
+    Unreadable {
+        canonical: Error,
+        pre_release: Error,
+    },
+}
+
+impl<M> V42Tail<M> {
+    fn from_readings(
+        canonical: io::Result<WalletTail<M>>,
+        pre_release: io::Result<WalletTail<M>>,
+    ) -> Self {
+        match (canonical, pre_release) {
+            (Ok(_), Ok(_)) => Self::Ambiguous,
+            (Ok(canonical), Err(_)) => Self::Canonical(canonical),
+            (Err(_), Ok(pre_release)) => Self::PreRelease(pre_release),
+            (Err(canonical), Err(pre_release)) => Self::Unreadable {
+                canonical,
+                pre_release,
+            },
+        }
+    }
+
+    fn into_tail(self) -> io::Result<WalletTail<M>> {
+        match self {
+            Self::Canonical(tail) | Self::PreRelease(tail) => Ok(tail),
+            Self::Ambiguous => Err(Error::new(
+                ErrorKind::InvalidData,
+                "ambiguous version 42 wallet file: its tail parses as both the \
+                 canonical and the pre-release layout, so which build wrote it \
+                 cannot be determined; recover the seed with recovery_info",
+            )),
+            Self::Unreadable {
+                canonical,
+                pre_release,
+            } => Err(Error::new(
+                canonical.kind(),
+                format!("{canonical}; read as the pre-release version 42 layout: {pre_release}"),
+            )),
+        }
+    }
+}
+
 enum V40ChainField {
     Tag(u8),
     Name(String),
@@ -837,7 +884,7 @@ impl<M: MigrationSection> WalletFile<M> {
             let mut tail = Vec::new();
             reader.read_to_end(&mut tail)?;
 
-            Self::read_v42_tail(&tail, chain_type)?
+            Self::read_v42_tail(&tail, chain_type).into_tail()?
         } else {
             let price_list = if version >= 34 {
                 PriceList::read(&mut reader)?
@@ -874,51 +921,22 @@ impl<M: MigrationSection> WalletFile<M> {
         }))
     }
 
-    fn read_v42_tail(tail: &[u8], chain_type: ChainType) -> io::Result<WalletTail<M>> {
-        let canonical = Self::read_price_and_migration(tail, chain_type);
-        // The extra byte of the pre-release layout is a bool, so only 0
-        // or 1 can begin one; any other leading byte rules that layout
-        // out without a second parse.
-        let pre_release = match tail.first() {
-            Some(0 | 1) if M::VALIDATES_ITS_BYTES => {
-                Some(Self::read_price_and_migration(&tail[1..], chain_type))
-            }
-            _ => None,
-        };
-
-        Self::resolve_v42_tail(canonical, pre_release)
+    fn read_v42_tail(tail: &[u8], chain_type: ChainType) -> V42Tail<M> {
+        V42Tail::from_readings(
+            Self::read_price_and_migration(tail, chain_type),
+            Self::read_pre_release_tail(tail, chain_type),
+        )
     }
 
-    /// Chooses between the two readings of a version 42 file tail.
-    ///
-    /// The pre-release reading is consulted only when the canonical reading
-    /// fails to parse, so a file written by current code never loads through
-    /// the fallback. When both readings parse cleanly the file is genuinely
-    /// ambiguous and the load fails rather than guessing: a wrong guess here
-    /// would silently substitute a different price list and migration state,
-    /// and the seed remains recoverable through [`read_recovery_info`].
-    ///
-    /// Parity rules out the readings both being migration-free, not the
-    /// refusal itself: a migration-free tail is 5 bytes plus a sum of
-    /// even-sized optional fields (4- and 8-byte values, and `CompactSize`
-    /// widths that grow by 2, 4, or 8), so its length is always odd, while
-    /// the two readings differ in length by exactly one. The refusal below
-    /// is therefore reachable only when at least one reading carries a
-    /// migration section, whose length parity is unconstrained.
-    fn resolve_v42_tail(
-        canonical: io::Result<WalletTail<M>>,
-        pre_release: Option<io::Result<WalletTail<M>>>,
-    ) -> io::Result<WalletTail<M>> {
-        match (canonical, pre_release) {
-            (Ok(_), Some(Ok(_))) => Err(Error::new(
+    fn read_pre_release_tail(tail: &[u8], chain_type: ChainType) -> io::Result<WalletTail<M>> {
+        match tail.split_first() {
+            Some((allow_v6_transactions, rest)) if *allow_v6_transactions <= u8::from(true) => {
+                Self::read_price_and_migration(rest, chain_type)
+            }
+            _ => Err(Error::new(
                 ErrorKind::InvalidData,
-                "ambiguous version 42 wallet file: its tail parses as both the \
-                 canonical and the pre-release layout, so which build wrote it \
-                 cannot be determined; recover the seed with recovery_info",
+                "the tail does not begin with the bool of the pre-release version 42 layout",
             )),
-            (Ok(parsed), _) => Ok(parsed),
-            (Err(_), Some(Ok(parsed))) => Ok(parsed),
-            (Err(canonical_error), _) => Err(canonical_error),
         }
     }
 
@@ -1026,54 +1044,83 @@ pub fn read_recovery_info<R: Read>(mut reader: R) -> io::Result<RecoveryInfo> {
 
 #[cfg(test)]
 mod tests {
+    use super::V42Tail;
     use crate::{RawMigration, WalletFile};
+    use zl_common::{chain::ChainType, price::PriceList};
 
-    #[test]
-    fn a_raw_section_reads_a_version_42_tail_in_the_canonical_layout_alone() -> std::io::Result<()>
-    {
-        use zl_common::{chain::ChainType, price::PriceList};
+    const ALLOW_V6_TRANSACTIONS_FALSE: u8 = 0;
+    const PRICE_LIST_VERSION: u8 = 0;
+    const NONE: u8 = 0;
+    const SOME: u8 = 1;
+    const NO_DAILY_PRICES: u8 = 0;
+    const ONE_DAILY_PRICE: u8 = 1;
+    const PRICE_TIME: [u8; 4] = [0; 4];
+    const DAILY_PRICE_ENTRY: [u8; 8] = [0; 8];
+    const SECTION: [u8; 3] = [7, 8, 9];
 
-        const SOME: u8 = 1;
-        const ONE_PRICE_ENTRY: [u8; 8] = [0; 8];
-        let mut tail = Vec::new();
-        PriceList::new().write(&mut tail)?;
-        tail.push(SOME);
-        let section_start = tail.len();
-        tail.extend(ONE_PRICE_ENTRY);
-        tail.push(SOME);
-
-        assert!(
-            WalletFile::<RawMigration>::read_price_and_migration(&tail[1..], ChainType::Mainnet)
-                .is_ok(),
-            "the tail also parses one byte later, so two readings would refuse it"
-        );
-
-        let (price_list, migration) =
-            WalletFile::<RawMigration>::read_v42_tail(&tail, ChainType::Mainnet)?;
-        assert!(
-            price_list.daily_prices().is_empty(),
-            "the canonical reading holds the empty price list that was written"
-        );
-        assert_eq!(
-            migration,
-            Some(RawMigration(tail[section_start..].to_vec()))
-        );
-        Ok(())
+    fn read_raw_tail(tail: &[u8]) -> V42Tail<RawMigration> {
+        WalletFile::<RawMigration>::read_v42_tail(tail, ChainType::Mainnet)
     }
 
-    /// A file whose tail reads cleanly under *both* layouts is genuinely
-    /// ambiguous, and the reader must refuse it rather than silently substitute
-    /// one reading's price list and migration state for the other's.
-    ///
-    /// The decision is exercised directly: constructing a byte string that
-    /// satisfies both parses is not possible for a migration-free tail (see the
-    /// parity argument on `resolve_v42_tail`) and impractical otherwise, so the
-    /// test supplies the four parse outcomes the caller can hand it.
-    #[test]
-    fn ambiguous_version_42_tail_is_refused() {
-        use zl_common::price::PriceList;
+    fn price_list_with_a_stored_time() -> Vec<u8> {
+        let mut bytes = vec![PRICE_LIST_VERSION, SOME];
+        bytes.extend(PRICE_TIME);
+        bytes.extend([NONE, NO_DAILY_PRICES]);
+        bytes
+    }
 
-        let parsed = || Ok((PriceList::new(), None));
+    #[test]
+    fn a_raw_section_reads_a_canonical_version_42_tail_that_parses_one_way() {
+        let mut tail = price_list_with_a_stored_time();
+        tail.push(SOME);
+        tail.extend(SECTION);
+
+        let V42Tail::Canonical((price_list, migration)) = read_raw_tail(&tail) else {
+            panic!("the tail parses in the canonical layout alone");
+        };
+        assert!(price_list.time_historical_prices_last_updated().is_some());
+        assert_eq!(migration, Some(RawMigration(SECTION.to_vec())));
+    }
+
+    #[test]
+    fn a_raw_section_reads_a_pre_release_version_42_tail_that_parses_one_way() {
+        let mut tail = vec![ALLOW_V6_TRANSACTIONS_FALSE];
+        tail.extend(price_list_with_a_stored_time());
+        tail.push(NONE);
+
+        let V42Tail::PreRelease((price_list, migration)) = read_raw_tail(&tail) else {
+            panic!("the tail parses in the pre-release layout alone");
+        };
+        assert!(price_list.time_historical_prices_last_updated().is_some());
+        assert_eq!(migration, None);
+    }
+
+    #[test]
+    fn a_raw_section_never_reads_a_pre_release_version_42_tail_as_another_price_list() {
+        let mut tail = vec![
+            ALLOW_V6_TRANSACTIONS_FALSE,
+            PRICE_LIST_VERSION,
+            NONE,
+            NONE,
+            ONE_DAILY_PRICE,
+        ];
+        tail.extend(DAILY_PRICE_ENTRY);
+        tail.push(NONE);
+
+        assert!(matches!(read_raw_tail(&tail), V42Tail::Ambiguous));
+        if let Ok((price_list, migration)) = read_raw_tail(&tail).into_tail() {
+            assert_eq!(
+                price_list.daily_prices().len(),
+                usize::from(ONE_DAILY_PRICE),
+                "a tail that reads must hold the daily price that was written"
+            );
+            assert_eq!(migration, None, "the tail was written with no section");
+        }
+    }
+
+    #[test]
+    fn the_two_readings_of_a_version_42_tail_resolve_to_one_state_each() {
+        let parsed = || Ok((PriceList::new(), None::<RawMigration>));
         let failed = || {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -1081,30 +1128,39 @@ mod tests {
             ))
         };
 
-        let ambiguous = WalletFile::<RawMigration>::resolve_v42_tail(parsed(), Some(parsed()));
-        assert_eq!(
-            ambiguous
-                .expect_err("resolve_v42_tail refuses a tail that parses both ways")
-                .kind(),
-            std::io::ErrorKind::InvalidData,
-            "a tail parsing both ways must be refused, not guessed"
-        );
+        assert!(matches!(
+            V42Tail::from_readings(parsed(), parsed()),
+            V42Tail::Ambiguous
+        ));
+        assert!(matches!(
+            V42Tail::from_readings(parsed(), failed()),
+            V42Tail::Canonical(_)
+        ));
+        assert!(matches!(
+            V42Tail::from_readings(failed(), parsed()),
+            V42Tail::PreRelease(_)
+        ));
+        assert!(matches!(
+            V42Tail::from_readings(failed(), failed()),
+            V42Tail::Unreadable { .. }
+        ));
+    }
 
+    #[test]
+    fn only_a_version_42_tail_that_parses_one_way_becomes_a_tail() {
+        let tail = || (PriceList::new(), None::<RawMigration>);
+        let failed = || std::io::Error::new(std::io::ErrorKind::InvalidData, "tail did not parse");
+
+        assert!(V42Tail::Canonical(tail()).into_tail().is_ok());
+        assert!(V42Tail::PreRelease(tail()).into_tail().is_ok());
+        assert!(V42Tail::<RawMigration>::Ambiguous.into_tail().is_err());
         assert!(
-            WalletFile::<RawMigration>::resolve_v42_tail(parsed(), Some(failed())).is_ok(),
-            "the canonical layout must win when only it parses"
-        );
-        assert!(
-            WalletFile::<RawMigration>::resolve_v42_tail(parsed(), None).is_ok(),
-            "a leading byte that is no bool rules out the pre-release layout"
-        );
-        assert!(
-            WalletFile::<RawMigration>::resolve_v42_tail(failed(), Some(parsed())).is_ok(),
-            "the pre-release layout must be accepted when only it parses"
-        );
-        assert!(
-            WalletFile::<RawMigration>::resolve_v42_tail(failed(), Some(failed())).is_err(),
-            "a tail parsing neither way must fail"
+            V42Tail::<RawMigration>::Unreadable {
+                canonical: failed(),
+                pre_release: failed(),
+            }
+            .into_tail()
+            .is_err()
         );
     }
 
