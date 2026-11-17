@@ -1,5 +1,7 @@
 const TEST_ATTRIBUTE_PATHS: [&str; 2] = ["test", "tokio::test"];
 
+const TEST_MACRO_PATHS: [&str; 2] = ["proptest", "proptest::proptest"];
+
 // Keywords that open an item other than a function, and so end the reach
 // of the attributes read since the last item.
 const ITEM_KEYWORDS: [&str; 10] = [
@@ -255,6 +257,7 @@ fn tokens(code: &str) -> Vec<String> {
 enum Scope {
     Module(String),
     Body,
+    TestMacro,
 }
 
 // The index just past the `]` that closes the attribute whose `[` sits at `open`.
@@ -308,7 +311,7 @@ pub fn functions(source: &str) -> Vec<Function> {
                             .iter()
                             .filter_map(|scope| match scope {
                                 Scope::Module(name) => Some(name.clone()),
-                                Scope::Body => None,
+                                Scope::Body | Scope::TestMacro => None,
                             })
                             .collect(),
                         enclosing_bodies: scopes
@@ -325,6 +328,15 @@ pub fn functions(source: &str) -> Vec<Function> {
             "mod" => {
                 pending_module = next.map(str::to_string);
                 test_attribute = false;
+            }
+            path if TEST_MACRO_PATHS.contains(&path)
+                && next == Some("!")
+                && tokens.get(at + 2).map(String::as_str) == Some("{") =>
+            {
+                scopes.push(Scope::TestMacro);
+                test_attribute = false;
+                at += 3;
+                continue;
             }
             "{" => {
                 scopes.push(match pending_module.take() {
@@ -388,6 +400,20 @@ mod tests {
                 "scoped"
             ]
         );
+    }
+
+    #[test]
+    fn a_test_inside_a_proptest_block_is_a_harness_test_under_its_bare_name() {
+        let source = "mod generated {\n    proptest! {\n        \
+                      #![proptest_config(ProptestConfig::with_cases(4))]\n        #[test]\n        \
+                      fn holds(steps in any_steps()) {\n            fn inner() {}\n        }\n    }\n\
+                      }\nfn proptest() {\n    #[test]\n    fn hidden() {}\n}\n";
+        let functions = functions(source);
+        assert_eq!(names(source), ["holds", "inner", "proptest", "hidden"]);
+        assert!(functions[0].is_harness_test());
+        assert_eq!(functions[0].nextest_name(), "generated::holds");
+        assert!(!functions[1].is_harness_test());
+        assert!(!functions[3].is_harness_test());
     }
 
     #[test]
