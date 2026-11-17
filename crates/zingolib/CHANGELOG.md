@@ -10,16 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
   port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
-  body as text, the local SOCKS5 endpoint it traveled through, and the round
-  trip. It uses the fetch exit of the price fetch, creates a client per
-  run after boot's conduit is spent, and refuses in every mixnet state but
-  ready, with no nakednet leg. A consumer fetches its own third-party data
-  (a forex table) through it instead of asking this crate for more
-  currencies.
+  HTTP status, the body as text, the local SOCKS5 endpoint it traveled
+  through, and the round trip. Every HTTP status is a response, so the
+  caller reads the status. The call makes one attempt and refuses in every
+  mixnet state but ready, with no nakednet leg. A session that can create
+  clients uses a client created for the call. `timeout` is the deadline of
+  the whole call, client creation included. A consumer fetches its own
+  third-party data (a forex table) through it instead of asking this crate
+  for more currencies.
 - `mixnet::fetch::MixnetFetchError` and `LightClientError::MixnetFetch` type
   the fetch's failures: `Ineligible` for a URL outside the exit policy's
-  shape, `Speed` for a run that reached no exit, `Request` for a leg that
-  failed at a typed stage.
+  shape, `ZeroTimeout`, `DeadlineExceeded` for a deadline that elapsed
+  before the request started, `Transport` for a client that could not be
+  acquired, `Request` for a request that failed at a typed stage, and
+  `BodyTooLarge` for a body over `mixnet::fetch::FETCH_BODY_LIMIT` (1 MiB).
 - `LightWallet::invariant_violations` reports every violated wallet
   invariant: outputs stored under foreign txids, spends recorded on
   transactions that do not carry the input, spends released by failed

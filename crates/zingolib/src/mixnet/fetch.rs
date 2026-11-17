@@ -1,237 +1,217 @@
-//! One HTTPS GET over the mixnet on the fetch exit, for a consumer that
-//! needs third-party data (a forex table, a fee estimate) without a
-//! nakednet leg and without sharing the Standing Client's exit.
+//! An HTTPS GET request over the mixnet for a consumer.
 //!
-//! The price fetch is one use of the same run: `FetchRun` contains the
-//! exit acquisition, the release, and the failure handling that every
-//! fetch on the fetch exit shares, and `FetchTargets` supplies what one
-//! fetch sends requests to and how it reads the responses.
+//! The call makes one attempt and records exit health only when a
+//! response arrives.
 
 #![forbid(unsafe_code)]
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use zl_netutils::conduit::ConduitDial;
-use zl_netutils::socks5_fetch::Socks5FetchError;
+use zl_netutils::conduit::{ConduitDial, MixnetConduit};
+use zl_netutils::socks5_fetch::{HttpResponse, HttpResponseError, Socks5FetchError};
 
 use crate::mixnet::acquire::TransportError;
 use crate::mixnet::pools::Pools;
 use crate::mixnet::pools::exit_pool::ExitNodeHealthVerdict;
 use crate::mixnet::roles::Role;
-use crate::mixnet::speed::{Member, SpeedError, SpeedPrioritized};
+use crate::mixnet::speed::Member;
 
-/// The client-side bound on establishing one fetch connection alone,
-/// so a request timeout above it still refuses an exit that never
-/// completes the handshake.
+/// The maximum time to establish the connection.
 pub const FETCH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// What one fetch on the fetch exit sends requests to, and how it reads
-/// the responses.
-pub(crate) trait FetchTargets: Send + Sync {
-    /// What this fetch sends requests to: a price source, a consumer's URL.
-    type Target: Send;
+/// The maximum size of a response body, in bytes.
+pub const FETCH_BODY_LIMIT: usize = 1024 * 1024;
 
-    /// What one target returns, whether it responded or failed.
-    type Response: Send;
-
-    /// The label the run logs under.
-    fn log_label(&self) -> &'static str;
-
-    /// The targets of this fetch, in the order the batch takes them.
-    fn targets(&self) -> Vec<Self::Target>;
-
-    /// Sends one request to `target` through `dial`'s conduit.
-    fn request(
-        &self,
-        dial: ConduitDial,
-        target: Self::Target,
-    ) -> impl std::future::Future<Output = Self::Response> + Send;
-
-    /// Whether any target responded, which both completes the batch and
-    /// shows the exit is alive.
-    fn has_response(&self, responses: &[Self::Response]) -> bool;
-}
-
-/// A fetch on the fetch exit: one speed-priority batch over a client
-/// created for this run, so consecutive fetches never share a client.
-pub(crate) struct FetchRun<F> {
+/// Acquires a client on the fetch exit and its SOCKS5 address. The first
+/// run of a session uses the client that boot verified. Each later run
+/// creates a new client.
+pub(crate) async fn acquire_fetch_client(
     pools: Arc<Pools>,
-    targets: F,
+) -> Result<(Member, SocketAddr), TransportError> {
+    let acquirer = pools.acquirer().ok_or(TransportError::NoAcquirer)?;
+    let created = pools
+        .conduit_for(Role::PriceFetch, acquirer.as_ref())
+        .await?;
+    let member = Member::new(created.transport, created.lease);
+    let addr = member.addr().ok_or(TransportError::DiedBeforeUse)?;
+    Ok((member, addr))
 }
 
-impl<F: FetchTargets> FetchRun<F> {
-    /// A run that takes its transport from `pools` and sends requests to
-    /// `targets`.
-    pub(crate) fn new(pools: Arc<Pools>, targets: F) -> Self {
-        FetchRun { pools, targets }
-    }
-
-    fn close_with_health(&self, member: Member, health: ExitNodeHealthVerdict) {
-        self.pools.remember(member.node().clone(), health);
-        tokio::spawn(async move {
-            member.retire().await;
-        });
-    }
+/// Closes `member` without recording exit health.
+fn close_unrecorded(member: Member) {
+    tokio::spawn(async move {
+        member.retire().await;
+    });
 }
 
-impl<F: FetchTargets> SpeedPrioritized for FetchRun<F> {
-    type Target = F::Target;
-    type Response = F::Response;
-
-    fn log_label(&self) -> &'static str {
-        self.targets.log_label()
-    }
-
-    fn targets(&self) -> Vec<Self::Target> {
-        self.targets.targets()
-    }
-
-    async fn request(&self, dial: ConduitDial, target: Self::Target) -> Self::Response {
-        self.targets.request(dial, target).await
-    }
-
-    fn is_complete(&self, responses: &[Self::Response]) -> bool {
-        SpeedPrioritized::has_response(self, responses)
-    }
-
-    fn has_response(&self, responses: &[Self::Response]) -> bool {
-        self.targets.has_response(responses)
-    }
-
-    fn acquire(
-        &self,
-    ) -> impl std::future::Future<Output = Result<(Member, std::net::SocketAddr), TransportError>> + Send
-    {
-        let pools = self.pools.clone();
-        async move {
-            let acquirer = pools.acquirer().ok_or(TransportError::NoAcquirer)?;
-            let created = pools
-                .conduit_for(Role::PriceFetch, acquirer.as_ref())
-                .await?;
-            let member = Member::new(created.transport, created.lease);
-            let addr = member.addr().ok_or(TransportError::DiedBeforeUse)?;
-            Ok((member, addr))
-        }
-    }
-
-    fn release(&self, used: Member) {
-        self.close_with_health(used, ExitNodeHealthVerdict::EpochProven);
-    }
-
-    fn mark_exit_failed(&self, failed: Member) {
-        tracing::warn!(
-            "{}: no target responded through exit {}, marking it failed",
-            self.targets.log_label(),
-            failed.node()
-        );
-        self.close_with_health(failed, ExitNodeHealthVerdict::Failed);
-    }
+/// Records `health` for the exit of `member`, then closes `member`.
+pub(crate) fn close_with_health(pools: &Pools, member: Member, health: ExitNodeHealthVerdict) {
+    pools.remember(member.node().clone(), health);
+    close_unrecorded(member);
 }
 
-/// A consumer's one URL, fetched as text under the caller's request
-/// timeout.
-pub(crate) struct UrlFetch {
-    /// The URL to GET. Admitted by [`crate::mixnet::probe::probe_eligible`]
-    /// before the run.
-    pub(crate) url: http::Uri,
-    /// The client-side bound on the whole request.
-    pub(crate) timeout: Duration,
+/// Returns the exit health that a request result shows. A failure shows
+/// nothing.
+fn exit_health_after<T, E>(result: &Result<T, E>) -> Option<ExitNodeHealthVerdict> {
+    result.is_ok().then_some(ExitNodeHealthVerdict::EpochProven)
 }
 
-impl FetchTargets for UrlFetch {
-    type Target = http::Uri;
-    type Response = Result<String, Socks5FetchError>;
-
-    fn log_label(&self) -> &'static str {
-        "mixnet fetch"
-    }
-
-    fn targets(&self) -> Vec<Self::Target> {
-        vec![self.url.clone()]
-    }
-
-    async fn request(&self, dial: ConduitDial, target: Self::Target) -> Self::Response {
-        dial.fetch_text(
-            &target.to_string(),
-            self.timeout,
-            self.timeout.min(FETCH_CONNECT_TIMEOUT),
-        )
-        .await
-    }
-
-    fn has_response(&self, responses: &[Self::Response]) -> bool {
-        responses.iter().any(Result::is_ok)
-    }
-}
-
-/// The body one fetch returned, with the route it traveled and the time
-/// it took.
+/// The result of a fetch over the mixnet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MixnetFetch {
+    /// The HTTP status code.
+    pub status: u16,
     /// The response body as text.
     pub body: String,
-    /// Wall-clock time from dispatch to the response, tunnel traversal
-    /// included.
+    /// The time from the start of the call to the response.
     pub round_trip: Duration,
-    /// The local SOCKS5 endpoint the fetch traveled through.
+    /// The local SOCKS5 address that the request used.
     pub via_socks5: String,
 }
 
-/// Why a fetch over the mixnet returned no body.
+/// The reason a fetch over the mixnet returned no response.
 #[derive(Debug, thiserror::Error)]
 pub enum MixnetFetchError {
-    /// A URL outside the one endpoint shape the exit policy allows.
+    /// The URL is not `https` on port 443.
     #[error("fetch targets must be https on port 443; got '{0}'")]
     Ineligible(http::Uri),
-    /// The run acquired no transport, or no target responded through any
-    /// exit it drew.
-    #[error("the fetch reached no exit.")]
-    Speed(#[source] SpeedError),
-    /// The request traveled and failed at a typed stage.
+    /// The timeout is zero.
+    #[error("the fetch timeout must be greater than zero")]
+    ZeroTimeout,
+    /// The deadline passed before the request started.
+    #[error("the fetch exceeded its {}ms deadline before the request started", timeout.as_millis())]
+    DeadlineExceeded {
+        /// The timeout of the call.
+        timeout: Duration,
+    },
+    /// No client could be acquired.
+    #[error("the fetch acquired no client.")]
+    Transport(#[source] TransportError),
+    /// The request failed.
     #[error("the fetch failed.")]
     Request(#[source] Box<Socks5FetchError>),
-    /// The batch ended with no response for the one URL.
-    #[error("the fetch produced no response.")]
-    NoResponse,
+    /// The body is larger than [`FETCH_BODY_LIMIT`].
+    #[error("the response body is larger than {limit} bytes")]
+    BodyTooLarge {
+        /// The limit in bytes.
+        limit: usize,
+    },
 }
 
-/// The body among a single-URL batch's responses, or the typed failure.
-pub(crate) fn first_body(
-    responses: Vec<Result<String, Socks5FetchError>>,
-) -> Result<String, MixnetFetchError> {
-    responses
-        .into_iter()
-        .next()
-        .ok_or(MixnetFetchError::NoResponse)?
-        .map_err(|error| MixnetFetchError::Request(Box::new(error)))
+impl From<HttpResponseError> for MixnetFetchError {
+    fn from(error: HttpResponseError) -> Self {
+        match error {
+            HttpResponseError::Transport(failure) => Self::Request(Box::new(failure)),
+            HttpResponseError::BodyTooLarge { limit } => Self::BodyTooLarge { limit },
+        }
+    }
+}
+
+async fn request_by_deadline(
+    dial: ConduitDial,
+    url: &http::Uri,
+    deadline: tokio::time::Instant,
+    timeout: Duration,
+) -> Result<HttpResponse, MixnetFetchError> {
+    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+    if remaining.is_zero() {
+        return Err(MixnetFetchError::DeadlineExceeded { timeout });
+    }
+    Ok(dial
+        .fetch_response(
+            &url.to_string(),
+            remaining,
+            remaining.min(FETCH_CONNECT_TIMEOUT),
+            FETCH_BODY_LIMIT,
+        )
+        .await?)
+}
+
+/// Sends one GET request to `url` within `timeout`. It uses a client
+/// acquired for this call, or `session_dial` if the session cannot create
+/// clients.
+pub(crate) async fn fetch_url(
+    pools: &Arc<Pools>,
+    session_dial: ConduitDial,
+    url: &http::Uri,
+    timeout: Duration,
+) -> Result<MixnetFetch, MixnetFetchError> {
+    let dispatched = std::time::Instant::now();
+    let deadline = tokio::time::Instant::now() + timeout;
+    let acquired = if pools.acquirer().is_some() {
+        let client = tokio::time::timeout_at(deadline, acquire_fetch_client(pools.clone()))
+            .await
+            .map_err(|_| MixnetFetchError::DeadlineExceeded { timeout })?
+            .map_err(MixnetFetchError::Transport)?;
+        Some(client)
+    } else {
+        None
+    };
+    let dial = match &acquired {
+        Some((_, addr)) => MixnetConduit::over(*addr).dial(),
+        None => session_dial,
+    };
+    let via_socks5 = dial.socks5().to_string();
+    let response = request_by_deadline(dial, url, deadline, timeout).await;
+    if let Some((member, _)) = acquired {
+        match exit_health_after(&response) {
+            Some(health) => close_with_health(pools, member, health),
+            None => close_unrecorded(member),
+        }
+    }
+    let response = response?;
+    Ok(MixnetFetch {
+        status: response.status,
+        body: response.body,
+        round_trip: dispatched.elapsed(),
+        via_socks5,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn uri(text: &str) -> http::Uri {
-        text.parse().expect("a well-formed test uri")
+    #[test]
+    fn a_response_marks_the_exit_healthy_and_a_failure_records_nothing() {
+        let responded: Result<u16, ()> = Ok(404);
+        assert_eq!(
+            exit_health_after(&responded),
+            Some(ExitNodeHealthVerdict::EpochProven),
+            "an error status still traveled through the exit"
+        );
+
+        let failed: Result<u16, ()> = Err(());
+        assert_eq!(
+            exit_health_after(&failed),
+            None,
+            "one URL that does not respond is no evidence about the exit"
+        );
     }
 
     #[test]
-    fn a_url_fetch_has_its_one_url_as_target() {
-        let fetch = UrlFetch {
-            url: uri("https://example.test/rates"),
-            timeout: Duration::from_secs(5),
-        };
-        assert_eq!(fetch.targets(), vec![uri("https://example.test/rates")]);
-        assert!(!fetch.has_response(&[]));
-        assert!(fetch.has_response(&[Ok("{}".to_string())]));
-    }
-
-    #[test]
-    fn an_empty_batch_is_a_typed_absence() {
+    fn a_body_over_the_limit_keeps_its_limit_across_the_conversion() {
+        let converted = MixnetFetchError::from(HttpResponseError::BodyTooLarge { limit: 8 });
         assert!(matches!(
-            first_body(Vec::new()),
-            Err(MixnetFetchError::NoResponse)
+            converted,
+            MixnetFetchError::BodyTooLarge { limit: 8 }
         ));
-        assert_eq!(first_body(vec![Ok("{}".to_string())]).unwrap(), "{}");
+    }
+
+    #[tokio::test]
+    async fn a_deadline_that_already_elapsed_refuses_before_any_request() {
+        let conduit = MixnetConduit::over("127.0.0.1:1".parse().expect("a static address"));
+        let url: http::Uri = "https://rates.test/latest".parse().expect("static uri");
+        let timeout = Duration::from_millis(1);
+
+        let error = request_by_deadline(conduit.dial(), &url, tokio::time::Instant::now(), timeout)
+            .await
+            .expect_err("no time remains for the request");
+        assert!(
+            matches!(error, MixnetFetchError::DeadlineExceeded { timeout: given } if given == timeout),
+            "the refusal must report the caller's deadline: {error}"
+        );
     }
 }
