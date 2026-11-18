@@ -25,10 +25,13 @@
 //!
 
 use std::future::Future;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::Request;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Channel, Endpoint};
 
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
@@ -134,28 +137,69 @@ pub mod test_tls {
 /// no bound at all. Through `connect_with_connector` it wraps the whole
 /// connector, TLS included. This one is configured the way tonic's own would be
 /// for these endpoints.
-fn indexer_connector() -> hyper_util::client::legacy::connect::HttpConnector {
-    let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+fn indexer_connector() -> HttpConnector {
+    let mut http = HttpConnector::new();
     http.enforce_http(false);
     http.set_nodelay(true);
     http
 }
 
-fn client_tls_config() -> ClientTlsConfig {
-    // The config built here is consumed by rustls at connect time; make
-    // sure a process-level CryptoProvider exists before that happens.
+fn mozilla_roots() -> rustls::RootCertStore {
+    rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned())
+}
+
+fn client_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
     ensure_default_crypto_provider();
-    // Allow self-signed certs in tests
-    #[cfg(test)]
-    {
-        ClientTlsConfig::new()
-            .ca_certificate(tonic::transport::Certificate::from_pem(
-                std::fs::read("test-data/localhost.pem").expect("test file"),
-            ))
-            .with_webpki_roots()
+    let mut config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    // Resumption MUST be set to disabled to stop us from resending
+    // tracking tokens to server when switching from wifi->cellular backhaul
+    config.resumption = rustls::client::Resumption::disabled();
+    config
+}
+
+type IndexerHttps = HttpsConnector<HttpConnector>;
+
+// tonic dials `http://` (`https` = tonic's own TLS), real URI dialed here
+#[derive(Clone)]
+struct DialOrigin {
+    https: IndexerHttps,
+    origin: http::Uri,
+}
+
+impl tower::Service<http::Uri> for DialOrigin {
+    type Response = <IndexerHttps as tower::Service<http::Uri>>::Response;
+    type Error = <IndexerHttps as tower::Service<http::Uri>>::Error;
+    type Future = <IndexerHttps as tower::Service<http::Uri>>::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.https.poll_ready(cx)
     }
-    #[cfg(not(test))]
-    ClientTlsConfig::new().with_webpki_roots()
+
+    fn call(&mut self, _tonic_dial: http::Uri) -> Self::Future {
+        self.https.call(self.origin.clone())
+    }
+}
+
+fn indexer_endpoint(
+    uri: http::Uri,
+    roots: rustls::RootCertStore,
+) -> Result<(Endpoint, DialOrigin), GetClientError> {
+    if !matches!(uri.scheme_str(), Some("http" | "https")) {
+        return Err(GetClientError::InvalidScheme);
+    }
+    let authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+    let endpoint = Endpoint::from_shared(format!("http://{authority}"))?
+        .origin(uri.clone())
+        .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
+    let https = HttpsConnectorBuilder::new()
+        .with_tls_config(client_tls_config(roots))
+        .https_or_http() // plaintext only for `http://` URIs, never a fallback
+        .enable_http2()
+        .wrap_connector(indexer_connector());
+    Ok((endpoint, DialOrigin { https, origin: uri }))
 }
 
 /// Trait for communicating with a Zcash chain indexer.
@@ -340,58 +384,22 @@ pub struct GrpcIndexer {
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
-
-        let endpoint = Endpoint::from_shared(uri.to_string())?
-            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect_with_connector(indexer_connector()).await?;
-        let clear_net_client = CompactTxStreamerClient::new(channel);
-
-        Ok(Self { clear_net_client })
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        let channel = endpoint.connect_with_connector(dial).await?;
+        Ok(Self {
+            clear_net_client: CompactTxStreamerClient::new(channel),
+        })
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
     /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
-
-        let endpoint = Endpoint::from_shared(uri.to_string())?
-            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect_with_connector_lazy(indexer_connector());
-        let clear_net_client = CompactTxStreamerClient::new(channel);
-
-        Ok(Self { clear_net_client })
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        let channel = endpoint.connect_with_connector_lazy(dial);
+        Ok(Self {
+            clear_net_client: CompactTxStreamerClient::new(channel),
+        })
     }
 
     /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
@@ -994,20 +1002,25 @@ mod tests {
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
-        let endpoint = tonic::transport::Endpoint::from_shared(uri.to_string())
-            .expect("endpoint")
-            .tcp_nodelay(true);
-
-        let connect_res = endpoint
-            .tls_config(client_tls_config())
-            .expect("tls_config failed")
-            .connect()
-            .await;
+        let mut roots = mozilla_roots();
+        add_test_cert_to_roots(&mut roots);
+        let (endpoint, dial) = indexer_endpoint(uri, roots).expect("valid uri");
+        let mut indexer = GrpcIndexer {
+            clear_net_client: CompactTxStreamerClient::new(
+                endpoint.connect_with_connector_lazy(dial),
+            ),
+        };
+        let rpc = timeout(
+            LOCAL_TLS_TEST_BOUND,
+            indexer.get_lightd_info(LOCAL_TLS_TEST_BOUND),
+        )
+        .await
+        .expect("rpc settles within the bound");
 
         // A gRPC (HTTP/2) client must not succeed against an HTTP/1.1-only TLS server.
         assert!(
-            connect_res.is_err(),
-            "expected connect to fail (no downgrade to HTTP/1.1), but it succeeded"
+            rpc.is_err(),
+            "expected the RPC to fail (no downgrade to HTTP/1.1), but it succeeded"
         );
 
         server_task.abort();

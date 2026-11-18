@@ -11363,6 +11363,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tower",
+ "webpki-roots 1.0.9",
  "x509-parser",
 ]
 

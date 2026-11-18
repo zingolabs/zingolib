@@ -17,6 +17,7 @@ rustls.workspace = true
 thiserror.workspace = true
 tokio-rustls.workspace = true
 tonic.workspace = true
+webpki-roots.workspace = true
 lightwallet-protocol.workspace = true
 tokio-stream = { workspace = true, optional = true }
 
@@ -55,7 +56,13 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
 # `indexer_connector`). tonic already depends on it with these features, so
 # nothing new enters the lockfile.
 hyper-util = { version = "0.1.20", features = ["client-legacy", "tokio"] }
-tower = { version = "0.5", optional = true }
+hyper-rustls = { version = "0.27", default-features = false, features = [
+    "aws-lc-rs",
+    "http2",
+    "tls12",
+    "logging",
+] }
+tower = "0.5"
 tokio = { workspace = true, optional = true, features = [
     "time",
     "rt-multi-thread",
@@ -97,7 +104,6 @@ testutils = []
 # SOCKS5 port.
 socks5-transmit = [
     "dep:tokio-socks",
-    "dep:tower",
     "dep:tokio",
 ]
 # The wallet-side SOCKS5-dialing HTTP fetch: one conduit-guarded request,

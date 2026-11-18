@@ -145,6 +145,7 @@ rand = "0.10"
 
 # zl-netutils and child crates
 rustls = { version = "0.23.40", features = ["prefer-post-quantum"] }
+webpki-roots = "1"
 tokio-rustls = { version = "0.26", default-features = false, features = [
   "aws_lc_rs",
   "logging",
