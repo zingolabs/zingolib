@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ConduitDial::fetch_response`, under the `socks5-fetch` feature, GETs a
+  URL through the conduit and returns `socks5_fetch::HttpResponse`: the HTTP
+  status code and the body as text. Every status is a response. A body over
+  the caller's limit is `socks5_fetch::HttpResponseError::BodyTooLarge`, and
+  a request that fails at a typed stage is `Transport`.
 - `NetworkAccess`, the wallet's access to the network as a type: the
   Session Indexer URI (zingo-adrs zingolib/0063) a session attaches to
   as `indexer_uri`, beside `indexer`, the live `GrpcIndexer`, which is

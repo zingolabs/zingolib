@@ -226,6 +226,7 @@ impl ZingolibError {
 /// fails compilation here instead of degrading to prose in the data channel.
 fn ffi_error(e: LightClientError) -> ZingolibError {
     use zingolib::lightclient::error::MigrationError;
+    use zingolib::mixnet::fetch::MixnetFetchError;
     let text = chain_text(&e);
     match e {
         LightClientError::SyncLaunchError
@@ -262,6 +263,15 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
         LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
+        LightClientError::MixnetFetch(inner) => match inner {
+            MixnetFetchError::Ineligible(_) | MixnetFetchError::ZeroTimeout => {
+                ZingolibError::InvalidInput(text)
+            }
+            MixnetFetchError::DeadlineExceeded { .. }
+            | MixnetFetchError::Transport(_)
+            | MixnetFetchError::Request(_)
+            | MixnetFetchError::BodyTooLarge { .. } => ZingolibError::Mixnet(text),
+        },
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -1114,6 +1124,36 @@ mod ffi_error_routing_tests {
             "a refusal must carry the owned mixnet marker: {mapped:?}"
         );
         assert!(mapped.to_string().starts_with("Error: mixnet:"));
+    }
+
+    #[test]
+    fn a_fetch_the_caller_asked_wrongly_is_invalid_input_and_a_failed_one_is_mixnet() {
+        use zingolib::mixnet::fetch::MixnetFetchError;
+
+        let plain_http: http::Uri = "http://rates.test/latest".parse().expect("static uri");
+        for inner in [
+            MixnetFetchError::Ineligible(plain_http),
+            MixnetFetchError::ZeroTimeout,
+        ] {
+            let mapped = ffi_error(LightClientError::MixnetFetch(inner));
+            assert!(
+                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                "the caller corrects its own argument: {mapped:?}"
+            );
+        }
+
+        for inner in [
+            MixnetFetchError::DeadlineExceeded {
+                timeout: std::time::Duration::from_secs(5),
+            },
+            MixnetFetchError::BodyTooLarge { limit: 8 },
+        ] {
+            let mapped = ffi_error(LightClientError::MixnetFetch(inner));
+            assert!(
+                matches!(&mapped, ZingolibError::Mixnet(_)),
+                "a fetch that ran and failed is a mixnet error: {mapped:?}"
+            );
+        }
     }
 
     #[test]
@@ -2952,6 +2992,33 @@ pub fn zec_price() -> Result<String, ZingolibError> {
         })
     })?;
     Ok(object! { "current_price" => usd }.pretty(2))
+}
+
+/// Sends an HTTPS GET request to `url` over the mixnet. Returns a JSON
+/// object with `status`, `body`, `via_socks5` and `rtt_ms`.
+///
+/// `url` must be `https` on port 443. `timeout_ms` is the deadline of the
+/// whole call. The caller must check `status`.
+#[uniffi::export]
+pub fn mixnet_fetch(url: String, timeout_ms: u64) -> Result<String, ZingolibError> {
+    let fetch = with_initialized_lightclient_read(|lightclient| {
+        let url = url
+            .parse::<http::Uri>()
+            .map_err(|error| ZingolibError::InvalidInput(format!("url: {error}")))?;
+        RT.block_on(async move {
+            lightclient
+                .fetch_over_mixnet(url, std::time::Duration::from_millis(timeout_ms))
+                .await
+                .map_err(ffi_error)
+        })
+    })?;
+    Ok(object! {
+        "status" => fetch.status,
+        "body" => fetch.body,
+        "via_socks5" => fetch.via_socks5,
+        "rtt_ms" => u64::try_from(fetch.round_trip.as_millis()).unwrap_or(u64::MAX),
+    }
+    .pretty(2))
 }
 
 #[derive(Debug)]
