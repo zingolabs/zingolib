@@ -56,12 +56,7 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
 # `indexer_connector`). tonic already depends on it with these features, so
 # nothing new enters the lockfile.
 hyper-util = { version = "0.1.20", features = ["client-legacy", "tokio"] }
-hyper-rustls = { version = "0.27", default-features = false, features = [
-    "aws-lc-rs",
-    "http2",
-    "tls12",
-    "logging",
-] }
+hyper-rustls = { workspace = true, features = ["http2"] }
 tower = "0.5"
 tokio = { workspace = true, optional = true, features = [
     "time",
@@ -151,7 +146,7 @@ required-features = ["nym"]
 
 [dev-dependencies]
 tokio-stream.workspace = true
-hyper-rustls.workspace = true
+hyper-rustls = { workspace = true, features = ["http1"] }
 hyper-util.workspace = true
 hyper.workspace = true
 rustls-pemfile.workspace = true
