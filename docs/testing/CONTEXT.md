@@ -51,7 +51,7 @@ test, sharpening but never narrowing any of them.
 _Avoid_: offline twin, port, replacement test
 
 **Binary e2e test**:
-A test that exercises the shipped zingo-cli binary through its public CLI
+A test that exercises the shipped zingolib-cli binary through its public CLI
 surface against a public network's Indexer. Contrast tests that drive the
 wallet in-process through `LightClient`.
 _Avoid_: CLI live test, harness test
