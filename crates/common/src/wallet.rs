@@ -21,9 +21,9 @@ use crate::status::ConfirmationStatus;
 
 use crate::{
     engine::{
-        self, OutgoingNoteOps, ScanTargetOps, ScanTargetOrigin, ShardTreesOps, TransparentCoinOps,
-        WalletBlockOps, WalletBlockParts, WalletNoteOps, WalletTransactionOps,
-        WalletTransactionParts, empty_shard_tree,
+        self, OutgoingNoteOps, ScanTargetOps, ScanTargetOrigin, ShardTreesOps,
+        TransactionRecordOps, TransactionRecordParts, TransparentCoinOps, WalletBlockOps,
+        WalletBlockParts, WalletNoteOps, empty_shard_tree,
     },
     keys::{KeyId, transparent::TransparentAddressId},
     witness,
@@ -368,9 +368,9 @@ pub struct TransactionRecord {
     pub(crate) outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
 }
 
-impl WalletTransactionOps for TransactionRecord {
-    fn from_parts(parts: WalletTransactionParts) -> Self {
-        let WalletTransactionParts {
+impl TransactionRecordOps for TransactionRecord {
+    fn from_parts(parts: TransactionRecordParts) -> Self {
+        let TransactionRecordParts {
             txid,
             status,
             transaction,

@@ -612,7 +612,7 @@ mod tests {
     use zip32::AccountId;
     use zl_common::status::ConfirmationStatus;
 
-    use crate::engine::{TransparentCoinOps, WalletTransactionOps, WalletTransactionParts};
+    use crate::engine::{TransactionRecordOps, TransactionRecordParts, TransparentCoinOps};
     use crate::keys::transparent::{TransparentAddressId, TransparentScope};
     use crate::wallet::{OutputId, TransactionRecord, TransparentCoin};
 
@@ -657,7 +657,7 @@ mod tests {
         .freeze()
         .unwrap();
         let pending_txid = pending_tx.txid();
-        let pending_record = TransactionRecord::from_parts(WalletTransactionParts {
+        let pending_record = TransactionRecord::from_parts(TransactionRecordParts {
             txid: pending_txid,
             status: ConfirmationStatus::Calculated(11.into()),
             transaction: pending_tx,
