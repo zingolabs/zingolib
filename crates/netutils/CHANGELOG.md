@@ -46,8 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds the live client alone; the URI lives in the `NetworkAccess` beside
   it.
 - `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
-- `GrpcIndexer` against an HTTP/1-only `https` indexer fails on the first RPC, not in `new`.
-  IPv6 literal hosts (`https://[::1]:9067`) now connect.
+- `GrpcIndexer` now connects to IPv6 literal hosts (`https://[::1]:9067`).
 
 ### Deprecated
 

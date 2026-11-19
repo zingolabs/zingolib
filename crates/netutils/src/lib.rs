@@ -25,13 +25,13 @@
 //!
 
 use std::future::Future;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
-use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
 use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::Request;
 use tonic::transport::{Channel, Endpoint};
+use tower::ServiceExt;
 
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
@@ -161,32 +161,38 @@ fn client_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
 }
 
 type IndexerHttps = HttpsConnector<HttpConnector>;
+type IndexerStream = <IndexerHttps as tower::Service<http::Uri>>::Response;
+type IndexerDialError = <IndexerHttps as tower::Service<http::Uri>>::Error;
 
-// tonic dials `http://` (`https` = tonic's own TLS), real URI dialed here
-#[derive(Clone)]
-struct DialOrigin {
-    https: IndexerHttps,
-    origin: http::Uri,
-}
+const ALPN_H2: &[u8] = b"h2";
 
-impl tower::Service<http::Uri> for DialOrigin {
-    type Response = <IndexerHttps as tower::Service<http::Uri>>::Response;
-    type Error = <IndexerHttps as tower::Service<http::Uri>>::Error;
-    type Future = <IndexerHttps as tower::Service<http::Uri>>::Future;
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP/2 was not negotiated.")]
+struct H2NotNegotiated;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.https.poll_ready(cx)
+fn require_h2(stream: IndexerStream) -> Result<IndexerStream, IndexerDialError> {
+    let refused = match &stream {
+        MaybeHttpsStream::Https(tls) => tls.inner().get_ref().1.alpn_protocol() != Some(ALPN_H2),
+        MaybeHttpsStream::Http(_) => false,
+    };
+    if refused {
+        return Err(H2NotNegotiated.into());
     }
-
-    fn call(&mut self, _tonic_dial: http::Uri) -> Self::Future {
-        self.https.call(self.origin.clone())
-    }
+    Ok(stream)
 }
 
 fn indexer_endpoint(
     uri: http::Uri,
     roots: rustls::RootCertStore,
-) -> Result<(Endpoint, DialOrigin), GetClientError> {
+) -> Result<
+    (
+        Endpoint,
+        impl tower::Service<http::Uri, Response = IndexerStream, Error = IndexerDialError, Future: Send>
+        + Send
+        + 'static,
+    ),
+    GetClientError,
+> {
     if !matches!(uri.scheme_str(), Some("http" | "https")) {
         return Err(GetClientError::InvalidScheme);
     }
@@ -199,7 +205,11 @@ fn indexer_endpoint(
         .https_or_http() // plaintext only for `http://` URIs, never a fallback
         .enable_http2()
         .wrap_connector(indexer_connector());
-    Ok((endpoint, DialOrigin { https, origin: uri }))
+    let dial = tower::service_fn(move |_tonic_dial: http::Uri| {
+        let dialed = https.clone().oneshot(uri.clone());
+        async move { dialed.await.and_then(require_h2) }
+    });
+    Ok((endpoint, dial))
 }
 
 /// Trait for communicating with a Zcash chain indexer.
@@ -1004,23 +1014,19 @@ mod tests {
 
         let mut roots = mozilla_roots();
         add_test_cert_to_roots(&mut roots);
-        let (endpoint, dial) = indexer_endpoint(uri, roots).expect("valid uri");
-        let mut indexer = GrpcIndexer {
-            clear_net_client: CompactTxStreamerClient::new(
-                endpoint.connect_with_connector_lazy(dial),
-            ),
-        };
-        let rpc = timeout(
-            LOCAL_TLS_TEST_BOUND,
-            indexer.get_lightd_info(LOCAL_TLS_TEST_BOUND),
-        )
-        .await
-        .expect("rpc settles within the bound");
+        let (endpoint, dial) = indexer_endpoint(uri, roots)
+            .expect("an https URI with a host and a port has a valid scheme and authority");
+        let connect_res = endpoint.connect_with_connector(dial).await;
 
         // A gRPC (HTTP/2) client must not succeed against an HTTP/1.1-only TLS server.
+        let Err(refusal) = connect_res else {
+            panic!("expected connect to fail (no downgrade to HTTP/1.1), but it succeeded");
+        };
         assert!(
-            rpc.is_err(),
-            "expected the RPC to fail (no downgrade to HTTP/1.1), but it succeeded"
+            diag::chain_texts(&refusal)
+                .iter()
+                .any(|text| text == &H2NotNegotiated.to_string()),
+            "expected the ALPN refusal in the chain, got {refusal:?}"
         );
 
         server_task.abort();
