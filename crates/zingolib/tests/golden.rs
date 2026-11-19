@@ -10,7 +10,7 @@ mod common;
 
 use std::str::FromStr as _;
 
-use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
+use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, TransactionRecord};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -51,7 +51,7 @@ fn editorial_wallet() -> (LightWallet, String) {
     // tx4: a sending transaction that also receives a text memo, which the
     // editorial layer renders as an extra memo-to-self value transfer.
     let txid4 = TxId::from_bytes([4; 32]);
-    let tx4 = WalletTransaction::new_for_test_with_ironwood_notes(
+    let tx4 = TransactionRecord::new_for_test_with_ironwood_notes(
         txid4,
         ConfirmationStatus::Confirmed(13.into()),
         vec![IronwoodNote::new_for_test(

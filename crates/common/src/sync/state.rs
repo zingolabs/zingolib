@@ -8,7 +8,7 @@ use zcash_protocol::{
 use crate::{
     engine::{ScanTargetOps, ScanTargetOrigin, SyncStateOps, VERIFY_BLOCK_RANGE_SIZE, VerifyEnd},
     sync::{InitialSyncState, ScanPriority, ScanRange, SyncState},
-    wallet::{ScanTarget, TreeBounds, WalletTransaction},
+    wallet::{ScanTarget, TransactionRecord, TreeBounds},
 };
 
 const NARROW_SCAN_AREA: u32 = 1_000;
@@ -677,7 +677,7 @@ impl SyncStateOps for SyncState {
         &mut self,
         consensus_parameters: &impl consensus::Parameters,
         shielded_protocol: ShieldedPool,
-        wallet_transaction: &WalletTransaction,
+        wallet_transaction: &TransactionRecord,
     ) {
         let found_note = match shielded_protocol {
             ShieldedPool::Sapling => !wallet_transaction.sapling_notes().is_empty(),
@@ -1106,7 +1106,7 @@ mod tests {
         use super::*;
         use crate::{
             status::ConfirmationStatus,
-            wallet::{OutputId, WalletNote, WalletTransaction},
+            wallet::{OutputId, TransactionRecord, WalletNote},
         };
 
         fn height(height: u32) -> BlockHeight {
@@ -1121,7 +1121,7 @@ mod tests {
             ScanRange::from_parts(range(start, end), priority)
         }
 
-        fn sapling_transaction(txid: TxId, block_height: u32) -> WalletTransaction {
+        fn sapling_transaction(txid: TxId, block_height: u32) -> TransactionRecord {
             let (_, recipient) = sapling_crypto::zip32::ExtendedSpendingKey::master(&[0; 32])
                 .expect("a 32 byte seed derives a key")
                 .default_address();
@@ -1137,7 +1137,7 @@ mod tests {
                 Memo::Empty,
                 None,
             );
-            WalletTransaction::new_for_test(
+            TransactionRecord::new_for_test(
                 txid,
                 ConfirmationStatus::Confirmed(height(block_height)),
             )

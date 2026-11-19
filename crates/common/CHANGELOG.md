@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The wallet data that the sync engine of `pepper-sync` writes, split out of
   `pepper-sync`, which re-exports each item at its old path. The `wallet`
   module holds `ScanTarget`, `TreeBounds`, `OutputId`, `NullifierMap`,
-  `WalletBlock`, `WalletTransaction`, `WalletNote`, `OutgoingNote`,
+  `WalletBlock`, `TransactionRecord`, `WalletNote`, `OutgoingNote`,
   `TransparentCoin`, `ShardTrees`, the note and shard store aliases, the
   output traits, `PoolActivation`, `pool_upgrade`, `MAX_REORG_ALLOWANCE` and
   `SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE`. The `keys` module gains `KeyId`,

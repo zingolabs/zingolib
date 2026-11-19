@@ -22,8 +22,8 @@ use crate::{
     wallet::{
         IronwoodNote, OrchardNote, OutgoingIronwoodNote, OutgoingNote, OutgoingOrchardNote,
         OutgoingSaplingNote, OutputId, SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, SaplingNote,
-        ScanTarget, ShardTrees, TransparentCoin, TreeBounds, WalletBlock, WalletNote,
-        WalletTransaction,
+        ScanTarget, ShardTrees, TransactionRecord, TransparentCoin, TreeBounds, WalletBlock,
+        WalletNote,
     },
 };
 
@@ -98,7 +98,7 @@ impl sealed::Sealed for SyncState {}
 impl sealed::Sealed for InitialSyncState {}
 impl sealed::Sealed for ScanTarget {}
 impl sealed::Sealed for WalletBlock {}
-impl sealed::Sealed for WalletTransaction {}
+impl sealed::Sealed for TransactionRecord {}
 impl sealed::Sealed for TransparentCoin {}
 impl<N, Nf: Copy, P> sealed::Sealed for WalletNote<N, Nf, P> {}
 impl<N, P> sealed::Sealed for OutgoingNote<N, P> {}
@@ -252,7 +252,7 @@ pub trait SyncStateOps: sealed::Sealed {
         &mut self,
         consensus_parameters: &impl consensus::Parameters,
         shielded_protocol: ShieldedPool,
-        wallet_transaction: &WalletTransaction,
+        wallet_transaction: &TransactionRecord,
     );
 }
 
