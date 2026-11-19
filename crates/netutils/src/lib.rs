@@ -1032,6 +1032,136 @@ mod tests {
         server_task.abort();
     }
 
+    const DIALS_PER_CONNECTOR: usize = 2;
+    const POST_HANDSHAKE_BYTES: &[u8] = b"t";
+
+    async fn localhost_h2_listener() -> (TcpListener, TlsAcceptor, http::Uri) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the loopback interface always has a free ephemeral port");
+        let port = listener
+            .local_addr()
+            .expect("a bound listener has a local address")
+            .port();
+        let uri = format!("https://127.0.0.1:{port}")
+            .parse::<http::Uri>()
+            .expect("an https scheme, a loopback address, and a port form a URI");
+
+        let mut server_config = std::sync::Arc::unwrap_or_clone(load_test_server_config());
+        server_config.alpn_protocols = vec![ALPN_H2.to_vec()];
+        let acceptor = TlsAcceptor::from(std::sync::Arc::new(server_config));
+
+        (listener, acceptor, uri)
+    }
+
+    async fn handshake_kinds_over_redials<D>(
+        mut dial: D,
+        uri: http::Uri,
+        listener: TcpListener,
+        acceptor: TlsAcceptor,
+    ) -> Vec<rustls::HandshakeKind>
+    where
+        D: tower::Service<http::Uri, Response = IndexerStream>,
+        D::Error: std::fmt::Debug,
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let server_task = tokio::spawn(async move {
+            let mut kinds = Vec::with_capacity(DIALS_PER_CONNECTOR);
+            for _ in 0..DIALS_PER_CONNECTOR {
+                let (socket, _) = listener
+                    .accept()
+                    .await
+                    .expect("the client dials this listener once per iteration");
+                let mut tls_stream = acceptor
+                    .accept(socket)
+                    .await
+                    .expect("the client trusts the localhost certificate and offers h2");
+                kinds.push(
+                    tls_stream
+                        .get_ref()
+                        .1
+                        .handshake_kind()
+                        .expect("an accepted TLS stream has completed its handshake"),
+                );
+                tls_stream
+                    .write_all(POST_HANDSHAKE_BYTES)
+                    .await
+                    .expect("the client holds the stream open until it reads these bytes");
+                let mut until_client_closes = Vec::new();
+                let _ = tls_stream.read_to_end(&mut until_client_closes).await;
+            }
+            kinds
+        });
+
+        let redials = async {
+            for _ in 0..DIALS_PER_CONNECTOR {
+                let stream = dial
+                    .ready()
+                    .await
+                    .expect("the connector is always ready")
+                    .call(uri.clone())
+                    .await
+                    .expect("the listener serves the localhost certificate over h2");
+                let mut stream = TokioIo::new(stream);
+                let mut received = [0u8; POST_HANDSHAKE_BYTES.len()];
+                stream
+                    .read_exact(&mut received)
+                    .await
+                    .expect("the server writes these bytes after every handshake");
+            }
+        };
+        timeout(LOCAL_TLS_TEST_BOUND, redials)
+            .await
+            .expect("loopback dials settle within the local TLS bound");
+
+        timeout(LOCAL_TLS_TEST_BOUND, server_task)
+            .await
+            .expect("the server ends once the last client stream closes")
+            .expect("the server task does not panic when every handshake succeeds")
+    }
+
+    #[tokio::test]
+    async fn a_redial_through_the_indexer_connector_never_resumes() {
+        let (listener, acceptor, uri) = localhost_h2_listener().await;
+
+        let mut roots = mozilla_roots();
+        add_test_cert_to_roots(&mut roots);
+        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots)
+            .expect("an https URI with a host and a port has a valid scheme and authority");
+
+        let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
+
+        assert_eq!(kinds.len(), DIALS_PER_CONNECTOR);
+        assert!(
+            !kinds.contains(&rustls::HandshakeKind::Resumed),
+            "the indexer connector resumed a TLS session: {kinds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_redial_resumes_when_resumption_stays_enabled() {
+        let (listener, acceptor, uri) = localhost_h2_listener().await;
+
+        let mut roots = mozilla_roots();
+        add_test_cert_to_roots(&mut roots);
+        let mut resuming_config = client_tls_config(roots);
+        resuming_config.resumption = rustls::client::Resumption::default();
+        let dial = HttpsConnectorBuilder::new()
+            .with_tls_config(resuming_config)
+            .https_or_http()
+            .enable_http2()
+            .wrap_connector(indexer_connector());
+
+        let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
+
+        assert_eq!(
+            kinds.last(),
+            Some(&rustls::HandshakeKind::Resumed),
+            "the control connector did not resume, so the test above proves nothing: {kinds:?}"
+        );
+    }
+
     /// A path that goes silent while the channel is connecting must fail the
     /// call, not hold it. This listener accepts the TCP connection and never
     /// answers, which is what a dropped network looks like to a client that is
