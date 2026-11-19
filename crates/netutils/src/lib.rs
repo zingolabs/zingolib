@@ -727,24 +727,24 @@ mod tests {
 
     use crate::time::test::LOCAL_TLS_TEST_BOUND;
 
-    fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-        use tonic::transport::CertificateDer;
-        eprintln!("Adding test cert to roots");
+    const LOCALHOST_CERT_COUNT: usize = 1;
 
-        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+    fn with_localhost_cert(roots: RootCertStore) -> RootCertStore {
+        let mut pem = test_tls::LOCALHOST_CERT_PEM;
+        rustls_pemfile::certs(&mut pem).fold(roots, |mut roots, cert| {
+            let cert = cert.expect("the embedded localhost.pem is well-formed PEM");
+            roots
+                .add(cert)
+                .expect("the embedded localhost.pem holds an X.509 certificate");
+            roots
+        })
+    }
 
-        let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
-            eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
-            return;
-        };
+    #[test]
+    fn with_localhost_cert_adds_the_embedded_certificate() {
+        let roots = with_localhost_cert(RootCertStore::empty());
 
-        let mut buf = std::io::BufReader::new(fd);
-        let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
-            .filter_map(Result::ok)
-            .collect();
-
-        let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
-        roots.add_parsable_certificates(certs);
+        assert_eq!(roots.len(), LOCALHOST_CERT_COUNT);
     }
 
     /// Ensures the committed localhost test certificate exists and is parseable as X.509.
@@ -812,7 +812,7 @@ mod tests {
     ///
     /// The cert/key pair is *test-only* and is stored under `test-data/`.
     /// This is used to verify that the client-side root-store injection
-    /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
+    /// (`with_localhost_cert`) actually enables successful TLS handshakes.
     fn load_test_server_config() -> std::sync::Arc<rustls::ServerConfig> {
         // Tests build rustls configs directly, outside client_tls_config's
         // install path.
@@ -851,7 +851,7 @@ mod tests {
     /// - Installs the rustls crypto provider to avoid provider
     ///   selection panics in test binaries.
     #[tokio::test]
-    async fn add_test_cert_to_roots_enables_tls_handshake() {
+    async fn with_localhost_cert_enables_tls_handshake() {
         use http_body_util::Full;
         use hyper::service::service_fn;
         use hyper_util::rt::TokioIo;
@@ -918,8 +918,7 @@ mod tests {
             .expect("server dropped before ready");
 
         // Build client root store and add the test cert.
-        let mut roots = rustls::RootCertStore::empty();
-        add_test_cert_to_roots(&mut roots);
+        let roots = with_localhost_cert(rustls::RootCertStore::empty());
 
         let client_config = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
@@ -1012,8 +1011,7 @@ mod tests {
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
-        let mut roots = mozilla_roots();
-        add_test_cert_to_roots(&mut roots);
+        let roots = with_localhost_cert(mozilla_roots());
         let (endpoint, dial) = indexer_endpoint(uri, roots)
             .expect("an https URI with a host and a port has a valid scheme and authority");
         let connect_res = endpoint.connect_with_connector(dial).await;
@@ -1125,8 +1123,7 @@ mod tests {
     async fn a_redial_through_the_indexer_connector_never_resumes() {
         let (listener, acceptor, uri) = localhost_h2_listener().await;
 
-        let mut roots = mozilla_roots();
-        add_test_cert_to_roots(&mut roots);
+        let roots = with_localhost_cert(mozilla_roots());
         let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots)
             .expect("an https URI with a host and a port has a valid scheme and authority");
 
@@ -1143,8 +1140,7 @@ mod tests {
     async fn a_redial_resumes_when_resumption_stays_enabled() {
         let (listener, acceptor, uri) = localhost_h2_listener().await;
 
-        let mut roots = mozilla_roots();
-        add_test_cert_to_roots(&mut roots);
+        let roots = with_localhost_cert(mozilla_roots());
         let mut resuming_config = client_tls_config(roots);
         resuming_config.resumption = rustls::client::Resumption::default();
         let dial = HttpsConnectorBuilder::new()
