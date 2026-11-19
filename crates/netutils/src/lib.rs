@@ -27,8 +27,11 @@
 use std::future::Future;
 use std::time::Duration;
 
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
+use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::Request;
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Channel, Endpoint};
+use tower::ServiceExt;
 
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
@@ -134,28 +137,79 @@ pub mod test_tls {
 /// no bound at all. Through `connect_with_connector` it wraps the whole
 /// connector, TLS included. This one is configured the way tonic's own would be
 /// for these endpoints.
-fn indexer_connector() -> hyper_util::client::legacy::connect::HttpConnector {
-    let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
+fn indexer_connector() -> HttpConnector {
+    let mut http = HttpConnector::new();
     http.enforce_http(false);
     http.set_nodelay(true);
     http
 }
 
-fn client_tls_config() -> ClientTlsConfig {
-    // The config built here is consumed by rustls at connect time; make
-    // sure a process-level CryptoProvider exists before that happens.
+fn mozilla_roots() -> rustls::RootCertStore {
+    rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned())
+}
+
+fn client_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
     ensure_default_crypto_provider();
-    // Allow self-signed certs in tests
-    #[cfg(test)]
-    {
-        ClientTlsConfig::new()
-            .ca_certificate(tonic::transport::Certificate::from_pem(
-                std::fs::read("test-data/localhost.pem").expect("test file"),
-            ))
-            .with_webpki_roots()
+    let mut config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    // Resumption MUST be set to disabled to stop us from resending
+    // tracking tokens to server when switching from wifi->cellular backhaul
+    config.resumption = rustls::client::Resumption::disabled();
+    config
+}
+
+type IndexerHttps = HttpsConnector<HttpConnector>;
+type IndexerStream = <IndexerHttps as tower::Service<http::Uri>>::Response;
+type IndexerDialError = <IndexerHttps as tower::Service<http::Uri>>::Error;
+
+const ALPN_H2: &[u8] = b"h2";
+
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP/2 was not negotiated.")]
+struct H2NotNegotiated;
+
+fn require_h2(stream: IndexerStream) -> Result<IndexerStream, IndexerDialError> {
+    let refused = match &stream {
+        MaybeHttpsStream::Https(tls) => tls.inner().get_ref().1.alpn_protocol() != Some(ALPN_H2),
+        MaybeHttpsStream::Http(_) => false,
+    };
+    if refused {
+        return Err(H2NotNegotiated.into());
     }
-    #[cfg(not(test))]
-    ClientTlsConfig::new().with_webpki_roots()
+    Ok(stream)
+}
+
+fn indexer_endpoint(
+    uri: http::Uri,
+    roots: rustls::RootCertStore,
+) -> Result<
+    (
+        Endpoint,
+        impl tower::Service<http::Uri, Response = IndexerStream, Error = IndexerDialError, Future: Send>
+        + Send
+        + 'static,
+    ),
+    GetClientError,
+> {
+    if !matches!(uri.scheme_str(), Some("http" | "https")) {
+        return Err(GetClientError::InvalidScheme);
+    }
+    let authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+    let endpoint = Endpoint::from_shared(format!("http://{authority}"))?
+        .origin(uri.clone())
+        .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
+    let https = HttpsConnectorBuilder::new()
+        .with_tls_config(client_tls_config(roots))
+        .https_or_http() // plaintext only for `http://` URIs, never a fallback
+        .enable_http2()
+        .wrap_connector(indexer_connector());
+    let dial = tower::service_fn(move |_tonic_dial: http::Uri| {
+        let dialed = https.clone().oneshot(uri.clone());
+        async move { dialed.await.and_then(require_h2) }
+    });
+    Ok((endpoint, dial))
 }
 
 /// Trait for communicating with a Zcash chain indexer.
@@ -340,58 +394,22 @@ pub struct GrpcIndexer {
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
-
-        let endpoint = Endpoint::from_shared(uri.to_string())?
-            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect_with_connector(indexer_connector()).await?;
-        let clear_net_client = CompactTxStreamerClient::new(channel);
-
-        Ok(Self { clear_net_client })
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        let channel = endpoint.connect_with_connector(dial).await?;
+        Ok(Self {
+            clear_net_client: CompactTxStreamerClient::new(channel),
+        })
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
     /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
-        let scheme = uri
-            .scheme_str()
-            .ok_or(GetClientError::InvalidScheme)?
-            .to_string();
-        if scheme != "http" && scheme != "https" {
-            return Err(GetClientError::InvalidScheme);
-        }
-        let _authority = uri
-            .authority()
-            .ok_or(GetClientError::InvalidAuthority)?
-            .clone();
-
-        let endpoint = Endpoint::from_shared(uri.to_string())?
-            .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
-        let endpoint = if scheme == "https" {
-            endpoint.tls_config(client_tls_config())?
-        } else {
-            endpoint
-        };
-        let channel = endpoint.connect_with_connector_lazy(indexer_connector());
-        let clear_net_client = CompactTxStreamerClient::new(channel);
-
-        Ok(Self { clear_net_client })
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        let channel = endpoint.connect_with_connector_lazy(dial);
+        Ok(Self {
+            clear_net_client: CompactTxStreamerClient::new(channel),
+        })
     }
 
     /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
@@ -709,24 +727,24 @@ mod tests {
 
     use crate::time::test::LOCAL_TLS_TEST_BOUND;
 
-    fn add_test_cert_to_roots(roots: &mut RootCertStore) {
-        use tonic::transport::CertificateDer;
-        eprintln!("Adding test cert to roots");
+    const LOCALHOST_CERT_COUNT: usize = 1;
 
-        const TEST_PEMFILE_PATH: &str = "test-data/localhost.pem";
+    fn with_localhost_cert(roots: RootCertStore) -> RootCertStore {
+        let mut pem = test_tls::LOCALHOST_CERT_PEM;
+        rustls_pemfile::certs(&mut pem).fold(roots, |mut roots, cert| {
+            let cert = cert.expect("the embedded localhost.pem is well-formed PEM");
+            roots
+                .add(cert)
+                .expect("the embedded localhost.pem holds an X.509 certificate");
+            roots
+        })
+    }
 
-        let Ok(fd) = std::fs::File::open(TEST_PEMFILE_PATH) else {
-            eprintln!("Test TLS cert not found at {TEST_PEMFILE_PATH}, skipping");
-            return;
-        };
+    #[test]
+    fn with_localhost_cert_adds_the_embedded_certificate() {
+        let roots = with_localhost_cert(RootCertStore::empty());
 
-        let mut buf = std::io::BufReader::new(fd);
-        let certs_bytes: Vec<tonic::transport::CertificateDer> = rustls_pemfile::certs(&mut buf)
-            .filter_map(Result::ok)
-            .collect();
-
-        let certs: Vec<CertificateDer<'_>> = certs_bytes.into_iter().collect();
-        roots.add_parsable_certificates(certs);
+        assert_eq!(roots.len(), LOCALHOST_CERT_COUNT);
     }
 
     /// Ensures the committed localhost test certificate exists and is parseable as X.509.
@@ -794,7 +812,7 @@ mod tests {
     ///
     /// The cert/key pair is *test-only* and is stored under `test-data/`.
     /// This is used to verify that the client-side root-store injection
-    /// (`add_test_cert_to_roots`) actually enables successful TLS handshakes.
+    /// (`with_localhost_cert`) actually enables successful TLS handshakes.
     fn load_test_server_config() -> std::sync::Arc<rustls::ServerConfig> {
         // Tests build rustls configs directly, outside client_tls_config's
         // install path.
@@ -833,7 +851,7 @@ mod tests {
     /// - Installs the rustls crypto provider to avoid provider
     ///   selection panics in test binaries.
     #[tokio::test]
-    async fn add_test_cert_to_roots_enables_tls_handshake() {
+    async fn with_localhost_cert_enables_tls_handshake() {
         use http_body_util::Full;
         use hyper::service::service_fn;
         use hyper_util::rt::TokioIo;
@@ -900,8 +918,7 @@ mod tests {
             .expect("server dropped before ready");
 
         // Build client root store and add the test cert.
-        let mut roots = rustls::RootCertStore::empty();
-        add_test_cert_to_roots(&mut roots);
+        let roots = with_localhost_cert(rustls::RootCertStore::empty());
 
         let client_config = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
@@ -994,23 +1011,151 @@ mod tests {
         let base = format!("https://127.0.0.1:{}", addr.port());
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
-        let endpoint = tonic::transport::Endpoint::from_shared(uri.to_string())
-            .expect("endpoint")
-            .tcp_nodelay(true);
-
-        let connect_res = endpoint
-            .tls_config(client_tls_config())
-            .expect("tls_config failed")
-            .connect()
-            .await;
+        let roots = with_localhost_cert(mozilla_roots());
+        let (endpoint, dial) = indexer_endpoint(uri, roots)
+            .expect("an https URI with a host and a port has a valid scheme and authority");
+        let connect_res = endpoint.connect_with_connector(dial).await;
 
         // A gRPC (HTTP/2) client must not succeed against an HTTP/1.1-only TLS server.
+        let Err(refusal) = connect_res else {
+            panic!("expected connect to fail (no downgrade to HTTP/1.1), but it succeeded");
+        };
         assert!(
-            connect_res.is_err(),
-            "expected connect to fail (no downgrade to HTTP/1.1), but it succeeded"
+            diag::chain_texts(&refusal)
+                .iter()
+                .any(|text| text == &H2NotNegotiated.to_string()),
+            "expected the ALPN refusal in the chain, got {refusal:?}"
         );
 
         server_task.abort();
+    }
+
+    const DIALS_PER_CONNECTOR: usize = 2;
+    const POST_HANDSHAKE_BYTES: &[u8] = b"t";
+
+    async fn localhost_h2_listener() -> (TcpListener, TlsAcceptor, http::Uri) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the loopback interface always has a free ephemeral port");
+        let port = listener
+            .local_addr()
+            .expect("a bound listener has a local address")
+            .port();
+        let uri = format!("https://127.0.0.1:{port}")
+            .parse::<http::Uri>()
+            .expect("an https scheme, a loopback address, and a port form a URI");
+
+        let mut server_config = std::sync::Arc::unwrap_or_clone(load_test_server_config());
+        server_config.alpn_protocols = vec![ALPN_H2.to_vec()];
+        let acceptor = TlsAcceptor::from(std::sync::Arc::new(server_config));
+
+        (listener, acceptor, uri)
+    }
+
+    async fn handshake_kinds_over_redials<D>(
+        mut dial: D,
+        uri: http::Uri,
+        listener: TcpListener,
+        acceptor: TlsAcceptor,
+    ) -> Vec<rustls::HandshakeKind>
+    where
+        D: tower::Service<http::Uri, Response = IndexerStream>,
+        D::Error: std::fmt::Debug,
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let server_task = tokio::spawn(async move {
+            let mut kinds = Vec::with_capacity(DIALS_PER_CONNECTOR);
+            for _ in 0..DIALS_PER_CONNECTOR {
+                let (socket, _) = listener
+                    .accept()
+                    .await
+                    .expect("the client dials this listener once per iteration");
+                let mut tls_stream = acceptor
+                    .accept(socket)
+                    .await
+                    .expect("the client trusts the localhost certificate and offers h2");
+                kinds.push(
+                    tls_stream
+                        .get_ref()
+                        .1
+                        .handshake_kind()
+                        .expect("an accepted TLS stream has completed its handshake"),
+                );
+                tls_stream
+                    .write_all(POST_HANDSHAKE_BYTES)
+                    .await
+                    .expect("the client holds the stream open until it reads these bytes");
+                let mut until_client_closes = Vec::new();
+                let _ = tls_stream.read_to_end(&mut until_client_closes).await;
+            }
+            kinds
+        });
+
+        let redials = async {
+            for _ in 0..DIALS_PER_CONNECTOR {
+                let stream = dial
+                    .ready()
+                    .await
+                    .expect("the connector is always ready")
+                    .call(uri.clone())
+                    .await
+                    .expect("the listener serves the localhost certificate over h2");
+                let mut stream = TokioIo::new(stream);
+                let mut received = [0u8; POST_HANDSHAKE_BYTES.len()];
+                stream
+                    .read_exact(&mut received)
+                    .await
+                    .expect("the server writes these bytes after every handshake");
+            }
+        };
+        timeout(LOCAL_TLS_TEST_BOUND, redials)
+            .await
+            .expect("loopback dials settle within the local TLS bound");
+
+        timeout(LOCAL_TLS_TEST_BOUND, server_task)
+            .await
+            .expect("the server ends once the last client stream closes")
+            .expect("the server task does not panic when every handshake succeeds")
+    }
+
+    #[tokio::test]
+    async fn a_redial_through_the_indexer_connector_never_resumes() {
+        let (listener, acceptor, uri) = localhost_h2_listener().await;
+
+        let roots = with_localhost_cert(mozilla_roots());
+        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots)
+            .expect("an https URI with a host and a port has a valid scheme and authority");
+
+        let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
+
+        assert_eq!(kinds.len(), DIALS_PER_CONNECTOR);
+        assert!(
+            !kinds.contains(&rustls::HandshakeKind::Resumed),
+            "the indexer connector resumed a TLS session: {kinds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_redial_resumes_when_resumption_stays_enabled() {
+        let (listener, acceptor, uri) = localhost_h2_listener().await;
+
+        let roots = with_localhost_cert(mozilla_roots());
+        let mut resuming_config = client_tls_config(roots);
+        resuming_config.resumption = rustls::client::Resumption::default();
+        let dial = HttpsConnectorBuilder::new()
+            .with_tls_config(resuming_config)
+            .https_or_http()
+            .enable_http2()
+            .wrap_connector(indexer_connector());
+
+        let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
+
+        assert_eq!(
+            kinds.last(),
+            Some(&rustls::HandshakeKind::Resumed),
+            "the control connector did not resume, so the test above proves nothing: {kinds:?}"
+        );
     }
 
     /// A path that goes silent while the channel is connecting must fail the

@@ -17,6 +17,154 @@ publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
 
+## bb149ecae37607151c6c51ef186880dcb884a0b9
+
+Since bb4b42def2f9be982f4bed4e231b8dd1148b2cd3.
+
+Audited `zingolib-ffi`, `pepper-sync`, `zingolib`, `zingolib-nym-proxy-ffi`, `zl-netutils`.
+
+### zingolib-ffi
+
+#### [Unreleased]
+
+##### Changed
+- **Breaking:** the package is `zingolib-ffi`, renamed from `zingo`, and its
+  proxy feature is `zingolib-nym-proxy-ffi`, renamed from `zingo-nym-proxy-ffi`.
+  The `[lib]` table pins the library name `zingo`, so the built libraries
+  (`libuniffi_zingo.so` on Android, `libzingo.a` on iOS), the UniFFI namespace
+  `zingo`, the Kotlin load name `uniffi_zingo`, the Kotlin package
+  `uniffi.zingo` and the Swift source `zingo.swift` with the `zingoFFI` module
+  are unchanged.
+- `default_indexer("mainnet")` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Added
+- `pending_spends` reports the wallet's outputs that its pending transactions
+  spend, derived from each pending transaction's inputs every time it is
+  called.
+
+##### Changed
+- BREAKING: the crate depends on `zl-memo`, `zl-status` and
+  `zl-netutils`, renamed from `zingo-memo`, `zingo-status` and
+  `zingo-netutils`. A consumer that names a type of those crates moves to
+  the new package names.
+- `scan_pending_transaction` records no spend on the wallet's outputs. A
+  pending transaction's spends derive through `pending_spends` from its
+  inputs, so `set_transactions_failed` releases them by the record's status
+  alone, and only the scan that finds a mined block records a spend on an
+  output. Truncation still resets recorded spends: it rescans the affected
+  blocks.
+
+##### Fixed
+- A Sync Session with `shutdown_on_completion` set no longer runs forever
+  after its last scan range is scanned. The scanner set the loader's
+  loading flag after it sent the scan task, so a loader that finished the
+  task first left the flag set, and the scan never completed. The scanner
+  alone now records the load it awaits from the loader, and the loader is
+  loading until that load arrives. The scan workers follow the same rule
+  for the scan results the scanner awaits from each of them.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::invariant_violations` reports every violated wallet
+  invariant: outputs stored under foreign txids, spends recorded on
+  transactions that do not carry the input, spends released by failed
+  transactions, and balance lines that disagree with the raw notes. The
+  zingolib-cli `doctor` command prints the list and its remedy.
+- The `GetStandardFee` RPC: at every connect (`go_online`,
+  `set_indexer_uri`, and construction against a configured indexer) the
+  client fetches the backend's standard fee report once and caches it in
+  wallet state, and `LightClient::standard_fee` reads the report back, or
+  `None` before first contact. Every proposal, shield, OP_RETURN send, and
+  migration now prices with the effective fee rule, whose marginal fee is
+  the backend's reported standard fee clamped between the ZIP 317 standard
+  marginal fee in force at the expected mining height and the weight-ratio
+  cap over it, so the wallet never pays below the standard and never pays
+  past the point where extra fee stops buying inclusion. The revision in
+  force follows ZIP 2009: Revision 1 prices at 5,000 zatoshi per logical
+  action with a weight-ratio cap of 4 (20,000), and Revision 2 prices at
+  1,000 zatoshi with a cap of 10 (10,000) from Mainnet block 3,590,000
+  (expected 19 November 2026); Testnet and a regtest chain reduce with
+  NU7 itself. A wallet that cannot name the mining height, a report whose
+  fee-estimator version is not the static one, a backend that does not
+  answer `GetStandardFee` (an old lightwalletd answers `Unimplemented`),
+  and any fetch failure all keep the revision's standard rule, and where
+  8.0.0 priced every transaction by the standard rule alone this release
+  keeps that posture: the connect itself never fails on the fee, and
+  there is no retry loop, the next connect fetches again.
+  Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
+  5,000 now raises the marginal fee to its report, at most to 20,000.
+
+##### Changed
+- **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
+  returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
+  selection checks a reservation in constant time. A consumer that indexed
+  or sorted the vector collects the set first.
+- `InputSource::select_spendable_notes` on `LightWallet` returns each pool's
+  notes in the order note selection takes them, which depends only on the
+  notes' values and output ids. It followed the iteration order of the
+  wallet's transaction map, which differed from run to run. A consumer that
+  shows the notes of a proposal sees a stable order.
+  client holds a `zl_netutils::NetworkAccess`, which owns `indexer_uri`
+- A pending transaction's spends of the wallet's notes derive from the
+  transaction's inputs each time they are read (`pepper_sync::pending_spends`),
+  and `spending_transaction` on a note records only a spend the scanner saw
+  in a scanned block. Balances, note selection, and the spend-status listings
+  read the two together, so a pending send shows its inputs spent until the
+  transaction confirms or fails, where 8.0.0 stored the pending spend on the
+  notes and every failure path erased it again.
+- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
+##### Fixed
+- A transaction the wallet believes failed, whose block later reaches the
+  wallet, lands as a spent note with no phantom unspent copy beside it: the
+  failure releases the input by status alone and the scan that sees the block
+  records the spend once. 8.0.0 reset the recorded spend on failure, so a
+  send mined at a height the wallet had already scanned (its block invisible
+  to a forward scan after a fork) left the spent note standing in the balance
+  as spendable.
+- Reading a wallet file below version 32 returns an `InvalidData` or
+  `UnexpectedEof` error where it panicked, when the file stores a corrupt
+  orchard nullifier, sapling rseed, sapling diversifier, address string or
+  witness-cache height, when a note is truncated, and when the wallet holds no
+  viewing key for a stored note's pool.
+
+### zingolib-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- **Breaking:** the package is `zingolib-nym-proxy-ffi`, renamed from
+  `zingo-nym-proxy-ffi`. The `[lib]` table pins the library name
+  `zingo_nym_proxy_ffi`, so the Android library `libzingo_nym_proxy_ffi.so`, the
+  UniFFI namespace `zingo_nym_proxy_ffi`, the Kotlin package
+  `uniffi.zingo_nym_proxy_ffi` and the Swift source `zingo_nym_proxy_ffi.swift`
+  with the `zingo_nym_proxy_ffiFFI` module are unchanged.
+
+### zl-netutils
+
+#### [Unreleased]
+
+##### Added
+- `Indexer::get_standard_fee` and `Socks5Indexer::get_standard_fee`, the
+  `GetStandardFee` RPC beside `get_lightd_info` on both transport routes.
+  It returns the backend's `StandardFee`: the ZIP 317 marginal fee,
+  zatoshis per logical action, the backend's `getstandardfee` RPC reports,
+  with the fee-estimator version. Backends predating the RPC answer
+  `Unimplemented`. The trait method is new and required, so out-of-tree
+  `Indexer` implementors must add it.
+
+##### Changed
+- BREAKING: the package is `zl-netutils` and its library
+  `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
 ## bb4b42def2f9be982f4bed4e231b8dd1148b2cd3
 
 Since 81d799775f11e882896e8710e8af12d6d4d29a41.
