@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    ops::Range,
+};
 
 use tokio::sync::mpsc;
 
@@ -37,7 +40,10 @@ use crate::engine::{
     TransparentCoinOps, WalletNoteOps,
 };
 use crate::{
-    client::{self, FetchRequest},
+    client::{
+        self, FetchRequest,
+        cover::{CoverFetch, CoverRequest},
+    },
     error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
@@ -47,7 +53,7 @@ use crate::{
     },
 };
 
-use super::{DecryptedNoteData, cover};
+use super::DecryptedNoteData;
 
 trait ShieldedOutputExt<D: Domain>: ShieldedOutput<D> {
     fn out_ciphertext(&self) -> [u8; 80];
@@ -131,7 +137,8 @@ fn stored_pending_transaction(
 
 /// Scans the transactions of `scan_targets`.
 ///
-/// Transactions missing from `pending_transactions` are fetched with [`cover::fetch_under_cover`].
+/// Transactions missing from `pending_transactions` are fetched under cover, with every transaction of each
+/// block of `scanned_heights` in the open group at the chain tip.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -143,6 +150,7 @@ pub(crate) async fn scan_transactions(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pending_transactions: &HashMap<TxId, Vec<u8>>,
+    scanned_heights: Range<BlockHeight>,
     chain_height: BlockHeight,
 ) -> Result<ScannedTransactions, ScanError> {
     let mut transactions = HashMap::with_capacity(scan_targets.len());
@@ -171,18 +179,25 @@ pub(crate) async fn scan_transactions(
             None => fetch_targets.push((scan_target.block_height(), txid)),
         }
     }
-    let cover::CoverFetch {
+    let cover_request = CoverRequest {
+        targets: fetch_targets,
+        scanned_heights,
+        timed_heights,
+        lowest_height: crate::wallet::PoolActivation::of(
+            consensus_parameters,
+            ShieldedPool::Sapling,
+        )
+        .map(|activation| activation.height()),
+        chain_height,
+    };
+    let CoverFetch {
         target_replies: mut fetched_transactions,
         block_times,
-    } = cover::fetch_under_cover(
-        fetch_request_sender.clone(),
-        &fetch_targets,
-        &timed_heights,
-        crate::wallet::PoolActivation::of(consensus_parameters, ShieldedPool::Sapling)
-            .map(|activation| activation.height()),
-        chain_height,
-    )
-    .await?;
+    } = if cover_request.is_empty() {
+        CoverFetch::default()
+    } else {
+        client::fetch_cover(fetch_request_sender.clone(), cover_request).await?
+    };
 
     for scan_target in scan_targets {
         let Some(txid) = scan_target.txid() else {
@@ -198,9 +213,11 @@ pub(crate) async fn scan_transactions(
                 continue;
             };
 
-            match fetched_transaction.and_then(|raw_transaction| {
-                client::parse_raw_transaction(consensus_parameters, &raw_transaction)
-            }) {
+            match fetched_transaction
+                .map_err(ServerError::RequestFailed)
+                .and_then(|raw_transaction| {
+                    client::parse_raw_transaction(consensus_parameters, &raw_transaction)
+                }) {
                 Ok(fetched) => fetched,
                 // the server answered that it does not serve the transaction. a consumer's target may name a txid
                 // that never existed, or one a re-org removed, and is dropped rather than failing every scan of its
@@ -801,7 +818,7 @@ mod tests {
 
     use zcash_primitives::block::BlockHash;
     use zcash_protocol::consensus::MAIN_NETWORK;
-    use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx, RawTransaction};
+    use zl_netutils::lightwallet_protocol::RawTransaction;
 
     use crate::{
         engine::{WalletBlockOps, WalletBlockParts},
@@ -811,107 +828,108 @@ mod tests {
     use super::*;
 
     const CHAIN_HEIGHT: BlockHeight = BlockHeight::from_u32(1_000_000);
+    const TARGET_HEIGHT: BlockHeight = BlockHeight::from_u32(500_004);
 
-    // A fetcher over a chain of empty blocks that answers every transaction request with `status`.
-    fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
+    type CoverRequestRecord = (Vec<(BlockHeight, TxId)>, Vec<BlockHeight>);
+    type CoverRequestLog = Arc<Mutex<Vec<CoverRequestRecord>>>;
+
+    /// Spawns a fetcher that answers cover requests and records their targets and timed heights.
+    ///
+    /// The reply serves `served` and answers every other target with `status`.
+    fn cover_fetcher(
+        served: Option<&TransactionRecord>,
+        status: tonic::Status,
+    ) -> (mpsc::UnboundedSender<FetchRequest>, CoverRequestLog) {
+        let served = served.map(|served| {
+            let mut data = Vec::new();
+            served
+                .transaction()
+                .write(&mut data)
+                .expect("a write to a vector does not fail");
+            (served.txid(), data)
+        });
         let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        let requests = CoverRequestLog::default();
+        let log = Arc::clone(&requests);
         tokio::spawn(async move {
             while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::Transaction(reply_sender, _) => {
-                        let _ignore_error = reply_sender.send(Err(status.clone()));
-                    }
-                    FetchRequest::CompactBlock(reply_sender, block_height) => {
-                        let _ignore_error = reply_sender.send(Ok(CompactBlock {
-                            height: u64::from(block_height),
-                            ..Default::default()
-                        }));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
+                let FetchRequest::Cover(reply_sender, request) = fetch_request else {
+                    panic!("unexpected fetch request");
+                };
+                let target_replies = request
+                    .targets
+                    .iter()
+                    .map(|(height, txid)| {
+                        let reply = match &served {
+                            Some((served_txid, data)) if served_txid == txid => {
+                                Ok(RawTransaction {
+                                    data: data.clone(),
+                                    height: u64::from(*height),
+                                })
+                            }
+                            _ => Err(status.clone()),
+                        };
+                        (*txid, reply)
+                    })
+                    .collect();
+                let block_times = request
+                    .timed_heights
+                    .iter()
+                    .map(|height| (*height, 0))
+                    .collect();
+                log.lock()
+                    .expect("no holder of the request log panics")
+                    .push((request.targets, request.timed_heights));
+                let _ignore_error = reply_sender.send(Ok(CoverFetch {
+                    target_replies,
+                    block_times,
+                }));
             }
         });
-        fetch_request_sender
+
+        (fetch_request_sender, requests)
     }
 
-    async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {
-        scan_against(scan_target, tonic::Status::not_found("no such transaction")).await
+    fn requests(log: &CoverRequestLog) -> Vec<CoverRequestRecord> {
+        log.lock()
+            .expect("no holder of the request log panics")
+            .clone()
     }
 
-    async fn scan_against(
+    async fn scan(
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         scan_target: ScanTarget,
-        status: tonic::Status,
+        pending_transactions: &HashMap<TxId, Vec<u8>>,
+        wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     ) -> Result<ScannedTransactions, ScanError> {
         scan_transactions(
-            fetcher_answering(status),
+            fetch_request_sender,
             &MAIN_NETWORK,
             &HashMap::new(),
             BTreeSet::from([scan_target]),
             DecryptedNoteData::new(),
-            &BTreeMap::new(),
+            wallet_blocks,
             &mut BTreeMap::new(),
             HashMap::new(),
-            &HashMap::new(),
+            pending_transactions,
+            CHAIN_HEIGHT..CHAIN_HEIGHT,
             CHAIN_HEIGHT,
         )
         .await
     }
 
-    #[tokio::test]
-    async fn an_external_target_the_server_does_not_serve_is_dropped() {
-        let scan_target =
-            ScanTarget::new(BlockHeight::from_u32(100), Some(TxId::from_bytes([1; 32])));
-
-        let scanned = scan(scan_target).await.unwrap();
-
-        assert!(scanned.transactions.is_empty());
-        assert_eq!(scanned.dropped_targets, BTreeSet::from([scan_target]));
+    async fn scan_unserved(
+        scan_target: ScanTarget,
+        status: tonic::Status,
+    ) -> Result<ScannedTransactions, ScanError> {
+        scan(
+            cover_fetcher(None, status).0,
+            scan_target,
+            &HashMap::new(),
+            &BTreeMap::new(),
+        )
+        .await
     }
-
-    // The transaction came from the served data, so the server not serving it is an inconsistency in that
-    // data, reported with the recommendation to change server.
-    #[tokio::test]
-    async fn an_internal_target_the_server_does_not_serve_is_an_inconsistency() {
-        let txid = TxId::from_bytes([1; 32]);
-        let scan_target = ScanTarget::internal(BlockHeight::from_u32(100), txid);
-
-        assert!(matches!(
-            scan(scan_target).await,
-            Err(ScanError::TransactionNotServed { txid: unserved, block_height, status })
-                if unserved == txid
-                    && block_height == BlockHeight::from_u32(100)
-                    && status.code() == tonic::Code::NotFound
-        ));
-    }
-
-    // Network weather is not an answer about the transaction: the request failure is reported as the transient
-    // failure it is, and a consumer's target is not dropped for it.
-    #[tokio::test]
-    async fn network_weather_is_reported_and_drops_no_target() {
-        for scan_target in [
-            ScanTarget::new(BlockHeight::from_u32(100), Some(TxId::from_bytes([1; 32]))),
-            ScanTarget::internal(BlockHeight::from_u32(100), TxId::from_bytes([1; 32])),
-        ] {
-            assert!(matches!(
-                scan_against(scan_target, tonic::Status::unavailable("down")).await,
-                Err(ScanError::ServerError(ServerError::RequestFailed(status)))
-                    if status.code() == tonic::Code::Unavailable
-            ));
-        }
-    }
-
-    #[tokio::test]
-    async fn a_target_without_a_txid_fetches_no_transaction() {
-        let scanned = scan(ScanTarget::new(BlockHeight::from_u32(100), None))
-            .await
-            .unwrap();
-
-        assert!(scanned.transactions.is_empty());
-        assert!(scanned.dropped_targets.is_empty());
-    }
-
-    const TARGET_HEIGHT: BlockHeight = BlockHeight::from_u32(500_004);
-    const COVER_TXID: TxId = TxId::from_bytes([7; 32]);
 
     fn pending_record() -> TransactionRecord {
         let status = ConfirmationStatus::Transmitted(TARGET_HEIGHT);
@@ -942,91 +960,6 @@ mod tests {
         )])
     }
 
-    fn recording_fetcher(
-        served: &TransactionRecord,
-    ) -> (mpsc::UnboundedSender<FetchRequest>, Arc<Mutex<Vec<TxId>>>) {
-        let served_txid = served.txid();
-        let mut served_data = Vec::new();
-        served
-            .transaction()
-            .write(&mut served_data)
-            .expect("a write to a vector does not fail");
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        let requested = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&requested);
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::CompactBlock(reply_sender, block_height) => {
-                        let vtx = if block_height == TARGET_HEIGHT {
-                            [COVER_TXID, served_txid]
-                                .iter()
-                                .map(|txid| CompactTx {
-                                    txid: txid.as_ref().to_vec(),
-                                    ..Default::default()
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
-                        let _ignore_error = reply_sender.send(Ok(CompactBlock {
-                            height: u64::from(block_height),
-                            vtx,
-                            ..Default::default()
-                        }));
-                    }
-                    FetchRequest::Transaction(reply_sender, txid) => {
-                        log.lock()
-                            .expect("no holder of the request log panics")
-                            .push(txid);
-                        let reply = if txid == served_txid {
-                            Ok(RawTransaction {
-                                data: served_data.clone(),
-                                height: u64::from(TARGET_HEIGHT),
-                            })
-                        } else {
-                            Err(tonic::Status::not_found("no such transaction"))
-                        };
-                        let _ignore_error = reply_sender.send(reply);
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-
-        (fetch_request_sender, requested)
-    }
-
-    async fn scan_with_pending(
-        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-        scan_target: ScanTarget,
-        pending_transactions: &HashMap<TxId, Vec<u8>>,
-        wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
-        outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
-    ) -> ScannedTransactions {
-        scan_transactions(
-            fetch_request_sender,
-            &MAIN_NETWORK,
-            &HashMap::new(),
-            BTreeSet::from([scan_target]),
-            DecryptedNoteData::new(),
-            wallet_blocks,
-            outpoint_map,
-            HashMap::new(),
-            pending_transactions,
-            CHAIN_HEIGHT,
-        )
-        .await
-        .expect("the fetcher serves the target and every block of its cover range")
-    }
-
-    fn requested_txids(requested: &Arc<Mutex<Vec<TxId>>>) -> Vec<TxId> {
-        requested
-            .lock()
-            .expect("no holder of the request log panics")
-            .clone()
-    }
-
     fn assert_confirmed_at_target_height(scanned: &ScannedTransactions, txid: TxId) {
         assert_eq!(
             scanned.transactions.keys().copied().collect::<Vec<_>>(),
@@ -1039,81 +972,109 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_external_target_the_server_does_not_serve_is_dropped() {
+        let scan_target = ScanTarget::new(TARGET_HEIGHT, Some(TxId::from_bytes([1; 32])));
+
+        let scanned = scan_unserved(scan_target, tonic::Status::not_found("no such transaction"))
+            .await
+            .expect("an unserved external target fails no scan");
+
+        assert!(scanned.transactions.is_empty());
+        assert_eq!(scanned.dropped_targets, BTreeSet::from([scan_target]));
+    }
+
+    #[tokio::test]
+    async fn an_internal_target_the_server_does_not_serve_is_an_error() {
+        let txid = TxId::from_bytes([1; 32]);
+
+        assert!(matches!(
+            scan_unserved(
+                ScanTarget::internal(TARGET_HEIGHT, txid),
+                tonic::Status::not_found("no such transaction")
+            )
+            .await,
+            Err(ScanError::TransactionNotServed { txid: unserved, block_height, status })
+                if unserved == txid
+                    && block_height == TARGET_HEIGHT
+                    && status.code() == tonic::Code::NotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn network_weather_is_an_error_and_drops_no_target() {
+        for scan_target in [
+            ScanTarget::new(TARGET_HEIGHT, Some(TxId::from_bytes([1; 32]))),
+            ScanTarget::internal(TARGET_HEIGHT, TxId::from_bytes([1; 32])),
+        ] {
+            assert!(matches!(
+                scan_unserved(scan_target, tonic::Status::unavailable("down")).await,
+                Err(ScanError::ServerError(ServerError::RequestFailed(status)))
+                    if status.code() == tonic::Code::Unavailable
+            ));
+        }
+    }
+
+    #[tokio::test]
     async fn a_stored_pending_transaction_is_scanned_without_a_request() {
         let pending_record = pending_record();
         let txid = pending_record.txid();
         let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
         drop(fetch_request_receiver);
 
-        let scanned = scan_with_pending(
+        let scanned = scan(
             fetch_request_sender,
             ScanTarget::internal(TARGET_HEIGHT, txid),
             &serialize_pending_transactions([&pending_record].into_iter()),
             &block_at_target_height(),
-            &mut BTreeMap::new(),
         )
-        .await;
+        .await
+        .expect("a scan that sends no request fails on no reply");
 
         assert_confirmed_at_target_height(&scanned, txid);
     }
 
     #[tokio::test]
-    async fn a_stored_pending_transaction_in_an_unheld_block_requests_no_transaction() {
+    async fn a_stored_pending_transaction_in_a_missing_block_requests_the_block_time_only() {
         let pending_record = pending_record();
         let txid = pending_record.txid();
-        let (fetch_request_sender, requested) = recording_fetcher(&pending_record);
+        let (fetch_request_sender, log) =
+            cover_fetcher(None, tonic::Status::not_found("no such transaction"));
 
-        let scanned = scan_with_pending(
+        let scanned = scan(
             fetch_request_sender,
             ScanTarget::internal(TARGET_HEIGHT, txid),
             &serialize_pending_transactions([&pending_record].into_iter()),
             &BTreeMap::new(),
-            &mut BTreeMap::new(),
         )
-        .await;
+        .await
+        .expect("the fetcher answers the block time");
 
-        assert!(requested_txids(&requested).is_empty());
+        assert_eq!(requests(&log), vec![(Vec::new(), vec![TARGET_HEIGHT])]);
         assert_confirmed_at_target_height(&scanned, txid);
     }
 
     #[tokio::test]
-    async fn a_consumers_target_is_requested_whatever_the_wallet_stores() {
+    async fn an_external_target_is_requested_even_if_stored() {
         let pending_record = pending_record();
         let txid = pending_record.txid();
-        let (fetch_request_sender, requested) = recording_fetcher(&pending_record);
+        let (fetch_request_sender, log) = cover_fetcher(
+            Some(&pending_record),
+            tonic::Status::not_found("no such transaction"),
+        );
 
-        let scanned = scan_with_pending(
+        let scanned = scan(
             fetch_request_sender,
             ScanTarget::new(TARGET_HEIGHT, Some(txid)),
             &serialize_pending_transactions([&pending_record].into_iter()),
             &block_at_target_height(),
-            &mut BTreeMap::new(),
         )
-        .await;
+        .await
+        .expect("the fetcher serves the target");
 
-        assert_eq!(requested_txids(&requested), vec![COVER_TXID, txid]);
+        assert_eq!(
+            requests(&log),
+            vec![(vec![(TARGET_HEIGHT, txid)], Vec::new())]
+        );
         assert_confirmed_at_target_height(&scanned, txid);
-    }
-
-    #[tokio::test]
-    async fn cover_transactions_are_requested_and_stay_out_of_the_scan() {
-        let served = pending_record();
-        let txid = served.txid();
-        let (fetch_request_sender, requested) = recording_fetcher(&served);
-        let mut outpoint_map = BTreeMap::new();
-
-        let scanned = scan_with_pending(
-            fetch_request_sender,
-            ScanTarget::internal(TARGET_HEIGHT, txid),
-            &HashMap::new(),
-            &block_at_target_height(),
-            &mut outpoint_map,
-        )
-        .await;
-
-        assert_eq!(requested_txids(&requested), vec![COVER_TXID, txid]);
-        assert_confirmed_at_target_height(&scanned, txid);
-        assert!(scanned.dropped_targets.is_empty());
-        assert!(outpoint_map.is_empty());
     }
 }

@@ -49,9 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it through `zl-common`.
 
 - A scan requests a wallet transaction together with every transaction in
-  its cover range of ten blocks.
-- A scan confirms a pending wallet transaction from the stored copy, with no
-  request to the server.
+  its cover group, a run of blocks with 128 shielded outputs.
+- A scan requests every transaction of each block it scans in the open
+  group at the chain tip.
+- A scan confirms a pending wallet transaction from the stored copy.
 
 ### Deprecated
 

@@ -283,8 +283,10 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
+const COVER_GROUP_OUTPUTS: usize = 128;
+
 #[tokio::test]
-async fn sent_transactions_are_never_requested_by_txid() {
+async fn a_sent_transaction_in_a_closed_group_is_never_requested() {
     let mut net = MockNet::launch().await;
     let mut sender = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
     let recipient = synthetic_wallet::external_address(PoolType::ORCHARD);
@@ -294,7 +296,11 @@ async fn sent_transactions_are_never_requested_by_txid() {
             .await
             .unwrap(),
     );
-    net.chain.write().await.mine_mempool();
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        chain.mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    }
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, i: 70_000 o: 0 s: 0 t: 0);
 
@@ -313,7 +319,11 @@ async fn sent_transactions_are_never_requested_by_txid() {
         .await
         .unwrap(),
     );
-    net.chain.write().await.mine_mempool();
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        chain.mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    }
     sender.sync_and_await().await.unwrap();
     check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
 
@@ -326,32 +336,42 @@ async fn sent_transactions_are_never_requested_by_txid() {
 }
 
 #[tokio::test]
-async fn a_received_transaction_is_requested_with_its_whole_cover_range() {
+async fn a_received_transaction_is_requested_with_its_whole_group() {
     let mut net = MockNet::launch().await;
     let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
     let other_wallet = synthetic_wallet::external_address(PoolType::ORCHARD);
-    net.chain.write().await.mine_empty_blocks(4);
+    // heights 1 and 2: a closed group that pays another wallet
     fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
-    net.chain.write().await.mine_empty_blocks(6);
+    net.chain
+        .write()
+        .await
+        .mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    // heights 3 to 6: a closed group that pays another wallet and the recipient
     fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
-    fund_client(&net, &recipient, &[(PoolType::ORCHARD, FUNDING)], 6).await;
-    assert_eq!(net.chain.read().await.tip(), 20);
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, FUNDING)], 0).await;
+    net.chain
+        .write()
+        .await
+        .mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    // height 7: the open group at the tip, which pays another wallet
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    assert_eq!(net.chain.read().await.tip(), 7);
 
     recipient.sync_and_await().await.unwrap();
     check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
 
-    let cover_range_txids = net.chain.read().await.mined_txids(10..20);
-    assert_eq!(cover_range_txids.len(), 2);
+    let expected_requests = net.chain.read().await.mined_txids(3..8);
+    assert_eq!(expected_requests.len(), 4);
     assert_eq!(
         net.chain.read().await.transaction_request_log(),
-        cover_range_txids
+        expected_requests
     );
 
     recipient.rescan_and_await().await.unwrap();
     check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
     assert_eq!(
         net.chain.read().await.transaction_request_log(),
-        [cover_range_txids.clone(), cover_range_txids].concat()
+        [expected_requests.clone(), expected_requests].concat()
     );
 }
 

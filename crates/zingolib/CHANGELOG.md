@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - A Sync Session requests a received transaction together with its Cover
-  Range, and sends no request for a transaction the wallet built.
+  Group, and requests every transaction of each new block at the chain tip.
 - **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
   `TransactionRecord`, and every zingolib signature that named it names
   `TransactionRecord` now, the `LightWallet::wallet_transactions` field

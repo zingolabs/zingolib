@@ -15,7 +15,11 @@ use zl_netutils::{
     },
 };
 
-use crate::client::FetchRequest;
+use crate::client::{
+    FetchRequest, MAX_RETRIES,
+    cover::{self, CoverCache, CoverSource},
+    next_stream_item,
+};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
@@ -34,6 +38,7 @@ pub(crate) async fn fetch<C>(
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
+    let mut cover_cache = CoverCache::default();
 
     loop {
         // `fetcher` returns `Ok` here when all requests have successfully been fetched and the
@@ -45,7 +50,7 @@ pub(crate) async fn fetch<C>(
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, request).await;
+            fetch_from_server(&mut client, &mut cover_cache, request).await;
         }
     }
 }
@@ -96,8 +101,11 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 }
 
 //
-async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
-where
+async fn fetch_from_server<C>(
+    client: &mut C,
+    cover_cache: &mut CoverCache,
+    fetch_request: FetchRequest,
+) where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     match fetch_request {
@@ -140,10 +148,10 @@ where
             let tree_state = get_tree_state(client, block_height).await;
             let _ignore_error = sender.send(tree_state);
         }
-        FetchRequest::Transaction(sender, txid) => {
-            tracing::debug!("Fetching transaction. {:?}", txid);
-            let transaction = get_transaction(client, txid).await;
-            let _ignore_error = sender.send(transaction);
+        FetchRequest::Cover(sender, request) => {
+            tracing::debug!("Fetching transactions under cover. {:?}", &request);
+            let cover_fetch = cover::fetch(&mut IndexerSource(client), cover_cache, request).await;
+            let _ignore_error = sender.send(cover_fetch);
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
             tracing::debug!(
@@ -307,6 +315,57 @@ where
         .await
 }
 
+const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
+
+/// Sends `request` again after each refusal that carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
+async fn retry_snapshot_races<F>(
+    mut request: impl FnMut() -> F,
+) -> Result<RawTransaction, tonic::Status>
+where
+    F: Future<Output = Result<RawTransaction, tonic::Status>>,
+{
+    let mut retry_count = 0;
+    loop {
+        match request().await {
+            Err(status)
+                if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
+            {
+                retry_count += 1;
+            }
+            reply => break reply,
+        }
+    }
+}
+
+struct IndexerSource<'a, C>(&'a mut C);
+
+impl<C> CoverSource for IndexerSource<'_, C>
+where
+    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+{
+    async fn compact_blocks(
+        &mut self,
+        block_range: Range<BlockHeight>,
+    ) -> Result<Vec<CompactBlock>, tonic::Status> {
+        let mut block_stream = get_block_range(self.0, block_range, true).await?;
+        let mut compact_blocks = Vec::new();
+        while let Some(compact_block) = next_stream_item(&mut block_stream, "cover block").await? {
+            compact_blocks.push(compact_block);
+        }
+
+        Ok(compact_blocks)
+    }
+
+    async fn transaction(&mut self, txid: TxId) -> Result<RawTransaction, tonic::Status> {
+        let client = self.0.clone();
+        retry_snapshot_races(|| {
+            let mut client = client.clone();
+            async move { get_transaction(&mut client, txid).await }
+        })
+        .await
+    }
+}
+
 async fn get_transaction<C>(client: &mut C, txid: TxId) -> Result<RawTransaction, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
@@ -385,4 +444,57 @@ where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client.get_mempool_stream().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot_race() -> tonic::Status {
+        tonic::Status::unknown(
+            "Chain index error: unavailable: mempool is not coherent with the requested \
+             snapshot; retry with a fresh snapshot",
+        )
+    }
+
+    async fn status_after(replies: Vec<tonic::Status>) -> tonic::Status {
+        let mut replies = replies.into_iter();
+        retry_snapshot_races(|| {
+            let status = replies.next().expect("no request beyond the script");
+            async move { Err(status) }
+        })
+        .await
+        .expect_err("every scripted reply is an error")
+    }
+
+    #[tokio::test]
+    async fn a_snapshot_race_is_retried_up_to_the_ceiling() {
+        let within_ceiling = (0..MAX_RETRIES)
+            .map(|_| snapshot_race())
+            .chain([tonic::Status::not_found("gone")])
+            .collect();
+        assert_eq!(
+            status_after(within_ceiling).await.code(),
+            tonic::Code::NotFound
+        );
+
+        let beyond_ceiling = (0..=MAX_RETRIES)
+            .map(|_| snapshot_race())
+            .chain([tonic::Status::not_found("never asked")])
+            .collect();
+        assert_eq!(
+            status_after(beyond_ceiling).await.code(),
+            tonic::Code::Unknown
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unrelated_failure_is_not_retried() {
+        assert_eq!(
+            status_after(vec![tonic::Status::internal("broken")])
+                .await
+                .code(),
+            tonic::Code::Internal
+        );
+    }
 }

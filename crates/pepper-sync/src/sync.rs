@@ -2845,6 +2845,33 @@ mod test {
     /// A local network with every upgrade active from block 1.
     const NETWORK: LocalNetwork = activated_at(1);
 
+    /// Serves `data` for every target of `request`, at the height of the target.
+    fn cover_reply(
+        request: &crate::client::cover::CoverRequest,
+        data: &[u8],
+    ) -> crate::client::cover::CoverFetch {
+        crate::client::cover::CoverFetch {
+            target_replies: request
+                .targets
+                .iter()
+                .map(|(height, txid)| {
+                    let raw_transaction = zl_netutils::lightwallet_protocol::RawTransaction {
+                        data: data.to_vec(),
+                        height: u64::from(*height),
+                    };
+                    (*txid, Ok(raw_transaction))
+                })
+                .collect(),
+            block_times: request
+                .targets
+                .iter()
+                .map(|(height, _)| *height)
+                .chain(request.timed_heights.iter().copied())
+                .map(|height| (height, 0))
+                .collect(),
+        }
+    }
+
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
     /// completion is the sync task's own terminal condition (sync has
     /// started and every scan range is `Scanned`), independent of the
@@ -4107,7 +4134,6 @@ mod test {
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{CompactBlock, RawTransaction};
 
         use crate::{
             client::FetchRequest,
@@ -4188,7 +4214,7 @@ mod test {
             )])
         }
 
-        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`, over a chain of empty blocks.
+        /// Answers cover requests with `transaction` for every target.
         fn spawn_fetcher(transaction: &TransactionRecord) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
@@ -4196,17 +4222,9 @@ mod test {
             tokio::spawn(async move {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
-                        FetchRequest::Transaction(reply_sender, _txid) => {
-                            let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                data: data.clone(),
-                                height: u64::from(SPEND_HEIGHT),
-                            }));
-                        }
-                        FetchRequest::CompactBlock(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(CompactBlock {
-                                height: u64::from(block_height),
-                                ..Default::default()
-                            }));
+                        FetchRequest::Cover(reply_sender, request) => {
+                            let _ignore_error =
+                                reply_sender.send(Ok(super::cover_reply(&request, &data)));
                         }
                         _ => panic!("unexpected fetch request"),
                     }
@@ -5237,7 +5255,7 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{CompactBlock, RawTransaction, TreeState};
+        use zl_netutils::lightwallet_protocol::TreeState;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5303,20 +5321,12 @@ mod test {
                                 ..Default::default()
                             }));
                         }
-                        FetchRequest::Transaction(reply_sender, _txid) => {
+                        FetchRequest::Cover(reply_sender, request) => {
                             // the request fails when the reply sender is dropped.
                             if let Some(data) = &spending_transaction_data {
-                                let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                    data: data.clone(),
-                                    height: u64::from(SPEND_HEIGHT),
-                                }));
+                                let _ignore_error =
+                                    reply_sender.send(Ok(super::cover_reply(&request, data)));
                             }
-                        }
-                        FetchRequest::CompactBlock(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(CompactBlock {
-                                height: u64::from(block_height),
-                                ..Default::default()
-                            }));
                         }
                         _ => panic!("unexpected fetch request"),
                     }
