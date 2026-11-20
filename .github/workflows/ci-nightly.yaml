@@ -155,8 +155,8 @@ jobs:
           ZINGO_NYM_PROXY: ${{ github.workspace }}/target/release/nym-proxy
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
-            --package libtonode-tests --package zingolib \
-            --features libtonode-tests/testnet,zingolib/nym \
+            --package zingolib \
+            --features zingolib/testnet \
             --run-ignored all \
             -E 'binary(testnet) | test(live_staged_probe_smoke)' \
             2>&1 | tee testnet-cells.log

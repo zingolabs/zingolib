@@ -4196,23 +4196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libtonode-tests"
-version = "0.2.0"
-dependencies = [
- "http 1.5.0",
- "incrementalmerkletree",
- "pepper-sync",
- "shardtree",
- "tokio",
- "tracing-subscriber",
- "zcash_protocol",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
- "zl-netutils",
-]
-
-[[package]]
 name = "lightwallet-protocol"
 version = "0.5.0"
 source = "git+https://github.com/zingolabs/lightwallet-protocol-rust?rev=554197558c1fac19554c8c38d01479d2b82b9a38#554197558c1fac19554c8c38d01479d2b82b9a38"
