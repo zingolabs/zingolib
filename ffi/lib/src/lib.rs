@@ -172,15 +172,13 @@ fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
 /// every `io::Error` on the way is opened directly.
 fn open_error(error: &LightClientError) -> ZingolibError {
     let file_io = match error {
-        LightClientError::FileError(io) => Some(io),
+        LightClientError::FileError(io) => Some(io as &(dyn std::error::Error + 'static)),
         _ => None,
     };
-    let chain = std::iter::successors(Some(error as &(dyn std::error::Error + 'static)), |cause| {
-        cause.source()
-    });
-    let mismatch = file_io
+    let mismatch = [Some(error as &(dyn std::error::Error + 'static)), file_io]
         .into_iter()
-        .chain(chain.filter_map(|cause| cause.downcast_ref::<std::io::Error>()))
+        .flat_map(|start| std::iter::successors(start, |cause| cause.source()))
+        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
         .filter_map(std::io::Error::get_ref)
         .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
     if mismatch {
@@ -1220,6 +1218,40 @@ mod cause_chain_tests {
             "invalid account id",
         ));
         assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+    }
+
+    #[test]
+    fn a_chain_mismatch_behind_a_second_failed_reading_opens_as_a_chain_mismatch() {
+        const MISMATCH_TEXT: &str = "wallet chain name mainnet doesn't match expected testnet";
+        const ONCE: usize = 1;
+
+        #[derive(Debug, thiserror::Error)]
+        #[error(
+            "read as another layout: tail did not parse; read as the canonical layout: {canonical}"
+        )]
+        struct BothReadingsFailed {
+            #[source]
+            canonical: std::io::Error,
+        }
+
+        let canonical = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            zingolib::wallet::disk::ChainMismatch {
+                saved: "mainnet".to_string(),
+                expected: "testnet".to_string(),
+            },
+        );
+        let refusal = LightClientError::FileError(std::io::Error::new(
+            canonical.kind(),
+            BothReadingsFailed { canonical },
+        ));
+
+        let error = open_error(&refusal);
+        assert!(
+            matches!(&error, ZingolibError::WalletChainMismatch(text)
+                if text.matches(MISMATCH_TEXT).count() == ONCE),
+            "{error:?}"
+        );
     }
 
     #[test]

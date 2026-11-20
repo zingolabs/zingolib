@@ -106,7 +106,10 @@ impl std::fmt::Display for AmbiguousV42Tail {
 impl std::error::Error for AmbiguousV42Tail {}
 
 #[derive(Debug, thiserror::Error)]
-#[error("{canonical}; read as the pre-release version 42 layout: {pre_release}")]
+#[error(
+    "read as the pre-release version 42 layout: {pre_release}; \
+     read as the canonical version 42 layout: {canonical}"
+)]
 pub struct UnreadableV42Tail {
     #[source]
     pub canonical: Error,
@@ -1098,6 +1101,7 @@ mod tests {
     use super::{AmbiguousV42Tail, UnreadableV42Tail, V42Layout, V42Tail, chain_mismatch};
     use crate::ChainMismatch;
     use crate::{RawMigration, WalletFile};
+    use std::{error::Error as _, io};
     use zl_common::{chain::ChainType, price::PriceList};
 
     const ALLOW_V6_TRANSACTIONS_FALSE: u8 = 0;
@@ -1261,18 +1265,35 @@ mod tests {
     #[test]
     fn the_source_of_an_unreadable_version_42_tail_is_the_canonical_error() {
         let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
-        let pre_release = std::io::Error::other("tail did not parse");
+        let pre_release = io::Error::other("tail did not parse");
 
         let refusal = V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
             .into_tail()
             .expect_err("a tail that parses in neither layout is refused");
 
-        let canonical_cause = std::error::Error::source(&refusal)
-            .and_then(|source| source.downcast_ref::<std::io::Error>())
-            .and_then(std::io::Error::get_ref);
+        let canonical_cause = refusal
+            .source()
+            .and_then(|source| source.downcast_ref::<io::Error>())
+            .and_then(io::Error::get_ref);
         assert!(
             canonical_cause.is_some_and(|inner| inner.is::<ChainMismatch>()),
             "a walk of the source chain must reach the cause of the canonical reading"
+        );
+    }
+
+    #[test]
+    fn the_text_of_an_unreadable_version_42_tail_ends_with_its_source() {
+        let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
+        let canonical_text = canonical.to_string();
+        let pre_release = io::Error::other("tail did not parse");
+
+        let refusal = V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
+            .into_tail()
+            .expect_err("a tail that parses in neither layout is refused");
+
+        assert!(
+            refusal.to_string().ends_with(&canonical_text),
+            "a walker that skips a source the text already ends with must not repeat it: {refusal}"
         );
     }
 
