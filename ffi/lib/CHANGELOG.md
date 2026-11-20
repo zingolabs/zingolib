@@ -95,7 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zingo`, the Kotlin load name `uniffi_zingo`, the Kotlin package
   `uniffi.zingo` and the Swift source `zingo.swift` with the `zingoFFI` module
   are unchanged.
-- `default_indexer("mainnet")` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 - **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
   `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
   `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
@@ -150,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `serveruri: String`. `Offline` disconnects the session through
   `go_offline` instead of binding a never-dialed placeholder URI, `Default`
   attaches to the chain's Default Indexer (mainnet's is
-  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `https://zec.global:443`; a chain without one fails
   `InvalidInput`), and `Named` carries the URI the string carried before
   (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
   label `serveruri`, so the Swift label stays `serveruri:`.

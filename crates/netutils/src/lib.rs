@@ -1,5 +1,5 @@
 //! A complete [`Indexer`] abstraction for communicating with Zcash chain
-//! indexers (`zainod`).
+//! indexers (`zingod`).
 //!
 //! # Organizing principle
 //!
