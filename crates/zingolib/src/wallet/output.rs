@@ -68,6 +68,14 @@ impl OutputRef {
     }
 }
 
+fn output_ids_of_pool(output_refs: &[OutputRef], pool_type: PoolType) -> HashSet<OutputId> {
+    output_refs
+        .iter()
+        .filter(|output_ref| output_ref.pool_type() == pool_type)
+        .map(OutputRef::output_id)
+        .collect()
+}
+
 impl std::fmt::Display for OutputRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -429,15 +437,11 @@ impl LightWallet {
         exclude: &[OutputRef],
         reserved_for_migration: &HashSet<OutputId>,
     ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
-        let exclude = exclude
-            .iter()
-            .filter(|output_ref| output_ref.pool_type() == N::POOL_TYPE)
-            .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
-            .collect::<HashSet<_>>();
+        let forbidden_ids = output_ids_of_pool(exclude, N::POOL_TYPE);
         Ok(self
             .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|judged| !exclude.contains(&judged.note.output_id()))
+            .filter(|judged| !forbidden_ids.contains(&judged.note.output_id()))
             .filter_map(|judged| {
                 judged
                     .verdict
@@ -822,6 +826,30 @@ mod tests {
                 .expect("the synthetic wallet is synced"),
             scan_ranges: wallet.sync_state.scan_ranges(),
         }
+    }
+
+    #[test]
+    fn output_ids_of_pool_keeps_the_ids_of_that_pool_alone() {
+        const FIRST_TXID_BYTE: u8 = 1;
+        const SECOND_TXID_BYTE: u8 = 2;
+        const OUTPUT_INDEX: u32 = 0;
+        let id_with = |byte: u8| OutputId::new(TxId::from_bytes([byte; 32]), OUTPUT_INDEX);
+        let orchard_id = id_with(FIRST_TXID_BYTE);
+        let sapling_id = id_with(SECOND_TXID_BYTE);
+        let output_refs = [
+            OutputRef::new(orchard_id, PoolType::ORCHARD),
+            OutputRef::new(sapling_id, PoolType::SAPLING),
+        ];
+
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::ORCHARD),
+            HashSet::from([orchard_id])
+        );
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::SAPLING),
+            HashSet::from([sapling_id])
+        );
+        assert!(output_ids_of_pool(&output_refs, PoolType::Transparent).is_empty());
     }
 
     const ANCHORED: Confirmation = Confirmation::Anchored {
