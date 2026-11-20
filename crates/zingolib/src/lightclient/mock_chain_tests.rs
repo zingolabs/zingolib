@@ -203,18 +203,23 @@ async fn funded_client(
     client
 }
 
-async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
+async fn confirmed_pool_balance(client: &LightClient, pool: PoolType) -> u64 {
     let balance = client
         .account_balance(zip32::AccountId::ZERO)
         .await
         .expect("a seed wallet holds account zero");
     match pool {
-        ShieldedPool::Orchard => balance.confirmed_orchard_balance,
-        ShieldedPool::Ironwood => balance.confirmed_ironwood_balance,
-        ShieldedPool::Sapling => balance.confirmed_sapling_balance,
+        PoolType::Transparent => balance.confirmed_transparent_balance,
+        PoolType::Shielded(ShieldedPool::Orchard) => balance.confirmed_orchard_balance,
+        PoolType::Shielded(ShieldedPool::Ironwood) => balance.confirmed_ironwood_balance,
+        PoolType::Shielded(ShieldedPool::Sapling) => balance.confirmed_sapling_balance,
     }
     .map(Zatoshis::into_u64)
     .unwrap_or(0)
+}
+
+async fn confirmed_balance(client: &LightClient, pool: ShieldedPool) -> u64 {
+    confirmed_pool_balance(client, PoolType::Shielded(pool)).await
 }
 
 #[tokio::test]
@@ -5121,6 +5126,200 @@ mod boundary_pruning {
                 panic!("the anchor boundary's tree state must be unavailable")
             }
         }
+    }
+}
+
+mod refund_gap {
+    use pepper_sync::{config, sync};
+    use zcash_keys::encoding::AddressCodec;
+    use zcash_protocol::{PoolType, ShieldedPool};
+
+    use super::{
+        HOSPITAL_MUSEUM, LightClient, MockNet, SYNCED_TIP_HEIGHT, confirmed_balance,
+        confirmed_pool_balance,
+    };
+    use crate::testutils::fee_tables;
+    use crate::{testutils, wallet};
+
+    const PAID: u64 = 50_000;
+    const FUNDED_REFUND_ADDRESSES: usize = 1;
+    const CONFIRMING_BLOCKS: u32 = 1;
+    const BLOCKS_PAST_THE_REORG_ALLOWANCE: u32 = 10;
+    const GAP_LIMITS_OF_EMPTY_ADDRESSES_BEFORE_THE_REFUND: usize = 2;
+
+    fn app_settings() -> wallet::WalletSettings {
+        let mut settings = testutils::default_test_wallet_settings();
+        settings.sync_config.transparent_address_discovery =
+            config::TransparentAddressDiscovery::default();
+        settings
+    }
+
+    fn gap_limit() -> usize {
+        usize::from(config::TransparentAddressDiscovery::default().gap_limit)
+    }
+
+    fn last_index_inside_the_gap_limit() -> usize {
+        gap_limit() - 1
+    }
+
+    fn first_index_past_the_gap_limit() -> usize {
+        gap_limit()
+    }
+
+    fn refund_index() -> usize {
+        GAP_LIMITS_OF_EMPTY_ADDRESSES_BEFORE_THE_REFUND * gap_limit()
+    }
+
+    fn reservations_whose_window_reaches_the_refund() -> usize {
+        refund_index() - gap_limit() + 1
+    }
+
+    /// - Takes the wallet write lock.
+    /// - Reserves the next `count` refund addresses of account zero.
+    async fn reserve(client: &LightClient, count: usize) -> String {
+        let (_, address) = *client
+            .wallet()
+            .write()
+            .await
+            .generate_refund_addresses(count, zip32::AccountId::ZERO)
+            .expect("the refund index does not overflow in these tests")
+            .last()
+            .expect("every call reserves at least one address");
+        address.encode(&client.chain_type())
+    }
+
+    /// - Mines `SYNCED_TIP_HEIGHT` empty blocks, one block paying `PAID` to the refund address at
+    ///   `index`, and `blocks_above` empty blocks.
+    /// - Reserves the refund addresses up to `index` on the new client.
+    async fn first_device_paid_at(
+        net: &mut MockNet,
+        index: usize,
+        blocks_above: u32,
+    ) -> LightClient {
+        net.chain.write().await.mine_empty_blocks(SYNCED_TIP_HEIGHT);
+        let first_device = net.client(HOSPITAL_MUSEUM, Some(app_settings())).await;
+        let address = reserve(&first_device, index + 1).await;
+        let funding = net.funding_transaction(vec![(&address, PAID, None)]).await;
+        let mut chain = net.chain.write().await;
+        chain.mine_block(vec![funding]);
+        chain.mine_empty_blocks(blocks_above);
+        drop(chain);
+        first_device
+    }
+
+    /// - Runs one sync session on the new client.
+    async fn synced_restored_wallet(net: &mut MockNet) -> LightClient {
+        let mut restored = net.client(HOSPITAL_MUSEUM, Some(app_settings())).await;
+        restored
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+        restored
+    }
+
+    /// - Sends four `account_balance` queries to the client's wallet.
+    async fn balances(client: &LightClient) -> (u64, u64) {
+        let mut shielded = 0;
+        for pool in [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ] {
+            shielded += confirmed_balance(client, pool).await;
+        }
+        (
+            confirmed_pool_balance(client, PoolType::Transparent).await,
+            shielded,
+        )
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_finds_funds_at_the_last_refund_index_inside_the_gap_limit() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(
+            &mut net,
+            last_index_inside_the_gap_limit(),
+            CONFIRMING_BLOCKS,
+        )
+        .await;
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_finds_funds_at_the_first_refund_index_past_the_gap_limit() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(
+            &mut net,
+            first_index_past_the_gap_limit(),
+            CONFIRMING_BLOCKS,
+        )
+        .await;
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_sees_a_refund_two_gap_limits_out_as_the_first_device_does() {
+        let mut net = MockNet::launch().await;
+        let mut first_device =
+            first_device_paid_at(&mut net, refund_index(), CONFIRMING_BLOCKS).await;
+
+        first_device
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(balances(&first_device).await, (PAID, 0));
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_finds_that_refund_after_reserving_up_to_its_window_and_a_rescan() {
+        let mut net = MockNet::launch().await;
+        first_device_paid_at(
+            &mut net,
+            refund_index(),
+            sync::MAX_REORG_ALLOWANCE + BLOCKS_PAST_THE_REORG_ALLOWANCE,
+        )
+        .await;
+        let mut restored = synced_restored_wallet(&mut net).await;
+
+        reserve(&restored, reservations_whose_window_reaches_the_refund()).await;
+        restored
+            .rescan_and_await()
+            .await
+            .expect("the mock chain rescans");
+        assert_eq!(balances(&restored).await, (PAID, 0));
+    }
+
+    #[tokio::test]
+    async fn a_restored_wallet_finds_that_refund_once_the_first_device_has_shielded_it() {
+        let mut net = MockNet::launch().await;
+        let mut first_device =
+            first_device_paid_at(&mut net, refund_index(), CONFIRMING_BLOCKS).await;
+        first_device
+            .sync_and_await()
+            .await
+            .expect("the mock chain syncs");
+
+        first_device
+            .quick_shield(zip32::AccountId::ZERO)
+            .await
+            .expect("the refund covers the shielding fee");
+        net.chain.write().await.mine_mempool();
+
+        let restored = synced_restored_wallet(&mut net).await;
+
+        assert_eq!(
+            balances(&restored).await,
+            (0, PAID - fee_tables::shield(FUNDED_REFUND_ADDRESSES))
+        );
     }
 }
 
