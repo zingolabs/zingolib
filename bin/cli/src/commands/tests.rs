@@ -1564,7 +1564,7 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
-    use pepper_sync::error::SyncModeError;
+    use zingolib::SyncModeError;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 

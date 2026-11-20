@@ -28,9 +28,9 @@ use log::{error, info};
 #[cfg(feature = "nym")]
 use log::{debug, warn};
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+use zingolib::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
 #[cfg(feature = "nym")]
-use pepper_sync::error::{SyncError, SyncRecoveryObservables};
+use zingolib::{SyncError, SyncRecoveryObservables};
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -254,7 +254,7 @@ fn parse_ufvk(s: &str) -> Result<String, String> {
 /// when no sync task is running and the wallet is not fully synced.
 ///
 /// Every outcome is classified from typed values ([`PollReport`],
-/// [`pepper_sync::sync_status`], `check_save_error`), never by inspecting
+/// [`LightClient::sync_status`], `check_save_error`), never by inspecting
 /// a command's output string. Every line this function prints is
 /// narration, so all of it goes to stderr (ADR 0031).
 async fn prompt_indicator(
@@ -346,7 +346,7 @@ struct ScanProgress {
 
 /// Reads the prompt's chain height from the sync engine's progress channel while sync runs, from the wallet otherwise, or zero when neither knows a height yet.
 async fn prompt_height(lightclient: &LightClient) -> u32 {
-    if lightclient.sync_mode() == pepper_sync::wallet::SyncMode::NotRunning {
+    if lightclient.sync_mode() == zingolib::SyncMode::NotRunning {
         lightclient
             .wallet()
             .read()
@@ -365,10 +365,8 @@ async fn prompt_height(lightclient: &LightClient) -> u32 {
 
 /// Reads the scan progress from the sync engine's progress channel while sync runs, from the wallet otherwise, or `None` if sync status is unavailable.
 async fn scan_progress(lightclient: &LightClient) -> Option<ScanProgress> {
-    let status = if lightclient.sync_mode() == pepper_sync::wallet::SyncMode::NotRunning {
-        pepper_sync::sync_status(&*lightclient.wallet().read().await)
-            .await
-            .ok()?
+    let status = if lightclient.sync_mode() == zingolib::SyncMode::NotRunning {
+        lightclient.sync_status().await.ok()?
     } else {
         lightclient.latest_sync_status()?
     };

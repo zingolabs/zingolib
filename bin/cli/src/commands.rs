@@ -12,8 +12,8 @@ use std::sync::LazyLock;
 
 use indoc::indoc;
 use json::object;
-use pepper_sync::config::PerformanceLevel;
-use pepper_sync::keys::transparent;
+use zingolib::PerformanceLevel;
+use zingolib::transparent;
 use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
@@ -23,7 +23,7 @@ use zcash_protocol::TxId;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
-use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+use zingolib::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::migrate::{
@@ -485,7 +485,7 @@ async fn relaunch_sync(lightclient: &mut LightClient) {
     match lightclient.sync().await {
         Ok(())
         | Err(zingolib::lightclient::error::LightClientError::SyncModeError(
-            pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+            zingolib::SyncModeError::SyncAlreadyRunning,
         )) => (),
         Err(e) => eprintln!("Error: failed to relaunch sync. {}", render_error_chain(&e)),
     }
@@ -892,7 +892,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
                 match lightclient.sync().await {
                     Ok(()) => Ok("Launching sync task...".to_string()),
                     Err(zingolib::lightclient::error::LightClientError::SyncModeError(
-                        pepper_sync::error::SyncModeError::SyncAlreadyRunning,
+                        zingolib::SyncModeError::SyncAlreadyRunning,
                     )) => Ok("Sync task already running.".to_string()),
                     Err(e) => Err(not_yet_typed(e)),
                 }
@@ -909,9 +909,7 @@ async fn sync(sub: SyncSubCommand, lightclient: &mut LightClient) -> Result<Stri
         SyncSubCommand::Status => {
             let status = match lightclient.latest_sync_status() {
                 Some(status) if lightclient.sync_mode() != SyncMode::NotRunning => status,
-                _ => pepper_sync::sync_status(&*lightclient.wallet().read().await)
-                    .await
-                    .map_err(not_yet_typed)?,
+                _ => lightclient.sync_status().await.map_err(not_yet_typed)?,
             };
             Ok(
                 json::JsonValue::from(sync_progress::SyncProgress::from(status))

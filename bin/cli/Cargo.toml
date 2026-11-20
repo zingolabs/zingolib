@@ -30,7 +30,6 @@ nym = ["zingolib/nym"]
 nakednet-test-mode = []
 
 [dependencies]
-pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
 # This consumer funnels through zingolib's re-exports (`zingolib::netutils`,
 # ADR 0024 decision 7), except for the `diag` failure types, which the funnel
