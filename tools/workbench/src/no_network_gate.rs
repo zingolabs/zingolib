@@ -37,6 +37,7 @@ const LIGHTWALLET_PROTOCOL: &str = "lightwallet-protocol";
 const FUTURES: &str = "futures";
 
 const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
+const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
 
 const RULES: [Rule; 3] = [
     Rule {
@@ -49,13 +50,13 @@ const RULES: [Rule; 3] = [
         package: FILE_FORMAT,
         features: FeatureSet::Default,
         members: &NETWORK_MEMBERS,
-        registry: &[REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL],
+        registry: &FILE_FORMAT_REGISTRY,
     },
     Rule {
         package: FILE_FORMAT,
         features: FeatureSet::Named(LEGACY_FEATURE),
         members: &NETWORK_MEMBERS,
-        registry: &[REQWEST],
+        registry: &FILE_FORMAT_REGISTRY,
     },
 ];
 
