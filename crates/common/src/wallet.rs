@@ -21,9 +21,9 @@ use crate::status::ConfirmationStatus;
 
 use crate::{
     engine::{
-        self, OutgoingNoteOps, ScanTargetOps, ScanTargetOrigin, ShardTreesOps, TransparentCoinOps,
-        WalletBlockOps, WalletBlockParts, WalletNoteOps, WalletTransactionOps,
-        WalletTransactionParts, empty_shard_tree,
+        self, OutgoingNoteOps, ScanTargetOps, ScanTargetOrigin, ShardTreesOps,
+        TransactionRecordOps, TransactionRecordParts, TransparentCoinOps, WalletBlockOps,
+        WalletBlockParts, WalletNoteOps, empty_shard_tree,
     },
     keys::{KeyId, transparent::TransparentAddressId},
     witness,
@@ -354,7 +354,7 @@ impl WalletBlock {
 }
 
 /// Wallet transaction
-pub struct WalletTransaction {
+pub struct TransactionRecord {
     pub(crate) txid: TxId,
     pub(crate) status: ConfirmationStatus,
     pub(crate) transaction: zcash_primitives::transaction::Transaction,
@@ -368,9 +368,9 @@ pub struct WalletTransaction {
     pub(crate) outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
 }
 
-impl WalletTransactionOps for WalletTransaction {
-    fn from_parts(parts: WalletTransactionParts) -> Self {
-        let WalletTransactionParts {
+impl TransactionRecordOps for TransactionRecord {
+    fn from_parts(parts: TransactionRecordParts) -> Self {
+        let TransactionRecordParts {
             txid,
             status,
             transaction,
@@ -412,7 +412,7 @@ impl WalletTransactionOps for WalletTransaction {
     }
 }
 
-impl WalletTransaction {
+impl TransactionRecord {
     /// Transaction ID
     #[must_use]
     pub fn txid(&self) -> TxId {
@@ -611,8 +611,8 @@ impl WalletTransaction {
 }
 
 #[cfg(any(test, feature = "test-features"))]
-impl WalletTransaction {
-    /// Creates a minimal `WalletTransaction` for testing purposes.
+impl TransactionRecord {
+    /// Creates a minimal `TransactionRecord` for testing purposes.
     ///
     /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
     /// The transaction's expiry height is set to 0 (never expires).
@@ -620,7 +620,7 @@ impl WalletTransaction {
         Self::new_for_test_with_expiry(txid, status, BlockHeight::from_u32(0))
     }
 
-    /// Creates a minimal `WalletTransaction` for testing purposes, with the given expiry height.
+    /// Creates a minimal `TransactionRecord` for testing purposes, with the given expiry height.
     ///
     /// Constructs a valid v5 transaction with empty bundles and the given `txid` and `status`.
     pub fn new_for_test_with_expiry(
@@ -740,7 +740,7 @@ impl WalletBlock {
 }
 
 #[cfg(any(test, feature = "test-features"))]
-impl WalletTransaction {
+impl TransactionRecord {
     /// - Removes the received and outgoing notes of `pool`.
     pub fn clear_pool_notes_for_test(&mut self, pool: ShieldedPool) {
         match pool {
@@ -809,7 +809,7 @@ impl<N, P> OutgoingNote<N, P> {
 }
 
 #[cfg(feature = "serialization")]
-impl WalletTransaction {
+impl TransactionRecord {
     /// Returns the total value sent to receivers, excluding value sent to the wallet's own addresses.
     #[must_use]
     pub fn total_value_sent(&self) -> u64 {
@@ -881,9 +881,9 @@ impl WalletTransaction {
     }
 }
 
-impl std::fmt::Debug for WalletTransaction {
+impl std::fmt::Debug for TransactionRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("WalletTransaction")
+        f.debug_struct("TransactionRecord")
             .field("txid", &self.txid)
             .field("confirmation_status", &self.status)
             .field("datetime", &self.datetime)
@@ -942,10 +942,10 @@ pub trait OutputInterface: Sized {
     ///
     /// Nullifiers for shielded outputs.
     /// Out points for transparent outputs.
-    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input>;
+    fn transaction_inputs(transaction: &TransactionRecord) -> Vec<&Self::Input>;
 
     /// Outputs within `transaction`.
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self];
+    fn transaction_outputs(transaction: &TransactionRecord) -> &[Self];
 }
 
 /// Provides a common API for all shielded output types.
@@ -1075,11 +1075,11 @@ impl OutputInterface for TransparentCoin {
         Some(self.output_id.into())
     }
 
-    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+    fn transaction_inputs(transaction: &TransactionRecord) -> Vec<&Self::Input> {
         transaction.outpoints()
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outputs(transaction: &TransactionRecord) -> &[Self] {
         &transaction.transparent_coins
     }
 }
@@ -1254,11 +1254,11 @@ impl OutputInterface for SaplingNote {
         self.nullifier
     }
 
-    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+    fn transaction_inputs(transaction: &TransactionRecord) -> Vec<&Self::Input> {
         transaction.sapling_nullifiers()
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outputs(transaction: &TransactionRecord) -> &[Self] {
         &transaction.sapling_notes
     }
 }
@@ -1323,11 +1323,11 @@ impl OutputInterface for OrchardNote {
         self.nullifier
     }
 
-    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+    fn transaction_inputs(transaction: &TransactionRecord) -> Vec<&Self::Input> {
         transaction.orchard_nullifiers()
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outputs(transaction: &TransactionRecord) -> &[Self] {
         &transaction.orchard_notes
     }
 }
@@ -1393,11 +1393,11 @@ impl OutputInterface for IronwoodNote {
         self.nullifier
     }
 
-    fn transaction_inputs(transaction: &WalletTransaction) -> Vec<&Self::Input> {
+    fn transaction_inputs(transaction: &TransactionRecord) -> Vec<&Self::Input> {
         transaction.ironwood_nullifiers()
     }
 
-    fn transaction_outputs(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outputs(transaction: &TransactionRecord) -> &[Self] {
         &transaction.ironwood_notes
     }
 }
@@ -1473,7 +1473,7 @@ pub trait OutgoingNoteInterface: Sized {
         P: consensus::Parameters + consensus::NetworkConstants;
 
     /// Outgoing notes within `transaction`.
-    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self];
+    fn transaction_outgoing_notes(transaction: &TransactionRecord) -> &[Self];
 }
 
 /// Note sent from this capability to a recipient. `P` is the pool marker
@@ -1574,7 +1574,7 @@ impl OutgoingNoteInterface for OutgoingSaplingNote {
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
-    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outgoing_notes(transaction: &TransactionRecord) -> &[Self] {
         &transaction.outgoing_sapling_notes
     }
 }
@@ -1633,7 +1633,7 @@ impl OutgoingNoteInterface for OutgoingOrchardNote {
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
-    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outgoing_notes(transaction: &TransactionRecord) -> &[Self] {
         &transaction.outgoing_orchard_notes
     }
 }
@@ -1692,7 +1692,7 @@ impl OutgoingNoteInterface for OutgoingIronwoodNote {
             .map(|unified_address| unified_address.encode(consensus_parameters))
     }
 
-    fn transaction_outgoing_notes(transaction: &WalletTransaction) -> &[Self] {
+    fn transaction_outgoing_notes(transaction: &TransactionRecord) -> &[Self] {
         &transaction.outgoing_ironwood_notes
     }
 }
@@ -1783,11 +1783,11 @@ mod test {
     use zcash_protocol::TxId;
     use zcash_protocol::consensus::BlockHeight;
 
-    use super::WalletTransaction;
+    use super::TransactionRecord;
     use crate::status::ConfirmationStatus;
 
-    fn transaction_with_status(status: ConfirmationStatus) -> WalletTransaction {
-        WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+    fn transaction_with_status(status: ConfirmationStatus) -> TransactionRecord {
+        TransactionRecord::new_for_test(TxId::from_bytes([0; 32]), status)
     }
 
     #[test]

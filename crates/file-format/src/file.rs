@@ -31,8 +31,8 @@ use zl_common::{
     serialization::ReadableWriteable,
     sync::SyncState,
     wallet::{
-        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, WalletBlock,
-        WalletTransaction,
+        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, TransactionRecord,
+        WalletBlock,
     },
 };
 #[cfg(feature = "legacy")]
@@ -859,7 +859,7 @@ impl<M: MigrationSection> WalletFile<M> {
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
         let wallet_transactions =
-            Vector::read(&mut reader, |r| WalletTransaction::read(r, &chain_type))?
+            Vector::read(&mut reader, |r| TransactionRecord::read(r, &chain_type))?
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect::<HashMap<_, _>>();

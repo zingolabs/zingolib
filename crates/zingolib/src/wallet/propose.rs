@@ -350,7 +350,7 @@ impl LightWallet {
     /// transaction can be mined only at or above the block that mined the note, so a note at or
     /// above the horizon has had its entire spend window scanned, and the absence of a discovered
     /// spend proves the note unspent. For a note below the horizon, the unscanned gap may conceal
-    /// a spend, so the strict form of [`Self::spendable_notes`] omits the note rather than vouch
+    /// a spend, so [`Self::spendable_notes`] omits the note rather than vouch
     /// for it. Withholding asserts nothing about the note; it records only that the wallet does
     /// not yet know.
     ///

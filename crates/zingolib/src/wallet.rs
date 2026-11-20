@@ -16,7 +16,7 @@ use pepper_sync::keys::transparent::{TransparentScope, encode_address};
 use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
-    wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, SyncState, TransactionRecord, WalletBlock},
 };
 use zl_common::price::PriceList;
 
@@ -93,7 +93,7 @@ pub struct LightWallet {
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
-    pub wallet_transactions: HashMap<TxId, WalletTransaction>,
+    pub wallet_transactions: HashMap<TxId, TransactionRecord>,
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
@@ -438,7 +438,7 @@ impl LightWallet {
                     .get_confirmed_height()
                     .is_some_and(|height| height <= fully_scanned_height)
             })
-            .map(pepper_sync::wallet::WalletTransaction::datetime)
+            .map(pepper_sync::wallet::TransactionRecord::datetime)
             .collect();
 
         let prune_below = self

@@ -96,7 +96,7 @@
 
 **LightWallet** — The wallet's internal data store. Holds keys, wallet transactions, shard trees, and sync state. Not part of the public contract — all external access is intended to go through `LightClient` passthrough methods. Direct access via the temporary `LightClient::wallet()` escape hatch is pending removal as the passthrough API is completed.
 
-**WalletTransaction** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine.
+**TransactionRecord** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine. *Avoid*: WalletTransaction (the name of the type before the rename).
 
 **WalletBlock** — A compact record of a scanned block, retained only at scan range bounds or when it contains wallet-relevant transactions.
 
@@ -188,6 +188,10 @@
 **AccountBalance** — A per-account snapshot of spendable funds, broken down by pool (Orchard, Ironwood, Sapling, Transparent) and confirmation state (confirmed, unconfirmed, total). `None` for a pool means the account has no view key for that pool. Dust outputs are excluded from all figures. Coinbase transparent outputs require 100 confirmations before appearing as spendable (ZIP-213 `COINBASE_MATURITY`).
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
+
+**Spendable** — Said of a shielded note that the wallet can spend at a given anchor and has proven unspent: the note is confirmed at or below the anchor, belongs to the account, holds a nullifier and a commitment tree position, can be witnessed, has no recorded spend, and every block that could hold its spend has been scanned. The absence of a recorded spend is then proof.
+
+**Potentially Spendable** — Said of a shielded note that is Spendable, or that meets every condition of Spendable except the last: some block that could hold its spend is not yet scanned. The wallet has no record of a spend and cannot yet rule one out. Every Spendable note is Potentially Spendable.
 
 **Dust** — Outputs whose value is strictly below the ZIP-317 marginal fee. Excluded from balances and not eligible as inputs. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration.
 
@@ -373,7 +377,7 @@
 
 ## Utility Crates
 
-**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `WalletTransaction`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
+**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `TransactionRecord`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
 
 **zl-file-format** — A published crates.io library split out of zingolib. Holds the Wallet File as one data type with the readers of every Wallet Version and the writer of the current one.
 
