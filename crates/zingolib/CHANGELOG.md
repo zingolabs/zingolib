@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `testnet` feature, off by default. It turns on `nym` and builds the
+  testnet cells of `tests/testnet.rs`, which moved here from the
+  `libtonode-tests` crate. The cells dial the public testnet, spend from
+  one shared testnet wallet, and wait for real blocks, so no consumer has
+  a reason to turn the feature on.
 - `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
   port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
   HTTP status, the body as text, the local SOCKS5 endpoint it traveled
