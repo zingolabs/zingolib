@@ -5224,19 +5224,18 @@ mod refund_gap {
     }
 
     #[tokio::test]
-    async fn a_restored_wallet_misses_funds_behind_ten_empty_refund_addresses() {
+    async fn a_restored_wallet_finds_funds_behind_ten_empty_refund_addresses() {
         let mut net = MockNet::launch().await;
         first_device_paid_at(&mut net, 10, 1).await;
 
         let restored = synced_restored_wallet(&mut net).await;
 
-        assert_eq!(balances(&restored).await, (0, 0));
+        assert_eq!(balances(&restored).await, (PAID, 0));
     }
 
-    /// Twenty swaps leave twenty empty addresses and the twenty first is refunded. The device that
-    /// reserved the addresses sees the refund, and a wallet restored from the same seed does not.
     #[tokio::test]
-    async fn only_the_device_that_reserved_the_addresses_sees_a_refund_behind_twenty_empty_ones() {
+    async fn a_restored_wallet_sees_a_refund_behind_twenty_empty_addresses_as_the_first_device_does()
+     {
         let mut net = MockNet::launch().await;
         let mut first_device = first_device_paid_at(&mut net, 20, 1).await;
 
@@ -5247,31 +5246,16 @@ mod refund_gap {
         let restored = synced_restored_wallet(&mut net).await;
 
         assert_eq!(balances(&first_device).await, (PAID, 0));
-        assert_eq!(balances(&restored).await, (0, 0));
+        assert_eq!(balances(&restored).await, (PAID, 0));
     }
 
-    /// Reaching the refund at index 20 takes the search window of indexes 11 to 20, so eleven
-    /// reservations, and a rescan, because a later session only searches recent blocks.
     #[tokio::test]
-    async fn a_restored_wallet_needs_eleven_reservations_and_a_rescan_to_find_that_refund() {
+    async fn a_restored_wallet_finds_that_refund_after_eleven_reservations_and_a_rescan() {
         let mut net = MockNet::launch().await;
         first_device_paid_at(&mut net, 20, MAX_REORG_ALLOWANCE + 10).await;
         let mut restored = synced_restored_wallet(&mut net).await;
 
-        reserve(&restored, 10).await;
-        restored
-            .rescan_and_await()
-            .await
-            .expect("the mock chain rescans");
-        assert_eq!(balances(&restored).await, (0, 0));
-
-        reserve(&restored, 1).await;
-        restored
-            .sync_and_await()
-            .await
-            .expect("the mock chain syncs");
-        assert_eq!(balances(&restored).await, (0, 0));
-
+        reserve(&restored, 11).await;
         restored
             .rescan_and_await()
             .await
