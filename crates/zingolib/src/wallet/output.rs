@@ -289,8 +289,8 @@ impl LightWallet {
         Ok(self
             .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|judged| judged.verdict == Verdict::Certain)
-            .map(|judged| judged.note)
+            .filter(|judged_note| judged_note.verdict == Verdict::Certain)
+            .map(|judged_note| judged_note.note)
             .collect())
     }
 
@@ -303,7 +303,7 @@ impl LightWallet {
         Ok(self
             .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter_map(|judged| judged.verdict.certainty().map(|_| judged.note))
+            .filter_map(|judged_note| judged_note.verdict.certainty().map(|_| judged_note.note))
             .collect())
     }
 
