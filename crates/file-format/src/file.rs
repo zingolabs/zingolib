@@ -31,8 +31,8 @@ use zl_common::{
     serialization::ReadableWriteable,
     sync::SyncState,
     wallet::{
-        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, WalletBlock,
-        WalletTransaction,
+        KeyIdInterface, NullifierMap, OutputId, ScanTarget, ShardTrees, TransactionRecord,
+        WalletBlock,
     },
 };
 #[cfg(feature = "legacy")]
@@ -105,23 +105,13 @@ impl std::fmt::Display for AmbiguousV42Tail {
 
 impl std::error::Error for AmbiguousV42Tail {}
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{canonical}; read as the pre-release version 42 layout: {pre_release}")]
 pub struct UnreadableV42Tail {
+    #[source]
     pub canonical: Error,
     pub pre_release: Error,
 }
-
-impl std::fmt::Display for UnreadableV42Tail {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}; read as the pre-release version 42 layout: {}",
-            self.canonical, self.pre_release
-        )
-    }
-}
-
-impl std::error::Error for UnreadableV42Tail {}
 
 enum V40ChainField {
     Tag(u8),
@@ -869,7 +859,7 @@ impl<M: MigrationSection> WalletFile<M> {
             .map(|block| (block.block_height(), block))
             .collect::<BTreeMap<_, _>>();
         let wallet_transactions =
-            Vector::read(&mut reader, |r| WalletTransaction::read(r, &chain_type))?
+            Vector::read(&mut reader, |r| TransactionRecord::read(r, &chain_type))?
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect::<HashMap<_, _>>();
@@ -1266,6 +1256,24 @@ mod tests {
                 .is_some_and(|inner| inner.is::<ChainMismatch>())
         );
         assert_eq!(unreadable.pre_release.to_string(), PRE_RELEASE_FAILURE);
+    }
+
+    #[test]
+    fn the_source_of_an_unreadable_version_42_tail_is_the_canonical_error() {
+        let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
+        let pre_release = std::io::Error::other("tail did not parse");
+
+        let refusal = V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
+            .into_tail()
+            .expect_err("a tail that parses in neither layout is refused");
+
+        let canonical_cause = std::error::Error::source(&refusal)
+            .and_then(|source| source.downcast_ref::<std::io::Error>())
+            .and_then(std::io::Error::get_ref);
+        assert!(
+            canonical_cause.is_some_and(|inner| inner.is::<ChainMismatch>()),
+            "a walk of the source chain must reach the cause of the canonical reading"
+        );
     }
 
     #[test]

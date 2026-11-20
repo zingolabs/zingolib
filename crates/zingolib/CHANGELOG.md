@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `testnet` feature, off by default. It turns on `nym` and builds the
+  testnet cells of `tests/testnet.rs`, which moved here from the
+  `libtonode-tests` crate. The cells dial the public testnet, spend from
+  one shared testnet wallet, and wait for real blocks, so no consumer has
+  a reason to turn the feature on.
+- `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
+  port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
+  HTTP status, the body as text, the local SOCKS5 endpoint it traveled
+  through, and the round trip. Every HTTP status is a response, so the
+  caller reads the status. The call makes one attempt and refuses in every
+  mixnet state but ready, with no nakednet leg. A session that can create
+  clients uses a client created for the call. `timeout` is the deadline of
+  the whole call, client creation included. A consumer fetches its own
+  third-party data (a forex table) through it instead of asking this crate
+  for more currencies.
+- `mixnet::fetch::MixnetFetchError` and `LightClientError::MixnetFetch` type
+  the fetch's failures: `Ineligible` for a URL outside the exit policy's
+  shape, `ZeroTimeout`, `DeadlineExceeded` for a deadline that elapsed
+  before the request started, `Transport` for a client that could not be
+  acquired, `Request` for a request that failed at a typed stage, and
+  `BodyTooLarge` for a body over `mixnet::fetch::FETCH_BODY_LIMIT` (1 MiB).
 - `LightWallet::invariant_violations` reports every violated wallet
   invariant: outputs stored under foreign txids, spends recorded on
   transactions that do not carry the input, spends released by failed
@@ -60,6 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
+- **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
+  `TransactionRecord`, and every zingolib signature that named it names
+  `TransactionRecord` now, the `LightWallet::wallet_transactions` field
+  included. A consumer replaces the type name; no field or method changes.
+- **Breaking:** `mixnet::speed::WAVE_WIDTH` is
+  `mixnet::speed::MAX_CONCURRENT_REQUESTS`. The value is unchanged: four
+  requests in flight through one Nym client.
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
   returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
   selection checks a reservation in constant time. A consumer that indexed

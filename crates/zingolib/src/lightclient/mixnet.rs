@@ -9,9 +9,7 @@
 use super::error::LightClientError;
 use super::{LightClient, MixnetPriceFetch};
 
-/// The price run as a speed-priority operation: it races the price census
-/// through one Exit Node and settles on the first quote, whichever operator
-/// answers.
+/// Sends one request to each price source and completes on the first quote.
 #[cfg(feature = "nym")]
 pub(crate) struct PriceRun {
     /// The pools this run takes its transport from and returns it to.
@@ -21,21 +19,25 @@ pub(crate) struct PriceRun {
 #[cfg(feature = "nym")]
 impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
     type Target = crate::price::PriceSource;
-    type Outcome = (
+    type Response = (
         crate::price::PriceSource,
         Result<zl_common::price::Price, crate::price::PriceError>,
     );
+
+    fn log_label(&self) -> &'static str {
+        "price run"
+    }
 
     fn targets(&self) -> Vec<Self::Target> {
         crate::price::RACED_SOURCES.to_vec()
     }
 
-    async fn probe(
+    async fn request(
         &self,
         dial: zl_netutils::conduit::ConduitDial,
         target: Self::Target,
-    ) -> Self::Outcome {
-        let outcome = crate::price::get_source_price(
+    ) -> Self::Response {
+        let response = crate::price::get_source_price(
             target,
             &dial,
             target.url(),
@@ -43,15 +45,15 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             crate::price::CONNECT_TIMEOUT,
         )
         .await;
-        (target, outcome)
+        (target, response)
     }
 
-    fn settled(&self, outcomes: &[Self::Outcome]) -> bool {
-        outcomes.iter().any(|(_, outcome)| outcome.is_ok())
+    fn is_complete(&self, responses: &[Self::Response]) -> bool {
+        crate::mixnet::speed::SpeedPrioritized::has_response(self, responses)
     }
 
-    fn answered(&self, outcomes: &[Self::Outcome]) -> bool {
-        outcomes.iter().any(|(_, outcome)| outcome.is_ok())
+    fn has_response(&self, responses: &[Self::Response]) -> bool {
+        responses.iter().any(|(_, response)| response.is_ok())
     }
 
     fn acquire(
@@ -62,51 +64,27 @@ impl crate::mixnet::speed::SpeedPrioritized for PriceRun {
             crate::mixnet::acquire::TransportError,
         >,
     > + Send {
-        // Boot's price fetch runs over the conduit proved for its role, so
-        // the first quote costs no birth. A later run finds the conduit
-        // spent and births its own client, which keeps priced traffic off
-        // the wallet-correlated streams on the standing client.
-        let pools = self.pools.clone();
-        async move {
-            let acquirer = pools
-                .acquirer()
-                .ok_or(crate::mixnet::acquire::TransportError::NoAcquirer)?;
-            let birth = pools
-                .conduit_for(crate::mixnet::roles::Role::PriceFetch, acquirer.as_ref())
-                .await?;
-            let member = crate::mixnet::speed::Member::new(birth.transport, birth.lease);
-            let addr = member
-                .addr()
-                .ok_or(crate::mixnet::acquire::TransportError::DiedBeforeUse)?;
-            Ok((member, addr))
-        }
+        crate::mixnet::fetch::acquire_fetch_client(self.pools.clone())
     }
 
-    fn dispose(&self, spent: crate::mixnet::speed::Member) {
-        // The quote is a completed round trip, so the exit's proof renews;
-        // the client still turns off behind the run, because consecutive
-        // fetches must not share a client.
-        self.pools.remember(
-            spent.node().clone(),
+    fn release(&self, used: crate::mixnet::speed::Member) {
+        crate::mixnet::fetch::close_with_health(
+            &self.pools,
+            used,
             crate::mixnet::pools::exit_pool::ExitNodeHealthVerdict::EpochProven,
         );
-        tokio::spawn(async move {
-            spent.retire().await;
-        });
     }
 
-    fn abandon(&self, dead: crate::mixnet::speed::Member) {
-        self.pools.remember(
-            dead.node().clone(),
+    fn mark_exit_failed(&self, failed: crate::mixnet::speed::Member) {
+        tracing::warn!(
+            "price run: no price source responded through exit {}, marking it failed",
+            failed.node()
+        );
+        crate::mixnet::fetch::close_with_health(
+            &self.pools,
+            failed,
             crate::mixnet::pools::exit_pool::ExitNodeHealthVerdict::Failed,
         );
-        tokio::spawn(async move {
-            dead.retire().await;
-        });
-    }
-
-    fn narrate(&self, phase: crate::mixnet::speed::SpeedProgress) {
-        tracing::info!("price run: {phase:?}");
     }
 }
 
@@ -1204,12 +1182,8 @@ impl LightClient {
         Ok(vec![probe])
     }
 
-    /// Update and return the current ZEC price in USD by racing the price
-    /// sources through the tunnel and taking the first answer. Mixnet-only
-    /// (ADR 0011, amendment 2026-09-11): a ready mixnet carries it, every
-    /// other state refuses with a typed
-    /// [`MixnetNotReady`](crate::mixnet::MixnetNotReady), and the transmit
-    /// policy has no effect.
+    /// Fetches the current ZEC price in USD from the first price source that
+    /// responds. Runs only over the mixnet (ADR 0011, amendment 2026-09-11).
     pub async fn update_current_price(&self) -> Result<MixnetPriceFetch, LightClientError> {
         let dispatched = std::time::Instant::now();
         let conduit = self.mixnet_only_route()?;
@@ -1220,33 +1194,61 @@ impl LightClient {
             pools: self.exit_pools.clone(),
         };
 
-        let (outcomes, via_socks5) = if self.exit_pools.acquirer().is_some() {
-            let (outcomes, spent) = crate::mixnet::speed::run_speed_prioritized(&run)
+        let (responses, via_socks5) = if self.exit_pools.acquirer().is_some() {
+            let (responses, used) = crate::mixnet::speed::run_speed_prioritized(&run)
                 .await
                 .map_err(crate::wallet::error::PriceError::Speed)?;
-            let dial = spent
-                .addr()
-                .map(|addr| addr.to_string())
-                .unwrap_or_default();
-            crate::mixnet::speed::SpeedPrioritized::dispose(&run, spent);
-            (outcomes, dial)
+            let dial = used.addr().map(|addr| addr.to_string()).unwrap_or_default();
+            crate::mixnet::speed::SpeedPrioritized::release(&run, used);
+            (responses, dial)
         } else {
             let conduit = zl_netutils::conduit::MixnetConduit::over(socks5_addr);
-            match crate::mixnet::speed::run_wave(&run, &conduit).await {
-                crate::mixnet::speed::WaveEnd::Settled(outcomes)
-                | crate::mixnet::speed::WaveEnd::Exhausted(outcomes) => {
-                    (outcomes, socks5_addr.to_string())
+            match crate::mixnet::speed::run_batch(&run, &conduit).await {
+                crate::mixnet::speed::BatchEnd::Completed(responses)
+                | crate::mixnet::speed::BatchEnd::Exhausted(responses) => {
+                    (responses, socks5_addr.to_string())
                 }
             }
         };
         let raced =
-            crate::price::first_quote(outcomes).map_err(crate::wallet::error::PriceError::from)?;
+            crate::price::first_quote(responses).map_err(crate::wallet::error::PriceError::from)?;
         Ok(MixnetPriceFetch {
             usd: raced.price.price_usd,
             source: raced.source,
             round_trip: dispatched.elapsed(),
             route: crate::lightclient::PriceFetchRoute::Mixnet { via_socks5 },
         })
+    }
+
+    /// Sends an HTTPS GET request to `url` over the mixnet and returns the
+    /// status code and the body.
+    ///
+    /// `url` must be `https` on port 443. `timeout` is the deadline of the
+    /// whole call. It includes client creation, which takes about ten seconds.
+    /// The call makes one attempt. The caller must check the status, because
+    /// an error status is also returned. A session attached to a single host
+    /// proxy shares that proxy with wallet traffic.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LightClientError::MixnetNotReady`] if the mixnet is not
+    /// ready, and [`LightClientError::MixnetFetch`] for every other failure.
+    pub async fn fetch_over_mixnet(
+        &self,
+        url: http::Uri,
+        timeout: std::time::Duration,
+    ) -> Result<crate::mixnet::fetch::MixnetFetch, LightClientError> {
+        use crate::mixnet::fetch::MixnetFetchError;
+        if !crate::mixnet::probe::probe_eligible(&url) {
+            return Err(MixnetFetchError::Ineligible(url).into());
+        }
+        if timeout.is_zero() {
+            return Err(MixnetFetchError::ZeroTimeout.into());
+        }
+        let session_dial = self.mixnet_only_route()?.dial();
+        crate::mixnet::fetch::fetch_url(&self.exit_pools, session_dial, &url, timeout)
+            .await
+            .map_err(LightClientError::from)
     }
 }
 
@@ -1328,6 +1330,83 @@ mod tests {
                     LightClientError::MixnetNotReady(crate::mixnet::MixnetNotReady::Unattached)
                 ),
                 "the refusal must be typed, not prose: {error}"
+            );
+        }
+
+        fn rates_url() -> http::Uri {
+            "https://rates.test/latest?base=USD"
+                .parse()
+                .expect("static uri")
+        }
+
+        async fn fetch_refusal(client: &LightClient, url: http::Uri) -> LightClientError {
+            client
+                .fetch_over_mixnet(url, std::time::Duration::from_secs(5))
+                .await
+                .expect_err("no transport was ever enabled, so the fetch must refuse")
+        }
+
+        /// The consumer fetch runs only over the mixnet.
+        #[tokio::test]
+        async fn the_consumer_fetch_is_mixnet_only() {
+            let unattached = LightClient::new_for_test(wallet()).await;
+            unattached.set_transmit_policy(crate::mixnet::TransmitPolicy::Nakednet);
+            let mut switched_off = LightClient::new_for_test(wallet()).await;
+            switched_off.disable_mixnet().await;
+
+            for client in [&unattached, &switched_off] {
+                let error = fetch_refusal(client, rates_url()).await;
+                assert!(
+                    matches!(
+                        error,
+                        LightClientError::MixnetNotReady(crate::mixnet::MixnetNotReady::Unattached)
+                    ),
+                    "the refusal must be typed, not prose: {error}"
+                );
+            }
+        }
+
+        /// A zero timeout is refused before the route is resolved.
+        #[tokio::test]
+        async fn a_zero_timeout_refuses_before_the_route() {
+            let client = LightClient::new_for_test(wallet()).await;
+
+            let error = client
+                .fetch_over_mixnet(rates_url(), std::time::Duration::ZERO)
+                .await
+                .expect_err("a zero timeout must refuse");
+            assert!(
+                matches!(
+                    error,
+                    LightClientError::MixnetFetch(
+                        crate::mixnet::fetch::MixnetFetchError::ZeroTimeout
+                    )
+                ),
+                "the refusal must report the timeout: {error}"
+            );
+            assert_eq!(
+                error.to_string(),
+                crate::mixnet::fetch::MixnetFetchError::ZeroTimeout.to_string(),
+                "the wrapper adds no text of its own"
+            );
+        }
+
+        /// A URL that the exit policy does not allow is refused before the route
+        /// is resolved.
+        #[tokio::test]
+        async fn a_url_the_exit_policy_rejects_refuses_before_the_route() {
+            let client = LightClient::new_for_test(wallet()).await;
+            let url: http::Uri = "http://rates.test/latest".parse().expect("static uri");
+
+            let error = fetch_refusal(&client, url).await;
+            assert!(
+                matches!(
+                    error,
+                    LightClientError::MixnetFetch(
+                        crate::mixnet::fetch::MixnetFetchError::Ineligible(_)
+                    )
+                ),
+                "the refusal must report the url: {error}"
             );
         }
 

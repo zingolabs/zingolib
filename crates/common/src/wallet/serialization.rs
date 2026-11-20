@@ -44,8 +44,8 @@ use crate::{
 use super::{
     IronwoodNote, KeyIdInterface, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
     OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface,
-    SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, SaplingNote, ShardTrees, TransparentCoin, TreeBounds,
-    WalletBlock, WalletNote, WalletTransaction,
+    SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, SaplingNote, ShardTrees, TransactionRecord,
+    TransparentCoin, TreeBounds, WalletBlock, WalletNote,
 };
 
 const SAPLING_RSEED: &str = "Sapling random seed";
@@ -330,7 +330,7 @@ impl WalletBlock {
     }
 }
 
-impl WalletTransaction {
+impl TransactionRecord {
     fn serialized_version() -> u8 {
         // Version 1 appends the ironwood note collections.
         1
@@ -341,7 +341,7 @@ impl WalletTransaction {
         mut reader: R,
         consensus_parameters: &impl consensus::Parameters,
     ) -> std::io::Result<Self> {
-        let version = read_version(&mut reader, "WalletTransaction", Self::serialized_version())?;
+        let version = read_version(&mut reader, "TransactionRecord", Self::serialized_version())?;
         let txid = TxId::read(&mut reader)?;
         let status = ConfirmationStatus::read(&mut reader)?;
         let transaction = Transaction::read(
@@ -1570,7 +1570,7 @@ mod tests {
         let newer_tree_bounds = [TreeBounds::serialized_version() + 1];
         let newer_nullifier_map = [NullifierMap::serialized_version() + 1];
         let newer_wallet_block = [WalletBlock::serialized_version() + 1];
-        let newer_wallet_transaction = [WalletTransaction::serialized_version() + 1];
+        let newer_wallet_transaction = [TransactionRecord::serialized_version() + 1];
         let newer_transparent_coin = [TransparentCoin::serialized_version() + 1];
         let newer_wallet_note = [SaplingNote::serialized_version() + 1];
         let newer_outgoing_note = [OutgoingSaplingNote::serialized_version() + 1];
@@ -1598,8 +1598,8 @@ mod tests {
                 WalletBlock::read(newer_wallet_block.as_slice()).map(drop),
             ),
             (
-                "WalletTransaction",
-                WalletTransaction::read(newer_wallet_transaction.as_slice(), &consensus_parameters)
+                "TransactionRecord",
+                TransactionRecord::read(newer_wallet_transaction.as_slice(), &consensus_parameters)
                     .map(drop),
             ),
             (

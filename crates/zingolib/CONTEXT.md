@@ -16,7 +16,9 @@
 
 **Chain Tip** — The range of blocks at the top of the blockchain starting from the lowest block containing the last note commitment to the most recent shard, up to the current chain height. Distinct from "chain height" (highest known block).
 
-**Spend-Evidence Height** — The block height through which the wallet's evidence of spends and transaction inclusion is complete: every block at or below it has been scanned with its nullifiers mapped, so a note spent or a transaction mined at or below this height is provably visible. Distinct from chain height (highest known header, which may exceed what scanning has reached) and from the highest scanned block (scan ranges complete out of order, and a scanned-but-unmapped block still lacks spend evidence). Judgments that condemn — declaring a transaction expired-unmined, a migration part dead — bind to the Spend-Evidence Height; judgments that plan forward may use chain height.
+**Spend-Evidence Ceiling** — The block height through which the wallet's evidence of spends and transaction inclusion is complete: every block at or below it has been scanned with its nullifiers mapped, so a note spent or a transaction mined at or below this height is provably visible. Distinct from chain height (highest known header, which may exceed what scanning has reached) and from the highest scanned block (scan ranges complete out of order, and a scanned-but-unmapped block still lacks spend evidence). Judgments that condemn bind to the Spend-Evidence Ceiling. Declaring a transaction expired-unmined or a migration part dead is such a judgment. Judgments that plan forward may use chain height. Counted from the wallet birthday upward, where the Spend-Evidence Floor is counted from the chain height downward. *Avoid*: Spend-Evidence Height, the name this term carried until 2026-11-19.
+
+**Spend-Evidence Floor** — The lowest block height from which the wallet's evidence of spends is complete up to the chain height. For a shielded note, every block at or above the floor has been scanned. A scanned block may still await its nullifier mapping, so the absence of a recorded spend proves a shielded note unspent when two conditions hold: the note is mined at or above the floor, and every block range whose nullifiers the wallet must refetch for the note has been scanned with its nullifiers mapped. For a transparent coin the floor sits lower, because the wallet learns every transaction that spends its transparent coins before scanning begins. There, the floor is the lowest height above which no block range the wallet has prioritised for scanning remains unscanned, and a coin mined at or above it with no recorded spend is unspent. A note mined below the floor may have a spend in an unscanned block above it, even when the note sits at or below the Spend-Evidence Ceiling. Judgments that vouch bind to the Spend-Evidence Floor. Declaring a note spendable with certainty is such a judgment. *Avoid*: spend horizon, the name this term carried in code until 2026-11-19.
 
 **Re-org** — A chain reorganisation. The sync engine detects this by checking block hash continuity in a verification window at the top of the locally known chain.
 
@@ -96,7 +98,7 @@
 
 **LightWallet** — The wallet's internal data store. Holds keys, wallet transactions, shard trees, and sync state. Not part of the public contract — all external access is intended to go through `LightClient` passthrough methods. Direct access via the temporary `LightClient::wallet()` escape hatch is pending removal as the passthrough API is completed.
 
-**WalletTransaction** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine.
+**TransactionRecord** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine. *Avoid*: WalletTransaction (the name of the type before the rename).
 
 **WalletBlock** — A compact record of a scanned block, retained only at scan range bounds or when it contains wallet-relevant transactions.
 
@@ -189,6 +191,10 @@
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
 
+**Spendable** — Said of a shielded note that the wallet can spend at a given anchor and has proven unspent: the note is confirmed at or below the anchor, belongs to the account, holds a nullifier and a commitment tree position, can be witnessed, has no recorded spend, and every block that could hold its spend has been scanned. The absence of a recorded spend is then proof.
+
+**Potentially Spendable** — Said of a shielded note that is Spendable, or that meets every condition of Spendable except the last: some block that could hold its spend is not yet scanned. The wallet has no record of a spend and cannot yet rule one out. Every Spendable note is Potentially Spendable.
+
 **Dust** — Outputs whose value is strictly below the ZIP-317 marginal fee. Excluded from balances and not eligible as inputs. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration.
 
 ---
@@ -277,7 +283,7 @@
 
 **IndexerSweep exit** — Retired 2026-10-13: named the first exit to prove itself at boot, whose client ran the Server-Selection Sweep. Boot now proves three exits, and the attach health round trip against the Session Indexer is the IndexerClient conduit's first act after its Sentinel. _Avoid_: the term for any live role.
 
-**PriceFetch exit** — The first exit to prove itself at boot, whose client fetches the price during boot. The quote is printed and stored nowhere: zingolib-cli narrates it and zingo-mobile handles its own result. A later `current_price` runs a fresh fetch over the network and binds this same exit, so it skips the Sentinel rather than reading anything cached. Ratified 2026-08-17; first rather than second since 2026-10-13.
+**PriceFetch exit** — The first exit to prove itself at boot, whose client fetches the price during boot. The quote is printed and stored nowhere: zingolib-cli narrates it and zingo-mobile handles its own result. A later `current_price` runs a fresh fetch over the network and binds this same exit, so it skips the Sentinel rather than reading anything cached. A consumer's `fetch_over_mixnet` binds this same exit with one client per call and one attempt, so its third-party lookups do not share the IndexerClient exit, and a URL that does not respond records nothing about the exit. Ratified 2026-08-17; first rather than second since 2026-10-13; carries the consumer fetch since 2026-11-06.
 
 **IndexerClient exit** — The second exit to prove itself at boot, which carries every operation bound for the Session Indexer: the attach health round trip, Transmissions, and migration parts. Its client is the only one that persists past boot; the other two stop when their task ends, leaving their exits proven and role-bound. *Avoid*: Standing Client (the retired name for the persisting client, retired 2026-08-17 when the role moved onto the exit). Ratified 2026-08-17; second rather than third, and owner of the health round trip, since 2026-10-13.
 
@@ -365,7 +371,7 @@
 
 ## Testing
 
-**libtonode-tests** — The crate of testnet cells: chain-bound tests behind the non-default `testnet` feature that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. Its regtest suite, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
+**Testnet cells** — Chain-bound tests in `crates/zingolib/tests/testnet.rs`, behind the non-default `testnet` feature of `zingolib`, that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. They lived in the `libtonode-tests` crate until November 2026, when that crate folded into `zingolib`. The regtest suite of that crate, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
 
 **darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
 
@@ -373,7 +379,7 @@
 
 ## Utility Crates
 
-**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `WalletTransaction`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
+**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `TransactionRecord`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
 
 **zl-file-format** — A published crates.io library split out of zingolib. Holds the Wallet File as one data type with the readers of every Wallet Version and the writer of the current one.
 

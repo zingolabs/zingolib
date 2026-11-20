@@ -31,7 +31,6 @@ use crate::{
         receivers::{Receiver, transaction_request_from_receivers},
     },
 };
-use pepper_sync::sync::{ScanPriority, ScanRange};
 
 /// How many times [`LightWallet::create_send_all_proposal`] proposes a
 /// send-all request, the first attempt included. Each retry can surface
@@ -337,62 +336,6 @@ impl LightWallet {
             }
         };
         MemoBytes::from(Memo::Arbitrary(Box::new(uas_bytes)))
-    }
-
-    /// Returns the block height at which all blocks equal to and above this height are scanned (scan ranges whose
-    /// priority satisfies [`ScanPriority::is_scanned`]).
-    /// Returns `None` if `self.scan_ranges` is empty.
-    ///
-    /// Useful for determining which height all the nullifiers have been mapped from for guaranteeing if a note is
-    /// unspent.
-    ///
-    /// The horizon *withholds* a note when the note's confirmation height lies below it. A spending
-    /// transaction can be mined only at or above the block that mined the note, so a note at or
-    /// above the horizon has had its entire spend window scanned, and the absence of a discovered
-    /// spend proves the note unspent. For a note below the horizon, the unscanned gap may conceal
-    /// a spend, so the strict form of [`Self::spendable_notes`] omits the note rather than vouch
-    /// for it. Withholding asserts nothing about the note; it records only that the wallet does
-    /// not yet know.
-    ///
-    /// `all_spends_known` may be set if all the spend locations are already known before scanning starts. For example,
-    /// the location of all transparent spends are known due to the pre-scan gRPC calls. In this case, the height returned
-    /// is the lowest height where there are no higher scan ranges with `FoundNote` or higher scan priority.
-    pub(crate) fn spend_horizon(&self, all_spends_known: bool) -> Option<BlockHeight> {
-        let mut scan_ranges_top_to_bottom = self.sync_state.scan_ranges().iter().rev();
-        let awaits_spend_detection = |scan_range: &&ScanRange| {
-            if all_spends_known {
-                scan_range.priority() >= ScanPriority::FoundNote
-                    || scan_range.priority() == ScanPriority::Scanning
-            } else {
-                !scan_range.priority().is_scanned()
-            }
-        };
-        let highest_range_awaiting_detection =
-            scan_ranges_top_to_bottom.find(awaits_spend_detection);
-        highest_range_awaiting_detection
-            .map(|awaiting_range| awaiting_range.block_range().end)
-            .or_else(|| self.sync_state.wallet_birthday())
-    }
-
-    /// Returns `true` if all nullifiers above `note_height` have been checked for this note's spend status.
-    ///
-    /// Requires that `note_height >= spend_horizon` (all ranges above the note are scanned) and that every
-    /// `refetch_nullifier_range` recorded on the note is fully contained within a `Scanned` scan range
-    /// (nullifiers that were discarded due to memory constraints have since been re-fetched).
-    pub(crate) fn note_spends_confirmed(
-        &self,
-        note_height: BlockHeight,
-        spend_horizon: BlockHeight,
-        refetch_nullifier_ranges: &[std::ops::Range<BlockHeight>],
-    ) -> bool {
-        note_height >= spend_horizon
-            && refetch_nullifier_ranges.iter().all(|refetch_range| {
-                self.sync_state.scan_ranges().iter().any(|scan_range| {
-                    scan_range.priority() == ScanPriority::Scanned
-                        && scan_range.block_range().contains(&refetch_range.start)
-                        && scan_range.block_range().contains(&(refetch_range.end - 1))
-                })
-            })
     }
 }
 

@@ -3178,7 +3178,7 @@ mod tests {
     /// into its denomination cohort. It is never silently skipped
     /// either: reconcile classifies it awaiting its expiry, visible to
     /// status, and the privacy-restoring rebuild follows once the
-    /// Spend-Evidence Height passes the expiry.
+    /// Spend-Evidence Ceiling passes the expiry.
     #[tokio::test]
     async fn overdue_signed_part_is_reported_awaiting_expiry_not_skipped() {
         use zcash_protocol::consensus::BlockHeight;
@@ -3370,7 +3370,7 @@ mod tests {
     /// reporting the migration vanished mid-split.
     #[tokio::test]
     async fn mid_round_status_projects_over_pending_outputs() {
-        use pepper_sync::wallet::{OutputId, WalletTransaction};
+        use pepper_sync::wallet::{OutputId, TransactionRecord};
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
@@ -3405,7 +3405,7 @@ mod tests {
             .collect();
         wallet.wallet_transactions.insert(
             round_txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            TransactionRecord::new_for_test_with_orchard_notes(
                 round_txid,
                 ConfirmationStatus::Transmitted(BlockHeight::from_u32(361)),
                 outputs,

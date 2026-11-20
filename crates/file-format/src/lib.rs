@@ -15,7 +15,7 @@ use zl_common::{
     config::SyncConfig,
     keys::{UnifiedAddressId, UnifiedKeyStore, transparent::TransparentAddressId},
     sync::SyncState,
-    wallet::{NullifierMap, OutputId, ScanTarget, ShardTrees, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, ScanTarget, ShardTrees, TransactionRecord, WalletBlock},
 };
 
 mod file;
@@ -93,7 +93,7 @@ pub struct WalletFileParts<M> {
     pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
     pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    pub wallet_transactions: HashMap<TxId, WalletTransaction>,
+    pub wallet_transactions: HashMap<TxId, TransactionRecord>,
     pub nullifier_map: NullifierMap,
     pub outpoint_map: BTreeMap<OutputId, ScanTarget>,
     pub shard_trees: ShardTrees,
@@ -112,7 +112,7 @@ pub struct WalletFileRef<'a, M> {
     pub unified_addresses: &'a BTreeMap<UnifiedAddressId, UnifiedAddress>,
     pub transparent_addresses: &'a BTreeMap<TransparentAddressId, String>,
     pub wallet_blocks: &'a BTreeMap<BlockHeight, WalletBlock>,
-    pub wallet_transactions: &'a HashMap<TxId, WalletTransaction>,
+    pub wallet_transactions: &'a HashMap<TxId, TransactionRecord>,
     pub nullifier_map: &'a NullifierMap,
     pub outpoint_map: &'a BTreeMap<OutputId, ScanTarget>,
     pub shard_trees: &'a mut ShardTrees,

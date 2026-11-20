@@ -272,7 +272,7 @@ mod tests {
             let mut wallet = client.wallet().write().await;
             wallet.wallet_transactions.insert(
                 failed,
-                pepper_sync::wallet::WalletTransaction::new_for_test(
+                pepper_sync::wallet::TransactionRecord::new_for_test(
                     failed,
                     ConfirmationStatus::Failed(5.into()),
                 ),

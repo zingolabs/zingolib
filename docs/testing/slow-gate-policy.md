@@ -37,7 +37,8 @@ coverage that happens to be expensive.
 ## Wiring
 
 No crate declares the feature today: `libtonode-tests` dropped its empty
-`slow = []` with the regtest removal. A test crate adopts the shape when
+`slow = []` with the regtest removal, and the crate has since folded into
+`zingolib`. A test crate adopts the shape when
 its first outlier appears: an empty `slow = []` feature, off by default. Gate an entire file with
 `#![cfg(feature = "slow")]`, or a single test with
 `#[cfg(feature = "slow")]` on the test function.
