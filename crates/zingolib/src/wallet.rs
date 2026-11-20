@@ -42,6 +42,7 @@ pub(crate) mod note_selection;
 pub mod output;
 pub mod propose;
 pub mod send;
+pub(crate) mod spend_evidence;
 pub mod summary;
 pub mod sync;
 pub mod transaction;

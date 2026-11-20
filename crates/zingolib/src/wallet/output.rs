@@ -277,7 +277,7 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
-        let Some(spend_horizon) = self.spend_horizon(false) else {
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
             return Err(WalletError::NoSyncData);
         };
         Ok(self
@@ -286,7 +286,7 @@ impl LightWallet {
             .filter(|&note| {
                 self.note_spends_confirmed(
                     self.output_transaction(note).status().get_height(),
-                    spend_horizon,
+                    spend_evidence_floor,
                     note.refetch_nullifier_ranges(),
                 )
             })
@@ -299,7 +299,7 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
-        if self.spend_horizon(false).is_none() {
+        if self.spend_evidence_floor(false).is_none() {
             return Err(WalletError::NoSyncData);
         }
         if self
@@ -389,7 +389,7 @@ impl LightWallet {
             "zero conf shielding not currently supported!"
         );
 
-        let Some(spend_horizon) = self.spend_horizon(true) else {
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(true) else {
             return Vec::new();
         };
         let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
@@ -421,7 +421,7 @@ impl LightWallet {
                                     // checks all ranges with `FoundNote` priority or higher above the coin height are
                                     // scanned as all relevant transactions containing transparent spends are known and
                                     // targetted before scanning begins.
-                                    transaction.status().get_height() >= spend_horizon
+                                    transaction.status().get_height() >= spend_evidence_floor
                                 } else {
                                     true
                                 }
