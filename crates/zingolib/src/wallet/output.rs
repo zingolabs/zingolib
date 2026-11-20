@@ -352,7 +352,7 @@ impl LightWallet {
     ) -> Confirmation {
         let status = transaction.status();
         if !status.is_confirmed_before_or_at(&anchor_height) {
-            return Confirmation::Pending;
+            return Confirmation::Unanchored;
         }
         let height = status.get_height();
         Confirmation::Anchored {
@@ -455,7 +455,7 @@ impl LightWallet {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Confirmation {
-    Pending,
+    Unanchored,
     Anchored {
         height: BlockHeight,
         witnessable: bool,
@@ -466,7 +466,7 @@ pub(crate) enum Confirmation {
 pub(crate) enum Verdict {
     Certain,
     Uncertain,
-    Pending,
+    Unanchored,
     ForeignAccount,
     Excluded,
     Spent,
@@ -480,7 +480,7 @@ impl Verdict {
         match self {
             Verdict::Certain => Some(true),
             Verdict::Uncertain => Some(false),
-            Verdict::Pending
+            Verdict::Unanchored
             | Verdict::ForeignAccount
             | Verdict::Excluded
             | Verdict::Spent
@@ -511,7 +511,7 @@ impl Judgement<'_> {
             witnessable,
         } = confirmation
         else {
-            return Verdict::Pending;
+            return Verdict::Unanchored;
         };
         if note.key_id().account_id() != self.account {
             return Verdict::ForeignAccount;
@@ -774,7 +774,6 @@ mod tests {
         }
     }
 
-    // Tests that the candidates are the lenient spendable walk and the certain ones are the strict walk.
     #[test]
     fn candidates_agree_with_the_spendable_walks() {
         let wallet = funded_wallet();
@@ -793,7 +792,6 @@ mod tests {
         );
     }
 
-    // Tests that a spent note leaves both spendable walks and the candidates.
     #[test]
     fn a_spent_note_leaves_the_candidates() {
         let mut wallet = funded_wallet();
@@ -843,7 +841,6 @@ mod tests {
         witnessable: true,
     };
 
-    // Tests that the single walk judges every note of the pool, and that the funded wallet's notes are all certain.
     #[test]
     fn every_note_is_judged_and_the_funded_wallet_is_certain() {
         let wallet = funded_wallet();
@@ -858,7 +855,6 @@ mod tests {
         );
     }
 
-    // Tests the pure judgement fact by fact: each fact it reads has a verdict of its own.
     #[test]
     fn judge_names_the_first_failing_fact() {
         let wallet = funded_wallet();
@@ -870,8 +866,8 @@ mod tests {
             Verdict::Certain
         );
         assert_eq!(
-            judgement(&wallet, &none, &unspent).judge(note, Confirmation::Pending),
-            Verdict::Pending
+            judgement(&wallet, &none, &unspent).judge(note, Confirmation::Unanchored),
+            Verdict::Unanchored
         );
         assert_eq!(
             judgement(&wallet, &none, &unspent).judge(
@@ -906,7 +902,6 @@ mod tests {
         assert_eq!(unscanned.judge(note, ANCHORED), Verdict::Uncertain);
     }
 
-    // Tests that a spent note is judged spent rather than dropped from the walk.
     #[test]
     fn a_spent_note_is_judged_spent() {
         let mut wallet = funded_wallet();
