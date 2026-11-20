@@ -813,7 +813,7 @@ mod tests {
         );
     }
 
-    fn a_note(wallet: &LightWallet) -> &OrchardNote {
+    fn get_the_100000_zat_spendable_orch_note(wallet: &LightWallet) -> &OrchardNote {
         certainly_spendable(wallet)
             .into_iter()
             .find(|note| note.value() == 100_000)
@@ -858,7 +858,7 @@ mod tests {
     #[test]
     fn judge_names_the_first_failing_fact() {
         let wallet = funded_wallet();
-        let note = a_note(&wallet);
+        let note = get_the_100000_zat_spendable_orch_note(&wallet);
         let none = HashSet::new();
         let unspent = HashMap::new();
         assert_eq!(
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn a_spent_note_is_judged_spent() {
         let mut wallet = funded_wallet();
-        let spent = a_note(&wallet).output_id();
+        let spent = get_the_100000_zat_spendable_orch_note(&wallet).output_id();
         mark_spent(&mut wallet, spent);
         let judged = wallet
             .judged_notes::<OrchardNote>(ANCHOR, &HashSet::new(), ACCOUNT)
