@@ -11,11 +11,11 @@ zingo-cli is a full-featured command-line application, suitable for development
 and for other terminal-driven projects.
 
 ### Known consumers
-* zingo-mobile
-* Edge
-* zingo-pc
-* zingo-tui
-* zingo-cli
+* [zingo-mobile](https://github.com/zingolabs/zingo-mobile)
+* [Edge](https://github.com/EdgeApp/edge-react-gui)
+* [zingo-pc](https://github.com/zingolabs/zingo-pc)
+* [zingo-tui](https://github.com/zingolabs/zingolib-tui)
+* [zingo-cli](bin/cli/README.md)
 
 # Security Vulnerability Disclosure
 
