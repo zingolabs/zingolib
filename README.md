@@ -16,6 +16,7 @@ and for other terminal-driven projects.
 * [zingo-pc](https://github.com/zingolabs/zingo-pc)
 * [zingo-tui](https://github.com/zingolabs/zingolib-tui)
 * [zingo-cli](bin/cli/README.md)
+* [zingo-desktop-delegator](https://github.com/zingolabs/zingo-desktop-delegator)
 
 # Security Vulnerability Disclosure
 
