@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the readers and the writer of every layout version. It was split out of
   `zingolib`, whose `LightWallet` converts to and from it.
 - `WalletFile<M>` holds the content of a wallet file as read. Only the
-  readers of the crate build one. It has a read accessor named after each
-  field, and `WalletFile::into_parts` moves the content out as a
+  readers of the crate build one. `WalletFile::into_parts` moves the content out as a
   `WalletFileParts<M>`, whose fields are public. `WalletFileRef<'a, M>`
   borrows the same fields for writing. `WalletFile::read` reads a file under a given `ChainType`,
   `WalletFile::validate` checks the content, and `WalletFileRef::write`
