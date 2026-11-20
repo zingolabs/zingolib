@@ -5,10 +5,8 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use orchard::tree::MerkleHashOrchard;
-use prost::Message;
 
 use incrementalmerkletree::{Address, Hashable, Level, Position, witness::IncrementalWitness};
-use lightwallet_protocol::CompactBlock;
 use shardtree::{
     LocatedPrunableTree, ShardTree,
     store::{Checkpoint, ShardStore as _, memory::MemoryShardStore},
@@ -151,28 +149,12 @@ pub struct BlockData {
 }
 
 impl BlockData {
-    pub(crate) fn new_with(height: u64, hash: &[u8]) -> Self {
-        let hash = hash.iter().copied().rev().collect::<Vec<_>>();
-
-        let cb = CompactBlock {
-            hash,
-            ..Default::default()
-        };
-
-        let mut ecb = vec![];
-        cb.encode(&mut ecb)
-            .expect("a Vec<u8> grows to fit any encoded message");
-
-        Self { ecb, height }
-    }
-
     /// TODO: Add Doc Comment Here!
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let height = reader.read_i32::<LittleEndian>()? as u64;
 
         let mut hash_bytes = [0; 32];
         reader.read_exact(&mut hash_bytes)?;
-        hash_bytes.reverse();
 
         // We don't need this, but because of a quirk, the version is stored later, so we can't actually
         // detect the version here. So we write an empty tree and read it back here
@@ -187,12 +169,26 @@ impl BlockData {
             Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?
         };
 
-        if ecb.is_empty() {
-            Ok(BlockData::new_with(height, &hash_bytes))
-        } else {
-            Ok(BlockData { ecb, height })
-        }
+        Ok(BlockData { ecb, height })
     }
+}
+
+#[derive(Clone, PartialEq, Eq, prost::Message)]
+pub(crate) struct TreeStateMessage {
+    #[prost(string, tag = "1")]
+    network: String,
+    #[prost(uint64, tag = "2")]
+    height: u64,
+    #[prost(string, tag = "3")]
+    hash: String,
+    #[prost(uint32, tag = "4")]
+    time: u32,
+    #[prost(string, tag = "5")]
+    sapling_tree: String,
+    #[prost(string, tag = "6")]
+    orchard_tree: String,
+    #[prost(string, tag = "7")]
+    ironwood_tree: String,
 }
 
 /// `HashMap` of all transactions in a wallet, keyed by txid.
@@ -1247,7 +1243,56 @@ impl WalletZecPriceInfo {
 
 #[cfg(test)]
 mod tests {
+    use prost::Message as _;
+
     use super::*;
+
+    const TREE_STATE_NETWORK: &str = "main";
+    const TREE_STATE_HEIGHT: u64 = 419_200;
+    const TREE_STATE_HASH: &str = "00";
+    const TREE_STATE_TIME: u32 = 1_540_000_000;
+    const TREE_STATE_SAPLING_TREE: &str = "01";
+    const TREE_STATE_ORCHARD_TREE: &str = "02";
+    const TREE_STATE_IRONWOOD_TREE: &str = "03";
+    const TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL: [u8; 32] = [
+        0x0a, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x10, 0x80, 0xcb, 0x19, 0x1a, 0x02, 0x30, 0x30, 0x20,
+        0x80, 0x92, 0xaa, 0xde, 0x05, 0x2a, 0x02, 0x30, 0x31, 0x32, 0x02, 0x30, 0x32, 0x3a, 0x02,
+        0x30, 0x33,
+    ];
+    const NETWORK_FIELD_AS_A_VARINT: [u8; 2] = [0x08, 0x01];
+
+    fn tree_state_message() -> TreeStateMessage {
+        TreeStateMessage {
+            network: TREE_STATE_NETWORK.to_string(),
+            height: TREE_STATE_HEIGHT,
+            hash: TREE_STATE_HASH.to_string(),
+            time: TREE_STATE_TIME,
+            sapling_tree: TREE_STATE_SAPLING_TREE.to_string(),
+            orchard_tree: TREE_STATE_ORCHARD_TREE.to_string(),
+            ironwood_tree: TREE_STATE_IRONWOOD_TREE.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_tree_state_that_lightwallet_protocol_encoded_decodes_to_the_same_fields() {
+        assert_eq!(
+            TreeStateMessage::decode(TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL.as_slice()).ok(),
+            Some(tree_state_message())
+        );
+    }
+
+    #[test]
+    fn a_tree_state_encodes_to_the_bytes_lightwallet_protocol_wrote() {
+        assert_eq!(
+            tree_state_message().encode_to_vec(),
+            TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL
+        );
+    }
+
+    #[test]
+    fn a_tree_state_whose_network_field_is_not_a_string_is_refused() {
+        assert!(TreeStateMessage::decode(NETWORK_FIELD_AS_A_VARINT.as_slice()).is_err());
+    }
 
     const RSEED_BEFORE_ZIP212: u8 = 1;
     const RSEED_UNKNOWN: u8 = 3;

@@ -20,7 +20,6 @@ legacy = [
     "dep:bs58",
     "dep:incrementalmerkletree",
     "dep:jubjub",
-    "dep:lightwallet-protocol",
     "dep:orchard",
     "dep:prost",
     "dep:sapling-crypto",
@@ -53,7 +52,6 @@ zcash_transparent.workspace = true
 # Protocol
 bip0039.workspace = true
 bip32 = { workspace = true, optional = true }
-lightwallet-protocol = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
 zip32.workspace = true
 
