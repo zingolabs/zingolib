@@ -432,10 +432,6 @@ impl ChainView for crate::wallet::LightWallet {
     }
 
     fn spend_evidence_ceiling(&self) -> Option<BlockHeight> {
-        // `fully_scanned_height`, not `highest_scanned_height`: scan ranges
-        // complete out of order, and a scanned-but-unmapped block still
-        // lacks spend evidence. Only the gap-free, nullifier-mapped
-        // frontier is evidence-complete.
         crate::wallet::spend_evidence::ceiling(&self.sync_state)
     }
 

@@ -1,17 +1,21 @@
-use std::ops::Range;
+use std::ops;
 
 use pepper_sync::{sync, wallet};
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::consensus;
 
-pub(crate) fn ceiling(sync_state: &wallet::SyncState) -> Option<BlockHeight> {
+pub(crate) fn ceiling(sync_state: &wallet::SyncState) -> Option<consensus::BlockHeight> {
+    // `fully_scanned_height`, not `highest_scanned_height`: scan ranges
+    // complete out of order, and a scanned-but-unmapped block still
+    // lacks spend evidence. Only the gap-free, nullifier-mapped
+    // frontier is evidence-complete.
     sync_state.fully_scanned_height()
 }
 
 pub(crate) fn floor(
     scan_ranges: &[sync::ScanRange],
-    wallet_birthday: Option<BlockHeight>,
+    wallet_birthday: Option<consensus::BlockHeight>,
     all_spends_known: bool,
-) -> Option<BlockHeight> {
+) -> Option<consensus::BlockHeight> {
     let mut scan_ranges_top_to_bottom = scan_ranges.iter().rev();
     let awaits_spend_detection = |scan_range: &&sync::ScanRange| {
         if all_spends_known {
@@ -28,9 +32,9 @@ pub(crate) fn floor(
 }
 
 pub(crate) fn note_spends_confirmed(
-    note_height: BlockHeight,
-    floor: BlockHeight,
-    refetch_nullifier_ranges: &[Range<BlockHeight>],
+    note_height: consensus::BlockHeight,
+    floor: consensus::BlockHeight,
+    refetch_nullifier_ranges: &[ops::Range<consensus::BlockHeight>],
     scan_ranges: &[sync::ScanRange],
 ) -> bool {
     note_height >= floor
@@ -44,7 +48,10 @@ pub(crate) fn note_spends_confirmed(
 }
 
 impl super::LightWallet {
-    pub(crate) fn spend_evidence_floor(&self, all_spends_known: bool) -> Option<BlockHeight> {
+    pub(crate) fn spend_evidence_floor(
+        &self,
+        all_spends_known: bool,
+    ) -> Option<consensus::BlockHeight> {
         floor(
             self.sync_state.scan_ranges(),
             self.sync_state.wallet_birthday(),
@@ -54,9 +61,9 @@ impl super::LightWallet {
 
     pub(crate) fn note_spends_confirmed(
         &self,
-        note_height: BlockHeight,
-        floor: BlockHeight,
-        refetch_nullifier_ranges: &[Range<BlockHeight>],
+        note_height: consensus::BlockHeight,
+        floor: consensus::BlockHeight,
+        refetch_nullifier_ranges: &[ops::Range<consensus::BlockHeight>],
     ) -> bool {
         note_spends_confirmed(
             note_height,
@@ -69,17 +76,17 @@ impl super::LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
+    use std::ops;
 
     use pepper_sync::sync;
-    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::consensus;
 
-    const BIRTHDAY: BlockHeight = BlockHeight::from_u32(0);
-    const GAP_START: BlockHeight = BlockHeight::from_u32(100);
-    const GAP_END: BlockHeight = BlockHeight::from_u32(200);
-    const TIP_END: BlockHeight = BlockHeight::from_u32(300);
-    const BELOW_THE_GAP: BlockHeight = BlockHeight::from_u32(50);
-    const ABOVE_THE_GAP: BlockHeight = BlockHeight::from_u32(250);
+    const BIRTHDAY: consensus::BlockHeight = consensus::BlockHeight::from_u32(0);
+    const GAP_START: consensus::BlockHeight = consensus::BlockHeight::from_u32(100);
+    const GAP_END: consensus::BlockHeight = consensus::BlockHeight::from_u32(200);
+    const TIP_END: consensus::BlockHeight = consensus::BlockHeight::from_u32(300);
+    const BELOW_THE_GAP: consensus::BlockHeight = consensus::BlockHeight::from_u32(50);
+    const ABOVE_THE_GAP: consensus::BlockHeight = consensus::BlockHeight::from_u32(250);
 
     fn scan_ranges_with_a_gap(gap_priority: sync::ScanPriority) -> [sync::ScanRange; 3] {
         [
@@ -122,7 +129,7 @@ mod tests {
     #[test]
     fn a_note_below_the_floor_has_no_confirmed_spends() {
         let scan_ranges = scan_ranges_with_a_gap(sync::ScanPriority::Historic);
-        let no_refetch_ranges: [Range<BlockHeight>; 0] = [];
+        let no_refetch_ranges: [ops::Range<consensus::BlockHeight>; 0] = [];
 
         assert!(super::note_spends_confirmed(
             ABOVE_THE_GAP,
