@@ -1411,6 +1411,7 @@ where
                     &missing_block_bounds,
                     &mut wallet_transactions,
                     &nullifiers,
+                    chain_height,
                 )
                 .await?;
 
@@ -1493,6 +1494,7 @@ where
                     &scanned_blocks,
                     &mut wallet_transactions,
                     &outpoints,
+                    chain_height,
                 )
                 .await?;
                 let shielded_spend_scan_targets = spend::locate_shielded_spends(
@@ -1503,6 +1505,7 @@ where
                     &scanned_blocks,
                     &mut wallet_transactions,
                     &nullifiers,
+                    chain_height,
                 )
                 .await?;
 
@@ -4104,7 +4107,7 @@ mod test {
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::RawTransaction;
+        use zl_netutils::lightwallet_protocol::{CompactBlock, RawTransaction};
 
         use crate::{
             client::FetchRequest,
@@ -4185,7 +4188,7 @@ mod test {
             )])
         }
 
-        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`.
+        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`, over a chain of empty blocks.
         fn spawn_fetcher(transaction: &WalletTransaction) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
@@ -4197,6 +4200,12 @@ mod test {
                             let _ignore_error = reply_sender.send(Ok(RawTransaction {
                                 data: data.clone(),
                                 height: u64::from(SPEND_HEIGHT),
+                            }));
+                        }
+                        FetchRequest::CompactBlock(reply_sender, block_height) => {
+                            let _ignore_error = reply_sender.send(Ok(CompactBlock {
+                                height: u64::from(block_height),
+                                ..Default::default()
                             }));
                         }
                         _ => panic!("unexpected fetch request"),
@@ -4234,6 +4243,7 @@ mod test {
                 &scanned_blocks(),
                 &mut scanned_transactions,
                 &BTreeMap::new(),
+                SPEND_HEIGHT,
             )
             .await?;
             wallet
@@ -4245,16 +4255,39 @@ mod test {
         }
 
         #[tokio::test]
-        async fn pending_spending_transaction_is_fetched_and_confirmed() {
+        async fn pending_spending_transaction_is_confirmed_without_a_fetch() {
             let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
             let spending_txid = spending_record.txid();
-            let fetch_request_sender = spawn_fetcher(&spending_record);
             let mut wallet = wallet_with_mapped_spend(spending_record);
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            drop(fetch_request_receiver);
 
             update_transparent_spends(&mut wallet, fetch_request_sender)
                 .await
                 .unwrap();
 
+            assert_spend_is_confirmed(&wallet, spending_txid);
+        }
+
+        #[tokio::test]
+        async fn unrecorded_spending_transaction_is_fetched_and_confirmed() {
+            let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let fetch_request_sender = spawn_fetcher(&spending_record);
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+            wallet
+                .get_wallet_transactions_mut()
+                .unwrap()
+                .remove(&spending_txid);
+
+            update_transparent_spends(&mut wallet, fetch_request_sender)
+                .await
+                .unwrap();
+
+            assert_spend_is_confirmed(&wallet, spending_txid);
+        }
+
+        fn assert_spend_is_confirmed(wallet: &MockWallet, spending_txid: TxId) {
             assert_eq!(
                 wallet
                     .get_wallet_transactions()
@@ -4264,7 +4297,7 @@ mod test {
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
             );
-            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
+            assert_eq!(get_coin_spending_txid(wallet), Some(spending_txid));
             // the spend stays mapped until cleanup prunes it behind the fully scanned height
             assert!(
                 wallet
@@ -4297,7 +4330,12 @@ mod test {
         #[tokio::test]
         async fn failed_fetch_keeps_the_mapped_spend() {
             let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
             let mut wallet = wallet_with_mapped_spend(spending_record);
+            wallet
+                .get_wallet_transactions_mut()
+                .unwrap()
+                .remove(&spending_txid);
             let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
             drop(fetch_request_receiver);
 
@@ -5199,7 +5237,7 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zl_netutils::lightwallet_protocol::{CompactBlock, RawTransaction, TreeState};
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5273,6 +5311,12 @@ mod test {
                                     height: u64::from(SPEND_HEIGHT),
                                 }));
                             }
+                        }
+                        FetchRequest::CompactBlock(reply_sender, block_height) => {
+                            let _ignore_error = reply_sender.send(Ok(CompactBlock {
+                                height: u64::from(block_height),
+                                ..Default::default()
+                            }));
                         }
                         _ => panic!("unexpected fetch request"),
                     }

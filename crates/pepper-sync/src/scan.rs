@@ -31,6 +31,7 @@ use self::{
 };
 
 pub(crate) mod compact_blocks;
+pub(crate) mod cover;
 pub(crate) mod task;
 pub(crate) mod transactions;
 
@@ -156,6 +157,7 @@ where
         mut scan_targets,
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
+        pending_transactions,
         transparent_scan_floor,
         chain_height,
         highest_scanned_height,
@@ -265,6 +267,8 @@ where
         &wallet_blocks,
         &mut outpoints,
         transparent_inuse_addresses,
+        &pending_transactions,
+        chain_height,
     )
     .await?;
 

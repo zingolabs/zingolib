@@ -283,6 +283,78 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
+#[tokio::test]
+async fn sent_transactions_are_never_requested_by_txid() {
+    let mut net = MockNet::launch().await;
+    let mut sender = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
+    let recipient = synthetic_wallet::external_address(PoolType::ORCHARD);
+
+    let mut sent = Vec::from(
+        from_inputs::quick_send(&mut sender, vec![(&recipient, 20_000, None)])
+            .await
+            .unwrap(),
+    );
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: 70_000 o: 0 s: 0 t: 0);
+
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&recipient).unwrap(),
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    sent.extend(
+        from_inputs::quick_send(
+            &mut sender,
+            vec![(&recipient, max_send_value.into_u64(), None)],
+        )
+        .await
+        .unwrap(),
+    );
+    net.chain.write().await.mine_mempool();
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+
+    let chain = net.chain.read().await;
+    let requested = chain.transaction_request_log();
+    assert!(!requested.is_empty());
+    for txid in &sent {
+        assert!(!requested.contains(txid), "the wallet requested {txid}");
+    }
+}
+
+#[tokio::test]
+async fn a_received_transaction_is_requested_with_its_whole_cover_range() {
+    let mut net = MockNet::launch().await;
+    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
+    let other_wallet = synthetic_wallet::external_address(PoolType::ORCHARD);
+    net.chain.write().await.mine_empty_blocks(4);
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    net.chain.write().await.mine_empty_blocks(6);
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, FUNDING)], 6).await;
+    assert_eq!(net.chain.read().await.tip(), 20);
+
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+
+    let cover_range_txids = net.chain.read().await.mined_txids(10..20);
+    assert_eq!(cover_range_txids.len(), 2);
+    assert_eq!(
+        net.chain.read().await.transaction_request_log(),
+        cover_range_txids
+    );
+
+    recipient.rescan_and_await().await.unwrap();
+    check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    assert_eq!(
+        net.chain.read().await.transaction_request_log(),
+        [cover_range_txids.clone(), cover_range_txids].concat()
+    );
+}
+
 /// Tests that max_send_value() returns a non-zero value for a wallet
 /// with funds.
 #[tokio::test]
@@ -4350,12 +4422,12 @@ mod strict_chain {
         }
     }
 
-    async fn wait_until_fetch_is_held(net: &MockNet) {
+    async fn wait_until_block_range_is_held(net: &MockNet) {
         let started = tokio::time::Instant::now();
-        while net.chain.read().await.faults.pending(Rpc::Transaction) > 0 {
+        while net.chain.read().await.faults.pending(Rpc::BlockRange) > 0 {
             assert!(
                 started.elapsed() < HOLD_WAIT_LIMIT,
-                "the sync engine did not request the transaction in time"
+                "the sync engine did not request a block range in time"
             );
             tokio::time::sleep(HOLD_POLL).await;
         }
@@ -4495,10 +4567,10 @@ mod strict_chain {
             .write()
             .await
             .faults
-            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+            .inject(Rpc::BlockRange, Fault::Delay(HELD_FETCH));
 
         recipient.sync().await.unwrap();
-        wait_until_fetch_is_held(&net).await;
+        wait_until_block_range_is_held(&net).await;
         recipient.stop_sync().unwrap();
         recipient.await_sync().await.unwrap();
         assert!(fully_scanned_height(&recipient).await < expiry);

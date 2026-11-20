@@ -2,6 +2,7 @@ use std::{
     borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
+    sync::Arc,
     time::Duration,
 };
 
@@ -12,6 +13,7 @@ use tokio::{
 };
 
 use zcash_keys::keys::UnifiedFullViewingKey;
+use zcash_primitives::transaction::TxId;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
@@ -1047,6 +1049,7 @@ pub(crate) struct ScanTask {
     pub(crate) scan_targets: BTreeSet<ScanTarget>,
     pub(crate) transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pub(crate) transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+    pub(crate) pending_transactions: Arc<HashMap<TxId, Vec<u8>>>,
     pub(crate) transparent_scan_floor: BlockHeight,
     // the session's chain height when the task was selected, which the rolling checkpoint window hangs from,
     // and the wallet's highest scanned block then, which places the anchor boundaries of each load with the
@@ -1065,6 +1068,7 @@ impl ScanTask {
         scan_targets: BTreeSet<ScanTarget>,
         transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
         transparent_gap_addresses: HashMap<String, TransparentAddressId>,
+        pending_transactions: HashMap<TxId, Vec<u8>>,
         transparent_scan_floor: BlockHeight,
         chain_height: BlockHeight,
         highest_scanned_height: BlockHeight,
@@ -1078,6 +1082,7 @@ impl ScanTask {
             scan_targets,
             transparent_inuse_addresses,
             transparent_gap_addresses,
+            pending_transactions: Arc::new(pending_transactions),
             transparent_scan_floor,
             chain_height,
             highest_scanned_height,
@@ -1151,6 +1156,7 @@ impl ScanTask {
                 scan_targets: lower_task_scan_targets,
                 transparent_inuse_addresses: self.transparent_inuse_addresses.clone(),
                 transparent_gap_addresses: self.transparent_gap_addresses.clone(),
+                pending_transactions: Arc::clone(&self.pending_transactions),
                 transparent_scan_floor: self.transparent_scan_floor,
                 chain_height: self.chain_height,
                 highest_scanned_height: self.highest_scanned_height,
@@ -1167,6 +1173,7 @@ impl ScanTask {
                 scan_targets: upper_task_scan_targets,
                 transparent_inuse_addresses: self.transparent_inuse_addresses,
                 transparent_gap_addresses: self.transparent_gap_addresses,
+                pending_transactions: self.pending_transactions,
                 transparent_scan_floor: self.transparent_scan_floor,
                 chain_height: self.chain_height,
                 highest_scanned_height: self.highest_scanned_height,

@@ -346,13 +346,12 @@ const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
 
 /// - Sends a transaction request to the fetcher, and sends it again after each
 ///   refusal that carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
-pub(crate) async fn get_transaction_and_block_height(
+pub(crate) async fn get_raw_transaction(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    consensus_parameters: &impl consensus::Parameters,
     txid: TxId,
-) -> Result<(Transaction, BlockHeight), ServerError> {
+) -> Result<RawTransaction, ServerError> {
     let mut retry_count = 0;
-    let raw_transaction = loop {
+    loop {
         let (reply_sender, reply_receiver) = oneshot::channel();
         fetch_request_sender
             .send(FetchRequest::Transaction(reply_sender, txid))
@@ -362,15 +361,26 @@ pub(crate) async fn get_transaction_and_block_height(
             .await
             .map_err(|_| ServerError::FetcherDropped)?
         {
-            Ok(raw_transaction) => break raw_transaction,
+            Ok(raw_transaction) => break Ok(raw_transaction),
             Err(status)
                 if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
             {
                 retry_count += 1;
             }
-            Err(status) => return Err(ServerError::RequestFailed(status)),
+            Err(status) => break Err(ServerError::RequestFailed(status)),
         }
-    };
+    }
+}
+
+/// Parses `raw_transaction` and returns it with its block height.
+///
+/// # Panics
+///
+/// Panics if the block height does not fit in a `u32`.
+pub(crate) fn parse_raw_transaction(
+    consensus_parameters: &impl consensus::Parameters,
+    raw_transaction: &RawTransaction,
+) -> Result<(Transaction, BlockHeight), ServerError> {
     let block_height =
         BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
     let transaction = Transaction::read(
@@ -630,7 +640,7 @@ mod tests {
         )
     }
 
-    fn status_of(result: Result<(Transaction, BlockHeight), ServerError>) -> tonic::Status {
+    fn status_of(result: Result<RawTransaction, ServerError>) -> tonic::Status {
         match result {
             Err(ServerError::RequestFailed(status)) => status,
             other => panic!("expected a failed request, got {other:?}"),
@@ -648,9 +658,8 @@ mod tests {
             .chain([tonic::Status::not_found("gone")])
             .collect();
         let status = status_of(
-            get_transaction_and_block_height(
+            get_raw_transaction(
                 spawn_transaction_fetcher(within_ceiling),
-                &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,
@@ -662,9 +671,8 @@ mod tests {
             .chain([tonic::Status::not_found("never asked")])
             .collect();
         let status = status_of(
-            get_transaction_and_block_height(
+            get_raw_transaction(
                 spawn_transaction_fetcher(beyond_ceiling),
-                &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,
@@ -677,9 +685,8 @@ mod tests {
     #[tokio::test]
     async fn an_unrelated_failure_is_not_retried() {
         let status = status_of(
-            get_transaction_and_block_height(
+            get_raw_transaction(
                 spawn_transaction_fetcher(vec![tonic::Status::internal("broken")]),
-                &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,

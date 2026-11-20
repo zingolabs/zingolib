@@ -76,6 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
+- A Sync Session requests a received transaction together with its Cover
+  Range, and sends no request for a transaction the wallet built.
 - **Breaking:** `mixnet::speed::WAVE_WIDTH` is
   `mixnet::speed::MAX_CONCURRENT_REQUESTS`. The value is unchanged: four
   requests in flight through one Nym client.
