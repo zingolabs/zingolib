@@ -28,7 +28,7 @@ use zl_common::status::ConfirmationStatus;
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
 use crate::engine::{
-    InitialSyncStateOps, ScanTargetOps, ShardTreesOps, SyncStateOps, WalletTransactionOps,
+    InitialSyncStateOps, ScanTargetOps, ShardTreesOps, SyncStateOps, TransactionRecordOps,
 };
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,
@@ -45,7 +45,7 @@ use crate::wallet::traits::{
 };
 use crate::wallet::{
     KeyIdInterface, NoteInterface, NullifierMap, OutputId, OutputInterface, PoolActivation,
-    ScanTarget, SyncMode, WalletBlock, WalletTransaction,
+    ScanTarget, SyncMode, TransactionRecord, WalletBlock,
 };
 use crate::witness::{ANCHOR_RETENTION_INTERVALS, LocatedTreeData};
 
@@ -1116,7 +1116,7 @@ where
 /// `invalid_txids` are the id's of the invalidated spending transactions. Any outputs in the `wallet_transactions`
 /// matching these spending transactions will be reset back to `None`.
 pub fn reset_spends(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    wallet_transactions: &mut HashMap<TxId, TransactionRecord>,
     invalid_txids: Vec<TxId>,
 ) {
     for transaction in wallet_transactions.values_mut() {
@@ -1149,7 +1149,7 @@ fn reset_invalid_spends<O: OutputInterface>(outputs: Vec<&mut O>, invalid_txids:
 /// block), so resetting it here would create a permanent phantom unspent note that no
 /// forward sync can correct.
 pub fn set_transactions_failed(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    wallet_transactions: &mut HashMap<TxId, TransactionRecord>,
     failed_txids: Vec<TxId>,
 ) {
     let (confirmed_txids, failable_txids): (Vec<TxId>, Vec<TxId>) =
@@ -1174,7 +1174,7 @@ pub fn set_transactions_failed(
 /// simultaneously reopens the affected scan ranges, so re-scanning is guaranteed to
 /// re-detect any spends that are still on the best chain.
 pub(crate) fn set_transactions_failed_unchecked(
-    wallet_transactions: &mut HashMap<TxId, WalletTransaction>,
+    wallet_transactions: &mut HashMap<TxId, TransactionRecord>,
     failed_txids: Vec<TxId>,
 ) {
     for failed_txid in failed_txids.iter() {
@@ -2141,7 +2141,7 @@ async fn update_wallet_data<W>(
     highest_scanned_height: BlockHeight,
     nullifiers: Option<&mut NullifierMap>,
     outpoints: &mut BTreeMap<OutputId, ScanTarget>,
-    mut transactions: HashMap<TxId, WalletTransaction>,
+    mut transactions: HashMap<TxId, TransactionRecord>,
     sapling_located_trees: Vec<LocatedTreeData<sapling_crypto::Node>>,
     orchard_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
     ironwood_located_trees: Vec<LocatedTreeData<MerkleHashOrchard>>,
@@ -2246,7 +2246,7 @@ where
 fn discover_unified_addresses<W>(
     wallet: &mut W,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
-    transaction: &WalletTransaction,
+    transaction: &TransactionRecord,
 ) -> Result<(), W::Error>
 where
     W: SyncWallet,
@@ -2802,7 +2802,7 @@ where
                 && expiry_height > BlockHeight::from_u32(0)
                 && fully_scanned_height >= expiry_height
         })
-        .map(super::wallet::WalletTransaction::txid)
+        .map(super::wallet::TransactionRecord::txid)
         .collect::<Vec<_>>();
     set_transactions_failed(wallet_transactions, expired_txids);
     wallet.set_save_flag().map_err(SyncError::WalletError)?;
@@ -3878,8 +3878,8 @@ mod test {
             mocks::{MockWallet, MockWalletBuilder},
             sync::{set_transactions_failed, spend},
             wallet::{
-                NullifierMap, OutputId, OutputInterface as _, ScanTarget, WalletNote,
-                WalletTransaction,
+                NullifierMap, OutputId, OutputInterface as _, ScanTarget, TransactionRecord,
+                WalletNote,
                 traits::{SyncNullifiers, SyncTransactions},
             },
         };
@@ -3892,8 +3892,8 @@ mod test {
             sapling_crypto::Nullifier([42; 32]);
 
         /// The spending transaction's wallet record in the given lifecycle state.
-        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
-            WalletTransaction::new_for_test(SPENDING_TXID, status)
+        fn spending_record(status: ConfirmationStatus) -> TransactionRecord {
+            TransactionRecord::new_for_test(SPENDING_TXID, status)
         }
 
         /// A confirmed funding transaction holding one sapling note with a derived
@@ -3907,7 +3907,7 @@ mod test {
             UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &[0; 32], zip32::AccountId::ZERO).unwrap()
         }
 
-        pub(super) fn funding_transaction(spending_transaction: Option<TxId>) -> WalletTransaction {
+        pub(super) fn funding_transaction(spending_transaction: Option<TxId>) -> TransactionRecord {
             let (_, recipient) = spending_key().sapling().default_address();
             let crypto_note = sapling_crypto::Note::from_parts(
                 recipient,
@@ -3925,7 +3925,7 @@ mod test {
             .with_nullifier_for_test(NOTE_NULLIFIER);
             note.set_spending_transaction(spending_transaction);
 
-            WalletTransaction::new_for_test(
+            TransactionRecord::new_for_test(
                 FUNDING_TXID,
                 ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
             )
@@ -4116,8 +4116,8 @@ mod test {
             mocks::{MockWallet, MockWalletBuilder, MockWalletError},
             sync::spend,
             wallet::{
-                OutputId, OutputInterface as _, ScanTarget, TransparentCoin, TreeBounds,
-                WalletBlock, WalletTransaction,
+                OutputId, OutputInterface as _, ScanTarget, TransactionRecord, TransparentCoin,
+                TreeBounds, WalletBlock,
                 traits::{SyncOutPoints, SyncTransactions},
             },
         };
@@ -4129,16 +4129,16 @@ mod test {
 
         /// The spending transaction's wallet record in the given lifecycle state, keyed by the txid the server
         /// returns it under.
-        fn spending_record(status: ConfirmationStatus) -> WalletTransaction {
-            let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+        fn spending_record(status: ConfirmationStatus) -> TransactionRecord {
+            let txid = TransactionRecord::new_for_test(TxId::from_bytes([0; 32]), status)
                 .transaction()
                 .txid();
-            WalletTransaction::new_for_test(txid, status)
+            TransactionRecord::new_for_test(txid, status)
         }
 
         /// A wallet holding a confirmed coin, the given record of the transaction that spends it, and the spend's
         /// outpoint as mapped from the compact block at `SPEND_HEIGHT`.
-        fn wallet_with_mapped_spend(spending_record: WalletTransaction) -> MockWallet {
+        fn wallet_with_mapped_spend(spending_record: TransactionRecord) -> MockWallet {
             let coin_id = OutputId::new(FUNDING_TXID, 0);
             let coin = TransparentCoin::from_parts(
                 coin_id,
@@ -4151,7 +4151,7 @@ mod test {
                 Script::default(),
                 Zatoshis::const_from_u64(100_000),
             );
-            let funding_transaction = WalletTransaction::new_for_test(
+            let funding_transaction = TransactionRecord::new_for_test(
                 FUNDING_TXID,
                 ConfirmationStatus::Confirmed(FUNDING_HEIGHT),
             )
@@ -4189,7 +4189,7 @@ mod test {
         }
 
         /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`, over a chain of empty blocks.
-        fn spawn_fetcher(transaction: &WalletTransaction) -> mpsc::UnboundedSender<FetchRequest> {
+        fn spawn_fetcher(transaction: &TransactionRecord) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
             let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
@@ -4623,14 +4623,14 @@ mod test {
 
         use crate::mocks::{MockWallet, MockWalletBuilder};
         use crate::sync::{ScanPriority, ScanRange, expire_transactions};
-        use crate::wallet::{SyncState, WalletTransaction};
+        use crate::wallet::{SyncState, TransactionRecord};
 
         const UNSCANNED_START: u32 = 51;
         const UNSCANNED_END: u32 = 91;
         const CHAIN_HEIGHT: u32 = 200;
 
         /// Creates a mock wallet with all blocks scanned up to `chain_height`.
-        fn wallet_at_height(chain_height: u32, transactions: Vec<WalletTransaction>) -> MockWallet {
+        fn wallet_at_height(chain_height: u32, transactions: Vec<TransactionRecord>) -> MockWallet {
             wallet_with_scan_ranges(
                 vec![ScanRange::from_parts(
                     BlockHeight::from_u32(1)..BlockHeight::from_u32(chain_height + 1),
@@ -4642,7 +4642,7 @@ mod test {
 
         /// Creates a mock wallet whose blocks up to [`CHAIN_HEIGHT`] are scanned, except for the range from
         /// [`UNSCANNED_START`] to [`UNSCANNED_END`].
-        fn wallet_with_unscanned_range(transactions: Vec<WalletTransaction>) -> MockWallet {
+        fn wallet_with_unscanned_range(transactions: Vec<TransactionRecord>) -> MockWallet {
             wallet_with_scan_ranges(
                 vec![
                     ScanRange::from_parts(
@@ -4666,10 +4666,10 @@ mod test {
 
         fn wallet_with_scan_ranges(
             scan_ranges: Vec<ScanRange>,
-            transactions: Vec<WalletTransaction>,
+            transactions: Vec<TransactionRecord>,
         ) -> MockWallet {
             let sync_state = SyncState::new_for_test(scan_ranges);
-            let wallet_transactions: HashMap<TxId, WalletTransaction> = transactions
+            let wallet_transactions: HashMap<TxId, TransactionRecord> = transactions
                 .into_iter()
                 .map(|transaction| (transaction.txid(), transaction))
                 .collect();
@@ -4691,7 +4691,7 @@ mod test {
         #[test]
         fn pending_transaction_past_expiry_is_failed() {
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Mempool(BlockHeight::from_u32(61)),
                 BlockHeight::from_u32(100),
@@ -4709,7 +4709,7 @@ mod test {
         #[test]
         fn pending_transaction_before_expiry_is_untouched() {
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Mempool(BlockHeight::from_u32(61)),
                 BlockHeight::from_u32(101),
@@ -4728,7 +4728,7 @@ mod test {
         fn zero_expiry_transaction_never_expires() {
             // ZIP-203: an expiry height of 0 means the transaction never expires.
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Mempool(BlockHeight::from_u32(61)),
                 BlockHeight::from_u32(0),
@@ -4746,7 +4746,7 @@ mod test {
         #[test]
         fn pending_transaction_with_expiry_above_an_unscanned_range_is_untouched() {
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Mempool(BlockHeight::from_u32(UNSCANNED_START - 1)),
                 BlockHeight::from_u32(UNSCANNED_END),
@@ -4764,7 +4764,7 @@ mod test {
         #[test]
         fn pending_transaction_with_expiry_below_an_unscanned_range_is_failed() {
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Mempool(BlockHeight::from_u32(1)),
                 BlockHeight::from_u32(UNSCANNED_START - 1),
@@ -4782,7 +4782,7 @@ mod test {
         #[test]
         fn confirmed_transaction_is_untouched() {
             let txid = TxId::from_bytes([1; 32]);
-            let transaction = WalletTransaction::new_for_test_with_expiry(
+            let transaction = TransactionRecord::new_for_test_with_expiry(
                 txid,
                 ConfirmationStatus::Confirmed(BlockHeight::from_u32(61)),
                 BlockHeight::from_u32(100),
@@ -5254,8 +5254,8 @@ mod test {
             },
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{
-                NullifierMap, OutputId, OutputInterface as _, ScanTarget, SyncState, TreeBounds,
-                WalletBlock, WalletTransaction,
+                NullifierMap, OutputId, OutputInterface as _, ScanTarget, SyncState,
+                TransactionRecord, TreeBounds, WalletBlock,
                 traits::{
                     SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions,
                     SyncWallet,
@@ -5270,18 +5270,18 @@ mod test {
         const SCANNED_TXID: TxId = TxId::from_bytes([3; 32]);
 
         /// The transaction that spends the wallet's note with no change, under the txid the server returns it with.
-        fn spending_transaction() -> WalletTransaction {
+        fn spending_transaction() -> TransactionRecord {
             let status = ConfirmationStatus::Confirmed(SPEND_HEIGHT);
-            let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+            let txid = TransactionRecord::new_for_test(TxId::from_bytes([0; 32]), status)
                 .transaction()
                 .txid();
-            WalletTransaction::new_for_test(txid, status)
+            TransactionRecord::new_for_test(txid, status)
         }
 
         /// Answers tree state requests with empty note commitment trees, and transaction requests with
         /// `spending_transaction` mined at `SPEND_HEIGHT`. With no spending transaction, transaction requests fail.
         fn spawn_fetcher(
-            spending_transaction: Option<&WalletTransaction>,
+            spending_transaction: Option<&TransactionRecord>,
         ) -> mpsc::UnboundedSender<FetchRequest> {
             const EMPTY_TREE: &str = "000000";
             let spending_transaction_data = spending_transaction.map(|spending_transaction| {
@@ -5463,7 +5463,7 @@ mod test {
                 dropped_scan_targets: BTreeSet::new(),
                 wallet_transactions: HashMap::from([(
                     SCANNED_TXID,
-                    WalletTransaction::new_for_test(
+                    TransactionRecord::new_for_test(
                         SCANNED_TXID,
                         ConfirmationStatus::Confirmed(SPEND_HEIGHT),
                     ),
@@ -6154,8 +6154,8 @@ mod test {
         use crate::mocks::{MockWalletBuilder, subtree_root};
         use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
         use crate::wallet::{
-            ScanTarget, ScanTargetOrigin, ShardTrees, SyncState, TreeBounds, WalletBlock,
-            WalletTransaction,
+            ScanTarget, ScanTargetOrigin, ShardTrees, SyncState, TransactionRecord, TreeBounds,
+            WalletBlock,
             traits::{SyncShardTrees, SyncTransactions, SyncWallet},
         };
 
@@ -6325,7 +6325,7 @@ mod test {
                 .sync_state(sync_state)
                 .wallet_transactions(HashMap::from([(
                     txid,
-                    WalletTransaction::new_for_test(
+                    TransactionRecord::new_for_test(
                         txid,
                         ConfirmationStatus::Confirmed(BlockHeight::from_u32(TRANSACTION_HEIGHT)),
                     ),
@@ -6373,7 +6373,7 @@ mod test {
                 .wallet_blocks(BTreeMap::from([(BlockHeight::from_u32(99), block(99))]))
                 .wallet_transactions(HashMap::from([(
                     txid,
-                    WalletTransaction::new_for_test(
+                    TransactionRecord::new_for_test(
                         txid,
                         ConfirmationStatus::Confirmed(BlockHeight::from_u32(TRANSACTION_HEIGHT)),
                     ),

@@ -14,10 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::serialization::write_string`.
 - The `test-features` feature adds
   `WalletBlock::clear_pool_tree_bounds_for_test`,
-  `WalletTransaction::clear_pool_notes_for_test` and
+  `TransactionRecord::clear_pool_notes_for_test` and
   `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
+- **Breaking:** `wallet::WalletTransaction` is renamed to
+  `wallet::TransactionRecord`. The type holds the wallet's record of a
+  transaction, whose status can be calculated, transmitted, in the mempool,
+  confirmed or failed, so it is not always a transaction on the chain. A
+  consumer replaces the name; no field or method changes.
 - BREAKING: the crate depends on `zl-netutils`, renamed from
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
@@ -35,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `wallet_essentials` feature enables `zl-common/serialization`,
   and the `test-features` feature enables `zl-common/test-features`. Both
   features gated code inside `pepper-sync` at 0.7.0.
-- **Breaking:** the `ConfirmationStatus` that `WalletTransaction::status`
+- **Breaking:** the `ConfirmationStatus` that `TransactionRecord::status`
   returns and the wallet data codecs read and write is
   `zl_common::status::ConfirmationStatus`, where it was
   `zingo_status::confirmation_status::ConfirmationStatus`. The wallet's memo

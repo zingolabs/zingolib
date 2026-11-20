@@ -15,8 +15,8 @@ use super::note_selection;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::TransactionRecord;
 use pepper_sync::wallet::TransparentCoin;
-use pepper_sync::wallet::WalletTransaction;
 use query::OutputQuery;
 use query::OutputSpendStatusQuery;
 use zl_common::status::ConfirmationStatus;
@@ -131,7 +131,7 @@ impl std::fmt::Display for SpendStatus {
 
 impl LightWallet {
     /// Returns the transaction the given `output` belongs to.
-    pub fn output_transaction(&self, output: &impl OutputInterface) -> &WalletTransaction {
+    pub fn output_transaction(&self, output: &impl OutputInterface) -> &TransactionRecord {
         self.wallet_transactions
             .get(&output.output_id().txid())
             .expect("transaction should exist in the wallet")
@@ -201,7 +201,7 @@ impl LightWallet {
     #[must_use]
     pub fn sum_queried_transaction_output_values(
         &self,
-        transaction: &WalletTransaction,
+        transaction: &TransactionRecord,
         query: OutputQuery,
         pending_spends: &HashMap<OutputId, TxId>,
     ) -> u64 {

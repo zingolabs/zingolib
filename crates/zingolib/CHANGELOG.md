@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - A Sync Session requests a received transaction together with its Cover
   Range, and sends no request for a transaction the wallet built.
+- **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
+  `TransactionRecord`, and every zingolib signature that named it names
+  `TransactionRecord` now, the `LightWallet::wallet_transactions` field
+  included. A consumer replaces the type name; no field or method changes.
 - **Breaking:** `mixnet::speed::WAVE_WIDTH` is
   `mixnet::speed::MAX_CONCURRENT_REQUESTS`. The value is unchanged: four
   requests in flight through one Nym client.

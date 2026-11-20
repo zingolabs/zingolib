@@ -96,7 +96,7 @@
 
 **LightWallet** — The wallet's internal data store. Holds keys, wallet transactions, shard trees, and sync state. Not part of the public contract — all external access is intended to go through `LightClient` passthrough methods. Direct access via the temporary `LightClient::wallet()` escape hatch is pending removal as the passthrough API is completed.
 
-**WalletTransaction** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine.
+**TransactionRecord** — An on-chain transaction containing wallet-relevant Notes, Coins, and spend data as decoded by the sync engine. *Avoid*: WalletTransaction (the name of the type before the rename).
 
 **WalletBlock** — A compact record of a scanned block, retained only at scan range bounds or when it contains wallet-relevant transactions.
 
@@ -375,7 +375,7 @@
 
 ## Utility Crates
 
-**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `WalletTransaction`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
+**zl-common** — A published crates.io library split out of zingolib and pepper-sync. Holds `ChainType`, the Unified Key Store, the `ReadableWriteable` serialization trait and the wallet data the sync engine writes (`WalletBlock`, `TransactionRecord`, the notes and coins, `NullifierMap`, `ShardTrees`, `ScanTarget`, the key identifiers) with its codecs, which both the wallet and the Wallet File reader use. It also holds `ConfirmationStatus`, the confirmation state of a transaction, in `status`, the encoding of the wallet's addresses in a memo field in `memo`, and the stored price data `Price` and `PriceList` in `price`. The `sync` module holds the progress record of the sync engine (`SyncState` with its scan-range logic, `InitialSyncState`, `ScanRange`, `ScanPriority`) and the `config` module holds `SyncConfig`, each with its codec.
 
 **zl-file-format** — A published crates.io library split out of zingolib. Holds the Wallet File as one data type with the readers of every Wallet Version and the writer of the current one.
 

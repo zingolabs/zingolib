@@ -6,7 +6,7 @@
 #[path = "support/common.rs"]
 mod common;
 
-use pepper_sync::wallet::{IronwoodNote, OutputId, WalletTransaction};
+use pepper_sync::wallet::{IronwoodNote, OutputId, TransactionRecord};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -263,7 +263,7 @@ async fn value_transfers_aggregation_and_ordering() {
         .collect::<Vec<_>>();
     wallet.wallet_transactions.insert(
         txid,
-        WalletTransaction::new_for_test_with_ironwood_notes(
+        TransactionRecord::new_for_test_with_ironwood_notes(
             txid,
             ConfirmationStatus::Confirmed(4.into()),
             notes,
@@ -286,7 +286,7 @@ async fn value_transfers_aggregation_and_ordering() {
         );
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_ironwood_notes(
+            TransactionRecord::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(height.into()),
                 vec![note],

@@ -33,8 +33,8 @@ use zl_common::memo::ParsedMemo;
 use zl_common::status::ConfirmationStatus;
 
 use crate::engine::{
-    KeyIdOps, OutgoingNoteOps, ScanTargetOps, TransparentCoinOps, WalletNoteOps,
-    WalletTransactionOps, WalletTransactionParts,
+    KeyIdOps, OutgoingNoteOps, ScanTargetOps, TransactionRecordOps, TransactionRecordParts,
+    TransparentCoinOps, WalletNoteOps,
 };
 use crate::{
     client::{self, FetchRequest},
@@ -43,7 +43,7 @@ use crate::{
     wallet::{
         IronwoodNote, NoteInterface, NullifierMap, OrchardNote, OutgoingIronwoodNote, OutgoingNote,
         OutgoingNoteInterface, OutgoingOrchardNote, OutgoingSaplingNote, OutputId, SaplingNote,
-        ScanTarget, ScanTargetOrigin, TransparentCoin, WalletBlock, WalletNote, WalletTransaction,
+        ScanTarget, ScanTargetOrigin, TransactionRecord, TransparentCoin, WalletBlock, WalletNote,
     },
 };
 
@@ -89,13 +89,13 @@ impl<Proof> ShieldedOutputExt<SaplingDomain> for OutputDescription<Proof> {
 /// The transactions scanned for a set of scan targets, and the external targets whose transaction the server did
 /// not serve.
 pub(crate) struct ScannedTransactions {
-    pub(crate) transactions: HashMap<TxId, WalletTransaction>,
+    pub(crate) transactions: HashMap<TxId, TransactionRecord>,
     pub(crate) dropped_targets: BTreeSet<ScanTarget>,
 }
 
 /// Serializes the unconfirmed transactions of `wallet_transactions`, keyed by txid.
 pub(crate) fn serialize_pending_transactions<'a>(
-    wallet_transactions: impl Iterator<Item = &'a WalletTransaction>,
+    wallet_transactions: impl Iterator<Item = &'a TransactionRecord>,
 ) -> HashMap<TxId, Vec<u8>> {
     wallet_transactions
         .filter(|wallet_transaction| !wallet_transaction.status().is_confirmed())
@@ -274,7 +274,7 @@ pub(crate) async fn scan_transactions(
     })
 }
 
-/// Scans `transaction` with the given `status` and returns [`crate::wallet::WalletTransaction`], decrypting all
+/// Scans `transaction` with the given `status` and returns [`crate::wallet::TransactionRecord`], decrypting all
 /// incoming and outgoing notes with `ufvks` and adding any transparent coins matching `transparent_addresses`.
 ///
 /// `decrypted_note_data` will be `None` for pending transactions. For confirmed transactions, it must contain the
@@ -296,7 +296,7 @@ pub(crate) fn scan_transaction(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_inuse_addresses: &HashMap<String, TransparentAddressId>,
     datetime: u32,
-) -> Result<WalletTransaction, ScanError> {
+) -> Result<TransactionRecord, ScanError> {
     let block_height = status.get_height();
     let zip212_enforcement = zcash_primitives::transaction::components::sapling::zip212_enforcement(
         consensus_parameters,
@@ -504,7 +504,7 @@ pub(crate) fn scan_transaction(
         add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
-    Ok(WalletTransaction::from_parts(WalletTransactionParts {
+    Ok(TransactionRecord::from_parts(TransactionRecordParts {
         txid,
         status,
         transaction,
@@ -913,12 +913,12 @@ mod tests {
     const TARGET_HEIGHT: BlockHeight = BlockHeight::from_u32(500_004);
     const COVER_TXID: TxId = TxId::from_bytes([7; 32]);
 
-    fn pending_record() -> WalletTransaction {
+    fn pending_record() -> TransactionRecord {
         let status = ConfirmationStatus::Transmitted(TARGET_HEIGHT);
-        let txid = WalletTransaction::new_for_test(TxId::from_bytes([0; 32]), status)
+        let txid = TransactionRecord::new_for_test(TxId::from_bytes([0; 32]), status)
             .transaction()
             .txid();
-        WalletTransaction::new_for_test(txid, status)
+        TransactionRecord::new_for_test(txid, status)
     }
 
     fn block_at_target_height() -> BTreeMap<BlockHeight, WalletBlock> {
@@ -943,7 +943,7 @@ mod tests {
     }
 
     fn recording_fetcher(
-        served: &WalletTransaction,
+        served: &TransactionRecord,
     ) -> (mpsc::UnboundedSender<FetchRequest>, Arc<Mutex<Vec<TxId>>>) {
         let served_txid = served.txid();
         let mut served_data = Vec::new();
