@@ -74,8 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`main`, `test` or `regtest`), so a consumer can compare it with the
   server's before opening the wallet.
 - `ZingolibError::WalletChainMismatch`: `init_from_bytes` returns it, in
-  place of `Init`, when the wallet bytes were written for another chain. A
-  version 42 file whose pre-release reading also fails is such a case.
+  place of `Init`, when the wallet bytes were written for another chain.
 - `preview_send(send_json)`, `preview_send_all(address, memo)` and
   `preview_shield()` answer exactly what `send`, `send_all` and `shield`
   answer, without storing a proposal or pausing sync. They are the calls for
@@ -189,6 +188,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dedicated migration transmission endpoint to set.
 
 ### Fixed
+- An error message no longer repeats a cause that an outer error prints
+  before other text of its own. It already did not repeat a cause printed at
+  the end of the outer text.
 - `send_swap_deposit` answers `InvalidInput` for a malformed or a
   non-transparent `vault_address`. It answered `Send`, the class a consumer
   retries.

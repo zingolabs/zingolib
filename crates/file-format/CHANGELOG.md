@@ -42,9 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged, so a caller can downcast to it and then to the cause of either
   reading. The `io::Error` keeps the kind of the canonical error, and the
   `source` of `UnreadableV42Tail` is the canonical error, so a walk of the
-  source chain reaches the cause of the canonical reading. Its text ends with
-  the text of the canonical error, so a walker that skips a source the text
-  already ends with does not print that text twice.
+  source chain reaches the cause of the canonical reading. Its text begins
+  with the text of the canonical error, so a caller that prints the source
+  chain skips a source whose text the message already holds.
 - `legacy` feature, off by default. It adds the readers of the layouts below
   version 32 and the dependencies they need, among them `lightwallet-protocol`,
   `prost` and `zcash_client_backend`. A build without it returns from
