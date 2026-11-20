@@ -14,8 +14,6 @@
 //! any pre-Confirmed state → Invalidated  (bound note spent outside the migration)
 //! ```
 
-use std::collections::HashSet;
-
 use pepper_sync::wallet::OutputId;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
@@ -1076,12 +1074,7 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::NoSyncData)?;
         let mut ready: Vec<(u64, BoundNote)> = Vec::new();
         for note in self
-            .spendable_notes::<pepper_sync::wallet::OrchardNote>(
-                anchor_height,
-                &HashSet::new(),
-                account,
-                false,
-            )?
+            .certainly_spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, account)?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
         {
