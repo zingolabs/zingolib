@@ -17,7 +17,7 @@ use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
 use zl_netutils::lightwallet_protocol::CompactBlock;
 
-use crate::engine::{SyncStateOps, WalletTransactionOps};
+use crate::engine::{SyncStateOps, TransactionRecordOps};
 use crate::{
     client::{self, FetchRequest},
     config::PerformanceLevel,

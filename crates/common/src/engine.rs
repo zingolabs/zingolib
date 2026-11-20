@@ -124,7 +124,7 @@ pub trait WalletBlockOps: sealed::Sealed {
     fn from_parts(parts: WalletBlockParts) -> Self;
 }
 
-pub struct WalletTransactionParts {
+pub struct TransactionRecordParts {
     pub txid: TxId,
     pub status: ConfirmationStatus,
     pub transaction: zcash_primitives::transaction::Transaction,
@@ -138,9 +138,9 @@ pub struct WalletTransactionParts {
     pub outgoing_ironwood_notes: Vec<OutgoingIronwoodNote>,
 }
 
-pub trait WalletTransactionOps: sealed::Sealed {
+pub trait TransactionRecordOps: sealed::Sealed {
     #[must_use]
-    fn from_parts(parts: WalletTransactionParts) -> Self;
+    fn from_parts(parts: TransactionRecordParts) -> Self;
     fn set_refetch_nullifier_ranges(&mut self, refetch_nullifier_ranges: &[Range<BlockHeight>]);
 }
 

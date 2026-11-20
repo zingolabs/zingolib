@@ -28,7 +28,7 @@ use zl_common::status::ConfirmationStatus;
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
 use crate::engine::{
-    InitialSyncStateOps, ScanTargetOps, ShardTreesOps, SyncStateOps, WalletTransactionOps,
+    InitialSyncStateOps, ScanTargetOps, ShardTreesOps, SyncStateOps, TransactionRecordOps,
 };
 use crate::error::{
     ContinuityError, MempoolError, ScanError, ServerError, SyncError, SyncModeError,

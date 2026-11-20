@@ -33,8 +33,8 @@ use zl_common::memo::ParsedMemo;
 use zl_common::status::ConfirmationStatus;
 
 use crate::engine::{
-    KeyIdOps, OutgoingNoteOps, ScanTargetOps, TransparentCoinOps, WalletNoteOps,
-    WalletTransactionOps, WalletTransactionParts,
+    KeyIdOps, OutgoingNoteOps, ScanTargetOps, TransactionRecordOps, TransactionRecordParts,
+    TransparentCoinOps, WalletNoteOps,
 };
 use crate::{
     client::{self, FetchRequest},
@@ -419,7 +419,7 @@ pub(crate) fn scan_transaction(
         add_recipient_unified_address(consensus_parameters, uas, &mut outgoing_ironwood_notes)?;
     }
 
-    Ok(TransactionRecord::from_parts(WalletTransactionParts {
+    Ok(TransactionRecord::from_parts(TransactionRecordParts {
         txid,
         status,
         transaction,
