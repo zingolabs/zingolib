@@ -1025,7 +1025,7 @@ impl MockChain {
     }
 
     /// The txid of each `GetTransaction` request received so far, in arrival
-    /// order, for asserting which transactions a wallet names to the indexer.
+    /// order.
     pub fn transaction_request_log(&self) -> &[TxId] {
         &self.transaction_request_log
     }
