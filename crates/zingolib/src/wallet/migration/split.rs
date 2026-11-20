@@ -534,17 +534,16 @@ impl crate::wallet::LightWallet {
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        let certainly_spendable =
-            v2_values(self.certainly_spendable_notes(anchor_height, account)?);
-        let plausibly_spendable =
-            v2_values(self.plausibly_spendable_notes(anchor_height, account)?);
+        let spendable = v2_values(self.spendable_notes(anchor_height, account)?);
+        let potentially_spendable =
+            v2_values(self.potentially_spendable_notes(anchor_height, account)?);
         // The two sets differ only in the spend-confirmation filter, so
         // an empty first with a non-empty second means spend detection
         // is incomplete below the recorded tip for every note.
-        if certainly_spendable.is_empty() && !plausibly_spendable.is_empty() {
+        if spendable.is_empty() && !potentially_spendable.is_empty() {
             return Err(crate::wallet::error::WalletError::SyncIncomplete);
         }
-        Ok(certainly_spendable)
+        Ok(spendable)
     }
 
     /// The values of the account's live pre-Ironwood (V2) Orchard notes:
@@ -696,10 +695,7 @@ impl crate::wallet::LightWallet {
         // wallet borrow ends before witnessing.
         let (notes, positions): (Vec<orchard::Note>, Vec<incrementalmerkletree::Position>) = {
             let mut candidates: Vec<&pepper_sync::wallet::OrchardNote> = self
-                .certainly_spendable_notes::<pepper_sync::wallet::OrchardNote>(
-                    anchor_height,
-                    account,
-                )?
+                .spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, account)?
                 .into_iter()
                 .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
                 .collect();

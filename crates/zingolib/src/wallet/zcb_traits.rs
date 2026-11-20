@@ -1123,7 +1123,7 @@ where
                 note.note().clone(),
                 note.key_id().scope,
                 note.position().expect(
-                    "spendable_notes admits only notes that hold a commitment tree position",
+                    "potentially_spendable_notes admits only notes that hold a commitment tree position",
                 ),
                 None,
                 None,
