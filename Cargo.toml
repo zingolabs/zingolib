@@ -114,7 +114,6 @@ http = "1"
 # zl_netutils::crypto::ensure_default_crypto_provider, so downstream
 # embedders that install their own provider first keep it.
 tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
-prost = "0.14"
 
 ### Async
 futures = "0.3"

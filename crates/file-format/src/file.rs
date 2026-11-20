@@ -526,17 +526,13 @@ impl<M: MigrationSection> WalletFile<M> {
                 reader.read_u8()? == 1
             };
         }
-        let _verified_tree = if version <= 21 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| {
-                use prost::Message;
-
-                let buf = Vector::read(r, byteorder::ReadBytesExt::read_u8)?;
-                legacy::TreeStateMessage::decode(&buf[..])
-                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-            })?
-        };
+        match legacy::tree_state_field(version) {
+            legacy::OpaqueField::Absent => {}
+            legacy::OpaqueField::Present => {
+                let _tree_state: Option<legacy::Discarded> =
+                    Optional::read(&mut reader, legacy::discard_bytes)?;
+            }
+        }
 
         let _price = if version <= 13 {
             WalletZecPriceInfo::default()
