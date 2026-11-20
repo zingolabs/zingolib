@@ -8,7 +8,7 @@ use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use zcash_protocol::value::Zatoshis;
 
-use zl_netutils::lightwallet_protocol::StandardFee;
+use zl_common::chain::StandardFee;
 
 /// The estimator version whose reported marginal fee is the static ZIP 317
 /// one, the only semantics the wallet can interpret. Any other version's

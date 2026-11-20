@@ -10,7 +10,7 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
-use zl_netutils::lightwallet_protocol::StandardFee;
+use zl_common::chain::StandardFee;
 
 use pepper_sync::keys::transparent::{TransparentScope, encode_address};
 use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};

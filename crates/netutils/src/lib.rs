@@ -25,6 +25,7 @@
 //!
 
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
@@ -33,12 +34,18 @@ use tonic::Request;
 use tonic::transport::{Channel, Endpoint};
 use tower::ServiceExt;
 
+use futures::Stream;
 use lightwallet_protocol::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
-    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
-    TreeState as WireTreeState, TxFilter,
+    BlockId as WireBlockId, BlockRange as WireBlockRange, ChainSpec,
+    CompactBlock as WireCompactBlock, CompactTx as WireCompactTx, CompactTxStreamerClient, Empty,
+    GetMempoolTxRequest, GetSubtreeRootsArg as WireGetSubtreeRootsArg, LightdInfo as WireLightdInfo,
+    RawTransaction as WireRawTransaction, StandardFee as WireStandardFee,
+    SubtreeRoot as WireSubtreeRoot, TreeState as WireTreeState, TxFilter as WireTxFilter,
 };
-use zl_common::chain::TreeState;
+use zl_common::chain::{
+    BlockId, BlockRange, CompactBlock, CompactTx, GetSubtreeRootsArg, LightdInfo, RawTransaction,
+    StandardFee, SubtreeRoot, TreeState, TxFilter,
+};
 
 #[cfg(feature = "ping-very-insecure")]
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
@@ -259,7 +266,7 @@ pub trait Indexer {
     /// transient failures and may retry.
     fn send_transaction(
         &mut self,
-        tx: RawTransaction,
+        tx: Vec<u8>,
         timeout: Duration,
     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
@@ -308,7 +315,7 @@ pub trait Indexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactBlockStream, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
     ///
@@ -320,7 +327,7 @@ pub trait Indexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactBlockStream, tonic::Status>> + Send;
 
     /// Return the full serialized transaction matching the given filter.
     ///
@@ -342,7 +349,7 @@ pub trait Indexer {
         &mut self,
         request: GetMempoolTxRequest,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactTxStream, tonic::Status>> + Send;
 
     /// Return a stream of raw mempool transactions.
     ///
@@ -353,7 +360,7 @@ pub trait Indexer {
     /// it is opened on.
     fn get_mempool_stream(
         &mut self,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<RawTransactionStream, tonic::Status>> + Send;
 
     /// Return the note commitment tree state at the chain tip.
     ///
@@ -372,7 +379,7 @@ pub trait Indexer {
         &mut self,
         arg: GetSubtreeRootsArg,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<SubtreeRootStream, tonic::Status>> + Send;
 
     /// Simulate server latency for testing.
     ///
@@ -502,6 +509,236 @@ mod send_response_parsing {
     }
 }
 
+/// A server's subtree-root stream, each item already parsed into the validated domain
+/// [`SubtreeRoot`]. Boxed because the stream's item type is produced by mapping a
+/// [`tonic::Streaming`] through [`parse_subtree_root`], an anonymous type that a trait method's
+/// return position, and a channel carrying it onward, both need to name concretely.
+pub type SubtreeRootStream = Pin<Box<dyn Stream<Item = Result<SubtreeRoot, tonic::Status>> + Send>>;
+
+/// A server's compact-block stream, each item already parsed into the validated domain
+/// [`CompactBlock`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type CompactBlockStream = Pin<Box<dyn Stream<Item = Result<CompactBlock, tonic::Status>> + Send>>;
+
+/// A server's compact-transaction (mempool) stream, each item already parsed into the
+/// validated domain [`CompactTx`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type CompactTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, tonic::Status>> + Send>>;
+
+/// A server's raw-transaction (mempool) stream, each item already parsed into the validated
+/// domain [`RawTransaction`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type RawTransactionStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, tonic::Status>> + Send>>;
+
+/// Parses a wire [`RawTransaction`](WireRawTransaction) into the validated domain
+/// [`RawTransaction`], mapping a parse failure into the same [`tonic::Status`] channel every
+/// other `Indexer` method answers through.
+fn parse_raw_transaction(wire: WireRawTransaction) -> Result<RawTransaction, tonic::Status> {
+    zl_common::chain::RawTransaction::from_wire_parts(wire.data, wire.height)
+        .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+}
+
+/// Parses a wire [`CompactSaplingSpend`](lightwallet_protocol::CompactSaplingSpend), mapping a
+/// parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
+/// through.
+fn parse_compact_sapling_spend(
+    wire: lightwallet_protocol::CompactSaplingSpend,
+) -> Result<zl_common::chain::CompactSaplingSpend, tonic::Status> {
+    zl_common::chain::CompactSaplingSpend::from_wire(wire.nf).map_err(invalid_compact_block)
+}
+
+/// Parses a wire [`CompactSaplingOutput`](lightwallet_protocol::CompactSaplingOutput).
+fn parse_compact_sapling_output(
+    wire: lightwallet_protocol::CompactSaplingOutput,
+) -> Result<zl_common::chain::CompactSaplingOutput, tonic::Status> {
+    Ok(zl_common::chain::CompactSaplingOutput {
+        cmu: wire.cmu,
+        ephemeral_key: wire.ephemeral_key,
+        ciphertext: wire.ciphertext,
+    })
+}
+
+/// Parses a wire [`CompactOrchardAction`](lightwallet_protocol::CompactOrchardAction) (shared by
+/// the Orchard and Ironwood pools).
+fn parse_compact_orchard_action(
+    wire: lightwallet_protocol::CompactOrchardAction,
+) -> Result<zl_common::chain::CompactOrchardAction, tonic::Status> {
+    zl_common::chain::CompactOrchardAction::from_wire(
+        wire.nullifier,
+        wire.cmx,
+        wire.ephemeral_key,
+        wire.ciphertext,
+    )
+    .map_err(invalid_compact_block)
+}
+
+/// Parses a wire [`CompactTxIn`](lightwallet_protocol::CompactTxIn).
+fn parse_compact_tx_in(
+    wire: lightwallet_protocol::CompactTxIn,
+) -> Result<zl_common::chain::CompactTxIn, tonic::Status> {
+    zl_common::chain::CompactTxIn::from_wire(wire.prevout_txid, wire.prevout_index)
+        .map_err(invalid_compact_block)
+}
+
+/// Parses a wire [`CompactTx`](WireCompactTx) into the validated domain [`CompactTx`], parsing
+/// every nested Sapling, Orchard, Ironwood, and transparent component first.
+fn parse_compact_tx(wire: WireCompactTx) -> Result<CompactTx, tonic::Status> {
+    let spends = wire
+        .spends
+        .into_iter()
+        .map(parse_compact_sapling_spend)
+        .collect::<Result<Vec<_>, _>>()?;
+    let outputs = wire
+        .outputs
+        .into_iter()
+        .map(parse_compact_sapling_output)
+        .collect::<Result<Vec<_>, _>>()?;
+    let actions = wire
+        .actions
+        .into_iter()
+        .map(parse_compact_orchard_action)
+        .collect::<Result<Vec<_>, _>>()?;
+    let ironwood_actions = wire
+        .ironwood_actions
+        .into_iter()
+        .map(parse_compact_orchard_action)
+        .collect::<Result<Vec<_>, _>>()?;
+    let vin = wire
+        .vin
+        .into_iter()
+        .map(parse_compact_tx_in)
+        .collect::<Result<Vec<_>, _>>()?;
+    let vout = wire
+        .vout
+        .into_iter()
+        .map(|out| zl_common::chain::TxOut {
+            value: out.value,
+            script_pub_key: out.script_pub_key,
+        })
+        .collect();
+    zl_common::chain::CompactTx::from_wire_parts(
+        wire.index,
+        wire.txid,
+        wire.fee,
+        spends,
+        outputs,
+        actions,
+        ironwood_actions,
+        vin,
+        vout,
+    )
+    .map_err(invalid_compact_block)
+}
+
+/// Parses a wire [`CompactBlock`](WireCompactBlock) into the validated domain [`CompactBlock`],
+/// parsing every transaction first.
+fn parse_compact_block(wire: WireCompactBlock) -> Result<CompactBlock, tonic::Status> {
+    let vtx = wire
+        .vtx
+        .into_iter()
+        .map(parse_compact_tx)
+        .collect::<Result<Vec<_>, _>>()?;
+    let chain_metadata = wire.chain_metadata.map(|metadata| zl_common::chain::ChainMetadata {
+        sapling_commitment_tree_size: metadata.sapling_commitment_tree_size,
+        orchard_commitment_tree_size: metadata.orchard_commitment_tree_size,
+        ironwood_commitment_tree_size: metadata.ironwood_commitment_tree_size,
+    });
+    zl_common::chain::CompactBlock::from_wire_parts(
+        wire.height,
+        wire.hash,
+        wire.prev_hash,
+        wire.time,
+        wire.header,
+        vtx,
+        chain_metadata,
+    )
+    .map_err(invalid_compact_block)
+}
+
+/// Maps an [`zl_common::chain::InvalidCompactBlock`] parse failure into the same
+/// [`tonic::Status`] channel every other `Indexer` method answers through.
+fn invalid_compact_block(error: zl_common::chain::InvalidCompactBlock) -> tonic::Status {
+    tonic::Status::new(tonic::Code::Internal, error.to_string())
+}
+
+// The functions below convert the other direction: an owned request type pepper-sync builds,
+// into the wire type a gRPC call actually sends. There is nothing to validate going this way
+// (the caller already built a well-formed value), so these are infallible, unlike the
+// `parse_*` functions above.
+
+/// Converts a wire [`LightdInfo`](WireLightdInfo) into the domain [`LightdInfo`]. Every field is
+/// already a plain owned value, so this is a lossless, infallible projection onto the subset
+/// callers use.
+pub(crate) fn parse_lightd_info(wire: WireLightdInfo) -> LightdInfo {
+    LightdInfo {
+        version: wire.version,
+        vendor: wire.vendor,
+        taddr_support: wire.taddr_support,
+        chain_name: wire.chain_name,
+        sapling_activation_height: wire.sapling_activation_height,
+        consensus_branch_id: wire.consensus_branch_id,
+        block_height: wire.block_height,
+        git_commit: wire.git_commit,
+        lightwallet_protocol_version: wire.lightwallet_protocol_version,
+    }
+}
+
+/// Parses a wire [`BlockId`](WireBlockId) into the domain [`BlockId`], the one direction this
+/// bidirectional type needs validation: [`Indexer::get_latest_block`] receives one from the
+/// server.
+pub(crate) fn parse_block_id(wire: WireBlockId) -> Result<BlockId, tonic::Status> {
+    BlockId::from_wire_parts(wire.height, wire.hash)
+        .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+}
+
+/// Converts a domain [`BlockId`] into its wire representation.
+fn block_id_to_wire(id: BlockId) -> WireBlockId {
+    WireBlockId {
+        height: id.height.into(),
+        hash: id.hash.map(|hash| hash.0.to_vec()).unwrap_or_default(),
+    }
+}
+
+/// Converts a domain [`BlockRange`] into its wire representation.
+fn block_range_to_wire(range: BlockRange) -> WireBlockRange {
+    WireBlockRange {
+        start: Some(block_id_to_wire(range.start)),
+        end: Some(block_id_to_wire(range.end)),
+        pool_types: range
+            .pool_types
+            .into_iter()
+            .map(zl_common::chain::pool_type_wire_value)
+            .collect(),
+    }
+}
+
+/// Converts a domain [`TxFilter`] into its wire representation.
+fn tx_filter_to_wire(filter: TxFilter) -> WireTxFilter {
+    WireTxFilter {
+        block: filter.block.map(block_id_to_wire),
+        index: filter.index,
+        hash: filter.hash.map(|txid| txid.as_ref().to_vec()).unwrap_or_default(),
+    }
+}
+
+/// Converts a domain [`GetSubtreeRootsArg`] into its wire representation.
+fn get_subtree_roots_arg_to_wire(arg: GetSubtreeRootsArg) -> WireGetSubtreeRootsArg {
+    WireGetSubtreeRootsArg {
+        start_index: arg.start_index,
+        shielded_protocol: arg.shielded_protocol,
+        max_entries: arg.max_entries,
+    }
+}
+
+/// Parses a wire [`SubtreeRoot`](WireSubtreeRoot) into the validated domain [`SubtreeRoot`],
+/// mapping a parse failure into the same [`tonic::Status`] channel every other `Indexer` method
+/// answers through.
+fn parse_subtree_root(wire: WireSubtreeRoot) -> Result<SubtreeRoot, tonic::Status> {
+    zl_common::chain::SubtreeRoot::from_wire_parts(
+        wire.root_hash,
+        wire.completing_block_hash,
+        wire.completing_block_height,
+    )
+    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+}
+
 /// Parses a wire [`TreeState`](WireTreeState) into the validated domain [`TreeState`], mapping
 /// a parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
 /// through.
@@ -520,39 +757,51 @@ impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_lightd_info(request)
-            .await?
-            .into_inner())
+        Ok(parse_lightd_info(
+            self.clear_net_client
+                .get_lightd_info(request)
+                .await?
+                .into_inner(),
+        ))
     }
 
     async fn get_standard_fee(&mut self, timeout: Duration) -> Result<StandardFee, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
+        let wire: WireStandardFee = self
             .clear_net_client
             .get_standard_fee(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(StandardFee {
+            fee_zat: wire.fee_zat,
+            estimator_version: wire.estimator_version,
+        })
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
         let mut request = Request::new(ChainSpec {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_latest_block(request)
-            .await?
-            .into_inner())
+        parse_block_id(
+            self.clear_net_client
+                .get_latest_block(request)
+                .await?
+                .into_inner(),
+        )
     }
 
     async fn send_transaction(
         &mut self,
-        tx: RawTransaction,
+        tx: Vec<u8>,
         timeout: Duration,
     ) -> Result<String, tonic::Status> {
-        let mut request = Request::new(tx);
+        // `height` is meaningless for a submission (the server ignores it for this RPC; the
+        // wire type's own `0` sentinel reads as "in the mempool", which is exactly where this
+        // transaction is headed), so only the serialized bytes cross this boundary.
+        let mut request = Request::new(WireRawTransaction {
+            data: tx,
+            height: 0,
+        });
         request.set_timeout(timeout);
         let sendresponse = self
             .clear_net_client
@@ -570,7 +819,7 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(block_id);
+        let mut request = Request::new(block_id_to_wire(block_id));
         request.set_timeout(timeout);
         parse_tree_state(
             self.clear_net_client
@@ -585,9 +834,9 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id);
+        let mut request = Request::new(block_id_to_wire(block_id));
         request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_block(request).await?.into_inner())
+        parse_compact_block(self.clear_net_client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -596,27 +845,32 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id);
+        let mut request = Request::new(block_id_to_wire(block_id));
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_block_nullifiers(request)
-            .await?
-            .into_inner())
+        parse_compact_block(
+            self.clear_net_client
+                .get_block_nullifiers(request)
+                .await?
+                .into_inner(),
+        )
     }
 
     async fn get_block_range(
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let mut request = Request::new(range);
+    ) -> Result<CompactBlockStream, tonic::Status> {
+        let mut request = Request::new(block_range_to_wire(range));
         request.set_timeout(timeout);
-        Ok(self
+        let wire_stream = self
             .clear_net_client
             .get_block_range(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(
+            wire_stream,
+            |item| item.and_then(parse_compact_block),
+        )))
     }
 
     #[allow(deprecated)]
@@ -624,14 +878,18 @@ impl Indexer for GrpcIndexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let mut request = Request::new(range);
+    ) -> Result<CompactBlockStream, tonic::Status> {
+        let mut request = Request::new(block_range_to_wire(range));
         request.set_timeout(timeout);
-        Ok(self
+        let wire_stream = self
             .clear_net_client
             .get_block_range_nullifiers(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(
+            wire_stream,
+            |item| item.and_then(parse_compact_block),
+        )))
     }
 
     async fn get_transaction(
@@ -639,37 +897,42 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
         timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
-        let mut request = Request::new(filter);
+        let mut request = Request::new(tx_filter_to_wire(filter));
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_transaction(request)
-            .await?
-            .into_inner())
+        parse_raw_transaction(
+            self.clear_net_client
+                .get_transaction(request)
+                .await?
+                .into_inner(),
+        )
     }
 
     async fn get_mempool_tx(
         &mut self,
         request: GetMempoolTxRequest,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
+    ) -> Result<CompactTxStream, tonic::Status> {
         let mut request = Request::new(request);
         request.set_timeout(timeout);
-        Ok(self
+        let wire_stream = self
             .clear_net_client
             .get_mempool_tx(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_compact_tx)
+        })))
     }
 
-    async fn get_mempool_stream(
-        &mut self,
-    ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        Ok(self
+    async fn get_mempool_stream(&mut self) -> Result<RawTransactionStream, tonic::Status> {
+        let wire_stream = self
             .clear_net_client
             .get_mempool_stream(Request::new(Empty {}))
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_raw_transaction)
+        })))
     }
 
     async fn get_latest_tree_state(
@@ -690,14 +953,17 @@ impl Indexer for GrpcIndexer {
         &mut self,
         arg: GetSubtreeRootsArg,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
-        let mut request = Request::new(arg);
+    ) -> Result<SubtreeRootStream, tonic::Status> {
+        let mut request = Request::new(get_subtree_roots_arg_to_wire(arg));
         request.set_timeout(timeout);
-        Ok(self
+        let wire_stream = self
             .clear_net_client
             .get_subtree_roots(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_subtree_root)
+        })))
     }
 
     #[cfg(feature = "ping-very-insecure")]
@@ -1270,14 +1536,8 @@ mod tests {
 
         // start > end → proto says descending order
         let range = BlockRange {
-            start: Some(BlockId {
-                height: start_height,
-                hash: vec![],
-            }),
-            end: Some(BlockId {
-                height: end_height,
-                hash: vec![],
-            }),
+            start: BlockId::from_height(start_height),
+            end: BlockId::from_height(end_height),
             pool_types: vec![],
         };
 
