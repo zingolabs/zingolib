@@ -181,13 +181,12 @@ mod tests {
         }
         .write(&mut bytes, &chain_type)
         .expect("writing into an in-memory Vec<u8> never returns an io::Error");
-        let read = || {
-            WalletFile::<RawMigration>::read(bytes.as_slice(), chain_type)
-                .expect("the bytes were written by the writer of this crate")
-        };
 
-        let parts = read().into_parts();
+        let parts = WalletFile::<RawMigration>::read(bytes.as_slice(), chain_type)
+            .expect("the bytes were written by the writer of this crate")
+            .into_parts();
 
+        assert_eq!(parts.read_version, crate::serialized_version());
         assert_eq!(parts.chain_type, chain_type);
         assert!(parts.mnemonic.is_none());
         assert_eq!(parts.birthday, BlockHeight::from_u32(BIRTHDAY));
