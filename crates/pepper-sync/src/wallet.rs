@@ -35,8 +35,8 @@ pub use zl_common::wallet::{
     Ironwood, IronwoodNote, KeyIdInterface, NoteInterface, NullifierMap, Orchard, OrchardNote,
     OrchardShardStore, OutgoingIronwoodNote, OutgoingNote, OutgoingNoteInterface,
     OutgoingOrchardNote, OutgoingSaplingNote, OutputId, OutputInterface, PoolActivation, Sapling,
-    SaplingNote, SaplingShardStore, ScanTarget, ShardTrees, TransparentCoin, TreeBounds,
-    WalletBlock, WalletNote, WalletTransaction, pool_upgrade,
+    SaplingNote, SaplingShardStore, ScanTarget, ShardTrees, TransactionRecord, TransparentCoin,
+    TreeBounds, WalletBlock, WalletNote, pool_upgrade,
 };
 
 /// Sync modes.
@@ -179,7 +179,7 @@ pub(crate) trait SyncDomain {
     type Note: NoteInterface;
     type ShardStore: ShardStore<CheckpointId = BlockHeight>;
 
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note>;
+    fn notes_mut(wallet_transaction: &mut TransactionRecord) -> Vec<&mut Self::Note>;
 }
 
 impl SyncDomain for Sapling {
@@ -188,7 +188,7 @@ impl SyncDomain for Sapling {
     type Note = SaplingNote;
     type ShardStore = SaplingShardStore;
 
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+    fn notes_mut(wallet_transaction: &mut TransactionRecord) -> Vec<&mut Self::Note> {
         wallet_transaction.sapling_notes_mut()
     }
 }
@@ -199,7 +199,7 @@ impl SyncDomain for Orchard {
     type Note = OrchardNote;
     type ShardStore = OrchardShardStore;
 
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+    fn notes_mut(wallet_transaction: &mut TransactionRecord) -> Vec<&mut Self::Note> {
         wallet_transaction.orchard_notes_mut()
     }
 }
@@ -212,7 +212,7 @@ impl SyncDomain for Ironwood {
     // store type serves its (separate) tree.
     type ShardStore = OrchardShardStore;
 
-    fn notes_mut(wallet_transaction: &mut WalletTransaction) -> Vec<&mut Self::Note> {
+    fn notes_mut(wallet_transaction: &mut TransactionRecord) -> Vec<&mut Self::Note> {
         wallet_transaction.ironwood_notes_mut()
     }
 }

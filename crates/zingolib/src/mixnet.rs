@@ -16,6 +16,8 @@ pub(crate) use crate::lightclient::indexer_history::fault_domain;
 
 pub mod driver;
 
+pub mod fetch;
+
 mod mode;
 
 pub mod probe;
