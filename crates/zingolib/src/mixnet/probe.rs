@@ -46,7 +46,7 @@ pub struct ProbeSuccess {
 }
 
 impl ProbeSuccess {
-    fn of(info: &zl_netutils::lightwallet_protocol::LightdInfo) -> Self {
+    fn of(info: &zl_common::chain::LightdInfo) -> Self {
         ProbeSuccess {
             chain: info.chain_name.clone(),
             height: info.block_height,

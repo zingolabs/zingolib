@@ -3,7 +3,7 @@
 use std::any::Any;
 
 use tokio::task::JoinError;
-use zl_netutils::lightwallet_protocol;
+use zl_common::chain::LightdInfo;
 
 pub mod proposal;
 
@@ -81,7 +81,7 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-    pub fn from_lightd_info(info: lightwallet_protocol::LightdInfo, server_uri: http::Uri) -> Self {
+    pub fn from_lightd_info(info: LightdInfo, server_uri: http::Uri) -> Self {
         Self {
             version: info.version,
             git_commit: info.git_commit,

@@ -10,9 +10,9 @@ use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zl_common::chain::TxFilter;
 use zl_common::status::ConfirmationStatus;
 use zl_netutils::Indexer as _;
-use zl_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
 
 use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
@@ -187,23 +187,24 @@ impl TransmitTarget for NakednetTarget {
     ) -> impl Future<Output = Result<String, zl_netutils::Status>> + Send {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
+        let _ = height;
         async move {
             client
-                .send_transaction(RawTransaction { data, height }, DEFAULT_REQUEST_TIMEOUT)
+                .send_transaction(data, DEFAULT_REQUEST_TIMEOUT)
                 .await
         }
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
         let mut client = self.0.clone();
-        let hash = txid.as_ref().to_vec();
+        let txid = *txid;
         async move {
             client
                 .get_transaction(
                     TxFilter {
                         block: None,
                         index: 0,
-                        hash,
+                        hash: Some(txid),
                     },
                     DEFAULT_REQUEST_TIMEOUT,
                 )
