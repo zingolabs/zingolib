@@ -11273,7 +11273,6 @@ dependencies = [
  "hex",
  "incrementalmerkletree",
  "jubjub",
- "lightwallet-protocol",
  "log",
  "orchard",
  "prost 0.14.4",

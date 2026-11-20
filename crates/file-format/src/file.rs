@@ -38,8 +38,9 @@ use zl_common::{
 #[cfg(feature = "legacy")]
 use {
     crate::RawMigration,
-    crate::legacy::{BlockData, TxMap, WalletOptions, WalletZecPriceInfo, keys::WalletCapability},
-    lightwallet_protocol::TreeState,
+    crate::legacy::{
+        self, BlockData, TxMap, WalletOptions, WalletZecPriceInfo, keys::WalletCapability,
+    },
     zcash_keys::keys::UnifiedSpendingKey,
     zip32::AccountId,
 };
@@ -532,7 +533,7 @@ impl<M: MigrationSection> WalletFile<M> {
                 use prost::Message;
 
                 let buf = Vector::read(r, byteorder::ReadBytesExt::read_u8)?;
-                TreeState::decode(&buf[..])
+                legacy::TreeStateMessage::decode(&buf[..])
                     .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
             })?
         };

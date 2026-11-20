@@ -44,11 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `source` of `UnreadableV42Tail` is the canonical error, so a walk of the
   source chain reaches the cause of the canonical reading.
 - `legacy` feature, off by default. It adds the readers of the layouts below
-  version 32 and the dependencies they need, among them `lightwallet-protocol`,
-  `prost` and `zcash_client_backend`. A build without it returns from
+  version 32 and the dependencies they need, among them `prost` and
+  `zcash_client_backend`. A build without it returns from
   `WalletFile::read` and `read_chain` an `InvalidData` error that names the
-  feature for a file below version 32, and `WalletFile::read`
-  decodes versions 32 and above with no network-protocol dependency.
+  feature for a file below version 32. Neither build depends on
+  `lightwallet-protocol` or on a network transport: the crate declares the
+  one protobuf message the old layouts hold.
 - `strings` module with `read_string` and a re-export of `write_string`.
 - `WalletSettings` and `RecoveryInfo`, which `zingolib` re-exports at their
   old paths, `ChainMismatch`, and the `MAX_RECOVERABLE_VERSION` and
