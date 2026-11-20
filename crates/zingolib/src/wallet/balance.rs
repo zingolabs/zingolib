@@ -474,7 +474,7 @@ impl LightWallet {
     where
         N: NoteInterface,
     {
-        let Some(spend_horizon) = self.spend_horizon(false) else {
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
             return Ok(Zatoshis::ZERO);
         };
         let Some((_, anchor_height)) = self
@@ -494,7 +494,7 @@ impl LightWallet {
                     && (include_potentially_spent_notes
                         || self.note_spends_confirmed(
                             transaction.status().get_height(),
-                            spend_horizon,
+                            spend_evidence_floor,
                             note.refetch_nullifier_ranges(),
                         ))
             },
