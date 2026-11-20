@@ -6,7 +6,6 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
-use std::collections::HashSet;
 use zcash_primitives::transaction::fees::FeeRule as _;
 pub(in crate::wallet::migration) use zcash_primitives::transaction::fees::zip317::FeeRule;
 use zcash_protocol::value::Zatoshis;
@@ -535,11 +534,10 @@ impl crate::wallet::LightWallet {
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        let no_exclusions = HashSet::new();
         let certainly_spendable =
-            v2_values(self.certainly_spendable_notes(anchor_height, &no_exclusions, account)?);
+            v2_values(self.certainly_spendable_notes(anchor_height, account)?);
         let plausibly_spendable =
-            v2_values(self.plausibly_spendable_notes(anchor_height, &no_exclusions, account)?);
+            v2_values(self.plausibly_spendable_notes(anchor_height, account)?);
         // The two sets differ only in the spend-confirmation filter, so
         // an empty first with a non-empty second means spend detection
         // is incomplete below the recorded tip for every note.
@@ -700,7 +698,6 @@ impl crate::wallet::LightWallet {
             let mut candidates: Vec<&pepper_sync::wallet::OrchardNote> = self
                 .certainly_spendable_notes::<pepper_sync::wallet::OrchardNote>(
                     anchor_height,
-                    &HashSet::new(),
                     account,
                 )?
                 .into_iter()
