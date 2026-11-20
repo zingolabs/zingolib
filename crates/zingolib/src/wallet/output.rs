@@ -771,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn candidates_agree_with_the_spendable_walks() {
+    fn note_candidates_agree_with_spendable_notes() {
         let wallet = funded_wallet();
         let candidates = candidates(&wallet);
         assert_eq!(candidates.len(), 2);
