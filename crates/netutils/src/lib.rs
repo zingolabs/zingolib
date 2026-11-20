@@ -36,8 +36,9 @@ use tower::ServiceExt;
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
-    TreeState, TxFilter,
+    TreeState as WireTreeState, TxFilter,
 };
+use zl_common::chain::TreeState;
 
 #[cfg(feature = "ping-very-insecure")]
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
@@ -501,6 +502,20 @@ mod send_response_parsing {
     }
 }
 
+/// Parses a wire [`TreeState`](WireTreeState) into the validated domain [`TreeState`], mapping
+/// a parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
+/// through.
+fn parse_tree_state(wire: WireTreeState) -> Result<TreeState, tonic::Status> {
+    zl_common::chain::TreeState::from_wire_parts(
+        wire.height,
+        &wire.hash,
+        &wire.sapling_tree,
+        &wire.orchard_tree,
+        &wire.ironwood_tree,
+    )
+    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+}
+
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
@@ -557,11 +572,12 @@ impl Indexer for GrpcIndexer {
     ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_tree_state(request)
-            .await?
-            .into_inner())
+        parse_tree_state(
+            self.clear_net_client
+                .get_tree_state(request)
+                .await?
+                .into_inner(),
+        )
     }
 
     async fn get_block(
@@ -662,11 +678,12 @@ impl Indexer for GrpcIndexer {
     ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_latest_tree_state(request)
-            .await?
-            .into_inner())
+        parse_tree_state(
+            self.clear_net_client
+                .get_latest_tree_state(request)
+                .await?
+                .into_inner(),
+        )
     }
 
     async fn get_subtree_roots(

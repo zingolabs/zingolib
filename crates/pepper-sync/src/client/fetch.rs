@@ -7,11 +7,12 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::instrument;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
+use zl_common::chain::TreeState;
 use zl_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
         BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
-        PoolType, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+        PoolType, RawTransaction, TransparentAddressBlockFilter, TxFilter,
     },
 };
 

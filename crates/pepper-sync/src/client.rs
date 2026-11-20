@@ -17,11 +17,10 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
+use zl_common::chain::TreeState;
 use zl_netutils::{
     Indexer, TransparentIndexer,
-    lightwallet_protocol::{
-        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
-    },
+    lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
 };
 
 use crate::{
@@ -511,8 +510,8 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
+    use zcash_primitives::block::BlockHash;
     use zcash_protocol::local_consensus::LocalNetwork;
-    use zl_netutils::lightwallet_protocol::TreeState;
 
     use super::*;
 
@@ -535,16 +534,16 @@ mod tests {
     };
 
     /// Serialized empty commitment tree, as served at and above a pool's activation height.
-    const EMPTY_TREE: &str = "000000";
+    const EMPTY_TREE: [u8; 3] = [0, 0, 0];
 
     /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
     /// is left empty.
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
-        let tree = |pool: ShieldedPool| {
+        let tree = |pool: ShieldedPool| -> Vec<u8> {
             if pool == omitted_pool {
-                String::new()
+                Vec::new()
             } else {
-                EMPTY_TREE.to_string()
+                EMPTY_TREE.to_vec()
             }
         };
         let (sapling_tree, orchard_tree, ironwood_tree) = (
@@ -558,12 +557,11 @@ mod tests {
                 match fetch_request {
                     FetchRequest::TreeState(reply_sender, block_height) => {
                         let _ignore_error = reply_sender.send(Ok(TreeState {
-                            height: u64::from(block_height),
-                            hash: "00".repeat(32),
+                            height: block_height,
+                            hash: BlockHash([0u8; 32]),
                             sapling_tree: sapling_tree.clone(),
                             orchard_tree: orchard_tree.clone(),
                             ironwood_tree: ironwood_tree.clone(),
-                            ..Default::default()
                         }));
                     }
                     _ => panic!("unexpected fetch request"),
