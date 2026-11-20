@@ -3017,14 +3017,11 @@ mod tests {
                 .grid(wallet.chain_type())
                 .index_of(wallet.sync_state.last_known_chain_height().unwrap());
             // The user insistently spends the reserved note.
-            wallet
-                .wallet_transactions
-                .values_mut()
-                .flat_map(|tx| tx.orchard_notes_mut())
-                .filter(|note| note.output_id() == bound_note.output_id)
-                .for_each(|note| {
-                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
-                });
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                TxId::from_bytes([9; 32]),
+                |note| note.output_id() == bound_note.output_id,
+            );
 
             let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
             let result = wallet

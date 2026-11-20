@@ -729,7 +729,7 @@ mod tests {
     use pepper_sync::wallet::OrchardNote;
 
     use super::*;
-    use crate::testutils::synthetic_wallet::SyntheticWalletBuilder;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
 
     const ANCHOR: BlockHeight = BlockHeight::from_u32(20);
     const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
@@ -765,13 +765,9 @@ mod tests {
     }
 
     fn mark_spent(wallet: &mut LightWallet, spent: OutputId) {
-        for transaction in wallet.wallet_transactions.values_mut() {
-            for note in transaction.orchard_notes_mut() {
-                if note.output_id() == spent {
-                    note.set_spending_transaction(Some(spent.txid()));
-                }
-            }
-        }
+        synthetic_wallet::mark_orchard_notes_spent(wallet, spent.txid(), |note| {
+            note.output_id() == spent
+        });
     }
 
     #[test]

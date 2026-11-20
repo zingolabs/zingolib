@@ -27,7 +27,8 @@ use zcash_keys::keys::UnifiedSpendingKey;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::{
-    IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransactionRecord, TransparentCoin,
+    IronwoodNote, OrchardNote, OutputId, OutputInterface as _, SaplingNote, SyncState,
+    TransactionRecord, TransparentCoin,
 };
 use zcash_primitives::transaction::TxId;
 #[cfg(test)]
@@ -425,6 +426,21 @@ pub(crate) fn external_tex_address() -> String {
         external_transparent_pubkey_hash(),
         &stranger_wallet().chain_type(),
     )
+}
+
+/// - Sets the spending transaction of every orchard note of `wallet` that `selects` accepts to `spending_txid`.
+pub fn mark_orchard_notes_spent(
+    wallet: &mut LightWallet,
+    spending_txid: TxId,
+    selects: impl Fn(&OrchardNote) -> bool,
+) {
+    for transaction in wallet.wallet_transactions.values_mut() {
+        for note in transaction.orchard_notes_mut() {
+            if selects(note) {
+                note.set_spending_transaction(Some(spending_txid));
+            }
+        }
+    }
 }
 
 /// Injects `count` confirmed, unspent legacy-Orchard (V2) notes of `value`
