@@ -427,7 +427,7 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
         exclude: &[OutputRef],
-        reserved: &HashSet<OutputId>,
+        reserved_for_migration: &HashSet<OutputId>,
     ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
         let exclude = exclude
             .iter()
@@ -444,7 +444,8 @@ impl LightWallet {
                     .certainty()
                     .map(|certain| note_selection::Candidate {
                         certain,
-                        reserved: reserved.contains(&judged.note.output_id()),
+                        reserved_for_migration: reserved_for_migration
+                            .contains(&judged.note.output_id()),
                         note: judged.note.clone(),
                     })
             })
