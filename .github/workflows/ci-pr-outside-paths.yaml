@@ -1,0 +1,36 @@
+name: CI outside its paths
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**/*.rs"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
+      - "bindings/**"
+      - "**/uniffi.toml"
+      - "ffi/lib/src/exported_surface.snapshot.txt"
+      - ".github/workflows/**"
+      - "deny.toml"
+      - ".github/actions/**"
+
+permissions: {}
+
+jobs:
+  test:
+    name: test / Run normal tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report the required check
+        run: echo "No file of this pull request is in the paths of ci-pr.yaml."
+
+  test-nym:
+    name: test-nym / Run nym tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report the required check
+        run: echo "No file of this pull request is in the paths of ci-pr.yaml."
