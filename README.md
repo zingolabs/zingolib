@@ -1,6 +1,21 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![coverage](https://img.shields.io/endpoint?url=https://zingolabs.org/zingolib/coverage/badge.json)](https://zingolabs.org/zingolib/coverage/)
-This repo provides both a library for zingo-mobile, as well as an included cli application to interact with the Zcash blockchain through a chain indexer.
+zingolib is an API that provides high-level abstractions for Zcash light
+wallet developers.
+
+It includes Prebuilt Bundles suitable for consumption in both Swift and Kotlin
+environments. The bindings are matched, so a React Native developer finds the
+same API on both platforms.
+
+zingo-cli is a full-featured command-line application, suitable for development
+and for other terminal-driven projects.
+
+### Known consumers
+* zingo-mobile
+* Edge
+* zingo-pc
+* zingo-tui
+* zingo-cli
 
 # Security Vulnerability Disclosure
 
