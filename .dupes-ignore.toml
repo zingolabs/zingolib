@@ -7,6 +7,10 @@ fingerprint = "0925f8bb5566196f"
 reason = "baseline at 639986655: exact group of 4, first member zingo-netutils/src/lib.rs:487"
 
 [[ignore]]
+fingerprint = "0dbbb2ab4e7c93ea"
+reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/migration/split.rs:517"
+
+[[ignore]]
 fingerprint = "0df789c7a8d20ac0"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1588"
 

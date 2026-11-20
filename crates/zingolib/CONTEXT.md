@@ -189,10 +189,6 @@
 
 **Zatoshis** — The atomic unit of ZEC. 1 ZEC = 100,000,000 zatoshis.
 
-**Certainly Spendable** — Said of a shielded note that the wallet can spend at a given anchor and has proven unspent: the note is confirmed at or below the anchor, belongs to the account, holds a nullifier and a commitment tree position, can be witnessed, has no recorded spend, and every block that could hold its spend has been scanned. The absence of a recorded spend is then proof.
-
-**Plausibly Spendable** — Said of a shielded note that is Certainly Spendable, or that meets every condition of Certainly Spendable except the last: some block that could hold its spend is not yet scanned. The wallet has no record of a spend and cannot yet rule one out. Every Certainly Spendable note is Plausibly Spendable. *Avoid*: potentially spent, the name the code gave the difference until 2026-11-19.
-
 **Dust** — Outputs whose value is strictly below the ZIP-317 marginal fee. Excluded from balances and not eligible as inputs. Distinct from Stranded value: the migration Sweep Minimum sits above the Dust threshold, so a note can be spendable in the ordinary send path yet still be Stranded by migration.
 
 ---
