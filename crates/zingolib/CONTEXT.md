@@ -373,7 +373,7 @@
 
 ## Testing
 
-**libtonode-tests** — The crate of testnet cells: chain-bound tests behind the non-default `testnet` feature that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. Its regtest suite, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
+**Testnet cells** — Chain-bound tests in `crates/zingolib/tests/testnet.rs`, behind the non-default `testnet` feature of `zingolib`, that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. They lived in the `libtonode-tests` crate until November 2026, when that crate folded into `zingolib`. The regtest suite of that crate, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
 
 **darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
 

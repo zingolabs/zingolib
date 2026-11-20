@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "libtonode-tests",
   "crates/pepper-sync",
   "bin/cli",
   "crates/common",

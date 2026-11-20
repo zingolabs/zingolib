@@ -145,15 +145,16 @@ const CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE: &str = " ";
 /// zingolib's taxonomy already print their own cause: `#[error(transparent)]`
 /// delegates `Display` to it outright, and a variant that interpolates it
 /// (`#[error("wallet error. {0}")]`) has embedded it. Both leave the cause's
-/// rendering at the tail of what we have, so a link is appended only when the
-/// text so far does not already end with it. The walk continues either way:
+/// rendering inside what we have, at the tail or before other text, so a link
+/// is appended only when the text so far does not already hold it. The walk
+/// continues either way:
 /// a skipped layer's own source still belongs on the line.
 fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
     let mut text = error.to_string();
     let mut link = error.source();
     while let Some(cause) = link {
         let cause_text = cause.to_string();
-        if !text.ends_with(&cause_text) {
+        if !text.contains(&cause_text) {
             text.push_str(if text.ends_with(['.', '!', '?', ':']) {
                 CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE
             } else {
@@ -1185,6 +1186,10 @@ mod ffi_error_routing_tests {
 mod cause_chain_tests {
     use super::*;
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("the leaf failed")]
+    struct Leaf;
+
     #[test]
     fn a_save_failure_keeps_the_cause_its_wrapper_does_not_print() {
         let wrapped = std::io::Error::other(LightClientError::WalletError(
@@ -1287,10 +1292,6 @@ mod cause_chain_tests {
     #[test]
     fn an_interpolating_wrapper_does_not_repeat_its_cause() {
         #[derive(Debug, thiserror::Error)]
-        #[error("the leaf failed")]
-        struct Leaf;
-
-        #[derive(Debug, thiserror::Error)]
         #[error("wallet error. {0}")]
         struct Interpolating(#[from] Leaf);
 
@@ -1302,6 +1303,21 @@ mod cause_chain_tests {
         assert_eq!(
             text, "outer: wallet error. the leaf failed",
             "a variant that interpolates its source has already printed it"
+        );
+    }
+
+    #[test]
+    fn a_wrapper_that_prints_its_cause_before_other_text_does_not_repeat_it() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("{source}; a second reading failed")]
+        struct CauseFirst {
+            source: Leaf,
+        }
+
+        let text = chain_text(&CauseFirst { source: Leaf });
+        assert_eq!(
+            text, "the leaf failed; a second reading failed",
+            "a message that holds its source before other text has already printed it"
         );
     }
 }

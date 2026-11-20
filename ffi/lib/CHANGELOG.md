@@ -188,6 +188,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dedicated migration transmission endpoint to set.
 
 ### Fixed
+- An error message no longer repeats a cause that an outer error prints
+  before other text of its own. It already did not repeat a cause printed at
+  the end of the outer text.
 - `send_swap_deposit` answers `InvalidInput` for a malformed or a
   non-transparent `vault_address`. It answered `Send`, the class a consumer
   retries.
