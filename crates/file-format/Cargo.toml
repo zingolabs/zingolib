@@ -21,7 +21,6 @@ legacy = [
     "dep:incrementalmerkletree",
     "dep:jubjub",
     "dep:orchard",
-    "dep:prost",
     "dep:sapling-crypto",
     "dep:shardtree",
     "dep:zcash_address",
@@ -52,7 +51,6 @@ zcash_transparent.workspace = true
 # Protocol
 bip0039.workspace = true
 bip32 = { workspace = true, optional = true }
-prost = { workspace = true, optional = true }
 zip32.workspace = true
 
 # Cryptography

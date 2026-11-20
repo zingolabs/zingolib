@@ -143,8 +143,6 @@ fn read_witness_cache<H: HashSer + Hashable + Clone, R: Read>(
 #[derive(Clone, PartialEq)]
 pub struct BlockData {
     /// TODO: Add Doc Comment Here!
-    pub(crate) ecb: Vec<u8>,
-    /// TODO: Add Doc Comment Here!
     pub height: u64,
 }
 
@@ -163,32 +161,47 @@ impl BlockData {
 
         let version = reader.read_u64::<LittleEndian>()?;
 
-        let ecb = if version <= 11 {
-            vec![]
-        } else {
-            Vector::read(&mut reader, byteorder::ReadBytesExt::read_u8)?
-        };
+        match compact_block_field(version) {
+            OpaqueField::Absent => {}
+            OpaqueField::Present => {
+                discard_bytes(&mut reader)?;
+            }
+        }
 
-        Ok(BlockData { ecb, height })
+        Ok(BlockData { height })
     }
 }
 
-#[derive(Clone, PartialEq, Eq, prost::Message)]
-pub(crate) struct TreeStateMessage {
-    #[prost(string, tag = "1")]
-    network: String,
-    #[prost(uint64, tag = "2")]
-    height: u64,
-    #[prost(string, tag = "3")]
-    hash: String,
-    #[prost(uint32, tag = "4")]
-    time: u32,
-    #[prost(string, tag = "5")]
-    sapling_tree: String,
-    #[prost(string, tag = "6")]
-    orchard_tree: String,
-    #[prost(string, tag = "7")]
-    ironwood_tree: String,
+const LAST_BLOCK_VERSION_WITHOUT_COMPACT_BLOCK: u64 = 11;
+const LAST_WALLET_VERSION_WITHOUT_TREE_STATE: u64 = 21;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Discarded;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpaqueField {
+    Absent,
+    Present,
+}
+
+const fn opaque_field_after(version: u64, last_version_without_field: u64) -> OpaqueField {
+    if version <= last_version_without_field {
+        OpaqueField::Absent
+    } else {
+        OpaqueField::Present
+    }
+}
+
+pub(crate) const fn compact_block_field(block_version: u64) -> OpaqueField {
+    opaque_field_after(block_version, LAST_BLOCK_VERSION_WITHOUT_COMPACT_BLOCK)
+}
+
+pub(crate) const fn tree_state_field(wallet_version: u64) -> OpaqueField {
+    opaque_field_after(wallet_version, LAST_WALLET_VERSION_WITHOUT_TREE_STATE)
+}
+
+pub(crate) fn discard_bytes<R: Read>(reader: R) -> io::Result<Discarded> {
+    Vector::read(reader, byteorder::ReadBytesExt::read_u8).map(|_bytes: Vec<u8>| Discarded)
 }
 
 /// `HashMap` of all transactions in a wallet, keyed by txid.
@@ -1243,55 +1256,61 @@ impl WalletZecPriceInfo {
 
 #[cfg(test)]
 mod tests {
-    use prost::Message as _;
-
     use super::*;
 
-    const TREE_STATE_NETWORK: &str = "main";
-    const TREE_STATE_HEIGHT: u64 = 419_200;
-    const TREE_STATE_HASH: &str = "00";
-    const TREE_STATE_TIME: u32 = 1_540_000_000;
-    const TREE_STATE_SAPLING_TREE: &str = "01";
-    const TREE_STATE_ORCHARD_TREE: &str = "02";
-    const TREE_STATE_IRONWOOD_TREE: &str = "03";
-    const TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL: [u8; 32] = [
-        0x0a, 0x04, 0x6d, 0x61, 0x69, 0x6e, 0x10, 0x80, 0xcb, 0x19, 0x1a, 0x02, 0x30, 0x30, 0x20,
-        0x80, 0x92, 0xaa, 0xde, 0x05, 0x2a, 0x02, 0x30, 0x31, 0x32, 0x02, 0x30, 0x32, 0x3a, 0x02,
-        0x30, 0x33,
-    ];
-    const NETWORK_FIELD_AS_A_VARINT: [u8; 2] = [0x08, 0x01];
+    const FOLLOWING_BYTE: u8 = 0xcc;
+    const NOT_A_PROTOBUF_MESSAGE: [u8; 2] = [0x08, 0x01];
+    const VECTOR_OF_TWO_BYTES_THEN_ONE_MORE: [u8; 4] = [0x02, 0x08, 0x01, FOLLOWING_BYTE];
+    const VECTOR_THAT_DECLARES_TWO_BYTES_AND_HOLDS_ONE: [u8; 2] = [0x02, 0x08];
 
-    fn tree_state_message() -> TreeStateMessage {
-        TreeStateMessage {
-            network: TREE_STATE_NETWORK.to_string(),
-            height: TREE_STATE_HEIGHT,
-            hash: TREE_STATE_HASH.to_string(),
-            time: TREE_STATE_TIME,
-            sapling_tree: TREE_STATE_SAPLING_TREE.to_string(),
-            orchard_tree: TREE_STATE_ORCHARD_TREE.to_string(),
-            ironwood_tree: TREE_STATE_IRONWOOD_TREE.to_string(),
-        }
+    #[test]
+    fn discard_bytes_consumes_the_vector_and_nothing_after_it() {
+        let mut reader = VECTOR_OF_TWO_BYTES_THEN_ONE_MORE.as_slice();
+        assert_eq!(discard_bytes(&mut reader).ok(), Some(Discarded));
+        assert_eq!(reader, [FOLLOWING_BYTE]);
     }
 
     #[test]
-    fn a_tree_state_that_lightwallet_protocol_encoded_decodes_to_the_same_fields() {
+    fn discard_bytes_accepts_bytes_that_are_not_a_protobuf_message() {
         assert_eq!(
-            TreeStateMessage::decode(TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL.as_slice()).ok(),
-            Some(tree_state_message())
+            VECTOR_OF_TWO_BYTES_THEN_ONE_MORE[1..3],
+            NOT_A_PROTOBUF_MESSAGE
+        );
+        let mut reader = VECTOR_OF_TWO_BYTES_THEN_ONE_MORE.as_slice();
+        assert!(discard_bytes(&mut reader).is_ok());
+    }
+
+    #[test]
+    fn discard_bytes_refuses_a_vector_shorter_than_its_length() {
+        let mut reader = VECTOR_THAT_DECLARES_TWO_BYTES_AND_HOLDS_ONE.as_slice();
+        assert_eq!(
+            discard_bytes(&mut reader).map_err(|error| error.kind()),
+            Err(io::ErrorKind::UnexpectedEof)
         );
     }
 
     #[test]
-    fn a_tree_state_encodes_to_the_bytes_lightwallet_protocol_wrote() {
+    fn the_tree_state_field_begins_after_its_last_absent_version() {
         assert_eq!(
-            tree_state_message().encode_to_vec(),
-            TREE_STATE_ENCODED_BY_LIGHTWALLET_PROTOCOL
+            tree_state_field(LAST_WALLET_VERSION_WITHOUT_TREE_STATE),
+            OpaqueField::Absent
+        );
+        assert_eq!(
+            tree_state_field(LAST_WALLET_VERSION_WITHOUT_TREE_STATE + 1),
+            OpaqueField::Present
         );
     }
 
     #[test]
-    fn a_tree_state_whose_network_field_is_not_a_string_is_refused() {
-        assert!(TreeStateMessage::decode(NETWORK_FIELD_AS_A_VARINT.as_slice()).is_err());
+    fn the_compact_block_field_begins_after_its_last_absent_version() {
+        assert_eq!(
+            compact_block_field(LAST_BLOCK_VERSION_WITHOUT_COMPACT_BLOCK),
+            OpaqueField::Absent
+        );
+        assert_eq!(
+            compact_block_field(LAST_BLOCK_VERSION_WITHOUT_COMPACT_BLOCK + 1),
+            OpaqueField::Present
+        );
     }
 
     const RSEED_BEFORE_ZIP212: u8 = 1;
