@@ -105,23 +105,13 @@ impl std::fmt::Display for AmbiguousV42Tail {
 
 impl std::error::Error for AmbiguousV42Tail {}
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{canonical}; read as the pre-release version 42 layout: {pre_release}")]
 pub struct UnreadableV42Tail {
+    #[source]
     pub canonical: Error,
     pub pre_release: Error,
 }
-
-impl std::fmt::Display for UnreadableV42Tail {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}; read as the pre-release version 42 layout: {}",
-            self.canonical, self.pre_release
-        )
-    }
-}
-
-impl std::error::Error for UnreadableV42Tail {}
 
 enum V40ChainField {
     Tag(u8),
@@ -1108,6 +1098,7 @@ mod tests {
     use super::{AmbiguousV42Tail, UnreadableV42Tail, V42Layout, V42Tail, chain_mismatch};
     use crate::ChainMismatch;
     use crate::{RawMigration, WalletFile};
+    use std::{error::Error as _, io};
     use zl_common::{chain::ChainType, price::PriceList};
 
     const ALLOW_V6_TRANSACTIONS_FALSE: u8 = 0;
@@ -1243,16 +1234,21 @@ mod tests {
         ));
     }
 
+    const PRE_RELEASE_FAILURE: &str = "tail did not parse";
+
+    fn refusal_of_both_readings(canonical: io::Error) -> io::Error {
+        let pre_release = io::Error::other(PRE_RELEASE_FAILURE);
+        V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
+            .into_tail()
+            .expect_err("a tail that parses in neither layout is refused")
+    }
+
     #[test]
     fn an_unreadable_version_42_tail_keeps_the_error_of_each_reading() {
-        const PRE_RELEASE_FAILURE: &str = "tail did not parse";
         let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
         let canonical_kind = canonical.kind();
-        let pre_release = std::io::Error::other(PRE_RELEASE_FAILURE);
 
-        let refusal = V42Tail::<RawMigration>::from_readings(Err(canonical), Err(pre_release))
-            .into_tail()
-            .expect_err("a tail that parses in neither layout is refused");
+        let refusal = refusal_of_both_readings(canonical);
 
         assert_eq!(refusal.kind(), canonical_kind);
         let unreadable = refusal
@@ -1266,6 +1262,33 @@ mod tests {
                 .is_some_and(|inner| inner.is::<ChainMismatch>())
         );
         assert_eq!(unreadable.pre_release.to_string(), PRE_RELEASE_FAILURE);
+    }
+
+    #[test]
+    fn the_source_of_an_unreadable_version_42_tail_is_the_canonical_error() {
+        let refusal = refusal_of_both_readings(chain_mismatch("mainnet", &ChainType::Testnet));
+
+        let canonical_cause = refusal
+            .source()
+            .and_then(|source| source.downcast_ref::<io::Error>())
+            .and_then(io::Error::get_ref);
+        assert!(
+            canonical_cause.is_some_and(|inner| inner.is::<ChainMismatch>()),
+            "a walk of the source chain must reach the cause of the canonical reading"
+        );
+    }
+
+    #[test]
+    fn the_text_of_an_unreadable_version_42_tail_begins_with_its_source() {
+        let canonical = chain_mismatch("mainnet", &ChainType::Testnet);
+        let canonical_text = canonical.to_string();
+
+        let refusal = refusal_of_both_readings(canonical);
+
+        assert!(
+            refusal.to_string().starts_with(&canonical_text),
+            "the canonical cause leads the text, and a walker skips a source the text holds: {refusal}"
+        );
     }
 
     #[test]

@@ -1,6 +1,23 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![coverage](https://img.shields.io/endpoint?url=https://zingolabs.org/zingolib/coverage/badge.json)](https://zingolabs.org/zingolib/coverage/)
-This repo provides both a library for zingo-mobile, as well as an included cli application to interact with the Zcash blockchain through a chain indexer.
+zingolib is an API that provides high-level abstractions for Zcash light
+wallet developers.
+
+It includes Prebuilt Bundles suitable for consumption in both Swift and Kotlin
+environments. The bindings are matched, so a React Native developer finds the
+same API on both platforms.
+
+zingo-cli is a full-featured command-line application, suitable for development
+and for other terminal-driven projects.
+
+### Known consumers
+* [zingo-mobile](https://github.com/zingolabs/zingo-mobile)
+* [Edge](https://github.com/EdgeApp/edge-react-gui)
+* [zingo-pc](https://github.com/zingolabs/zingo-pc)
+* [zingo-tui](https://github.com/zingolabs/zingolib-tui)
+* [zingo-cli](bin/cli/README.md)
+* [Zingo Delegator (mobile)](https://github.com/zingolabs/crosslink-mobile-client)
+* [zingo-desktop-delegator](https://github.com/zingolabs/zingo-desktop-delegator)
 
 # Security Vulnerability Disclosure
 
@@ -9,7 +26,7 @@ If you believe you have discovered a security issue, please contact us at:
 zingodisclosure@proton.me
 
 ## Zingo CLI
-`zingolib-cli` is a command line indexer client. Its own README,
+zingo-cli is a command line indexer client. Its own README,
 [bin/cli/README.md](bin/cli/README.md), holds everything specific to it:
 the one procedure that builds it, which bundles the `nym-proxy` binary beside
 it, and how to launch it, take it online, choose a network (regtest included),

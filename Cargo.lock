@@ -1336,7 +1336,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2086,6 +2086,15 @@ name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
 dependencies = [
  "dirs-sys",
 ]
@@ -4187,23 +4196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libtonode-tests"
-version = "0.2.0"
-dependencies = [
- "http 1.5.0",
- "incrementalmerkletree",
- "pepper-sync",
- "shardtree",
- "tokio",
- "tracing-subscriber",
- "zcash_protocol",
- "zingo_test_vectors",
- "zingolib",
- "zip32",
- "zl-netutils",
-]
-
-[[package]]
 name = "lightwallet-protocol"
 version = "0.5.0"
 source = "git+https://github.com/zingolabs/lightwallet-protocol-rust?rev=554197558c1fac19554c8c38d01479d2b82b9a38#554197558c1fac19554c8c38d01479d2b82b9a38"
@@ -4905,7 +4897,7 @@ version = "1.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d7ae1fdcf3fbdb95a3a19fa67f22cda18a1cedbc2c57561834bf97cd190e7fd"
 dependencies = [
- "dirs",
+ "dirs 6.0.0",
  "handlebars",
  "log",
  "nym-network-defaults",
@@ -5601,7 +5593,7 @@ dependencies = [
  "celes",
  "clap",
  "dashmap",
- "dirs",
+ "dirs 6.0.0",
  "futures",
  "http 1.5.0",
  "httpcodec",
@@ -5691,7 +5683,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce677a263c3582c488787a84a229a0373c4350dec10c7d162b6b7d9289800038"
 dependencies = [
  "anyhow",
- "dirs",
+ "dirs 6.0.0",
  "futures",
  "log",
  "nym-bandwidth-controller",
@@ -6870,7 +6862,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -6891,7 +6883,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -6904,7 +6896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -8864,7 +8856,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.3",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",
@@ -10192,7 +10184,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11068,7 +11060,7 @@ dependencies = [
  "blake2b_simd",
  "byteorder",
  "chrono",
- "dirs",
+ "dirs 7.0.0",
  "futures",
  "hex",
  "http 1.5.0",
