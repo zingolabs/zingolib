@@ -62,15 +62,16 @@ jobs:
 
       - name: Generate coverage badge
         run: |
-          COVERAGE=$(cargo llvm-cov report --json \
-            | jq '.data[0].totals.lines.percent' \
-            | xargs printf '%.1f')
-          if   [ "$(echo "$COVERAGE >= 80" | bc)" -eq 1 ]; then COLOR="brightgreen"
-          elif [ "$(echo "$COVERAGE >= 60" | bc)" -eq 1 ]; then COLOR="yellow"
-          else COLOR="red"; fi
-          jq -n --arg pct "${COVERAGE}%" --arg color "$COLOR" \
-            '{schemaVersion:1, label:"coverage", message:$pct, color:$color}' \
-            > coverage-html/badge.json
+          cargo llvm-cov report --json \
+            | jq '.data[0].totals.lines.percent
+                | (. * 10 | round / 10) as $pct
+                | {schemaVersion: 1,
+                   label: "coverage",
+                   message: "\($pct)%",
+                   color: (if $pct >= 80 then "brightgreen"
+                           elif $pct >= 60 then "yellow"
+                           else "red" end)}' \
+            > coverage-html/html/badge.json
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
@@ -83,6 +84,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./coverage-html
+          publish_dir: ./coverage-html/html
           destination_dir: coverage
           force_orphan: true

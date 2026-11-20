@@ -271,24 +271,37 @@ impl LightWallet {
         }
     }
 
-    /// Returns all spendable notes of the specified shielded pool and `account` confirmed at or below `anchor_height`.
-    ///
-    /// Any notes with output IDs in `exclude` will not be returned.
-    /// Any notes without a nullifier or commitment tree position will not be returned.
-    /// Any notes that the wallet cannot construct a witness for with the current sync state will not be returned.
-    /// If `include_potentially_spent_notes` is `true`, notes will be included even if the wallet's current sync state
-    /// cannot guarantee the notes are unspent.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn spendable_notes<'a, N: NoteInterface>(
-        &'a self,
+    pub(crate) fn spendable_notes<N: NoteInterface>(
+        &self,
         anchor_height: BlockHeight,
-        exclude: &HashSet<OutputId>,
         account: zip32::AccountId,
-        include_potentially_spent_notes: bool,
-    ) -> Result<Vec<&'a N>, WalletError> {
+    ) -> Result<Vec<&N>, WalletError> {
         let Some(spend_horizon) = self.spend_horizon(false) else {
             return Err(WalletError::NoSyncData);
         };
+        Ok(self
+            .potentially_spendable_notes::<N>(anchor_height, account)?
+            .into_iter()
+            .filter(|&note| {
+                self.note_spends_confirmed(
+                    self.output_transaction(note).status().get_height(),
+                    spend_horizon,
+                    note.refetch_nullifier_ranges(),
+                )
+            })
+            .collect())
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn potentially_spendable_notes<N: NoteInterface>(
+        &self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+    ) -> Result<Vec<&N>, WalletError> {
+        if self.spend_horizon(false).is_none() {
+            return Err(WalletError::NoSyncData);
+        }
         if self
             .shard_trees
             .ironwood
@@ -349,14 +362,7 @@ impl LightWallet {
                                     transaction.status().get_height(),
                                     anchor_height,
                                 )
-                                && !exclude.contains(&note.output_id())
                                 && note.key_id().account_id() == account
-                                && (include_potentially_spent_notes
-                                    || self.note_spends_confirmed(
-                                        transaction.status().get_height(),
-                                        spend_horizon,
-                                        note.refetch_nullifier_ranges(),
-                                    ))
                         })
                         .collect::<Vec<_>>()
                 } else {
@@ -442,13 +448,14 @@ impl LightWallet {
             .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
             .collect::<HashSet<_>>();
         let certain = self
-            .spendable_notes::<N>(anchor_height, &exclude, account, false)?
+            .spendable_notes::<N>(anchor_height, account)?
             .into_iter()
             .map(N::output_id)
             .collect::<HashSet<_>>();
         Ok(self
-            .spendable_notes::<N>(anchor_height, &exclude, account, true)?
+            .potentially_spendable_notes::<N>(anchor_height, account)?
             .into_iter()
+            .filter(|note| !exclude.contains(&note.output_id()))
             .map(|note| note_selection::Candidate {
                 certain: certain.contains(&note.output_id()),
                 reserved: reserved.contains(&note.output_id()),
