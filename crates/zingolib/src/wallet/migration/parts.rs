@@ -1074,7 +1074,7 @@ impl crate::wallet::LightWallet {
             .ok_or(WalletError::NoSyncData)?;
         let mut ready: Vec<(u64, BoundNote)> = Vec::new();
         for note in self
-            .certainly_spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, account)?
+            .spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, account)?
             .into_iter()
             .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
         {

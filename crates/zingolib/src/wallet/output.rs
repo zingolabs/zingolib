@@ -272,7 +272,7 @@ impl LightWallet {
     }
 
     #[allow(clippy::result_large_err)]
-    pub(crate) fn certainly_spendable_notes<N: NoteInterface>(
+    pub(crate) fn spendable_notes<N: NoteInterface>(
         &self,
         anchor_height: BlockHeight,
         account: zip32::AccountId,
@@ -281,7 +281,7 @@ impl LightWallet {
             return Err(WalletError::NoSyncData);
         };
         Ok(self
-            .plausibly_spendable_notes::<N>(anchor_height, account)?
+            .potentially_spendable_notes::<N>(anchor_height, account)?
             .into_iter()
             .filter(|&note| {
                 self.note_spends_confirmed(
@@ -294,7 +294,7 @@ impl LightWallet {
     }
 
     #[allow(clippy::result_large_err)]
-    pub(crate) fn plausibly_spendable_notes<N: NoteInterface>(
+    pub(crate) fn potentially_spendable_notes<N: NoteInterface>(
         &self,
         anchor_height: BlockHeight,
         account: zip32::AccountId,
@@ -448,12 +448,12 @@ impl LightWallet {
             .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
             .collect::<HashSet<_>>();
         let certain = self
-            .certainly_spendable_notes::<N>(anchor_height, account)?
+            .spendable_notes::<N>(anchor_height, account)?
             .into_iter()
             .map(N::output_id)
             .collect::<HashSet<_>>();
         Ok(self
-            .plausibly_spendable_notes::<N>(anchor_height, account)?
+            .potentially_spendable_notes::<N>(anchor_height, account)?
             .into_iter()
             .filter(|note| !exclude.contains(&note.output_id()))
             .map(|note| note_selection::Candidate {
