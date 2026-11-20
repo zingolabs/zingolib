@@ -30,10 +30,10 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use pepper_sync::error::SyncModeError;
-use pepper_sync::keys::transparent;
-use pepper_sync::wallet::{KeyIdInterface, SyncMode};
+use zingolib::{
+    KeyIdInterface, PerformanceLevel, SyncConfig, SyncMode, SyncModeError,
+    TransparentAddressDiscovery, transparent,
+};
 use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::proposal::Proposal;
@@ -1260,7 +1260,7 @@ mod cause_chain_tests {
     #[test]
     fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
         let mapped = ffi_error(LightClientError::SyncError(
-            pepper_sync::error::SyncError::ChainError(1, 2, 3),
+            zingolib::SyncError::ChainError(1, 2, 3),
         ));
         let text = mapped.to_string();
         // `LightClientError::SyncError` is declared `#[error("Sync error.")]`,
@@ -2388,8 +2388,7 @@ fn status_sync() -> Result<String, ZingolibError> {
             );
         }
         RT.block_on(async {
-            let wallet = lightclient.wallet().read().await;
-            match pepper_sync::sync_status(&*wallet).await {
+            match lightclient.sync_status().await {
                 Ok(status) => {
                     Ok(json::JsonValue::from(sync_progress::SyncProgress::from(status)).pretty(2))
                 }
