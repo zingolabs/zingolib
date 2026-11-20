@@ -351,6 +351,9 @@ mod tests {
         outputs_per_block: usize,
         unserved: Vec<TxId>,
         replaced_blocks: Vec<u32>,
+        block_failure: Option<tonic::Code>,
+        served_blocks_end: Option<u32>,
+        served_height: u64,
         block_requests: Vec<Range<u32>>,
         transaction_requests: Vec<TxId>,
     }
@@ -362,6 +365,13 @@ mod tests {
         ) -> Result<Vec<CompactBlock>, tonic::Status> {
             let block_range = u32::from(block_range.start)..u32::from(block_range.end);
             self.block_requests.push(block_range.clone());
+            if let Some(code) = self.block_failure {
+                return Err(tonic::Status::new(code, "the block range is not served"));
+            }
+            let block_range = block_range.start
+                ..self
+                    .served_blocks_end
+                    .map_or(block_range.end, |end| end.min(block_range.end));
 
             Ok(block_range
                 .map(|height| CompactBlock {
@@ -393,7 +403,7 @@ mod tests {
             } else {
                 Ok(RawTransaction {
                     data: txid.as_ref().to_vec(),
-                    height: 0,
+                    height: self.served_height,
                 })
             }
         }
@@ -575,5 +585,171 @@ mod tests {
         );
         // each new tip block is open and requested once
         assert_eq!(chain.transaction_requests, block_txids(2_005..2_008));
+    }
+
+    fn downloaded_blocks(chain: &TestChain) -> usize {
+        chain
+            .block_requests
+            .iter()
+            .map(ExactSizeIterator::len)
+            .sum()
+    }
+
+    #[tokio::test]
+    async fn finding_1_a_failed_area_download_still_answers_the_target() {
+        let target = txid(2_003, 2);
+        let mut chain = TestChain {
+            outputs_per_block: 64,
+            block_failure: Some(tonic::Code::OutOfRange),
+            ..Default::default()
+        };
+
+        let fetched = fetch(
+            &mut chain,
+            &mut CoverCache::default(),
+            request(&[(2_003, target)], 0..0, 5_000),
+        )
+        .await;
+
+        assert!(
+            matches!(&fetched, Ok(fetched) if fetched.target_replies.contains_key(&target)),
+            "the fetch answered {fetched:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn finding_2_a_complete_cached_area_is_checked_again_after_a_reorg() {
+        let mut chain = TestChain {
+            outputs_per_block: 64,
+            ..Default::default()
+        };
+        let mut cache = CoverCache::default();
+        fetch_on(
+            &mut chain,
+            &mut cache,
+            request(&[(2_990, txid(2_990, 1))], 0..0, 3_000),
+        )
+        .await;
+        assert_eq!(chain.block_requests, vec![2_000..3_000]);
+
+        chain.replaced_blocks = vec![2_999];
+        fetch_on(
+            &mut chain,
+            &mut cache,
+            request(&[(2_998, txid(2_998, 1))], 0..0, 3_000),
+        )
+        .await;
+
+        assert!(
+            chain.block_requests.len() > 1,
+            "no block request followed the re-org of block 2999, one block below the chain tip"
+        );
+    }
+
+    #[tokio::test]
+    async fn finding_3_a_target_in_an_unloaded_block_is_not_requested_alone() {
+        let target = txid(2_700, 1);
+        let mut chain = TestChain {
+            outputs_per_block: 64,
+            served_blocks_end: Some(2_500),
+            ..Default::default()
+        };
+
+        fetch_on(
+            &mut chain,
+            &mut CoverCache::default(),
+            request(&[(2_700, target)], 0..0, 5_000),
+        )
+        .await;
+
+        assert_ne!(chain.transaction_requests, vec![target]);
+    }
+
+    #[tokio::test]
+    async fn finding_4_a_block_time_downloads_one_block() {
+        let mut chain = TestChain::default();
+        let mut block_time_request = request(&[], 0..0, 5_000);
+        block_time_request.timed_heights = vec![BlockHeight::from_u32(2_500)];
+
+        let fetched = fetch_on(&mut chain, &mut CoverCache::default(), block_time_request).await;
+
+        assert_eq!(
+            fetched.block_times.get(&BlockHeight::from_u32(2_500)),
+            Some(&2_500)
+        );
+        assert_eq!(downloaded_blocks(&chain), 1);
+    }
+
+    #[tokio::test]
+    async fn finding_4_interleaved_areas_are_downloaded_once_each() {
+        let area_starts = [2_000, 3_000, 4_000, 5_000, 6_000, 7_000];
+        let mut chain = TestChain {
+            outputs_per_block: 64,
+            ..Default::default()
+        };
+        let mut cache = CoverCache::default();
+        for _round in 0..2 {
+            for area_start in area_starts {
+                fetch_on(
+                    &mut chain,
+                    &mut cache,
+                    request(&[(area_start + 2, txid(area_start + 2, 1))], 0..0, 50_000),
+                )
+                .await;
+            }
+        }
+
+        assert_eq!(chain.block_requests.len(), area_starts.len());
+    }
+
+    #[tokio::test]
+    async fn finding_4_a_scan_below_the_tip_area_sends_no_request() {
+        let mut chain = TestChain::default();
+
+        fetch_on(
+            &mut chain,
+            &mut CoverCache::default(),
+            request(&[], 100..200, 5_000),
+        )
+        .await;
+
+        assert!(chain.block_requests.is_empty());
+        assert!(chain.transaction_requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finding_6_a_cached_transaction_is_not_served_after_its_area_reloads() {
+        let target = txid(2_002, 1);
+        let mut chain = TestChain {
+            outputs_per_block: 64,
+            served_height: 2_002,
+            ..Default::default()
+        };
+        let mut cache = CoverCache::default();
+        fetch_on(
+            &mut chain,
+            &mut cache,
+            request(&[(2_002, target)], 0..0, 2_005),
+        )
+        .await;
+
+        chain.replaced_blocks = vec![2_005];
+        chain.served_height = 2_003;
+        let fetched = fetch_on(
+            &mut chain,
+            &mut cache,
+            request(&[(2_002, target)], 0..0, 2_005),
+        )
+        .await;
+
+        assert_eq!(chain.block_requests.last(), Some(&(2_000..2_006)));
+        assert!(
+            matches!(
+                fetched.target_replies.get(&target),
+                Some(Ok(raw_transaction)) if raw_transaction.height == 2_003
+            ),
+            "the reply after the reload was {:?}",
+            fetched.target_replies.get(&target)
+        );
     }
 }

@@ -1077,4 +1077,56 @@ mod tests {
         );
         assert_confirmed_at_target_height(&scanned, txid);
     }
+
+    #[tokio::test]
+    async fn finding_5_a_stored_pending_transaction_absent_from_its_block_is_not_confirmed() {
+        let pending_record = pending_record();
+        let txid = pending_record.txid();
+        let wallet_blocks = block_at_target_height();
+        assert!(!wallet_blocks[&TARGET_HEIGHT].txids().contains(&txid));
+        let (fetch_request_sender, _log) =
+            cover_fetcher(None, tonic::Status::not_found("no such transaction"));
+
+        let scanned = scan(
+            fetch_request_sender,
+            ScanTarget::internal(TARGET_HEIGHT, txid),
+            &serialize_pending_transactions([&pending_record].into_iter()),
+            &wallet_blocks,
+        )
+        .await;
+
+        assert!(
+            !matches!(&scanned, Ok(scanned) if scanned.transactions.contains_key(&txid)),
+            "the transaction was confirmed in a block that does not hold it"
+        );
+    }
+
+    #[tokio::test]
+    async fn finding_8_an_unserved_internal_target_that_shares_a_txid_is_an_error() {
+        let txid = TxId::from_bytes([1; 32]);
+        let external_target = ScanTarget::new(TARGET_HEIGHT - 1, Some(txid));
+        let internal_target = ScanTarget::internal(TARGET_HEIGHT, txid);
+        let (fetch_request_sender, _log) =
+            cover_fetcher(None, tonic::Status::not_found("no such transaction"));
+
+        let scanned = scan_transactions(
+            fetch_request_sender,
+            &MAIN_NETWORK,
+            &HashMap::new(),
+            BTreeSet::from([external_target, internal_target]),
+            DecryptedNoteData::new(),
+            &BTreeMap::new(),
+            &mut BTreeMap::new(),
+            HashMap::new(),
+            &HashMap::new(),
+            CHAIN_HEIGHT..CHAIN_HEIGHT,
+            CHAIN_HEIGHT,
+        )
+        .await;
+
+        assert!(matches!(
+            scanned,
+            Err(ScanError::TransactionNotServed { txid: unserved, .. }) if unserved == txid
+        ));
+    }
 }

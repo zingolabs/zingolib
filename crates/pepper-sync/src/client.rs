@@ -626,4 +626,17 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn finding_7_a_served_height_beyond_u32_is_an_error() {
+        let parsed = parse_raw_transaction(
+            &NETWORK,
+            &RawTransaction {
+                data: Vec::new(),
+                height: u64::MAX,
+            },
+        );
+
+        assert!(parsed.is_err());
+    }
 }
