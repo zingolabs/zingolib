@@ -21,7 +21,10 @@ mock chain, twin, guarantee, testnet cell.
 2. **Testnet cells are feature-gated and non-default.** They sit behind
    the `testnet` feature of `libtonode-tests`, outside `extra-credit-tests`,
    compiled on every pull request by the cargo-hack sweep and run by no CI
-   profile until the node below exists. No unlinked files.
+   profile until the node below exists. No unlinked files. Amended
+   2026-11-20: `libtonode-tests` folded into `zingolib`, so the cells sit
+   under `crates/zingolib/tests/testnet/`, behind the `testnet` feature of
+   `zingolib`.
 3. **The node is a zingolabs-operated zainod on a tagged release, serving
    TLS, with NU6.3 active.** It does not exist yet. The fixture keeps one
    constant, `TESTNET_INDEXER`; the gated file's doc bullet names the node
