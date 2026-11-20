@@ -279,7 +279,7 @@ impl LightWallet {
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
         Ok(self
-            .judged_notes::<N>(anchor_height, &HashSet::new(), account)?
+            .judged_notes::<N>(anchor_height, account)?
             .into_iter()
             .filter(|judged| judged.verdict == Verdict::Certain)
             .map(|judged| judged.note)
@@ -293,7 +293,7 @@ impl LightWallet {
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
         Ok(self
-            .judged_notes::<N>(anchor_height, &HashSet::new(), account)?
+            .judged_notes::<N>(anchor_height, account)?
             .into_iter()
             .filter_map(|judged| judged.verdict.certainty().map(|_| judged.note))
             .collect())
@@ -303,7 +303,6 @@ impl LightWallet {
     pub(crate) fn judged_notes<'a, N: NoteInterface>(
         &'a self,
         anchor_height: BlockHeight,
-        exclude: &HashSet<OutputId>,
         account: zip32::AccountId,
     ) -> Result<Vec<Judged<'a, N>>, WalletError> {
         let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
@@ -324,7 +323,6 @@ impl LightWallet {
         let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
         let judgement = Judgement {
             account,
-            exclude,
             pending_spends: &pending_spends,
             spend_evidence_floor,
             scan_ranges: self.sync_state.scan_ranges(),
@@ -437,8 +435,9 @@ impl LightWallet {
             .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
             .collect::<HashSet<_>>();
         Ok(self
-            .judged_notes::<N>(anchor_height, &exclude, account)?
+            .judged_notes::<N>(anchor_height, account)?
             .into_iter()
+            .filter(|judged| !exclude.contains(&judged.note.output_id()))
             .filter_map(|judged| {
                 judged
                     .verdict
@@ -468,7 +467,6 @@ pub(crate) enum Verdict {
     Uncertain,
     Unanchored,
     ForeignAccount,
-    Excluded,
     Spent,
     NoNullifier,
     NoPosition,
@@ -482,7 +480,6 @@ impl Verdict {
             Verdict::Uncertain => Some(false),
             Verdict::Unanchored
             | Verdict::ForeignAccount
-            | Verdict::Excluded
             | Verdict::Spent
             | Verdict::NoNullifier
             | Verdict::NoPosition
@@ -498,7 +495,6 @@ pub(crate) struct Judged<'a, N> {
 
 pub(crate) struct Judgement<'a> {
     pub(crate) account: zip32::AccountId,
-    pub(crate) exclude: &'a HashSet<OutputId>,
     pub(crate) pending_spends: &'a HashMap<OutputId, TxId>,
     pub(crate) spend_evidence_floor: BlockHeight,
     pub(crate) scan_ranges: &'a [ScanRange],
@@ -515,9 +511,6 @@ impl Judgement<'_> {
         };
         if note.key_id().account_id() != self.account {
             return Verdict::ForeignAccount;
-        }
-        if self.exclude.contains(&note.output_id()) {
-            return Verdict::Excluded;
         }
         if note.spending_transaction().is_some()
             || self.pending_spends.contains_key(&note.output_id())
@@ -818,12 +811,10 @@ mod tests {
 
     fn judgement<'a>(
         wallet: &'a LightWallet,
-        exclude: &'a HashSet<OutputId>,
         pending_spends: &'a HashMap<OutputId, TxId>,
     ) -> Judgement<'a> {
         Judgement {
             account: ACCOUNT,
-            exclude,
             pending_spends,
             spend_evidence_floor: wallet
                 .spend_evidence_floor(false)
@@ -841,7 +832,7 @@ mod tests {
     fn every_note_is_judged_and_the_funded_wallet_is_certain() {
         let wallet = funded_wallet();
         let judged = wallet
-            .judged_notes::<OrchardNote>(ANCHOR, &HashSet::new(), ACCOUNT)
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
             .expect("the synthetic wallet is synced");
         assert_eq!(judged.len(), 2);
         assert!(
@@ -855,18 +846,17 @@ mod tests {
     fn judge_names_the_first_failing_fact() {
         let wallet = funded_wallet();
         let note = get_the_100000_zat_spendable_orch_note(&wallet);
-        let none = HashSet::new();
         let unspent = HashMap::new();
         assert_eq!(
-            judgement(&wallet, &none, &unspent).judge(note, ANCHORED),
+            judgement(&wallet, &unspent).judge(note, ANCHORED),
             Verdict::Certain
         );
         assert_eq!(
-            judgement(&wallet, &none, &unspent).judge(note, Confirmation::Unanchored),
+            judgement(&wallet, &unspent).judge(note, Confirmation::Unanchored),
             Verdict::Unanchored
         );
         assert_eq!(
-            judgement(&wallet, &none, &unspent).judge(
+            judgement(&wallet, &unspent).judge(
                 note,
                 Confirmation::Anchored {
                     height: ANCHOR,
@@ -875,25 +865,20 @@ mod tests {
             ),
             Verdict::NoWitness
         );
-        let excluded = HashSet::from([note.output_id()]);
-        assert_eq!(
-            judgement(&wallet, &excluded, &unspent).judge(note, ANCHORED),
-            Verdict::Excluded
-        );
         let pending_spend = HashMap::from([(note.output_id(), note.output_id().txid())]);
         assert_eq!(
-            judgement(&wallet, &none, &pending_spend).judge(note, ANCHORED),
+            judgement(&wallet, &pending_spend).judge(note, ANCHORED),
             Verdict::Spent
         );
         let foreign = Judgement {
             account: zip32::AccountId::try_from(1).expect("1 is a valid account id"),
-            ..judgement(&wallet, &none, &unspent)
+            ..judgement(&wallet, &unspent)
         };
         assert_eq!(foreign.judge(note, ANCHORED), Verdict::ForeignAccount);
         let unscanned = Judgement {
             spend_evidence_floor: ANCHOR + 1,
             scan_ranges: &[],
-            ..judgement(&wallet, &none, &unspent)
+            ..judgement(&wallet, &unspent)
         };
         assert_eq!(unscanned.judge(note, ANCHORED), Verdict::Uncertain);
     }
@@ -904,7 +889,7 @@ mod tests {
         let spent = get_the_100000_zat_spendable_orch_note(&wallet).output_id();
         mark_spent(&mut wallet, spent);
         let judged = wallet
-            .judged_notes::<OrchardNote>(ANCHOR, &HashSet::new(), ACCOUNT)
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
             .expect("the synthetic wallet is synced");
         let verdict = judged
             .iter()
