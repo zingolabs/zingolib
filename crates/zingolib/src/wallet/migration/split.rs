@@ -522,7 +522,7 @@ impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
     ///
-    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// Errors with [`WalletError::SyncIncomplete`] when the Spend-Evidence Floor
     /// withholds every V2 note the anchor would otherwise offer.
     ///
     /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete

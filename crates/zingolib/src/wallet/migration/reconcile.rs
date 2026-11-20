@@ -31,7 +31,7 @@ pub trait ChainView {
     /// windows this view's heights fall in.
     fn bucket_grid(&self, params: &super::params::MigrationParams) -> BucketGrid;
 
-    /// The Spend-Evidence Height: the height through which the wallet's
+    /// The Spend-Evidence Ceiling: the height through which the wallet's
     /// evidence of spends and transaction inclusion is complete, with every
     /// block at or below it scanned with its nullifiers mapped. This is
     /// the only lawful input to judgments that condemn (a transaction
@@ -39,7 +39,7 @@ pub trait ChainView {
     /// scanning, and condemning against it invites false invalidation
     /// (issue #2493, finding 8). Forward planning may use
     /// [`Self::chain_tip`].
-    fn spend_evidence_height(&self) -> Option<BlockHeight>;
+    fn spend_evidence_ceiling(&self) -> Option<BlockHeight>;
 
     /// The confirmed or pending spend of the given note, if the wallet has
     /// observed one: the spending txid and its confirmation height.
@@ -373,7 +373,7 @@ fn classify(
     };
 
     // Expiry: a signed-or-broadcast transaction is condemned as dead only
-    // on complete evidence. The Spend-Evidence Height must reach the
+    // on complete evidence. The Spend-Evidence Ceiling must reach the
     // expiry, so every block the transaction could have mined in has been
     // scanned with its nullifiers mapped. Judging against the chain tip
     // here condemned parts whose exonerating spend sat in the unscanned
@@ -381,7 +381,7 @@ fn classify(
     if matches!(part.state, PartState::Signed | PartState::Broadcast)
         && part.expiry_height.is_some_and(|expiry_height| {
             chain
-                .spend_evidence_height()
+                .spend_evidence_ceiling()
                 .is_some_and(|evidence| evidence >= expiry_height)
         })
     {
@@ -431,12 +431,12 @@ impl ChainView for crate::wallet::LightWallet {
         params.grid(self.chain_type)
     }
 
-    fn spend_evidence_height(&self) -> Option<BlockHeight> {
+    fn spend_evidence_ceiling(&self) -> Option<BlockHeight> {
         // `fully_scanned_height`, not `highest_scanned_height`: scan ranges
         // complete out of order, and a scanned-but-unmapped block still
         // lacks spend evidence. Only the gap-free, nullifier-mapped
         // frontier is evidence-complete.
-        self.sync_state.fully_scanned_height()
+        crate::wallet::spend_evidence::ceiling(&self.sync_state)
     }
 
     fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
@@ -537,7 +537,7 @@ mod tests {
         fn bucket_grid(&self, params: &MigrationParams) -> BucketGrid {
             params.grid(ChainType::Mainnet)
         }
-        fn spend_evidence_height(&self) -> Option<BlockHeight> {
+        fn spend_evidence_ceiling(&self) -> Option<BlockHeight> {
             self.spend_evidence
         }
         fn note_spend(&self, output_id: OutputId) -> Option<(TxId, Option<BlockHeight>)> {
