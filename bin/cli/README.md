@@ -280,7 +280,7 @@ working directory. Override with `--data-dir`.
 Regtest runs against a local network you launch yourself:
 
 1. [Build](#building) the `zingolib-cli` binary.
-2. Launch a local network — a `zebrad` validator with a `zainod` indexer in
+2. Launch a local network — a `zebrad` validator with a `zingod` indexer in
    front of it (the Core stack). The `zcash_local_net` crate in the
    infrastructure repo launches and manages the pair:
    <https://github.com/zingolabs/infrastructure/tree/dev/zcash_local_net>

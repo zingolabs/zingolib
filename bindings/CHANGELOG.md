@@ -35,7 +35,6 @@ Audited `zingolib-ffi`, `pepper-sync`, `zingolib`, `zingolib-nym-proxy-ffi`, `zl
   `zingo`, the Kotlin load name `uniffi_zingo`, the Kotlin package
   `uniffi.zingo` and the Swift source `zingo.swift` with the `zingoFFI` module
   are unchanged.
-- `default_indexer("mainnet")` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ### pepper-sync
 
@@ -119,7 +118,6 @@ Audited `zingolib-ffi`, `pepper-sync`, `zingolib`, `zingolib-nym-proxy-ffi`, `zl
   read the two together, so a pending send shows its inputs spent until the
   transaction confirms or fails, where 8.0.0 stored the pending spend on the
   notes and every failure path erased it again.
-- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ##### Fixed
 - A transaction the wallet believes failed, whose block later reaches the
@@ -163,7 +161,6 @@ Audited `zingolib-ffi`, `pepper-sync`, `zingolib`, `zingolib-nym-proxy-ffi`, `zl
 ##### Changed
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
-- `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 
 ## bb4b42def2f9be982f4bed4e231b8dd1148b2cd3
 
@@ -752,7 +749,7 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
   `IndexerConnection.indexer: IndexerChoice`, a uniffi enum of `Offline`,
   `Default`, and `Named { uri }`. `Offline` replaces the empty string,
   `Default` attaches to the chain's Default Indexer (mainnet's is
-  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `https://zec.global:443`; a chain without one fails
   `Init`), and `Named` carries the URI the string carried before.
 - BREAKING: `change_server(serveruri: String)` is now
   `change_server(choice: IndexerChoice)`. `Offline` disconnects the
@@ -855,7 +852,7 @@ Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netuti
 - `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
   answers the zingolabs endpoint a session attaches to when the consumer
   goes online without naming one, `MAINNET_DEFAULT_INDEXER`
-  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  (`https://zec.global:443`) for mainnet and nothing for
   testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ## d4ac5772d7fc5d4ca621e57523d28f1b24ac24c5
