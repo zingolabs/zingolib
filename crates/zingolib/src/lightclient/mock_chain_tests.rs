@@ -1161,7 +1161,7 @@ async fn from_t_z_o_tz_to_zo_tzo_to_orchard() {
 /// failing whenever a slow validator response crosses the wallet's
 /// send timeout). The first submission is accepted into the mock
 /// mempool but its response is lost. The wallet's retry then receives
-/// the validator's duplicate rejection, verbatim as zainod surfaces it
+/// the validator's duplicate rejection, verbatim as zingod surfaces it
 /// (zingolabs/zaino#1392). That rejection is proof of successful
 /// transmission: the send must return Ok, the transaction must not be
 /// marked Failed, and it must confirm with ordinary balance

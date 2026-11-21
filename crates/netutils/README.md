@@ -7,7 +7,7 @@
 ![integration tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/zancas/56329b760b39044631c42c0b36dcb2e5/raw/integration.json)
 
 A complete `Indexer` abstraction for communicating with Zcash chain indexers
-(`zainod`).
+(`zingod`).
 
 ## Organizing principle
 

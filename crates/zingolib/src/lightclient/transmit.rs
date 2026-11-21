@@ -144,7 +144,7 @@ pub(crate) enum RejectionClass {
 }
 
 /// Classify a server/transport failure message for the resilience policy.
-/// Substring matches because zainod surfaces the rejections untyped
+/// Substring matches because zingod surfaces the rejections untyped
 /// (zingolabs/zaino#1392). When that lands, typed checks replace this
 /// classifier and the policy loop is untouched.
 pub(crate) fn classify_rejection(message: &str) -> RejectionClass {
