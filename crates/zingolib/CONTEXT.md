@@ -295,6 +295,8 @@
 
 **Sync Session** — One sync run, from start to quiescence, against the Session Indexer. The sync traffic rides the session route, never a transport a Transmission holds. Ratified 2026-07-28; the per-session sweep and draw that once opened it were retired 2026-10-13 (see Session Indexer).
 
+**Cover Group** — The run of consecutive blocks whose every transaction a Sync Session requests when it needs one of them in full. The chain is divided into aligned areas of 1,000 blocks. Within an area, blocks are grouped from the first block of the area, and a group closes at the block that brings it to 128 shielded outputs. In a complete area, the blocks after the last closed group join that group. The blocks after the last closed group of the area at the chain tip are the open group: there, a Sync Session requests every transaction of each block it scans, with or without a transaction of the wallet. A group is a function of chain data alone. A transaction the wallet stored as pending is confirmed from the stored copy, and is requested only as part of an open-group block. _Avoid_: bucket (the ZIP 318 window), decoy.
+
 **Sync Indexer Selection** — Retired 2026-10-13: named the per-session draw of the sync indexer from a curated list, disjoint from every Destination. The Session Indexer receives every Transmission, so no draw remains. _Avoid_: the term for any live mechanism.
 
 **Destination Indexer** — Retired 2026-10-13: named an Indexer used only as a Transmission target, drawn from a list that excluded the sync operator. The Session Indexer receives every Transmission, so no draw remains. _Avoid_: the term for any live mechanism.

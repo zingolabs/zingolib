@@ -283,6 +283,98 @@ async fn funded_send_confirms_on_the_mock_chain() {
     check_client_balances!(recipient, i: 70_000 o: 0 s: 0 t: 0);
 }
 
+const COVER_GROUP_OUTPUTS: usize = 128;
+
+#[tokio::test]
+async fn a_sent_transaction_in_a_closed_group_is_never_requested() {
+    let mut net = MockNet::launch().await;
+    let mut sender = funded_client(&mut net, &[(PoolType::ORCHARD, FUNDING)], 1).await;
+    let recipient = synthetic_wallet::external_address(PoolType::ORCHARD);
+
+    let mut sent = Vec::from(
+        from_inputs::quick_send(&mut sender, vec![(&recipient, 20_000, None)])
+            .await
+            .unwrap(),
+    );
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        chain.mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    }
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: 70_000 o: 0 s: 0 t: 0);
+
+    let max_send_value = sender
+        .max_send_value(
+            ZcashAddress::try_from_encoded(&recipient).unwrap(),
+            zip32::AccountId::ZERO,
+        )
+        .await
+        .unwrap();
+    sent.extend(
+        from_inputs::quick_send(
+            &mut sender,
+            vec![(&recipient, max_send_value.into_u64(), None)],
+        )
+        .await
+        .unwrap(),
+    );
+    {
+        let mut chain = net.chain.write().await;
+        chain.mine_mempool();
+        chain.mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    }
+    sender.sync_and_await().await.unwrap();
+    check_client_balances!(sender, i: 0 o: 0 s: 0 t: 0);
+
+    let chain = net.chain.read().await;
+    let requested = chain.transaction_request_log();
+    assert!(!requested.is_empty());
+    for txid in &sent {
+        assert!(!requested.contains(txid), "the wallet requested {txid}");
+    }
+}
+
+#[tokio::test]
+async fn a_received_transaction_is_requested_with_its_whole_group() {
+    let mut net = MockNet::launch().await;
+    let mut recipient = net.client(HOSPITAL_MUSEUM, None).await;
+    let other_wallet = synthetic_wallet::external_address(PoolType::ORCHARD);
+    // heights 1 and 2: a closed group that pays another wallet
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    net.chain
+        .write()
+        .await
+        .mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    // heights 3 to 6: a closed group that pays another wallet and the recipient
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    fund_client(&net, &recipient, &[(PoolType::ORCHARD, FUNDING)], 0).await;
+    net.chain
+        .write()
+        .await
+        .mine_filler_orchard_block(COVER_GROUP_OUTPUTS);
+    // height 7: the open group at the tip, which pays another wallet
+    fund(&net, vec![(&other_wallet, FUNDING, None)], 0).await;
+    assert_eq!(net.chain.read().await.tip(), 7);
+
+    recipient.sync_and_await().await.unwrap();
+    check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+
+    let expected_requests = net.chain.read().await.mined_txids(3..8);
+    assert_eq!(expected_requests.len(), 4);
+    assert_eq!(
+        net.chain.read().await.transaction_request_log(),
+        expected_requests
+    );
+
+    recipient.rescan_and_await().await.unwrap();
+    check_client_balances!(recipient, i: FUNDING o: 0 s: 0 t: 0);
+    assert_eq!(
+        net.chain.read().await.transaction_request_log(),
+        [expected_requests.clone(), expected_requests].concat()
+    );
+}
+
 /// Tests that max_send_value() returns a non-zero value for a wallet
 /// with funds.
 #[tokio::test]
@@ -4350,12 +4442,12 @@ mod strict_chain {
         }
     }
 
-    async fn wait_until_fetch_is_held(net: &MockNet) {
+    async fn wait_until_block_range_is_held(net: &MockNet) {
         let started = tokio::time::Instant::now();
-        while net.chain.read().await.faults.pending(Rpc::Transaction) > 0 {
+        while net.chain.read().await.faults.pending(Rpc::BlockRange) > 0 {
             assert!(
                 started.elapsed() < HOLD_WAIT_LIMIT,
-                "the sync engine did not request the transaction in time"
+                "the sync engine did not request a block range in time"
             );
             tokio::time::sleep(HOLD_POLL).await;
         }
@@ -4495,10 +4587,10 @@ mod strict_chain {
             .write()
             .await
             .faults
-            .inject(Rpc::Transaction, Fault::Delay(HELD_FETCH));
+            .inject(Rpc::BlockRange, Fault::Delay(HELD_FETCH));
 
         recipient.sync().await.unwrap();
-        wait_until_fetch_is_held(&net).await;
+        wait_until_block_range_is_held(&net).await;
         recipient.stop_sync().unwrap();
         recipient.await_sync().await.unwrap();
         assert!(fully_scanned_height(&recipient).await < expiry);

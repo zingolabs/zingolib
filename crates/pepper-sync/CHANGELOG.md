@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.3.0 wrote. A consumer that names the status through `zingo-status` names
   it through `zl-common`.
 
+- A scan requests a wallet transaction together with every transaction in
+  its cover group, a run of blocks with 128 shielded outputs.
+- A scan requests every transaction of each block it scans in the open
+  group at the chain tip.
+- A scan confirms a pending wallet transaction from the stored copy.
+
 ### Deprecated
 
 ### Removed

@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
+- A Sync Session requests a received transaction together with its Cover
+  Group, and requests every transaction of each new block at the chain tip.
 - **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
   `TransactionRecord`, and every zingolib signature that named it names
   `TransactionRecord` now, the `LightWallet::wallet_transactions` field

@@ -13,11 +13,11 @@ use zip32::AccountId;
 use crate::engine::SyncStateOps;
 use crate::{
     SyncDomain,
-    client::{self, FetchRequest},
+    client::FetchRequest,
     error::SyncError,
     scan::{
         DecryptedNoteData,
-        transactions::{ScannedTransactions, scan_transactions},
+        transactions::{ScannedTransactions, scan_transactions, serialize_pending_transactions},
     },
     wallet::{
         Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
@@ -74,6 +74,7 @@ fn transactions_with_scanned<'a>(
 ///
 /// In the edge case where a spending transaction received no change, the transaction evaded trial decryption. It is
 /// fetched, scanned and added to `scanned_transactions`.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn locate_shielded_spends<P, W>(
     consensus_parameters: &P,
     wallet: &W,
@@ -82,6 +83,7 @@ pub(super) async fn locate_shielded_spends<P, W>(
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     scanned_transactions: &mut HashMap<TxId, TransactionRecord>,
     scanned_nullifiers: &NullifierMap,
+    chain_height: BlockHeight,
 ) -> Result<ShieldedSpendScanTargets, SyncError<W::Error>>
 where
     P: consensus::Parameters,
@@ -116,6 +118,7 @@ where
         spend_scan_targets.scan_targets(),
         scanned_blocks,
         scanned_transactions,
+        chain_height,
     )
     .await?;
     scanned_transactions.extend(spending_transactions);
@@ -156,6 +159,7 @@ where
 /// the `FoundNote` priorities will be automatically set for scan prioritisation. Transactions with incoming notes
 /// are required to be scanned in the context of a scan task to correctly derive the nullifiers and positions for
 /// spending.
+#[allow(clippy::too_many_arguments)]
 async fn scan_spending_transactions<L, P, W>(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
     consensus_parameters: &P,
@@ -164,6 +168,7 @@ async fn scan_spending_transactions<L, P, W>(
     scan_targets: L,
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     scanned_transactions: &HashMap<TxId, TransactionRecord>,
+    chain_height: BlockHeight,
 ) -> Result<HashMap<TxId, TransactionRecord>, SyncError<W::Error>>
 where
     L: Iterator<Item = ScanTarget>,
@@ -179,6 +184,12 @@ where
     .filter(|transaction| transaction.status().is_confirmed())
     .map(TransactionRecord::txid)
     .collect::<HashSet<_>>();
+    let pending_transactions = serialize_pending_transactions(
+        wallet
+            .get_wallet_transactions()
+            .map_err(SyncError::WalletError)?
+            .values(),
+    );
     let mut spending_scan_targets = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
     for scan_target in scan_targets {
@@ -195,23 +206,13 @@ where
 
         spending_scan_targets.insert(scan_target);
 
-        let wallet_block = match wallet.get_wallet_block(block_height) {
-            Ok(block) => block,
-            Err(_) => match scanned_blocks.get(&block_height) {
-                Some(block) => block.clone(),
-                None => {
-                    crate::wallet::wallet_block_from_compact_block(
-                        consensus_parameters,
-                        fetch_request_sender.clone(),
-                        &client::get_compact_block(fetch_request_sender.clone(), block_height)
-                            .await?,
-                    )
-                    .await?
-                }
-            },
-        };
-
-        wallet_blocks.insert(block_height, wallet_block);
+        if let Some(wallet_block) = wallet
+            .get_wallet_block(block_height)
+            .ok()
+            .or_else(|| scanned_blocks.get(&block_height).cloned())
+        {
+            wallet_blocks.insert(block_height, wallet_block);
+        }
     }
 
     let mut outpoint_map = BTreeMap::new(); // dummy outpoint map
@@ -229,6 +230,9 @@ where
         &wallet_blocks,
         &mut outpoint_map,
         HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
+        &pending_transactions,
+        chain_height..chain_height,
+        chain_height,
     )
     .await?;
 
@@ -494,6 +498,7 @@ pub fn pending_spends(
 ///
 /// In the edge case where a spending transaction received no change, the transaction evaded transparent output
 /// scanning. It is fetched, scanned and added to `scanned_transactions`.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn locate_transparent_spends<P, W>(
     consensus_parameters: &P,
     wallet: &W,
@@ -502,6 +507,7 @@ pub(super) async fn locate_transparent_spends<P, W>(
     scanned_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     scanned_transactions: &mut HashMap<TxId, TransactionRecord>,
     scanned_outpoints: &BTreeMap<OutputId, ScanTarget>,
+    chain_height: BlockHeight,
 ) -> Result<BTreeMap<OutputId, ScanTarget>, SyncError<W::Error>>
 where
     P: consensus::Parameters,
@@ -531,6 +537,7 @@ where
         transparent_spend_scan_targets.values().copied(),
         scanned_blocks,
         scanned_transactions,
+        chain_height,
     )
     .await?;
     scanned_transactions.extend(spending_transactions);

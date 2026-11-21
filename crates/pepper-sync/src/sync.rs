@@ -1411,6 +1411,7 @@ where
                     &missing_block_bounds,
                     &mut wallet_transactions,
                     &nullifiers,
+                    chain_height,
                 )
                 .await?;
 
@@ -1493,6 +1494,7 @@ where
                     &scanned_blocks,
                     &mut wallet_transactions,
                     &outpoints,
+                    chain_height,
                 )
                 .await?;
                 let shielded_spend_scan_targets = spend::locate_shielded_spends(
@@ -1503,6 +1505,7 @@ where
                     &scanned_blocks,
                     &mut wallet_transactions,
                     &nullifiers,
+                    chain_height,
                 )
                 .await?;
 
@@ -2842,6 +2845,33 @@ mod test {
     /// A local network with every upgrade active from block 1.
     const NETWORK: LocalNetwork = activated_at(1);
 
+    /// Serves `data` for every target of `request`, at the height of the target.
+    fn cover_reply(
+        request: &crate::client::cover::CoverRequest,
+        data: &[u8],
+    ) -> crate::client::cover::CoverFetch {
+        crate::client::cover::CoverFetch {
+            target_replies: request
+                .targets
+                .iter()
+                .map(|(height, txid)| {
+                    let raw_transaction = zl_netutils::lightwallet_protocol::RawTransaction {
+                        data: data.to_vec(),
+                        height: u64::from(*height),
+                    };
+                    (*txid, Ok(raw_transaction))
+                })
+                .collect(),
+            block_times: request
+                .targets
+                .iter()
+                .map(|(height, _)| *height)
+                .chain(request.timed_heights.iter().copied())
+                .map(|height| (height, 0))
+                .collect(),
+        }
+    }
+
     /// The completion contract of [`crate::sync::SyncStatus::is_complete`]:
     /// completion is the sync task's own terminal condition (sync has
     /// started and every scan range is `Scanned`), independent of the
@@ -4104,7 +4134,6 @@ mod test {
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::RawTransaction;
 
         use crate::{
             client::FetchRequest,
@@ -4185,7 +4214,7 @@ mod test {
             )])
         }
 
-        /// Answers transaction requests with `transaction` mined at `SPEND_HEIGHT`.
+        /// Answers cover requests with `transaction` for every target.
         fn spawn_fetcher(transaction: &TransactionRecord) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
@@ -4193,11 +4222,9 @@ mod test {
             tokio::spawn(async move {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
-                        FetchRequest::Transaction(reply_sender, _txid) => {
-                            let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                data: data.clone(),
-                                height: u64::from(SPEND_HEIGHT),
-                            }));
+                        FetchRequest::Cover(reply_sender, request) => {
+                            let _ignore_error =
+                                reply_sender.send(Ok(super::cover_reply(&request, &data)));
                         }
                         _ => panic!("unexpected fetch request"),
                     }
@@ -4234,6 +4261,7 @@ mod test {
                 &scanned_blocks(),
                 &mut scanned_transactions,
                 &BTreeMap::new(),
+                SPEND_HEIGHT,
             )
             .await?;
             wallet
@@ -4245,16 +4273,39 @@ mod test {
         }
 
         #[tokio::test]
-        async fn pending_spending_transaction_is_fetched_and_confirmed() {
+        async fn pending_spending_transaction_is_confirmed_without_a_fetch() {
             let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
             let spending_txid = spending_record.txid();
-            let fetch_request_sender = spawn_fetcher(&spending_record);
             let mut wallet = wallet_with_mapped_spend(spending_record);
+            let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
+            drop(fetch_request_receiver);
 
             update_transparent_spends(&mut wallet, fetch_request_sender)
                 .await
                 .unwrap();
 
+            assert_spend_is_confirmed(&wallet, spending_txid);
+        }
+
+        #[tokio::test]
+        async fn unrecorded_spending_transaction_is_fetched_and_confirmed() {
+            let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
+            let fetch_request_sender = spawn_fetcher(&spending_record);
+            let mut wallet = wallet_with_mapped_spend(spending_record);
+            wallet
+                .get_wallet_transactions_mut()
+                .unwrap()
+                .remove(&spending_txid);
+
+            update_transparent_spends(&mut wallet, fetch_request_sender)
+                .await
+                .unwrap();
+
+            assert_spend_is_confirmed(&wallet, spending_txid);
+        }
+
+        fn assert_spend_is_confirmed(wallet: &MockWallet, spending_txid: TxId) {
             assert_eq!(
                 wallet
                     .get_wallet_transactions()
@@ -4264,7 +4315,7 @@ mod test {
                     .status(),
                 ConfirmationStatus::Confirmed(SPEND_HEIGHT)
             );
-            assert_eq!(get_coin_spending_txid(&wallet), Some(spending_txid));
+            assert_eq!(get_coin_spending_txid(wallet), Some(spending_txid));
             // the spend stays mapped until cleanup prunes it behind the fully scanned height
             assert!(
                 wallet
@@ -4297,7 +4348,12 @@ mod test {
         #[tokio::test]
         async fn failed_fetch_keeps_the_mapped_spend() {
             let spending_record = spending_record(ConfirmationStatus::Mempool(SPEND_HEIGHT));
+            let spending_txid = spending_record.txid();
             let mut wallet = wallet_with_mapped_spend(spending_record);
+            wallet
+                .get_wallet_transactions_mut()
+                .unwrap()
+                .remove(&spending_txid);
             let (fetch_request_sender, fetch_request_receiver) = mpsc::unbounded_channel();
             drop(fetch_request_receiver);
 
@@ -5199,7 +5255,7 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zl_netutils::lightwallet_protocol::TreeState;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5265,13 +5321,11 @@ mod test {
                                 ..Default::default()
                             }));
                         }
-                        FetchRequest::Transaction(reply_sender, _txid) => {
+                        FetchRequest::Cover(reply_sender, request) => {
                             // the request fails when the reply sender is dropped.
                             if let Some(data) = &spending_transaction_data {
-                                let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                    data: data.clone(),
-                                    height: u64::from(SPEND_HEIGHT),
-                                }));
+                                let _ignore_error =
+                                    reply_sender.send(Ok(super::cover_reply(&request, data)));
                             }
                         }
                         _ => panic!("unexpected fetch request"),

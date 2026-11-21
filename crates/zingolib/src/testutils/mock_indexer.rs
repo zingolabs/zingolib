@@ -561,6 +561,8 @@ pub struct MockChain {
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
+    /// The txid of each `GetTransaction` request received, in arrival order.
+    transaction_request_log: Vec<TxId>,
     /// The `lightwalletProtocolVersion` reported by `GetLightdInfo`. Defaults to v0.5.0, the minimum version sync
     /// accepts. Set it lower, or empty for a server pre-dating the field, to exercise the rejection of old servers.
     pub lightwallet_protocol_version: String,
@@ -999,6 +1001,7 @@ impl MockChain {
             answer_sends_with_error_code: None,
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
+            transaction_request_log: Vec::new(),
             lightwallet_protocol_version: "v0.5.0".to_string(),
             standard_fee: StandardFeeReport::default(),
             branch_seed: 0,
@@ -1019,6 +1022,30 @@ impl MockChain {
     /// transparent-detection failures in tests.
     pub fn taddr_request_log(&self) -> &[String] {
         &self.taddr_request_log
+    }
+
+    /// The txid of each `GetTransaction` request received so far, in arrival
+    /// order.
+    pub fn transaction_request_log(&self) -> &[TxId] {
+        &self.transaction_request_log
+    }
+
+    /// The txid of every transaction mined at `heights`, in block order.
+    pub fn mined_txids(&self, heights: std::ops::Range<u32>) -> Vec<TxId> {
+        self.blocks
+            .iter()
+            .filter(|block| {
+                u32::try_from(block.height).is_ok_and(|height| heights.contains(&height))
+            })
+            .flat_map(|block| &block.vtx)
+            .map(|transaction| {
+                TxId::from_bytes(
+                    transaction.txid[..]
+                        .try_into()
+                        .expect("the mock chain mines every transaction under its 32-byte txid"),
+                )
+            })
+            .collect()
     }
 
     /// The height of the chain tip (0 on an empty chain).
@@ -2065,16 +2092,18 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<TxFilter>,
     ) -> Result<Response<RawTransaction>, Status> {
-        self.fault_for(Rpc::Transaction).await?;
         let txid: [u8; 32] = request
             .into_inner()
             .hash
             .try_into()
             .map_err(|_| Status::invalid_argument("txid must be 32 bytes"))?;
+        let txid = TxId::from_bytes(txid);
+        self.chain.write().await.transaction_request_log.push(txid);
+        self.fault_for(Rpc::Transaction).await?;
         let chain = self.chain.read().await;
         chain
             .transactions
-            .get(&TxId::from_bytes(txid))
+            .get(&txid)
             .map(|mined| {
                 Response::new(RawTransaction {
                     data: mined.bytes.clone(),

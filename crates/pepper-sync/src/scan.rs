@@ -156,6 +156,7 @@ where
         mut scan_targets,
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
+        pending_transactions,
         transparent_scan_floor,
         chain_height,
         highest_scanned_height,
@@ -251,6 +252,7 @@ where
     } = scan_data;
 
     scan_targets.append(&mut decrypted_scan_targets);
+    let scanned_heights = scan_range.block_range().clone();
     transparent_inuse_addresses.extend(new_transparent_inuse_addresses.clone());
 
     let ScannedTransactions {
@@ -265,6 +267,9 @@ where
         &wallet_blocks,
         &mut outpoints,
         transparent_inuse_addresses,
+        &pending_transactions,
+        scanned_heights,
+        chain_height,
     )
     .await?;
 
