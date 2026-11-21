@@ -50,7 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GrpcIndexer::uri` is removed. The value is connected by construction and
   holds the live client alone; the URI lives in the `NetworkAccess` beside
   it.
-- `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
 - `GrpcIndexer` now connects to IPv6 literal hosts (`https://[::1]:9067`).
 
 ### Deprecated
@@ -67,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
   answers the zingolabs endpoint a session attaches to when the consumer
   goes online without naming one, `MAINNET_DEFAULT_INDEXER`
-  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  (`https://zec.global:443`) for mainnet and nothing for
   testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ### Changed
