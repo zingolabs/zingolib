@@ -45,12 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the text of the canonical error, so a caller that prints the source
   chain skips a source whose text the message already holds.
 - `legacy` feature, off by default. It adds the readers of the layouts below
-  version 32 and the dependencies they need, among them `prost` and
+  version 32 and the dependencies they need, among them
   `zcash_client_backend`. A build without it returns from
   `WalletFile::read` and `read_chain` an `InvalidData` error that names the
   feature for a file below version 32. Neither build depends on
-  `lightwallet-protocol` or on a network transport: the crate declares the
-  one protobuf message the old layouts hold.
+  `lightwallet-protocol` or on a network transport, and the crate itself
+  uses no `prost`. The old layouts hold two protobuf messages that no code
+  reads, a tree state and a compact block. The readers consume the bytes of
+  each without decoding them, so a file whose tree state is not a protobuf
+  message now reads.
 - `strings` module with `read_string` and a re-export of `write_string`.
 - `WalletSettings` and `RecoveryInfo`, which `zingolib` re-exports at their
   old paths, `ChainMismatch`, and the `MAX_RECOVERABLE_VERSION` and

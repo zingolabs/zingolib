@@ -7,12 +7,12 @@ on:
   workflow_call:
     inputs:
       # The CI_IOS_RUNNER repository variable sets the runner label. The
-      # fallback warp-macos-15-arm64-12x is WarpBuild's 12-vCPU M4 Pro
-      # machine. The stock macos-15 label has three cores.
+      # fallback warp-macos-26-arm64-12x is WarpBuild's 12-vCPU M4 Pro
+      # machine with Xcode 27. The stock macos-26 label has three cores.
       runner:
         required: false
         type: string
-        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-15-arm64-12x' }}
+        default: ${{ vars.CI_IOS_RUNNER || 'warp-macos-26-arm64-12x' }}
       # The commit to build. The publish workflow passes the commit it was
       # dispatched at, which its relay makes the commit that triggered it.
       ref:
@@ -38,7 +38,7 @@ on:
 # layout only under this toolchain. Every cache key carries the version,
 # so objects that cc compiled under another SDK are never restored.
 env:
-  XCODE_VERSION: '26.3'
+  XCODE_VERSION: '27.2'
 
 jobs:
   slices:
