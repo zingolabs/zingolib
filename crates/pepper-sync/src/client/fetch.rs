@@ -9,8 +9,8 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedPool};
 use zl_common::chain::{
-    BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply,
-    GetSubtreeRootsArg, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
+    BlockId, BlockRange, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg,
+    RawTransaction, TransparentAddressBlockFilter, TxFilter,
 };
 use zl_netutils::{CompactBlockStream, Indexer, TransparentIndexer};
 
@@ -105,7 +105,9 @@ where
         }
         FetchRequest::CompactBlock(sender, block_height) => {
             tracing::debug!("Fetching compact block. {:?}", &block_height);
-            let block = get_block(client, block_height).await;
+            let block = client
+                .get_block(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
+                .await;
             let _ignore_error = sender.send(block);
         }
         FetchRequest::CompactBlockRange(sender, block_range, include_transparent) => {
@@ -134,7 +136,9 @@ where
         }
         FetchRequest::TreeState(sender, block_height) => {
             tracing::debug!("Fetching tree state. {:?}", &block_height);
-            let tree_state = get_tree_state(client, block_height).await;
+            let tree_state = client
+                .get_tree_state(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
+                .await;
             let _ignore_error = sender.send(tree_state);
         }
         FetchRequest::Transaction(sender, txid) => {
@@ -182,29 +186,6 @@ where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client.get_latest_block(UNARY_RPC_TIMEOUT).await
-}
-
-/// Resolves `block_height` to a [`BlockId`] and runs `call` with it. Shared by every fetch that
-/// only needs to identify a block by height, so each stays one line instead of repeating the
-/// `BlockId::from_height` + unary-timeout shape.
-async fn get_by_height<T>(
-    block_height: BlockHeight,
-    call: impl AsyncFnOnce(BlockId) -> Result<T, tonic::Status>,
-) -> Result<T, tonic::Status> {
-    call(BlockId::from_height(block_height)).await
-}
-
-async fn get_block<C>(
-    client: &mut C,
-    block_height: BlockHeight,
-) -> Result<CompactBlock, tonic::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    get_by_height(block_height, async |id| {
-        client.get_block(id, UNARY_RPC_TIMEOUT).await
-    })
-    .await
 }
 
 /// Fetches compact blocks with shielded data only, or with transparent and shielded data if `include_transparent` is
@@ -282,20 +263,6 @@ where
         )
         .await?;
     Ok(Box::pin(stream))
-}
-
-#[instrument(skip(client), name = "fetch::get_tree_state", err, level = "info")]
-async fn get_tree_state<C>(
-    client: &mut C,
-    block_height: BlockHeight,
-) -> Result<TreeState, tonic::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    get_by_height(block_height, async |id| {
-        client.get_tree_state(id, UNARY_RPC_TIMEOUT).await
-    })
-    .await
 }
 
 async fn get_transaction<C>(client: &mut C, txid: TxId) -> Result<RawTransaction, tonic::Status>
