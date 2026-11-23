@@ -17,7 +17,7 @@ use crate::{
     error::SyncError,
     scan::{
         DecryptedNoteData,
-        transactions::{ScannedTransactions, scan_transactions},
+        transactions::{ScannedTransactions, scan_transactions, serialize_pending_transactions},
     },
     wallet::{
         Ironwood, NoteInterface, NullifierMap, Orchard, OutputId, OutputInterface, Sapling,
@@ -179,6 +179,12 @@ where
     .filter(|transaction| transaction.status().is_confirmed())
     .map(TransactionRecord::txid)
     .collect::<HashSet<_>>();
+    let pending_transactions = serialize_pending_transactions(
+        wallet
+            .get_wallet_transactions()
+            .map_err(SyncError::WalletError)?
+            .values(),
+    );
     let mut spending_scan_targets = BTreeSet::new();
     let mut wallet_blocks = BTreeMap::new();
     for scan_target in scan_targets {
@@ -229,6 +235,7 @@ where
         &wallet_blocks,
         &mut outpoint_map,
         HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
+        &pending_transactions,
     )
     .await?;
 

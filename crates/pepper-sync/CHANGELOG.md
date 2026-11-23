@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a block join its last triple. Sync discards the replies to the other
   requests. A transaction whose block the scan does not hold is requested
   alone, as before.
+- Sync sends no request for an unconfirmed transaction the wallet stores,
+  when the scanned block at the transaction's height lists its txid. Sync
+  confirms the transaction from the stored copy.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,
