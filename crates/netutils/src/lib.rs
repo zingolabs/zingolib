@@ -516,7 +516,7 @@ mod send_response_parsing {
 
 /// A server's subtree-root stream, each item already parsed into the validated domain
 /// [`SubtreeRoot`]. Boxed because the stream's item type is produced by mapping a
-/// [`tonic::Streaming`] through [`parse_wire_as_status`], an anonymous type that a trait
+/// [`tonic::Streaming`] through an internal parsing closure, an anonymous type that a trait
 /// method's return position, and a channel carrying it onward, both need to name concretely.
 pub type SubtreeRootStream = Pin<Box<dyn Stream<Item = Result<SubtreeRoot, tonic::Status>> + Send>>;
 
