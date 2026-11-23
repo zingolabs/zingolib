@@ -21,9 +21,7 @@ use futures::Stream;
 use zl_common::chain::{
     BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
 };
-use zl_netutils::{
-    CompactBlockStream, Indexer, SubtreeRootStream, TransparentIndexer,
-};
+use zl_netutils::{CompactBlockStream, Indexer, SubtreeRootStream, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError},

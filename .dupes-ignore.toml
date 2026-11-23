@@ -3,10 +3,6 @@ fingerprint = "091894c21bf110c2"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/wallet/output/query.rs:78"
 
 [[ignore]]
-fingerprint = "0925f8bb5566196f"
-reason = "baseline at 639986655: exact group of 4, first member zingo-netutils/src/lib.rs:487"
-
-[[ignore]]
 fingerprint = "0df789c7a8d20ac0"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/wallet.rs:1588"
 
@@ -27,10 +23,6 @@ fingerprint = "1c39211b8970cfa4"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lightclient/sync.rs:179"
 
 [[ignore]]
-fingerprint = "1d3e910a75e571b6"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/client/fetch.rs:170"
-
-[[ignore]]
 fingerprint = "1eee3061850146e7"
 reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:59"
 
@@ -41,10 +33,6 @@ reason = "baseline at 639986655: exact group of 2, first member zingolib/src/lig
 [[ignore]]
 fingerprint = "2239f3057e351d56"
 reason = "baseline at 639986655: exact group of 2, first member zingolib/src/perspective/value_transfer.rs:273"
-
-[[ignore]]
-fingerprint = "2772c6ff6cc95c03"
-reason = "baseline at 639986655: exact group of 2, first member zingo-netutils/src/socks5_transmit.rs:299"
 
 [[ignore]]
 fingerprint = "2df2b10dcb0eb304"
@@ -173,10 +161,6 @@ reason = "baseline at 639986655: exact group of 3, first member zingolib/src/lig
 [[ignore]]
 fingerprint = "92d452d6560102c0"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1961"
-
-[[ignore]]
-fingerprint = "9755ff9cb034efa6"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/witness.rs:314"
 
 [[ignore]]
 fingerprint = "9a51c97c519be6ce"
@@ -321,3 +305,23 @@ reason = "FFI export pair send_all/preview_send_all: the same call under the wri
 [[ignore]]
 fingerprint = "951708b4f685840f"
 reason = "FFI export pair shield/preview_shield: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
+
+[[ignore]]
+fingerprint = "f366a2abce350af5"
+reason = "trait-delegation group: Indexer/TransparentIndexer methods (get_tree_state, get_block, get_block_range, get_transaction, get_subtree_roots, get_taddress_txids) each delegate identically to wire::unary_rpc/stream_rpc and cannot share an impl (distinct trait methods)"
+
+[[ignore]]
+fingerprint = "e545bd213593bcf9"
+reason = "trait-delegation group: Indexer/TransparentIndexer methods (get_block_nullifiers, get_block_range_nullifiers, get_taddress_transactions, get_address_utxos_stream) each delegate identically to wire::stream_rpc and cannot share an impl (distinct trait methods)"
+
+[[ignore]]
+fingerprint = "06d25b9af436704a"
+reason = "trait-delegation pair get_latest_block/get_latest_tree_state: both Indexer methods delegate identically to wire::unary_rpc_raw and cannot share an impl (distinct trait methods)"
+
+[[ignore]]
+fingerprint = "72fa233d1db72ee1"
+reason = "trait-delegation pair: CompactOrchardAction and SubtreeRoot both impl ParseWire, each delegating to its own from_wire/from_wire_parts constructor, and cannot share an impl (distinct Self types)"
+
+[[ignore]]
+fingerprint = "fa1876ba06c17b07"
+reason = "get_latest_block/get_mempool_stream: two unrelated one-line client delegates (chain tip vs mempool stream) that only matched once nearby near-duplicates (get_block/get_tree_state) were deduplicated via get_by_height; each is already irreducibly minimal"

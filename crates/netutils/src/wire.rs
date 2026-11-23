@@ -2,6 +2,11 @@
 //! owned `zl_common::chain` domain counterpart, so no other module in this crate (or any
 //! consumer crate) needs to name a proto type directly.
 
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
+
+use futures::Stream;
 use lightwallet_protocol::{
     BlockId as WireBlockId, BlockRange as WireBlockRange, CompactBlock as WireCompactBlock,
     CompactTx as WireCompactTx, GetSubtreeRootsArg as WireGetSubtreeRootsArg,
@@ -50,6 +55,64 @@ pub(crate) trait ToWire {
     type Wire;
 
     fn to_wire(self) -> Self::Wire;
+}
+
+/// Runs one unary RPC whose request is a prebuilt wire value (there is nothing to convert:
+/// `ChainSpec`/`Empty` carry no data), parsing the response via [`ParseWire`].
+pub(crate) async fn unary_rpc_raw<Req, T, F, Fut>(
+    wire_request: Req,
+    timeout: Duration,
+    call: F,
+) -> Result<T, tonic::Status>
+where
+    T: ParseWire,
+    F: FnOnce(tonic::Request<Req>) -> Fut,
+    Fut: Future<Output = Result<tonic::Response<T::Wire>, tonic::Status>>,
+{
+    let mut request = tonic::Request::new(wire_request);
+    request.set_timeout(timeout);
+    parse_wire_as_status(call(request).await?.into_inner())
+}
+
+/// Runs one unary RPC, converting `arg` to its wire form and parsing the response via
+/// [`ParseWire`]. Every unary `Indexer`/`TransparentIndexer` method taking one domain argument
+/// shares this exact shape; factored out so each stays one line instead of repeating it
+/// (`cargo-dupes` otherwise flags the repeated shape as duplication, AGENTS.md).
+pub(crate) async fn unary_rpc<Arg, T, F, Fut>(
+    arg: Arg,
+    timeout: Duration,
+    call: F,
+) -> Result<T, tonic::Status>
+where
+    Arg: ToWire,
+    T: ParseWire,
+    F: FnOnce(tonic::Request<Arg::Wire>) -> Fut,
+    Fut: Future<Output = Result<tonic::Response<T::Wire>, tonic::Status>>,
+{
+    unary_rpc_raw(arg.to_wire(), timeout, call).await
+}
+
+/// Runs one streaming RPC, converting `arg` to its wire form and parsing each response item
+/// via [`ParseWire`]. Shared shape for every streaming method taking one domain argument; see
+/// [`unary_rpc`].
+pub(crate) async fn stream_rpc<Arg, T, F, Fut, S>(
+    arg: Arg,
+    timeout: Duration,
+    call: F,
+) -> Result<Pin<Box<dyn Stream<Item = Result<T, tonic::Status>> + Send>>, tonic::Status>
+where
+    Arg: ToWire,
+    T: ParseWire + Send + 'static,
+    F: FnOnce(tonic::Request<Arg::Wire>) -> Fut,
+    Fut: Future<Output = Result<tonic::Response<S>, tonic::Status>>,
+    S: Stream<Item = Result<T::Wire, tonic::Status>> + Send + 'static,
+{
+    let mut request = tonic::Request::new(arg.to_wire());
+    request.set_timeout(timeout);
+    let wire_stream = call(request).await?.into_inner();
+    Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+        item.and_then(parse_wire_as_status)
+    })))
 }
 
 impl ParseWire for RawTransaction {

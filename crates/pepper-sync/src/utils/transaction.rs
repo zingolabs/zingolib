@@ -44,10 +44,7 @@ pub(crate) fn compact_tx(
         index: 0,
         txid: TxId::from_bytes([0; 32]),
         fee: 0,
-        spends: vec![
-            zl_common::chain::CompactSaplingSpend { nullifier: [0; 32] };
-            spends
-        ],
+        spends: vec![zl_common::chain::CompactSaplingSpend { nullifier: [0; 32] }; spends],
         outputs: vec![
             zl_common::chain::CompactSaplingOutput {
                 cmu: vec![0; 32],
