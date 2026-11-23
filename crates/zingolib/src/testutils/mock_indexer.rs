@@ -26,12 +26,14 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::pin::Pin;
+use std::sync::atomic;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::{RwLock, mpsc};
 use tokio_stream::Stream;
 
+use zaino_proto::prost;
 use zaino_proto::tonic::{self, Code, Request, Response, Status};
 use zl_netutils::lightwallet_protocol::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainMetadata, ChainSpec, CompactBlock,
@@ -509,6 +511,35 @@ struct MempoolState {
     outputs: HashMap<OutPoint, TxOut>,
 }
 
+#[derive(Debug, Default)]
+struct ServeCounters {
+    transparent_blocks: atomic::AtomicUsize,
+    reply_bytes: atomic::AtomicUsize,
+}
+
+impl ServeCounters {
+    /// - Adds the encoded length of `message` to the reply byte count.
+    fn reply<T: prost::Message>(&self, message: T) -> Response<T> {
+        self.reply_bytes
+            .fetch_add(message.encoded_len(), atomic::Ordering::Relaxed);
+        Response::new(message)
+    }
+
+    /// - Adds the encoded length of every item to the reply byte count.
+    fn stream<T: prost::Message>(&self, items: &[T]) {
+        let stream_bytes = items.iter().map(|item| item.encoded_len()).sum();
+        self.reply_bytes
+            .fetch_add(stream_bytes, atomic::Ordering::Relaxed);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServeCounts {
+    pub transaction_requests: usize,
+    pub transparent_blocks: usize,
+    pub reply_bytes: usize,
+}
+
 /// The fabricated chain: blocks, transactions, tree states, mempool.
 pub struct MockChain {
     activation_heights: ActivationHeights,
@@ -561,6 +592,8 @@ pub struct MockChain {
     /// requested range, and how many transactions were streamed back.
     /// Diagnostic surface for transparent-detection failures.
     taddr_request_log: Vec<String>,
+    transaction_request_log: Vec<TxId>,
+    serve_counters: ServeCounters,
     /// The `lightwalletProtocolVersion` reported by `GetLightdInfo`. Defaults to v0.5.0, the minimum version sync
     /// accepts. Set it lower, or empty for a server pre-dating the field, to exercise the rejection of old servers.
     pub lightwallet_protocol_version: String,
@@ -999,6 +1032,8 @@ impl MockChain {
             answer_sends_with_error_code: None,
             rejected_sends: 0,
             taddr_request_log: Vec::new(),
+            transaction_request_log: Vec::new(),
+            serve_counters: ServeCounters::default(),
             lightwallet_protocol_version: "v0.5.0".to_string(),
             standard_fee: StandardFeeReport::default(),
             branch_seed: 0,
@@ -1019,6 +1054,24 @@ impl MockChain {
     /// transparent-detection failures in tests.
     pub fn taddr_request_log(&self) -> &[String] {
         &self.taddr_request_log
+    }
+
+    pub fn transaction_request_log(&self) -> &[TxId] {
+        &self.transaction_request_log
+    }
+
+    pub fn serve_counts(&self) -> ServeCounts {
+        ServeCounts {
+            transaction_requests: self.transaction_request_log.len(),
+            transparent_blocks: self
+                .serve_counters
+                .transparent_blocks
+                .load(atomic::Ordering::Relaxed),
+            reply_bytes: self
+                .serve_counters
+                .reply_bytes
+                .load(atomic::Ordering::Relaxed),
+        }
     }
 
     /// The height of the chain tip (0 on an empty chain).
@@ -1943,6 +1996,13 @@ impl MockIndexerService {
                 reduce_to_nullifiers(block);
             }
         }
+        if pools.transparent {
+            chain
+                .serve_counters
+                .transparent_blocks
+                .fetch_add(blocks.len(), atomic::Ordering::Relaxed);
+        }
+        chain.serve_counters.stream(&blocks);
         Ok(Response::new(stream_with_fault(blocks, fault)))
     }
 
@@ -1977,7 +2037,7 @@ impl CompactTxStreamer for MockIndexerService {
     ) -> Result<Response<BlockId>, Status> {
         self.fault_for(Rpc::LatestBlock).await?;
         let chain = self.chain.read().await;
-        Ok(Response::new(BlockId {
+        Ok(chain.serve_counters.reply(BlockId {
             height: u64::from(chain.tip()),
             hash: chain.tip_hash(),
         }))
@@ -1988,13 +2048,13 @@ impl CompactTxStreamer for MockIndexerService {
         let height = request.into_inner().height;
         let chain = self.chain.read().await;
         if height == u64::from(u32::from(GENESIS_HEIGHT)) {
-            return Ok(Response::new(chain.genesis_compact_block()));
+            return Ok(chain.serve_counters.reply(chain.genesis_compact_block()));
         }
         chain
             .blocks
             .get(height as usize - 1)
             .cloned()
-            .map(Response::new)
+            .map(|block| chain.serve_counters.reply(block))
             .ok_or_else(|| Status::not_found(format!("no block at height {height}")))
     }
 
@@ -2033,7 +2093,7 @@ impl CompactTxStreamer for MockIndexerService {
         let chain = self.chain.read().await;
         chain
             .tree_state_at(height)
-            .map(Response::new)
+            .map(|tree_state| chain.serve_counters.reply(tree_state))
             .ok_or_else(|| Status::not_found(format!("no tree state at height {height}")))
     }
 
@@ -2046,7 +2106,7 @@ impl CompactTxStreamer for MockIndexerService {
         let tip = chain.tip();
         chain
             .tree_state_at(tip)
-            .map(Response::new)
+            .map(|tree_state| chain.serve_counters.reply(tree_state))
             .ok_or_else(|| Status::internal("tip tree state always exists"))
     }
 
@@ -2065,18 +2125,20 @@ impl CompactTxStreamer for MockIndexerService {
         &self,
         request: Request<TxFilter>,
     ) -> Result<Response<RawTransaction>, Status> {
-        self.fault_for(Rpc::Transaction).await?;
         let txid: [u8; 32] = request
             .into_inner()
             .hash
             .try_into()
             .map_err(|_| Status::invalid_argument("txid must be 32 bytes"))?;
+        let txid = TxId::from_bytes(txid);
+        self.chain.write().await.transaction_request_log.push(txid);
+        self.fault_for(Rpc::Transaction).await?;
         let chain = self.chain.read().await;
         chain
             .transactions
-            .get(&TxId::from_bytes(txid))
+            .get(&txid)
             .map(|mined| {
-                Response::new(RawTransaction {
+                chain.serve_counters.reply(RawTransaction {
                     data: mined.bytes.clone(),
                     height: u64::from(u32::from(mined.height)),
                 })
@@ -2228,6 +2290,7 @@ impl CompactTxStreamer for MockIndexerService {
             })
             .collect();
         let served = raw.len();
+        chain.serve_counters.stream(&raw);
         drop(chain);
         self.chain.write().await.taddr_request_log.push(format!(
             "address={} range=[{start},{end}] served={served}",
@@ -2260,6 +2323,7 @@ impl CompactTxStreamer for MockIndexerService {
                 compact_transaction(i as u64 + 1, &chain.parse_transaction(bytes, height))
             })
             .collect();
+        chain.serve_counters.stream(&compact);
         Ok(Response::new(stream_with_fault(compact, fault)))
     }
 
@@ -2296,7 +2360,7 @@ impl CompactTxStreamer for MockIndexerService {
             .chain_type()
             .activation_height(NetworkUpgrade::Sapling)
             .map_or(0, |height| u64::from(u32::from(height)));
-        Ok(Response::new(LightdInfo {
+        Ok(chain.serve_counters.reply(LightdInfo {
             version: "mock-indexer".to_string(),
             vendor: "zingolib test".to_string(),
             taddr_support: true,
@@ -2316,7 +2380,7 @@ impl CompactTxStreamer for MockIndexerService {
     ) -> Result<Response<StandardFee>, Status> {
         self.fault_for(Rpc::StandardFee).await?;
         let chain = self.chain.read().await;
-        Ok(Response::new(StandardFee {
+        Ok(chain.serve_counters.reply(StandardFee {
             fee_zat: chain.standard_fee.fee_zat,
             estimator_version: chain.standard_fee.estimator_version,
         }))
@@ -2337,7 +2401,7 @@ impl CompactTxStreamer for MockIndexerService {
                 .map(|utxo| utxo.value_zat)
                 .sum::<i64>();
         }
-        Ok(Response::new(Balance { value_zat }))
+        Ok(chain.serve_counters.reply(Balance { value_zat }))
     }
 
     async fn get_taddress_balance_stream(
@@ -2356,7 +2420,7 @@ impl CompactTxStreamer for MockIndexerService {
                 .map(|utxo| utxo.value_zat)
                 .sum::<i64>();
         }
-        Ok(Response::new(Balance { value_zat }))
+        Ok(chain.serve_counters.reply(Balance { value_zat }))
     }
 
     async fn get_address_utxos(
@@ -3272,6 +3336,55 @@ mod tests {
             served += 1;
         }
         assert_eq!(served, 3);
+    }
+
+    #[tokio::test]
+    async fn serve_counts_record_requests_blocks_and_bytes() -> Result<(), Status> {
+        const MINED_BLOCKS: u32 = 3;
+        const UNMINED_TXID_BYTE: u8 = 7;
+        let chain = Arc::new(RwLock::new(MockChain::new()));
+        chain.write().await.mine_empty_blocks(MINED_BLOCKS);
+        let service = MockIndexerService::new(chain.clone());
+        let unmined = TxId::from_bytes([UNMINED_TXID_BYTE; 32]);
+        let range = |pool_types| BlockRange {
+            start: Some(BlockId {
+                height: 1,
+                hash: Vec::new(),
+            }),
+            end: Some(BlockId {
+                height: u64::from(MINED_BLOCKS),
+                hash: Vec::new(),
+            }),
+            pool_types,
+        };
+
+        let refusal = service
+            .get_transaction(Request::new(TxFilter {
+                hash: unmined.as_ref().to_vec(),
+                ..Default::default()
+            }))
+            .await;
+        let _shielded_stream = service
+            .get_block_range(Request::new(range(Vec::new())))
+            .await?;
+        let shielded_only = chain.read().await.serve_counts();
+        let _transparent_stream = service
+            .get_block_range(Request::new(range(vec![ProtoPoolType::Transparent as i32])))
+            .await?;
+        let with_transparent = chain.read().await.serve_counts();
+
+        assert!(refusal.is_err());
+        assert_eq!(chain.read().await.transaction_request_log(), [unmined]);
+        assert_eq!(shielded_only.transaction_requests, 1);
+        assert_eq!(shielded_only.transparent_blocks, 0);
+        assert!(shielded_only.reply_bytes > 0);
+        assert_eq!(
+            u32::try_from(with_transparent.transparent_blocks),
+            Ok(MINED_BLOCKS)
+        );
+        assert!(with_transparent.reply_bytes > shielded_only.reply_bytes);
+
+        Ok(())
     }
 
     #[tokio::test]
