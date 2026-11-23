@@ -589,6 +589,7 @@ where
                     let Some(compact_block) = maybe_block else {
                         break;
                     };
+                    crate::client::chaff::BYTE_TALLY.add_compact_block(&compact_block);
 
                     if fetch_nullifiers_only {
                         current_block_sapling_nullifier_count =

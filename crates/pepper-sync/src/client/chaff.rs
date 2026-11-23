@@ -1,4 +1,8 @@
-use std::{collections::HashMap, future::Future};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::atomic::{self, AtomicU64},
+};
 
 use futures::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
@@ -6,7 +10,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus;
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::RawTransaction;
+use zl_netutils::lightwallet_protocol::{CompactBlock, RawTransaction};
 
 pub(crate) const TRIPLE_SIZE: usize = 3;
 pub(crate) const TARGET_FREE_BLOCK_INTERVAL: u64 = 1_024;
@@ -104,6 +108,89 @@ impl TargetFreeSelector {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ByteTally {
+    compact_block_payload: AtomicU64,
+    wanted_replies: AtomicU64,
+    discarded_replies: AtomicU64,
+}
+
+pub(crate) static BYTE_TALLY: ByteTally = ByteTally {
+    compact_block_payload: AtomicU64::new(0),
+    wanted_replies: AtomicU64::new(0),
+    discarded_replies: AtomicU64::new(0),
+};
+
+impl ByteTally {
+    /// - Adds the byte fields of `compact_block` to the process-wide tally.
+    pub(crate) fn add_compact_block(&self, compact_block: &CompactBlock) {
+        let transaction_bytes = compact_block.vtx.iter().map(|transaction| {
+            let sapling_spends = transaction.spends.iter().map(|spend| spend.nf.len());
+            let sapling_outputs = transaction.outputs.iter().map(|output| {
+                output.cmu.len() + output.ephemeral_key.len() + output.ciphertext.len()
+            });
+            let actions = transaction
+                .actions
+                .iter()
+                .chain(&transaction.ironwood_actions)
+                .map(|action| {
+                    action.nullifier.len()
+                        + action.cmx.len()
+                        + action.ephemeral_key.len()
+                        + action.ciphertext.len()
+                });
+            let transparent_inputs = transaction.vin.iter().map(|input| input.prevout_txid.len());
+            let transparent_outputs = transaction
+                .vout
+                .iter()
+                .map(|output| output.script_pub_key.len());
+
+            transaction.txid.len()
+                + sapling_spends
+                    .chain(sapling_outputs)
+                    .chain(actions)
+                    .chain(transparent_inputs)
+                    .chain(transparent_outputs)
+                    .sum::<usize>()
+        });
+        let block_bytes = compact_block.hash.len()
+            + compact_block.prev_hash.len()
+            + compact_block.header.len()
+            + transaction_bytes.sum::<usize>();
+        Self::add(&self.compact_block_payload, block_bytes);
+    }
+
+    fn add(counter: &AtomicU64, bytes: usize) {
+        counter.fetch_add(
+            u64::try_from(bytes).unwrap_or(u64::MAX),
+            atomic::Ordering::Relaxed,
+        );
+    }
+
+    /// - Adds the size of `reply` to the process-wide tally.
+    /// - Writes the tally to the debug log.
+    fn add_reply(&self, reply: &Result<RawTransaction, tonic::Status>, is_wanted: bool) {
+        let counter = if is_wanted {
+            &self.wanted_replies
+        } else {
+            &self.discarded_replies
+        };
+        Self::add(
+            counter,
+            reply
+                .as_ref()
+                .map_or(0, |raw_transaction| raw_transaction.data.len()),
+        );
+        tracing::debug!(
+            compact_block_payload_bytes =
+                self.compact_block_payload.load(atomic::Ordering::Relaxed),
+            wanted_reply_bytes = self.wanted_replies.load(atomic::Ordering::Relaxed),
+            discarded_reply_bytes = self.discarded_replies.load(atomic::Ordering::Relaxed),
+            "transaction request byte tally"
+        );
+    }
+}
+
 pub(crate) type TargetReplySender = oneshot::Sender<Result<RawTransaction, tonic::Status>>;
 
 pub(crate) struct TripleRequest {
@@ -131,6 +218,10 @@ pub(crate) async fn request_triples<Request>(
             .map(|(txid, request)| async move { (txid, request.await) })
             .collect::<FuturesUnordered<_>>();
         while let Some((txid, reply)) = requests.next().await {
+            BYTE_TALLY.add_reply(
+                &reply,
+                txid == triple.target() && target_reply_sender.is_some(),
+            );
             if txid == triple.target()
                 && let Some(target_reply_sender) = target_reply_sender.take()
             {
