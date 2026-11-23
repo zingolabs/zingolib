@@ -37,7 +37,7 @@ use crate::engine::{
     TransparentCoinOps, WalletNoteOps,
 };
 use crate::{
-    client::{self, FetchRequest},
+    client::{self, FetchRequest, chaff},
     error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
@@ -115,7 +115,10 @@ pub(crate) async fn scan_transactions(
         let (transaction, block_height) = match client::get_transaction_and_block_height(
             fetch_request_sender.clone(),
             consensus_parameters,
-            txid,
+            &wallet_blocks.get(&scan_target.block_height()).map_or_else(
+                || chaff::Triple::alone(txid),
+                |wallet_block| chaff::Triple::in_block(wallet_block.txids(), txid),
+            ),
         )
         .await
         {
@@ -712,7 +715,13 @@ fn collect_outpoints<A: TransparentAuthorization>(
 
 #[cfg(test)]
 mod tests {
+    use zcash_primitives::block::BlockHash;
     use zcash_protocol::consensus::MAIN_NETWORK;
+
+    use crate::{
+        engine::{WalletBlockOps, WalletBlockParts},
+        wallet::TreeBounds,
+    };
 
     use super::*;
 
@@ -793,6 +802,68 @@ mod tests {
                 Err(ScanError::ServerError(ServerError::RequestFailed(status)))
                     if status.code() == tonic::Code::Unavailable
             ));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_target_in_a_held_block_is_requested_with_its_triple() {
+        let block_height = BlockHeight::from_u32(100);
+        let block_txids = (1..=chaff::TRIPLE_SIZE)
+            .map(|index| TxId::from_bytes([u8::try_from(index).unwrap_or(u8::MAX); 32]))
+            .collect::<Vec<_>>();
+        let wallet_block = WalletBlock::from_parts(WalletBlockParts {
+            block_height,
+            block_hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
+            time: 0,
+            txids: block_txids.clone(),
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size: 0,
+                sapling_final_tree_size: 0,
+                orchard_initial_tree_size: 0,
+                orchard_final_tree_size: 0,
+                ironwood_initial_tree_size: 0,
+                ironwood_final_tree_size: 0,
+            },
+        });
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        let (triple_log, mut requested_triples) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, triple) => {
+                        triple_log
+                            .send(triple)
+                            .expect("the test holds the receiver of the triple log");
+                        let _ignore_error =
+                            reply_sender.send(Err(tonic::Status::not_found("no such transaction")));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        for target in &block_txids {
+            let scanned = scan_transactions(
+                fetch_request_sender.clone(),
+                &MAIN_NETWORK,
+                &HashMap::new(),
+                BTreeSet::from([ScanTarget::new(block_height, Some(*target))]),
+                DecryptedNoteData::new(),
+                &BTreeMap::from([(block_height, wallet_block.clone())]),
+                &mut BTreeMap::new(),
+                HashMap::new(),
+            )
+            .await;
+
+            assert!(scanned.is_ok());
+            assert_eq!(
+                requested_triples
+                    .recv()
+                    .await
+                    .map(|triple| (triple.target(), triple.txids().collect::<Vec<_>>())),
+                Some((*target, block_txids.clone()))
+            );
         }
     }
 

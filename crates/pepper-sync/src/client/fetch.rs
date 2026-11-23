@@ -15,7 +15,7 @@ use zl_netutils::{
     },
 };
 
-use crate::client::FetchRequest;
+use crate::client::{FetchRequest, chaff};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
@@ -140,9 +140,13 @@ where
             let tree_state = get_tree_state(client, block_height).await;
             let _ignore_error = sender.send(tree_state);
         }
-        FetchRequest::Transaction(sender, txid) => {
-            tracing::debug!("Fetching transaction. {:?}", txid);
-            let transaction = get_transaction(client, txid).await;
+        FetchRequest::Transaction(sender, triple) => {
+            tracing::debug!("Fetching transaction. {:?}", triple.target());
+            let transaction = chaff::request(&triple, |txid| {
+                let mut client = client.clone();
+                async move { get_transaction(&mut client, txid).await }
+            })
+            .await;
             let _ignore_error = sender.send(transaction);
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {

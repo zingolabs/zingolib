@@ -11,7 +11,7 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::{
     PoolType, ShieldedPool,
     consensus::{self, BlockHeight},
@@ -31,6 +31,7 @@ use crate::{
 
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
+pub(crate) mod chaff;
 pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
@@ -80,7 +81,10 @@ pub enum FetchRequest {
         BlockHeight,
     ),
     /// Get a full transaction by txid.
-    Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
+    Transaction(
+        oneshot::Sender<Result<RawTransaction, tonic::Status>>,
+        chaff::Triple,
+    ),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
@@ -349,13 +353,13 @@ const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
 pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
-    txid: TxId,
+    triple: &chaff::Triple,
 ) -> Result<(Transaction, BlockHeight), ServerError> {
     let mut retry_count = 0;
     let raw_transaction = loop {
         let (reply_sender, reply_receiver) = oneshot::channel();
         fetch_request_sender
-            .send(FetchRequest::Transaction(reply_sender, txid))
+            .send(FetchRequest::Transaction(reply_sender, triple.clone()))
             .map_err(|_| ServerError::FetcherDropped)?;
 
         match reply_receiver
@@ -511,6 +515,7 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
+    use zcash_primitives::transaction::TxId;
     use zcash_protocol::local_consensus::LocalNetwork;
     use zl_netutils::lightwallet_protocol::TreeState;
 
@@ -651,7 +656,7 @@ mod tests {
             get_transaction_and_block_height(
                 spawn_transaction_fetcher(within_ceiling),
                 &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );
@@ -665,7 +670,7 @@ mod tests {
             get_transaction_and_block_height(
                 spawn_transaction_fetcher(beyond_ceiling),
                 &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );
@@ -680,7 +685,7 @@ mod tests {
             get_transaction_and_block_height(
                 spawn_transaction_fetcher(vec![tonic::Status::internal("broken")]),
                 &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );

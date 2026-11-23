@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
+- Sync requests a wallet transaction together with the other transactions
+  of its triple. A triple is three consecutive transactions of one block,
+  counted from the first transaction of the block, and the last transactions
+  of a block join its last triple. Sync discards the replies to the other
+  requests. A transaction whose block the scan does not hold is requested
+  alone, as before.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,
