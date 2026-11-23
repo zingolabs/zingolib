@@ -600,6 +600,54 @@ mod tests {
         }
     }
 
+    const MALFORMED_HASH_HEX: &str = "zz";
+    const EMPTY_TREE_HEX: &str = "000000";
+
+    /// - Spawns a task that answers each tree state request as `GrpcIndexer` answers a wire tree state whose
+    ///   block hash is `MALFORMED_HASH_HEX`.
+    fn spawn_fetcher_of_a_malformed_tree_state() -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TreeState(reply_sender, block_height) => {
+                        let _ignore_error = reply_sender.send(
+                            TreeState::from_wire_parts(
+                                u64::from(u32::from(block_height)),
+                                MALFORMED_HASH_HEX,
+                                EMPTY_TREE_HEX,
+                                EMPTY_TREE_HEX,
+                                EMPTY_TREE_HEX,
+                            )
+                            .map_err(|error| {
+                                tonic::Status::new(tonic::Code::Internal, error.to_string())
+                            }),
+                        );
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        fetch_request_sender
+    }
+
+    #[tokio::test]
+    async fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
+        let frontiers = get_frontiers(
+            spawn_fetcher_of_a_malformed_tree_state(),
+            &NETWORK,
+            IRONWOOD_ACTIVATION.into(),
+        )
+        .await;
+
+        assert!(
+            matches!(frontiers, Err(ServerError::InvalidFrontier(_))),
+            "a malformed tree state was reported as {:?}",
+            frontiers.map(|_| "valid frontiers")
+        );
+    }
+
     /// Answers transaction requests with each status of `replies` in turn, then
     /// panics, so a caller that asks more often than the script allows fails.
     fn spawn_transaction_fetcher(
