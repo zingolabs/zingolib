@@ -307,10 +307,6 @@ fingerprint = "951708b4f685840f"
 reason = "FFI export pair shield/preview_shield: the same call under the write lock storing and under the read lock previewing (zingolib#3104)"
 
 [[ignore]]
-fingerprint = "f366a2abce350af5"
-reason = "trait-delegation group: Indexer/TransparentIndexer methods (get_tree_state, get_block, get_block_range, get_transaction, get_subtree_roots, get_taddress_txids) each delegate identically to wire::unary_rpc/stream_rpc and cannot share an impl (distinct trait methods)"
-
-[[ignore]]
 fingerprint = "e545bd213593bcf9"
 reason = "trait-delegation group: Indexer/TransparentIndexer methods (get_block_nullifiers, get_block_range_nullifiers, get_taddress_transactions, get_address_utxos_stream) each delegate identically to wire::stream_rpc and cannot share an impl (distinct trait methods)"
 
