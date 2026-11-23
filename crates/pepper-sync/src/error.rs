@@ -820,6 +820,14 @@ mod tests {
             fn genesis_block_only() {
                 assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
             }
+
+            /// A mempool or mined-off-main-chain transaction reaching this point is bad data
+            /// from the server (it promised a mined transaction), not network weather, so
+            /// retrying the same server will not help.
+            #[test]
+            fn unexpected_unmined_transaction() {
+                assert!(!ServerError::UnexpectedUnminedTransaction.recommend_same_server());
+            }
         }
 
         mod sync_error {
@@ -1048,6 +1056,14 @@ mod tests {
                 .into();
                 assert_eq!(
                     e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn unexpected_unmined_transaction() {
+                assert_eq!(
+                    ServerError::UnexpectedUnminedTransaction.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable
                 );
             }

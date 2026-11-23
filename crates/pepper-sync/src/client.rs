@@ -692,6 +692,104 @@ mod tests {
         assert_eq!(status.code(), tonic::Code::Internal, "{status}");
     }
 
+    /// Answers a single transaction request with `reply`, then panics, so a caller that asks
+    /// more than once fails.
+    fn spawn_single_transaction_reply(
+        reply: Result<RawTransaction, tonic::Status>,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut reply = Some(reply);
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, _) => {
+                        let reply = reply.take().expect("a request beyond the script");
+                        let _ignore_error = reply_sender.send(reply);
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    /// `RawTransaction`'s wire height field used to overload `0` (mempool) and `u64::MAX`
+    /// (mined off the main chain) under a `u32::try_from(height).expect(...)` that panicked on
+    /// either sentinel. `RawTransactionStatus::Mempool`/`MinedOffMainChain` now refuse cleanly
+    /// instead: this caller never expected an unmined transaction and has nothing useful to do
+    /// with one.
+    #[tokio::test]
+    async fn an_unmined_transaction_is_refused_not_panicked() {
+        for status in [
+            zl_common::chain::RawTransactionStatus::Mempool,
+            zl_common::chain::RawTransactionStatus::MinedOffMainChain,
+        ] {
+            let raw_transaction = RawTransaction {
+                data: vec![],
+                status,
+            };
+            let result = get_transaction_and_block_height(
+                spawn_single_transaction_reply(Ok(raw_transaction)),
+                &NETWORK,
+                TxId::from_bytes([0; 32]),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ServerError::UnexpectedUnminedTransaction)),
+                "{status:?}: {result:?}"
+            );
+        }
+    }
+
+    /// Answers a single transparent-address-transactions request with a one-item stream of
+    /// `reply`, then panics, so a caller that asks more than once fails.
+    fn spawn_single_transparent_address_txs_reply(
+        reply: Result<RawTransaction, tonic::Status>,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut reply = Some(reply);
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TransparentAddressTxs(reply_sender, _) => {
+                        let reply = reply.take().expect("a request beyond the script");
+                        let stream: zl_netutils::RawTransactionStream =
+                            Box::pin(futures::stream::iter([reply]));
+                        let _ignore_error = reply_sender.send(Ok(stream));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    /// The same regression as `an_unmined_transaction_is_refused_not_panicked`, for the other
+    /// call site that matches on `RawTransactionStatus`.
+    #[tokio::test]
+    async fn a_transparent_address_tx_that_is_unmined_is_refused_not_panicked() {
+        for status in [
+            zl_common::chain::RawTransactionStatus::Mempool,
+            zl_common::chain::RawTransactionStatus::MinedOffMainChain,
+        ] {
+            let raw_transaction = RawTransaction {
+                data: vec![],
+                status,
+            };
+            let result = get_transparent_address_transactions(
+                spawn_single_transparent_address_txs_reply(Ok(raw_transaction)),
+                &NETWORK,
+                "t1abc".to_string(),
+                BlockHeight::from_u32(0)..BlockHeight::from_u32(10),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ServerError::UnexpectedUnminedTransaction)),
+                "{status:?}: {result:?}"
+            );
+        }
+    }
+
     /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.
     #[test]
     fn protocol_version_is_parsed_and_compared() {
