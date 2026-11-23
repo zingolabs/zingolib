@@ -602,10 +602,13 @@ mod tests {
 
     const MALFORMED_HASH_HEX: &str = "zz";
     const EMPTY_TREE_HEX: &str = "000000";
+    const OMITTED_TREE_HEX: &str = "";
 
     /// - Spawns a task that answers each tree state request as `GrpcIndexer` answers a wire tree state whose
-    ///   block hash is `MALFORMED_HASH_HEX`.
-    fn spawn_fetcher_of_a_malformed_tree_state() -> mpsc::UnboundedSender<FetchRequest> {
+    ///   block hash is `MALFORMED_HASH_HEX` and whose Ironwood tree is `ironwood_tree_hex`.
+    fn spawn_fetcher_of_a_malformed_tree_state(
+        ironwood_tree_hex: &'static str,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
         let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Some(fetch_request) = fetch_request_receiver.recv().await {
@@ -617,7 +620,7 @@ mod tests {
                                 MALFORMED_HASH_HEX,
                                 EMPTY_TREE_HEX,
                                 EMPTY_TREE_HEX,
-                                EMPTY_TREE_HEX,
+                                ironwood_tree_hex,
                             )
                             .map_err(|error| {
                                 tonic::Status::new(tonic::Code::Internal, error.to_string())
@@ -635,7 +638,7 @@ mod tests {
     #[tokio::test]
     async fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
         let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(),
+            spawn_fetcher_of_a_malformed_tree_state(EMPTY_TREE_HEX),
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
         )
@@ -644,6 +647,28 @@ mod tests {
         assert!(
             matches!(frontiers, Err(ServerError::InvalidFrontier(_))),
             "a malformed tree state was reported as {:?}",
+            frontiers.map(|_| "valid frontiers")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
+        let frontiers = get_frontiers(
+            spawn_fetcher_of_a_malformed_tree_state(OMITTED_TREE_HEX),
+            &NETWORK,
+            IRONWOOD_ACTIVATION.into(),
+        )
+        .await;
+
+        assert!(
+            matches!(
+                frontiers,
+                Err(ServerError::TreeStateNotServed {
+                    pool: PoolType::Shielded(ShieldedPool::Ironwood),
+                    height,
+                }) if height == IRONWOOD_ACTIVATION.into()
+            ),
+            "an omitted Ironwood tree was reported as {:?}",
             frontiers.map(|_| "valid frontiers")
         );
     }
