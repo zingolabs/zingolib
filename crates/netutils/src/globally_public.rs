@@ -16,49 +16,51 @@ use lightwallet_protocol::{
 use tonic::Request;
 use zl_common::chain::{GetAddressUtxosArg, GetAddressUtxosReply, TransparentAddressBlockFilter};
 
-use super::{
-    GrpcIndexer, Indexer, RawTransactionStream, block_range_to_wire, parse_raw_transaction,
-};
+use super::{GrpcIndexer, Indexer, ParseWire, RawTransactionStream, ToWire, parse_wire_as_status};
 
-/// Converts a domain [`GetAddressUtxosArg`] into its wire representation.
-fn get_address_utxos_arg_to_wire(arg: GetAddressUtxosArg) -> WireGetAddressUtxosArg {
-    WireGetAddressUtxosArg {
-        addresses: arg.addresses,
-        start_height: arg.start_height.into(),
-        max_entries: arg.max_entries,
+impl ToWire for GetAddressUtxosArg {
+    type Wire = WireGetAddressUtxosArg;
+
+    fn to_wire(self) -> Self::Wire {
+        WireGetAddressUtxosArg {
+            addresses: self.addresses,
+            start_height: self.start_height.into(),
+            max_entries: self.max_entries,
+        }
     }
 }
 
-/// Converts a domain [`TransparentAddressBlockFilter`] into its wire representation.
-fn transparent_address_block_filter_to_wire(
-    filter: TransparentAddressBlockFilter,
-) -> WireTransparentAddressBlockFilter {
-    WireTransparentAddressBlockFilter {
-        address: filter.address,
-        range: filter.range.map(block_range_to_wire),
+impl ToWire for TransparentAddressBlockFilter {
+    type Wire = WireTransparentAddressBlockFilter;
+
+    fn to_wire(self) -> Self::Wire {
+        WireTransparentAddressBlockFilter {
+            address: self.address,
+            range: self.range.map(ToWire::to_wire),
+        }
     }
 }
 
 /// A server's address-UTXO stream, each item already parsed into the validated domain
 /// [`GetAddressUtxosReply`]. Boxed for the same reason as [`super::SubtreeRootStream`].
-pub type GetAddressUtxosReplyStream =
-    std::pin::Pin<Box<dyn futures::Stream<Item = Result<GetAddressUtxosReply, tonic::Status>> + Send>>;
+pub type GetAddressUtxosReplyStream = std::pin::Pin<
+    Box<dyn futures::Stream<Item = Result<GetAddressUtxosReply, tonic::Status>> + Send>,
+>;
 
-/// Parses a wire [`GetAddressUtxosReply`](WireGetAddressUtxosReply) into the validated domain
-/// [`GetAddressUtxosReply`], mapping a parse failure into the same [`tonic::Status`] channel
-/// every other `Indexer` method answers through.
-fn parse_get_address_utxos_reply(
-    wire: WireGetAddressUtxosReply,
-) -> Result<GetAddressUtxosReply, tonic::Status> {
-    GetAddressUtxosReply::from_wire_parts(
-        wire.address,
-        wire.txid,
-        wire.index,
-        wire.script,
-        wire.value_zat,
-        wire.height,
-    )
-    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+impl ParseWire for GetAddressUtxosReply {
+    type Wire = WireGetAddressUtxosReply;
+    type Error = zl_common::chain::InvalidGetAddressUtxosReply;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire_parts(
+            wire.address,
+            wire.txid,
+            wire.index,
+            wire.script,
+            wire.value_zat,
+            wire.height,
+        )
+    }
 }
 
 /// Extension of [`Indexer`] for transparent address operations.
@@ -139,7 +141,7 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<RawTransactionStream, tonic::Status> {
-        let mut request = Request::new(transparent_address_block_filter_to_wire(filter));
+        let mut request = Request::new(filter.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
@@ -147,7 +149,7 @@ impl TransparentIndexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_raw_transaction)
+            item.and_then(parse_wire_as_status)
         })))
     }
 
@@ -156,7 +158,7 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<RawTransactionStream, tonic::Status> {
-        let mut request = Request::new(transparent_address_block_filter_to_wire(filter));
+        let mut request = Request::new(filter.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
@@ -164,7 +166,7 @@ impl TransparentIndexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_raw_transaction)
+            item.and_then(parse_wire_as_status)
         })))
     }
 
@@ -199,7 +201,7 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<Vec<GetAddressUtxosReply>, tonic::Status> {
-        let mut request = Request::new(get_address_utxos_arg_to_wire(arg));
+        let mut request = Request::new(arg.to_wire());
         request.set_timeout(timeout);
         self.clear_net_client
             .get_address_utxos(request)
@@ -207,7 +209,7 @@ impl TransparentIndexer for GrpcIndexer {
             .into_inner()
             .address_utxos
             .into_iter()
-            .map(parse_get_address_utxos_reply)
+            .map(parse_wire_as_status)
             .collect()
     }
 
@@ -216,7 +218,7 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<GetAddressUtxosReplyStream, tonic::Status> {
-        let mut request = Request::new(get_address_utxos_arg_to_wire(arg));
+        let mut request = Request::new(arg.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
@@ -224,7 +226,7 @@ impl TransparentIndexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_get_address_utxos_reply)
+            item.and_then(parse_wire_as_status)
         })))
     }
 }

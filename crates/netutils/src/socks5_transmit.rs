@@ -31,7 +31,7 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
-use crate::{parse_block_id, parse_lightd_info};
+use crate::{ParseWire, parse_lightd_info, status_of};
 use lightwallet_protocol::{
     BlockId as WireBlockId, ChainSpec, CompactTxStreamerClient, Empty,
     LightdInfo as WireLightdInfo, RawTransaction, StandardFee as WireStandardFee, TxFilter,
@@ -305,9 +305,9 @@ impl Socks5Indexer {
                 client.get_latest_block(request).await
             })
             .await?;
-        parse_block_id(wire).map_err(|status| Socks5TransmitError::Rpc {
+        BlockId::parse_wire(wire).map_err(|error| Socks5TransmitError::Rpc {
             destination: self.destination(),
-            status,
+            status: status_of(error),
         })
     }
 

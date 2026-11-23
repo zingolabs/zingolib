@@ -38,9 +38,10 @@ use futures::Stream;
 use lightwallet_protocol::{
     BlockId as WireBlockId, BlockRange as WireBlockRange, ChainSpec,
     CompactBlock as WireCompactBlock, CompactTx as WireCompactTx, CompactTxStreamerClient, Empty,
-    GetMempoolTxRequest, GetSubtreeRootsArg as WireGetSubtreeRootsArg, LightdInfo as WireLightdInfo,
-    RawTransaction as WireRawTransaction, StandardFee as WireStandardFee,
-    SubtreeRoot as WireSubtreeRoot, TreeState as WireTreeState, TxFilter as WireTxFilter,
+    GetMempoolTxRequest, GetSubtreeRootsArg as WireGetSubtreeRootsArg,
+    LightdInfo as WireLightdInfo, RawTransaction as WireRawTransaction,
+    StandardFee as WireStandardFee, SubtreeRoot as WireSubtreeRoot, TreeState as WireTreeState,
+    TxFilter as WireTxFilter,
 };
 use zl_common::chain::{
     BlockId, BlockRange, CompactBlock, CompactTx, GetSubtreeRootsArg, LightdInfo, RawTransaction,
@@ -511,13 +512,14 @@ mod send_response_parsing {
 
 /// A server's subtree-root stream, each item already parsed into the validated domain
 /// [`SubtreeRoot`]. Boxed because the stream's item type is produced by mapping a
-/// [`tonic::Streaming`] through [`parse_subtree_root`], an anonymous type that a trait method's
-/// return position, and a channel carrying it onward, both need to name concretely.
+/// [`tonic::Streaming`] through [`parse_wire_as_status`], an anonymous type that a trait
+/// method's return position, and a channel carrying it onward, both need to name concretely.
 pub type SubtreeRootStream = Pin<Box<dyn Stream<Item = Result<SubtreeRoot, tonic::Status>> + Send>>;
 
 /// A server's compact-block stream, each item already parsed into the validated domain
 /// [`CompactBlock`]. Boxed for the same reason as [`SubtreeRootStream`].
-pub type CompactBlockStream = Pin<Box<dyn Stream<Item = Result<CompactBlock, tonic::Status>> + Send>>;
+pub type CompactBlockStream =
+    Pin<Box<dyn Stream<Item = Result<CompactBlock, tonic::Status>> + Send>>;
 
 /// A server's compact-transaction (mempool) stream, each item already parsed into the
 /// validated domain [`CompactTx`]. Boxed for the same reason as [`SubtreeRootStream`].
@@ -525,143 +527,183 @@ pub type CompactTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, tonic::St
 
 /// A server's raw-transaction (mempool) stream, each item already parsed into the validated
 /// domain [`RawTransaction`]. Boxed for the same reason as [`SubtreeRootStream`].
-pub type RawTransactionStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, tonic::Status>> + Send>>;
+pub type RawTransactionStream =
+    Pin<Box<dyn Stream<Item = Result<RawTransaction, tonic::Status>> + Send>>;
 
-/// Parses a wire [`RawTransaction`](WireRawTransaction) into the validated domain
-/// [`RawTransaction`], mapping a parse failure into the same [`tonic::Status`] channel every
-/// other `Indexer` method answers through.
-fn parse_raw_transaction(wire: WireRawTransaction) -> Result<RawTransaction, tonic::Status> {
-    zl_common::chain::RawTransaction::from_wire_parts(wire.data, wire.height)
-        .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+/// A domain type that can be parsed from its wire representation, failing exactly when the
+/// wire value's shape violates this type's own invariants.
+///
+/// Lives here, not in `zl_common`, because the orphan rule blocks implementing any trait on a
+/// `zl_common::chain` type for a `lightwallet_protocol` wire type from a third crate: at least
+/// one of the trait or the type being converted from has to be local. `zl_common` itself can't
+/// define this trait with a `lightwallet_protocol`-typed `Wire`, since it is forbidden from
+/// depending on proto crates at all.
+pub(crate) trait ParseWire: Sized {
+    /// The wire-format type carrying this value over the gRPC boundary.
+    type Wire;
+    /// This type's own parse failure. Each primitive already defines its own `Invalid*` error;
+    /// this just gives every one of them a common name to compose `?` over.
+    type Error: std::fmt::Display;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error>;
 }
 
-/// Parses a wire [`CompactSaplingSpend`](lightwallet_protocol::CompactSaplingSpend), mapping a
-/// parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
-/// through.
-fn parse_compact_sapling_spend(
-    wire: lightwallet_protocol::CompactSaplingSpend,
-) -> Result<zl_common::chain::CompactSaplingSpend, tonic::Status> {
-    zl_common::chain::CompactSaplingSpend::from_wire(wire.nf).map_err(invalid_compact_block)
-}
-
-/// Parses a wire [`CompactSaplingOutput`](lightwallet_protocol::CompactSaplingOutput).
-fn parse_compact_sapling_output(
-    wire: lightwallet_protocol::CompactSaplingOutput,
-) -> Result<zl_common::chain::CompactSaplingOutput, tonic::Status> {
-    Ok(zl_common::chain::CompactSaplingOutput {
-        cmu: wire.cmu,
-        ephemeral_key: wire.ephemeral_key,
-        ciphertext: wire.ciphertext,
-    })
-}
-
-/// Parses a wire [`CompactOrchardAction`](lightwallet_protocol::CompactOrchardAction) (shared by
-/// the Orchard and Ironwood pools).
-fn parse_compact_orchard_action(
-    wire: lightwallet_protocol::CompactOrchardAction,
-) -> Result<zl_common::chain::CompactOrchardAction, tonic::Status> {
-    zl_common::chain::CompactOrchardAction::from_wire(
-        wire.nullifier,
-        wire.cmx,
-        wire.ephemeral_key,
-        wire.ciphertext,
-    )
-    .map_err(invalid_compact_block)
-}
-
-/// Parses a wire [`CompactTxIn`](lightwallet_protocol::CompactTxIn).
-fn parse_compact_tx_in(
-    wire: lightwallet_protocol::CompactTxIn,
-) -> Result<zl_common::chain::CompactTxIn, tonic::Status> {
-    zl_common::chain::CompactTxIn::from_wire(wire.prevout_txid, wire.prevout_index)
-        .map_err(invalid_compact_block)
-}
-
-/// Parses a wire [`CompactTx`](WireCompactTx) into the validated domain [`CompactTx`], parsing
-/// every nested Sapling, Orchard, Ironwood, and transparent component first.
-fn parse_compact_tx(wire: WireCompactTx) -> Result<CompactTx, tonic::Status> {
-    let spends = wire
-        .spends
-        .into_iter()
-        .map(parse_compact_sapling_spend)
-        .collect::<Result<Vec<_>, _>>()?;
-    let outputs = wire
-        .outputs
-        .into_iter()
-        .map(parse_compact_sapling_output)
-        .collect::<Result<Vec<_>, _>>()?;
-    let actions = wire
-        .actions
-        .into_iter()
-        .map(parse_compact_orchard_action)
-        .collect::<Result<Vec<_>, _>>()?;
-    let ironwood_actions = wire
-        .ironwood_actions
-        .into_iter()
-        .map(parse_compact_orchard_action)
-        .collect::<Result<Vec<_>, _>>()?;
-    let vin = wire
-        .vin
-        .into_iter()
-        .map(parse_compact_tx_in)
-        .collect::<Result<Vec<_>, _>>()?;
-    let vout = wire
-        .vout
-        .into_iter()
-        .map(|out| zl_common::chain::TxOut {
-            value: out.value,
-            script_pub_key: out.script_pub_key,
-        })
-        .collect();
-    zl_common::chain::CompactTx::from_wire_parts(
-        wire.index,
-        wire.txid,
-        wire.fee,
-        spends,
-        outputs,
-        actions,
-        ironwood_actions,
-        vin,
-        vout,
-    )
-    .map_err(invalid_compact_block)
-}
-
-/// Parses a wire [`CompactBlock`](WireCompactBlock) into the validated domain [`CompactBlock`],
-/// parsing every transaction first.
-fn parse_compact_block(wire: WireCompactBlock) -> Result<CompactBlock, tonic::Status> {
-    let vtx = wire
-        .vtx
-        .into_iter()
-        .map(parse_compact_tx)
-        .collect::<Result<Vec<_>, _>>()?;
-    let chain_metadata = wire.chain_metadata.map(|metadata| zl_common::chain::ChainMetadata {
-        sapling_commitment_tree_size: metadata.sapling_commitment_tree_size,
-        orchard_commitment_tree_size: metadata.orchard_commitment_tree_size,
-        ironwood_commitment_tree_size: metadata.ironwood_commitment_tree_size,
-    });
-    zl_common::chain::CompactBlock::from_wire_parts(
-        wire.height,
-        wire.hash,
-        wire.prev_hash,
-        wire.time,
-        wire.header,
-        vtx,
-        chain_metadata,
-    )
-    .map_err(invalid_compact_block)
-}
-
-/// Maps an [`zl_common::chain::InvalidCompactBlock`] parse failure into the same
-/// [`tonic::Status`] channel every other `Indexer` method answers through.
-fn invalid_compact_block(error: zl_common::chain::InvalidCompactBlock) -> tonic::Status {
+/// Maps a [`ParseWire`] failure into the same [`tonic::Status`] channel every `Indexer` method
+/// answers through.
+pub(crate) fn status_of(error: impl std::fmt::Display) -> tonic::Status {
     tonic::Status::new(tonic::Code::Internal, error.to_string())
+}
+
+/// Parses `wire` via [`ParseWire`], mapping a failure through [`status_of`].
+pub(crate) fn parse_wire_as_status<T: ParseWire>(wire: T::Wire) -> Result<T, tonic::Status> {
+    T::parse_wire(wire).map_err(status_of)
+}
+
+/// A domain type that can be converted into its wire representation. Always infallible: a
+/// value built locally (never received from a server) is valid by construction, unlike
+/// [`ParseWire`]'s inbound direction.
+pub(crate) trait ToWire {
+    /// The wire-format type this value crosses the gRPC boundary as.
+    type Wire;
+
+    fn to_wire(self) -> Self::Wire;
+}
+
+impl ParseWire for RawTransaction {
+    type Wire = WireRawTransaction;
+    type Error = zl_common::chain::InvalidRawTransaction;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire_parts(wire.data, wire.height)
+    }
+}
+
+impl ParseWire for zl_common::chain::CompactSaplingSpend {
+    type Wire = lightwallet_protocol::CompactSaplingSpend;
+    type Error = zl_common::chain::InvalidCompactBlock;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire.nf)
+    }
+}
+
+impl ParseWire for zl_common::chain::CompactOrchardAction {
+    type Wire = lightwallet_protocol::CompactOrchardAction;
+    type Error = zl_common::chain::InvalidCompactBlock;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire(
+            wire.nullifier,
+            wire.cmx,
+            wire.ephemeral_key,
+            wire.ciphertext,
+        )
+    }
+}
+
+impl ParseWire for zl_common::chain::CompactTxIn {
+    type Wire = lightwallet_protocol::CompactTxIn;
+    type Error = zl_common::chain::InvalidCompactBlock;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire.prevout_txid, wire.prevout_index)
+    }
+}
+
+impl ParseWire for CompactTx {
+    type Wire = WireCompactTx;
+    type Error = zl_common::chain::InvalidCompactBlock;
+
+    /// Parses every nested Sapling, Orchard, Ironwood, and transparent component first. The
+    /// Sapling output and transparent-output copies are plain field projections (nothing in
+    /// them is validated, so they skip [`ParseWire`] rather than wrap a result that can never
+    /// be an error).
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        let spends = wire
+            .spends
+            .into_iter()
+            .map(zl_common::chain::CompactSaplingSpend::parse_wire)
+            .collect::<Result<Vec<_>, _>>()?;
+        let outputs = wire
+            .outputs
+            .into_iter()
+            .map(|out| zl_common::chain::CompactSaplingOutput {
+                cmu: out.cmu,
+                ephemeral_key: out.ephemeral_key,
+                ciphertext: out.ciphertext,
+            })
+            .collect();
+        let actions = wire
+            .actions
+            .into_iter()
+            .map(zl_common::chain::CompactOrchardAction::parse_wire)
+            .collect::<Result<Vec<_>, _>>()?;
+        let ironwood_actions = wire
+            .ironwood_actions
+            .into_iter()
+            .map(zl_common::chain::CompactOrchardAction::parse_wire)
+            .collect::<Result<Vec<_>, _>>()?;
+        let vin = wire
+            .vin
+            .into_iter()
+            .map(zl_common::chain::CompactTxIn::parse_wire)
+            .collect::<Result<Vec<_>, _>>()?;
+        let vout = wire
+            .vout
+            .into_iter()
+            .map(|out| zl_common::chain::TxOut {
+                value: out.value,
+                script_pub_key: out.script_pub_key,
+            })
+            .collect();
+        Self::from_wire_parts(
+            wire.index,
+            wire.txid,
+            wire.fee,
+            spends,
+            outputs,
+            actions,
+            ironwood_actions,
+            vin,
+            vout,
+        )
+    }
+}
+
+impl ParseWire for CompactBlock {
+    type Wire = WireCompactBlock;
+    type Error = zl_common::chain::InvalidCompactBlock;
+
+    /// Parses every transaction first.
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        let vtx = wire
+            .vtx
+            .into_iter()
+            .map(CompactTx::parse_wire)
+            .collect::<Result<Vec<_>, _>>()?;
+        let chain_metadata = wire
+            .chain_metadata
+            .map(|metadata| zl_common::chain::ChainMetadata {
+                sapling_commitment_tree_size: metadata.sapling_commitment_tree_size,
+                orchard_commitment_tree_size: metadata.orchard_commitment_tree_size,
+                ironwood_commitment_tree_size: metadata.ironwood_commitment_tree_size,
+            });
+        Self::from_wire_parts(
+            wire.height,
+            wire.hash,
+            wire.prev_hash,
+            wire.time,
+            wire.header,
+            vtx,
+            chain_metadata,
+        )
+    }
 }
 
 /// An invariant that only emerges once primitives are bundled into a [`CompactTx`] or
 /// [`CompactBlock`]: nothing in [`zl_common::chain`] itself enforces it (each primitive only
-/// validates its own fields), it falls out of how `parse_compact_tx`/`parse_compact_block`
-/// compose their nested `?`-propagating parses.
+/// validates its own fields), it falls out of how their [`ParseWire`] impls compose their
+/// nested `?`-propagating parses.
 #[cfg(test)]
 mod compact_parsing {
     use super::*;
@@ -674,9 +716,7 @@ mod compact_parsing {
         lightwallet_protocol::CompactSaplingSpend { nf: vec![0xaa; 31] }
     }
 
-    fn tx_with_spends(
-        spends: Vec<lightwallet_protocol::CompactSaplingSpend>,
-    ) -> WireCompactTx {
+    fn tx_with_spends(spends: Vec<lightwallet_protocol::CompactSaplingSpend>) -> WireCompactTx {
         WireCompactTx {
             txid: vec![0xaa; 32],
             spends,
@@ -686,14 +726,16 @@ mod compact_parsing {
 
     #[test]
     fn a_tx_with_only_valid_spends_parses() {
-        assert!(parse_compact_tx(tx_with_spends(vec![valid_spend(), valid_spend()])).is_ok());
+        assert!(CompactTx::parse_wire(tx_with_spends(vec![valid_spend(), valid_spend()])).is_ok());
     }
 
     /// One invalid nested spend fails the whole transaction's parse, not just that spend: the
     /// bundling step has no way to accept a transaction with a partially-invalid component.
     #[test]
     fn one_invalid_nested_spend_fails_the_whole_transaction() {
-        assert!(parse_compact_tx(tx_with_spends(vec![valid_spend(), invalid_spend()])).is_err());
+        assert!(
+            CompactTx::parse_wire(tx_with_spends(vec![valid_spend(), invalid_spend()])).is_err()
+        );
     }
 
     /// The same short-circuit holds one level up: a block with one bad transaction fails to
@@ -708,7 +750,7 @@ mod compact_parsing {
             vtx: vec![good.clone(), bad, good],
             ..Default::default()
         };
-        assert!(parse_compact_block(block).is_err());
+        assert!(CompactBlock::parse_wire(block).is_err());
     }
 
     #[test]
@@ -720,18 +762,14 @@ mod compact_parsing {
             vtx: vec![good.clone(), good],
             ..Default::default()
         };
-        assert!(parse_compact_block(block).is_ok());
+        assert!(CompactBlock::parse_wire(block).is_ok());
     }
 }
 
-// The functions below convert the other direction: an owned request type pepper-sync builds,
-// into the wire type a gRPC call actually sends. There is nothing to validate going this way
-// (the caller already built a well-formed value), so these are infallible, unlike the
-// `parse_*` functions above.
-
 /// Converts a wire [`LightdInfo`](WireLightdInfo) into the domain [`LightdInfo`]. Every field is
 /// already a plain owned value, so this is a lossless, infallible projection onto the subset
-/// callers use.
+/// callers use — it skips [`ParseWire`] for the same reason [`CompactSaplingOutput`'s
+/// (`zl_common::chain::CompactSaplingOutput`) copy inside [`CompactTx::parse_wire`] does.
 pub(crate) fn parse_lightd_info(wire: WireLightdInfo) -> LightdInfo {
     LightdInfo {
         version: wire.version,
@@ -746,77 +784,97 @@ pub(crate) fn parse_lightd_info(wire: WireLightdInfo) -> LightdInfo {
     }
 }
 
-/// Parses a wire [`BlockId`](WireBlockId) into the domain [`BlockId`], the one direction this
-/// bidirectional type needs validation: [`Indexer::get_latest_block`] receives one from the
-/// server.
-pub(crate) fn parse_block_id(wire: WireBlockId) -> Result<BlockId, tonic::Status> {
-    BlockId::from_wire_parts(wire.height, wire.hash)
-        .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
-}
+impl ParseWire for BlockId {
+    type Wire = WireBlockId;
+    type Error = zl_common::chain::InvalidBlockId;
 
-/// Converts a domain [`BlockId`] into its wire representation.
-fn block_id_to_wire(id: BlockId) -> WireBlockId {
-    WireBlockId {
-        height: id.height.into(),
-        hash: id.hash.map(|hash| hash.0.to_vec()).unwrap_or_default(),
+    /// The one direction this bidirectional type needs validation: [`Indexer::get_latest_block`]
+    /// receives one from the server.
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire_parts(wire.height, wire.hash)
     }
 }
 
-/// Converts a domain [`BlockRange`] into its wire representation.
-fn block_range_to_wire(range: BlockRange) -> WireBlockRange {
-    WireBlockRange {
-        start: Some(block_id_to_wire(range.start)),
-        end: Some(block_id_to_wire(range.end)),
-        pool_types: range
-            .pool_types
-            .into_iter()
-            .map(zl_common::chain::pool_type_wire_value)
-            .collect(),
+impl ToWire for BlockId {
+    type Wire = WireBlockId;
+
+    fn to_wire(self) -> Self::Wire {
+        WireBlockId {
+            height: self.height.into(),
+            hash: self.hash.map(|hash| hash.0.to_vec()).unwrap_or_default(),
+        }
     }
 }
 
-/// Converts a domain [`TxFilter`] into its wire representation.
-fn tx_filter_to_wire(filter: TxFilter) -> WireTxFilter {
-    WireTxFilter {
-        block: filter.block.map(block_id_to_wire),
-        index: filter.index,
-        hash: filter.hash.map(|txid| txid.as_ref().to_vec()).unwrap_or_default(),
+impl ToWire for BlockRange {
+    type Wire = WireBlockRange;
+
+    fn to_wire(self) -> Self::Wire {
+        WireBlockRange {
+            start: Some(self.start.to_wire()),
+            end: Some(self.end.to_wire()),
+            pool_types: self
+                .pool_types
+                .into_iter()
+                .map(zl_common::chain::pool_type_wire_value)
+                .collect(),
+        }
     }
 }
 
-/// Converts a domain [`GetSubtreeRootsArg`] into its wire representation.
-fn get_subtree_roots_arg_to_wire(arg: GetSubtreeRootsArg) -> WireGetSubtreeRootsArg {
-    WireGetSubtreeRootsArg {
-        start_index: arg.start_index,
-        shielded_protocol: arg.shielded_protocol,
-        max_entries: arg.max_entries,
+impl ToWire for TxFilter {
+    type Wire = WireTxFilter;
+
+    fn to_wire(self) -> Self::Wire {
+        WireTxFilter {
+            block: self.block.map(ToWire::to_wire),
+            index: self.index,
+            hash: self
+                .hash
+                .map(|txid| txid.as_ref().to_vec())
+                .unwrap_or_default(),
+        }
     }
 }
 
-/// Parses a wire [`SubtreeRoot`](WireSubtreeRoot) into the validated domain [`SubtreeRoot`],
-/// mapping a parse failure into the same [`tonic::Status`] channel every other `Indexer` method
-/// answers through.
-fn parse_subtree_root(wire: WireSubtreeRoot) -> Result<SubtreeRoot, tonic::Status> {
-    zl_common::chain::SubtreeRoot::from_wire_parts(
-        wire.root_hash,
-        wire.completing_block_hash,
-        wire.completing_block_height,
-    )
-    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+impl ToWire for GetSubtreeRootsArg {
+    type Wire = WireGetSubtreeRootsArg;
+
+    fn to_wire(self) -> Self::Wire {
+        WireGetSubtreeRootsArg {
+            start_index: self.start_index,
+            shielded_protocol: self.shielded_protocol,
+            max_entries: self.max_entries,
+        }
+    }
 }
 
-/// Parses a wire [`TreeState`](WireTreeState) into the validated domain [`TreeState`], mapping
-/// a parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
-/// through.
-fn parse_tree_state(wire: WireTreeState) -> Result<TreeState, tonic::Status> {
-    zl_common::chain::TreeState::from_wire_parts(
-        wire.height,
-        &wire.hash,
-        &wire.sapling_tree,
-        &wire.orchard_tree,
-        &wire.ironwood_tree,
-    )
-    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+impl ParseWire for SubtreeRoot {
+    type Wire = WireSubtreeRoot;
+    type Error = zl_common::chain::InvalidSubtreeRoot;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire_parts(
+            wire.root_hash,
+            wire.completing_block_hash,
+            wire.completing_block_height,
+        )
+    }
+}
+
+impl ParseWire for TreeState {
+    type Wire = WireTreeState;
+    type Error = zl_common::chain::InvalidTreeState;
+
+    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
+        Self::from_wire_parts(
+            wire.height,
+            &wire.hash,
+            &wire.sapling_tree,
+            &wire.orchard_tree,
+            &wire.ironwood_tree,
+        )
+    }
 }
 
 impl Indexer for GrpcIndexer {
@@ -848,7 +906,7 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
         let mut request = Request::new(ChainSpec {});
         request.set_timeout(timeout);
-        parse_block_id(
+        parse_wire_as_status(
             self.clear_net_client
                 .get_latest_block(request)
                 .await?
@@ -885,9 +943,9 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(block_id_to_wire(block_id));
+        let mut request = Request::new(block_id.to_wire());
         request.set_timeout(timeout);
-        parse_tree_state(
+        parse_wire_as_status(
             self.clear_net_client
                 .get_tree_state(request)
                 .await?
@@ -900,9 +958,9 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id_to_wire(block_id));
+        let mut request = Request::new(block_id.to_wire());
         request.set_timeout(timeout);
-        parse_compact_block(self.clear_net_client.get_block(request).await?.into_inner())
+        parse_wire_as_status(self.clear_net_client.get_block(request).await?.into_inner())
     }
 
     #[allow(deprecated)]
@@ -911,9 +969,9 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id_to_wire(block_id));
+        let mut request = Request::new(block_id.to_wire());
         request.set_timeout(timeout);
-        parse_compact_block(
+        parse_wire_as_status(
             self.clear_net_client
                 .get_block_nullifiers(request)
                 .await?
@@ -926,17 +984,16 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<CompactBlockStream, tonic::Status> {
-        let mut request = Request::new(block_range_to_wire(range));
+        let mut request = Request::new(range.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
             .get_block_range(request)
             .await?
             .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(
-            wire_stream,
-            |item| item.and_then(parse_compact_block),
-        )))
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_wire_as_status)
+        })))
     }
 
     #[allow(deprecated)]
@@ -945,17 +1002,16 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<CompactBlockStream, tonic::Status> {
-        let mut request = Request::new(block_range_to_wire(range));
+        let mut request = Request::new(range.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
             .get_block_range_nullifiers(request)
             .await?
             .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(
-            wire_stream,
-            |item| item.and_then(parse_compact_block),
-        )))
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_wire_as_status)
+        })))
     }
 
     async fn get_transaction(
@@ -963,9 +1019,9 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
         timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
-        let mut request = Request::new(tx_filter_to_wire(filter));
+        let mut request = Request::new(filter.to_wire());
         request.set_timeout(timeout);
-        parse_raw_transaction(
+        parse_wire_as_status(
             self.clear_net_client
                 .get_transaction(request)
                 .await?
@@ -986,7 +1042,7 @@ impl Indexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_compact_tx)
+            item.and_then(parse_wire_as_status)
         })))
     }
 
@@ -997,7 +1053,7 @@ impl Indexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_raw_transaction)
+            item.and_then(parse_wire_as_status)
         })))
     }
 
@@ -1007,7 +1063,7 @@ impl Indexer for GrpcIndexer {
     ) -> Result<TreeState, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        parse_tree_state(
+        parse_wire_as_status(
             self.clear_net_client
                 .get_latest_tree_state(request)
                 .await?
@@ -1020,7 +1076,7 @@ impl Indexer for GrpcIndexer {
         arg: GetSubtreeRootsArg,
         timeout: Duration,
     ) -> Result<SubtreeRootStream, tonic::Status> {
-        let mut request = Request::new(get_subtree_roots_arg_to_wire(arg));
+        let mut request = Request::new(arg.to_wire());
         request.set_timeout(timeout);
         let wire_stream = self
             .clear_net_client
@@ -1028,7 +1084,7 @@ impl Indexer for GrpcIndexer {
             .await?
             .into_inner();
         Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_subtree_root)
+            item.and_then(parse_wire_as_status)
         })))
     }
 
