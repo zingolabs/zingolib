@@ -16,7 +16,9 @@ use lightwallet_protocol::{
 use tonic::Request;
 use zl_common::chain::{GetAddressUtxosArg, GetAddressUtxosReply, TransparentAddressBlockFilter};
 
-use super::{GrpcIndexer, Indexer, ParseWire, RawTransactionStream, ToWire, parse_wire_as_status};
+use super::{
+    GrpcIndexer, Indexer, ParseWire, RawTransactionStream, ToWire, parse_wire_as_status, stream_rpc,
+};
 
 impl ToWire for GetAddressUtxosArg {
     type Wire = WireGetAddressUtxosArg;
@@ -141,16 +143,10 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<RawTransactionStream, tonic::Status> {
-        let mut request = Request::new(filter.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_taddress_txids(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(filter, timeout, |req| {
+            self.clear_net_client.get_taddress_txids(req)
+        })
+        .await
     }
 
     async fn get_taddress_transactions(
@@ -158,16 +154,10 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<RawTransactionStream, tonic::Status> {
-        let mut request = Request::new(filter.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_taddress_transactions(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(filter, timeout, |req| {
+            self.clear_net_client.get_taddress_transactions(req)
+        })
+        .await
     }
 
     async fn get_taddress_balance(
@@ -218,15 +208,9 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<GetAddressUtxosReplyStream, tonic::Status> {
-        let mut request = Request::new(arg.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_address_utxos_stream(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(arg, timeout, |req| {
+            self.clear_net_client.get_address_utxos_stream(req)
+        })
+        .await
     }
 }

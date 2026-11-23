@@ -184,6 +184,16 @@ where
     client.get_latest_block(UNARY_RPC_TIMEOUT).await
 }
 
+/// Resolves `block_height` to a [`BlockId`] and runs `call` with it. Shared by every fetch that
+/// only needs to identify a block by height, so each stays one line instead of repeating the
+/// `BlockId::from_height` + unary-timeout shape.
+async fn get_by_height<T>(
+    block_height: BlockHeight,
+    call: impl AsyncFnOnce(BlockId) -> Result<T, tonic::Status>,
+) -> Result<T, tonic::Status> {
+    call(BlockId::from_height(block_height)).await
+}
+
 async fn get_block<C>(
     client: &mut C,
     block_height: BlockHeight,
@@ -191,9 +201,10 @@ async fn get_block<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    client
-        .get_block(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
-        .await
+    get_by_height(block_height, async |id| {
+        client.get_block(id, UNARY_RPC_TIMEOUT).await
+    })
+    .await
 }
 
 /// Fetches compact blocks with shielded data only, or with transparent and shielded data if `include_transparent` is
@@ -281,9 +292,10 @@ async fn get_tree_state<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    client
-        .get_tree_state(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
-        .await
+    get_by_height(block_height, async |id| {
+        client.get_tree_state(id, UNARY_RPC_TIMEOUT).await
+    })
+    .await
 }
 
 async fn get_transaction<C>(client: &mut C, txid: TxId) -> Result<RawTransaction, tonic::Status>

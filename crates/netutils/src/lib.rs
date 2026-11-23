@@ -55,7 +55,7 @@ pub mod network_access;
 mod wire;
 
 pub use crypto::ensure_default_crypto_provider;
-pub(crate) use wire::{ToWire, parse_lightd_info, parse_wire_as_status};
+pub(crate) use wire::{ToWire, parse_lightd_info, parse_wire_as_status, stream_rpc, unary_rpc};
 // `ParseWire` itself is never named directly in this file (only `parse_wire_as_status`, which
 // already carries its own bound, is): it is re-exported purely for the `globally-public-
 // transparent` and `socks5-transmit` feature-gated modules, so it is unused without either.
@@ -560,14 +560,10 @@ impl Indexer for GrpcIndexer {
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
-        let mut request = Request::new(ChainSpec {});
-        request.set_timeout(timeout);
-        parse_wire_as_status(
-            self.clear_net_client
-                .get_latest_block(request)
-                .await?
-                .into_inner(),
-        )
+        wire::unary_rpc_raw(ChainSpec {}, timeout, |req| {
+            self.clear_net_client.get_latest_block(req)
+        })
+        .await
     }
 
     async fn send_transaction(
@@ -599,14 +595,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(block_id.to_wire());
-        request.set_timeout(timeout);
-        parse_wire_as_status(
-            self.clear_net_client
-                .get_tree_state(request)
-                .await?
-                .into_inner(),
-        )
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_tree_state(req)
+        })
+        .await
     }
 
     async fn get_block(
@@ -614,9 +606,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id.to_wire());
-        request.set_timeout(timeout);
-        parse_wire_as_status(self.clear_net_client.get_block(request).await?.into_inner())
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_block(req)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -625,14 +618,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id.to_wire());
-        request.set_timeout(timeout);
-        parse_wire_as_status(
-            self.clear_net_client
-                .get_block_nullifiers(request)
-                .await?
-                .into_inner(),
-        )
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_block_nullifiers(req)
+        })
+        .await
     }
 
     async fn get_block_range(
@@ -640,16 +629,10 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<CompactBlockStream, tonic::Status> {
-        let mut request = Request::new(range.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_block_range(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(range, timeout, |req| {
+            self.clear_net_client.get_block_range(req)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -658,16 +641,10 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<CompactBlockStream, tonic::Status> {
-        let mut request = Request::new(range.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_block_range_nullifiers(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(range, timeout, |req| {
+            self.clear_net_client.get_block_range_nullifiers(req)
+        })
+        .await
     }
 
     async fn get_transaction(
@@ -675,14 +652,10 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
         timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
-        let mut request = Request::new(filter.to_wire());
-        request.set_timeout(timeout);
-        parse_wire_as_status(
-            self.clear_net_client
-                .get_transaction(request)
-                .await?
-                .into_inner(),
-        )
+        unary_rpc(filter, timeout, |req| {
+            self.clear_net_client.get_transaction(req)
+        })
+        .await
     }
 
     async fn get_mempool_tx(
@@ -717,14 +690,10 @@ impl Indexer for GrpcIndexer {
         &mut self,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(Empty {});
-        request.set_timeout(timeout);
-        parse_wire_as_status(
-            self.clear_net_client
-                .get_latest_tree_state(request)
-                .await?
-                .into_inner(),
-        )
+        wire::unary_rpc_raw(Empty {}, timeout, |req| {
+            self.clear_net_client.get_latest_tree_state(req)
+        })
+        .await
     }
 
     async fn get_subtree_roots(
@@ -732,16 +701,10 @@ impl Indexer for GrpcIndexer {
         arg: GetSubtreeRootsArg,
         timeout: Duration,
     ) -> Result<SubtreeRootStream, tonic::Status> {
-        let mut request = Request::new(arg.to_wire());
-        request.set_timeout(timeout);
-        let wire_stream = self
-            .clear_net_client
-            .get_subtree_roots(request)
-            .await?
-            .into_inner();
-        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
-            item.and_then(parse_wire_as_status)
-        })))
+        stream_rpc(arg, timeout, |req| {
+            self.clear_net_client.get_subtree_roots(req)
+        })
+        .await
     }
 
     #[cfg(feature = "ping-very-insecure")]

@@ -303,52 +303,34 @@ impl TryFrom<TreeState> for Frontiers {
         Ok(Frontiers::new(
             value.height,
             value.hash,
-            get_sapling_tree(&value.sapling_tree)?.to_frontier(),
-            get_orchard_tree(&value.orchard_tree)?.to_frontier(),
-            get_ironwood_tree(&value.ironwood_tree)?.to_frontier(),
+            get_tree::<Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>(&value.sapling_tree)?
+                .to_frontier(),
+            get_tree::<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
+                &value.orchard_tree,
+            )?
+            .to_frontier(),
+            // Servers omit this field below the ironwood activation height, so an empty field
+            // means the tree is empty. See `crate::client::get_frontiers` for the rejection of
+            // an omitted field at or above the activation height.
+            get_tree::<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
+                &value.ironwood_tree,
+            )?
+            .to_frontier(),
         ))
     }
 }
 
-/// Deserializes and returns the Sapling note commitment tree from its already-decoded bytes.
-pub(crate) fn get_sapling_tree(
+/// Deserializes a note commitment tree from its already-decoded bytes, or an empty tree when
+/// the server omitted the field (legitimate only for Ironwood below its activation height; see
+/// the caller for the rejection elsewhere). Shared by every pool's tree, which differ only in
+/// which hash type and depth they read.
+fn get_tree<H: zcash_primitives::merkle_tree::HashSer, const DEPTH: u8>(
     tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>> {
+) -> std::io::Result<CommitmentTree<H, DEPTH>> {
     if tree_bytes.is_empty() {
         Ok(CommitmentTree::empty())
     } else {
-        read_commitment_tree::<Node, _, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>(tree_bytes)
-    }
-}
-
-/// Deserializes and returns the Orchard note commitment tree from its already-decoded bytes.
-pub(crate) fn get_orchard_tree(
-    tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_bytes.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            tree_bytes,
-        )
-    }
-}
-
-/// Deserializes and returns the Ironwood note commitment tree from its already-decoded bytes.
-/// Servers omit the field below the ironwood activation height, so an empty field means the
-/// tree is empty. See [`crate::client::get_frontiers`] for the rejection of an omitted field at
-/// or above the activation height.
-pub(crate) fn get_ironwood_tree(
-    tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_bytes.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            tree_bytes,
-        )
+        read_commitment_tree::<H, _, DEPTH>(tree_bytes)
     }
 }
 
