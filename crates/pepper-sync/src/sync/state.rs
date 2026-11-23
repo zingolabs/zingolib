@@ -31,7 +31,7 @@ use super::{ScanPriority, held_at, overlaps};
 
 pub(crate) use zl_common::engine::VerifyEnd;
 
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use zl_common::chain::SubtreeRoot;
 
 /// Prioritize scan ranges for scanning.
 pub(super) fn prioritize_scan_ranges<W>(
@@ -544,14 +544,7 @@ pub(super) fn add_shard_ranges(
 ) {
     let subtree_completing_heights = subtree_roots
         .iter()
-        .map(|subtree_root| {
-            BlockHeight::from_u32(
-                subtree_root
-                    .completing_block_height
-                    .try_into()
-                    .expect("overflow should never occur"),
-            )
-        })
+        .map(|subtree_root| subtree_root.completing_block_height)
         .collect::<Vec<_>>();
     sync_state.add_shard_ranges(
         consensus_parameters,

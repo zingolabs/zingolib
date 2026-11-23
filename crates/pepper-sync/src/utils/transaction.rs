@@ -1,16 +1,9 @@
 use zcash_protocol::{ShieldedPool, TxId};
-use zl_netutils::lightwallet_protocol::CompactTx;
-
-#[cfg(test)]
-use zl_netutils::lightwallet_protocol::{
-    CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend,
-};
+use zl_common::chain::CompactTx;
 
 /// Returns the transaction Id
 pub(crate) fn get_compact_txid(compact_tx: &CompactTx) -> TxId {
-    let mut txid_bytes = [0u8; 32];
-    txid_bytes.copy_from_slice(&compact_tx.txid);
-    TxId::from_bytes(txid_bytes)
+    compact_tx.txid
 }
 
 pub(crate) fn shielded_output_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
@@ -49,14 +42,54 @@ pub(crate) fn compact_tx(
 ) -> CompactTx {
     CompactTx {
         index: 0,
-        txid: vec![0; 32],
+        txid: TxId::from_bytes([0; 32]),
         fee: 0,
-        spends: vec![CompactSaplingSpend::default(); spends],
-        outputs: vec![CompactSaplingOutput::default(); outputs],
-        actions: vec![CompactOrchardAction::default(); actions],
-        ironwood_actions: vec![CompactOrchardAction::default(); ironwood_actions],
+        spends: vec![
+            zl_common::chain::CompactSaplingSpend { nullifier: [0; 32] };
+            spends
+        ],
+        outputs: vec![
+            zl_common::chain::CompactSaplingOutput {
+                cmu: vec![0; 32],
+                ephemeral_key: vec![0; 32],
+                ciphertext: vec![0; 52],
+            };
+            outputs
+        ],
+        actions: vec![
+            zl_common::chain::CompactOrchardAction {
+                nullifier: [0; 32],
+                cmx: vec![0; 32],
+                ephemeral_key: vec![0; 32],
+                ciphertext: vec![0; 52],
+            };
+            actions
+        ],
+        ironwood_actions: vec![
+            zl_common::chain::CompactOrchardAction {
+                nullifier: [0; 32],
+                cmx: vec![0; 32],
+                ephemeral_key: vec![0; 32],
+                ciphertext: vec![0; 52],
+            };
+            ironwood_actions
+        ],
         vin: vec![],
         vout: vec![],
+    }
+}
+
+/// An otherwise-empty compact block holding `vtx`, for tests exercising per-block aggregation.
+#[cfg(test)]
+pub(crate) fn empty_compact_block(vtx: Vec<CompactTx>) -> zl_common::chain::CompactBlock {
+    zl_common::chain::CompactBlock {
+        height: zcash_protocol::consensus::BlockHeight::from_u32(0),
+        hash: zcash_primitives::block::BlockHash([0; 32]),
+        prev_hash: zcash_primitives::block::BlockHash([0; 32]),
+        time: 0,
+        header: vec![],
+        vtx,
+        chain_metadata: None,
     }
 }
 

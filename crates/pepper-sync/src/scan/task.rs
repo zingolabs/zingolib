@@ -15,7 +15,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::CompactBlock;
+use zl_common::chain::CompactBlock;
 
 use crate::engine::{SyncStateOps, TransactionRecordOps};
 use crate::{
@@ -36,7 +36,7 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
-use zl_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+use zl_netutils::time::SCANNER_SHUTDOWN_TIMEOUT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanTaskRunnerActivity {
@@ -514,13 +514,7 @@ where
 
                 loop {
                     let msg_res: Result<Option<CompactBlock>, tonic::Status> =
-                        match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
-                        {
-                            Ok(res) => res,
-                            Err(_) => {
-                                Err(tonic::Status::deadline_exceeded("stream message timeout"))
-                            }
-                        };
+                        client::next_stream_item(&mut block_stream, "block").await;
 
                     let maybe_block = match msg_res {
                         Ok(b) => b,
@@ -550,17 +544,8 @@ where
                             };
 
                             let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
-                                match tokio::time::timeout(
-                                    STREAM_MSG_TIMEOUT,
-                                    block_stream.message(),
-                                )
-                                .await
-                                {
-                                    Ok(res) => res,
-                                    Err(_) => Err(tonic::Status::deadline_exceeded(
-                                        "stream message timeout after retry",
-                                    )),
-                                };
+                                client::next_stream_item(&mut block_stream, "block (after retry)")
+                                    .await;
 
                             match first_msg_res {
                                 Ok(b) => b,
@@ -805,7 +790,7 @@ async fn open_block_stream(
     block_range: Range<BlockHeight>,
     fetch_nullifiers_only: bool,
     transparent_scan_floor: BlockHeight,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<zl_netutils::CompactBlockStream, ServerError> {
     if fetch_nullifiers_only {
         client::get_nullifier_range(fetch_request_sender, block_range).await
     } else {

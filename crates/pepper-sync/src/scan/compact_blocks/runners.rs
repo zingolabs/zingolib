@@ -17,7 +17,7 @@ use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
 use zcash_protocol::ShieldedPool;
-use zl_netutils::lightwallet_protocol::CompactBlock;
+use zl_common::chain::CompactBlock;
 
 use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
@@ -116,7 +116,7 @@ where
         self.ironwood.flush();
     }
 
-    #[tracing::instrument(skip_all, fields(height = block.height))]
+    #[tracing::instrument(skip_all, fields(height = u32::from(block.height)))]
     pub(crate) fn add_block<P>(
         &mut self,
         params: &P,

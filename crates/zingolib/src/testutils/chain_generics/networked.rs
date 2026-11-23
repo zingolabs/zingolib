@@ -153,8 +153,8 @@ impl NetworkedTestEnvironment {
             .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
             .await
             .unwrap_or_else(|error| panic!("{TESTNET_INDEXER} served no latest block: {error}"))
-            .height as u32;
-        self.latest_known_server_height = Some(BlockHeight::from(latest));
+            .height;
+        self.latest_known_server_height = Some(latest);
     }
 
     /// - Creates a temporary directory and keeps it until the environment drops.

@@ -20,9 +20,10 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{self, BlockHeight};
 use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{RawTransaction, SubtreeRoot};
+use zl_common::chain::RawTransaction;
 use zl_netutils::{Indexer, TransparentIndexer};
 
+use zl_common::chain::SubtreeRoot;
 use zl_common::status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
@@ -439,9 +440,7 @@ where
                     .await
                     .get_wallet_block(chain_height)
                     .map_err(SyncError::WalletError)?;
-                if chain_height_wallet_block.block_hash().0.to_vec()
-                    != chain_height_server_block.hash
-                {
+                if chain_height_wallet_block.block_hash() != chain_height_server_block.hash {
                     tracing::info!("Re-org detected.");
                     reorg_occured = true;
                     let mut wallet_guard = wallet.write().await;
@@ -2706,8 +2705,8 @@ where
                 interval.reset();
                 loop {
                     tokio::select! {
-                        mempool_stream_message = mempool_stream.message() => {
-                            match mempool_stream_message {
+                        mempool_stream_message = futures::StreamExt::next(&mut mempool_stream) => {
+                            match mempool_stream_message.transpose() {
                                 Ok(Some(raw_transaction)) => {
                                      // counted before sending so the drain verdict never observes a zero count
                                      // while a transaction is queued in the channel.
@@ -3166,8 +3165,9 @@ mod test {
         use orchard::tree::MerkleHashOrchard;
         use shardtree::error::ShardTreeError;
         use shardtree::store::{Checkpoint, ShardStore as _};
+        use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
-        use zl_netutils::lightwallet_protocol::SubtreeRoot;
+        use zl_common::chain::SubtreeRoot;
 
         use crate::mocks::{MockWallet, MockWalletBuilder};
         use crate::sync::{ScanPriority, ScanRange, rollback_unscanned_tree_states};
@@ -3293,8 +3293,9 @@ mod test {
             witness::add_subtree_roots(
                 SUBTREE_ABOVE_HIGHEST_SCANNED,
                 vec![SubtreeRoot {
-                    root_hash: note_commitment(SCANNED_CHAIN).to_bytes().to_vec(),
-                    ..Default::default()
+                    root_hash: note_commitment(SCANNED_CHAIN).to_bytes(),
+                    completing_block_hash: BlockHash([0u8; 32]),
+                    completing_block_height: BlockHeight::from_u32(0),
                 }],
                 &mut shard_trees.orchard,
             )
@@ -4103,8 +4104,8 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
         use zcash_transparent::{address::Script, keys::NonHardenedChildIndex};
+        use zl_common::chain::{RawTransaction, RawTransactionStatus};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::RawTransaction;
 
         use crate::{
             client::FetchRequest,
@@ -4196,7 +4197,7 @@ mod test {
                         FetchRequest::Transaction(reply_sender, _txid) => {
                             let _ignore_error = reply_sender.send(Ok(RawTransaction {
                                 data: data.clone(),
-                                height: u64::from(SPEND_HEIGHT),
+                                status: RawTransactionStatus::Mined(SPEND_HEIGHT),
                             }));
                         }
                         _ => panic!("unexpected fetch request"),
@@ -5197,9 +5198,8 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
-        use zl_common::chain::TreeState;
+        use zl_common::chain::{RawTransaction, RawTransactionStatus, TreeState};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::RawTransaction;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5269,7 +5269,7 @@ mod test {
                             if let Some(data) = &spending_transaction_data {
                                 let _ignore_error = reply_sender.send(Ok(RawTransaction {
                                     data: data.clone(),
-                                    height: u64::from(SPEND_HEIGHT),
+                                    status: RawTransactionStatus::Mined(SPEND_HEIGHT),
                                 }));
                             }
                         }
@@ -6030,6 +6030,7 @@ mod test {
         use std::ops::Range;
 
         use orchard::tree::MerkleHashOrchard;
+        use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
 
         use crate::mocks::orchard_tree_scanned_past_the_fetched_roots;
@@ -6064,13 +6065,13 @@ mod test {
         #[test]
         fn resumes_from_the_tree_when_a_rollback_dropped_its_bare_roots() {
             let mut shard_trees = ShardTrees::new();
-            let bare_root = zl_netutils::lightwallet_protocol::SubtreeRoot {
+            let bare_root = zl_common::chain::SubtreeRoot {
                 root_hash: <MerkleHashOrchard as incrementalmerkletree::Hashable>::empty_root(
                     incrementalmerkletree::Level::from(witness::SHARD_HEIGHT),
                 )
-                .to_bytes()
-                .to_vec(),
-                ..Default::default()
+                .to_bytes(),
+                completing_block_hash: BlockHash([0u8; 32]),
+                completing_block_height: BlockHeight::from_u32(0),
             };
             witness::add_subtree_roots(0, vec![bare_root; 2], &mut shard_trees.orchard).unwrap();
 

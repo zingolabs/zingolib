@@ -20,7 +20,7 @@ use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
 use {
     crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
-    zl_netutils::lightwallet_protocol::SubtreeRoot,
+    zl_common::chain::SubtreeRoot,
 };
 
 pub(crate) use zl_common::engine::SHARD_HEIGHT;
@@ -158,14 +158,9 @@ where
             incrementalmerkletree::Level::new(SHARD_HEIGHT),
             (subtree_root_start_index + index) as u64,
         );
-        let node = <S::H as FromBytes>::from_bytes(
-            tree_root
-                .root_hash
-                .try_into()
-                .map_err(|_| ServerError::InvalidSubtreeRoot)?,
-        )
-        .into_option()
-        .ok_or(ServerError::InvalidSubtreeRoot)?;
+        let node = <S::H as FromBytes>::from_bytes(tree_root.root_hash)
+            .into_option()
+            .ok_or(ServerError::InvalidSubtreeRoot)?;
         let stored = shard_tree
             .store()
             .get_shard(address)
