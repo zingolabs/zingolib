@@ -1147,8 +1147,8 @@ mod config_template {
 
     mod zingo_config {
         use super::*;
-        use zingolib::PerformanceLevel;
         use std::num::NonZeroU32;
+        use zingolib::PerformanceLevel;
         use zingolib::{
             config::WalletConfig,
             wallet::{SyncConfig, TransparentAddressDiscovery},

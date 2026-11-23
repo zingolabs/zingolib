@@ -28,15 +28,15 @@ use log::{error, info};
 #[cfg(feature = "nym")]
 use log::{debug, warn};
 
-use zingolib::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-#[cfg(feature = "nym")]
-use zingolib::{SyncError, SyncRecoveryObservables};
 use zingolib::config::{ChainType, ClientConfig, DEFAULT_WALLET_NAME, WalletConfig};
 use zingolib::data::PollReport;
 use zingolib::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
 use zingolib::netutils::Indexer as _;
 use zingolib::perspective::sync_progress;
 use zingolib::wallet::WalletSettings;
+use zingolib::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+#[cfg(feature = "nym")]
+use zingolib::{SyncError, SyncRecoveryObservables};
 
 use crate::commands::RT;
 

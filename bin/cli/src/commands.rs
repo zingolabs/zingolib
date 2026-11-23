@@ -12,9 +12,9 @@ use std::sync::LazyLock;
 
 use indoc::indoc;
 use json::object;
+use tokio::runtime::Runtime;
 use zingolib::PerformanceLevel;
 use zingolib::transparent;
-use tokio::runtime::Runtime;
 
 use zcash_address::unified::{Container, Encoding, Ufvk};
 use zcash_keys::address::Address;
@@ -23,7 +23,6 @@ use zcash_protocol::TxId;
 use zcash_protocol::consensus::NetworkType;
 use zcash_protocol::value::Zatoshis;
 
-use zingolib::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 use zingo_common_components::protocol::ActivationHeights;
 use zingolib::data::{PollReport, proposal};
 use zingolib::lightclient::migrate::{
@@ -36,6 +35,7 @@ use zingolib::utils::conversion::txid_from_hex_encoded_str;
 use zingolib::wallet::keys::WalletAddressRef;
 use zingolib::wallet::keys::unified::{ReceiverSelection, UnifiedKeyStore};
 use zingolib::wallet::migration::{self, MigrationPhase};
+use zingolib::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
 
 pub static RT: LazyLock<Runtime> = LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
 
