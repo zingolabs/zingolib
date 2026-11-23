@@ -658,6 +658,72 @@ fn invalid_compact_block(error: zl_common::chain::InvalidCompactBlock) -> tonic:
     tonic::Status::new(tonic::Code::Internal, error.to_string())
 }
 
+/// An invariant that only emerges once primitives are bundled into a [`CompactTx`] or
+/// [`CompactBlock`]: nothing in [`zl_common::chain`] itself enforces it (each primitive only
+/// validates its own fields), it falls out of how `parse_compact_tx`/`parse_compact_block`
+/// compose their nested `?`-propagating parses.
+#[cfg(test)]
+mod compact_parsing {
+    use super::*;
+
+    fn valid_spend() -> lightwallet_protocol::CompactSaplingSpend {
+        lightwallet_protocol::CompactSaplingSpend { nf: vec![0xaa; 32] }
+    }
+
+    fn invalid_spend() -> lightwallet_protocol::CompactSaplingSpend {
+        lightwallet_protocol::CompactSaplingSpend { nf: vec![0xaa; 31] }
+    }
+
+    fn tx_with_spends(
+        spends: Vec<lightwallet_protocol::CompactSaplingSpend>,
+    ) -> WireCompactTx {
+        WireCompactTx {
+            txid: vec![0xaa; 32],
+            spends,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_tx_with_only_valid_spends_parses() {
+        assert!(parse_compact_tx(tx_with_spends(vec![valid_spend(), valid_spend()])).is_ok());
+    }
+
+    /// One invalid nested spend fails the whole transaction's parse, not just that spend: the
+    /// bundling step has no way to accept a transaction with a partially-invalid component.
+    #[test]
+    fn one_invalid_nested_spend_fails_the_whole_transaction() {
+        assert!(parse_compact_tx(tx_with_spends(vec![valid_spend(), invalid_spend()])).is_err());
+    }
+
+    /// The same short-circuit holds one level up: a block with one bad transaction fails to
+    /// parse at all, even when every other transaction (before or after it) is valid.
+    #[test]
+    fn one_invalid_nested_transaction_fails_the_whole_block() {
+        let good = tx_with_spends(vec![valid_spend()]);
+        let bad = tx_with_spends(vec![invalid_spend()]);
+        let block = WireCompactBlock {
+            hash: vec![0xaa; 32],
+            prev_hash: vec![0xbb; 32],
+            vtx: vec![good.clone(), bad, good],
+            ..Default::default()
+        };
+        assert!(parse_compact_block(block).is_err());
+    }
+
+    #[test]
+    fn a_block_with_only_valid_transactions_parses() {
+        let good = tx_with_spends(vec![valid_spend()]);
+        let block = WireCompactBlock {
+            hash: vec![0xaa; 32],
+            prev_hash: vec![0xbb; 32],
+            vtx: vec![good.clone(), good],
+            ..Default::default()
+        };
+        assert!(parse_compact_block(block).is_ok());
+    }
+}
+
 // The functions below convert the other direction: an owned request type pepper-sync builds,
 // into the wire type a gRPC call actually sends. There is nothing to validate going this way
 // (the caller already built a well-formed value), so these are infallible, unlike the

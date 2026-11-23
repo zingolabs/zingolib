@@ -749,4 +749,410 @@ mod tests {
         assert!(ChainType::try_from(" mainnet").is_err()); // leading space
         assert!(ChainType::try_from("regtест").is_err()); // lookalike chars
     }
+
+    /// A height one past `u32::MAX`, the smallest value `BlockHeight::try_from` rejects.
+    const TOO_TALL: u64 = u32::MAX as u64 + 1;
+
+    mod tree_state {
+        use super::super::{InvalidTreeState, TreeState};
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        /// Hex for a valid, arbitrary 32-byte hash. Not used to assert anything about byte
+        /// order; see `valid_parts_decode_hex_and_reverse_the_hash` for that.
+        fn some_hash_hex() -> String {
+            hex::encode([0xaa; 32])
+        }
+
+        #[test]
+        fn valid_parts_decode_hex_and_reverse_the_hash() {
+            // chosen so reversal is visible: only the first byte is non-zero on the wire, so
+            // only the LAST byte of the decoded hash should be non-zero.
+            let mut wire_bytes = [0u8; 32];
+            wire_bytes[0] = 0x01;
+            let hash_hex = hex::encode(wire_bytes);
+
+            let tree_state =
+                TreeState::from_wire_parts(100, &hash_hex, "aa", "bb", "cc").unwrap();
+            assert_eq!(tree_state.height, BlockHeight::from_u32(100));
+            let mut expected = [0u8; 32];
+            expected[31] = 0x01;
+            assert_eq!(tree_state.hash, BlockHash(expected));
+            assert_eq!(tree_state.sapling_tree, vec![0xaa]);
+            assert_eq!(tree_state.orchard_tree, vec![0xbb]);
+            assert_eq!(tree_state.ironwood_tree, vec![0xcc]);
+        }
+
+        #[test]
+        fn a_height_past_u32_max_is_rejected() {
+            assert!(matches!(
+                TreeState::from_wire_parts(super::TOO_TALL, &some_hash_hex(), "", "", ""),
+                Err(InvalidTreeState::InvalidHeight)
+            ));
+        }
+
+        #[test]
+        fn non_hex_hash_is_rejected() {
+            assert!(matches!(
+                TreeState::from_wire_parts(0, "not hex", "", "", ""),
+                Err(InvalidTreeState::InvalidHashHex(_))
+            ));
+        }
+
+        #[test]
+        fn a_hash_not_exactly_32_bytes_is_rejected() {
+            assert!(matches!(
+                TreeState::from_wire_parts(0, "aabb", "", "", ""),
+                Err(InvalidTreeState::InvalidHashLength)
+            ));
+        }
+
+        #[test]
+        fn non_hex_tree_is_rejected_and_names_the_pool() {
+            for (sapling, orchard, ironwood) in [
+                ("not hex", "", ""),
+                ("", "not hex", ""),
+                ("", "", "not hex"),
+            ] {
+                let err =
+                    TreeState::from_wire_parts(0, &some_hash_hex(), sapling, orchard, ironwood)
+                        .unwrap_err();
+                assert!(matches!(err, InvalidTreeState::InvalidTreeHex { .. }), "{err}");
+            }
+        }
+    }
+
+    mod subtree_root {
+        use super::super::{InvalidSubtreeRoot, SubtreeRoot};
+        use zcash_protocol::consensus::BlockHeight;
+
+        #[test]
+        fn valid_parts_build() {
+            let subtree_root = SubtreeRoot::from_wire_parts(vec![0xaa; 32], vec![0xbb; 32], 100)
+                .unwrap();
+            assert_eq!(subtree_root.root_hash, [0xaa; 32]);
+            assert_eq!(subtree_root.completing_block_height, BlockHeight::from_u32(100));
+        }
+
+        #[test]
+        fn a_root_hash_not_32_bytes_is_rejected() {
+            assert!(matches!(
+                SubtreeRoot::from_wire_parts(vec![0xaa; 31], vec![0xbb; 32], 100),
+                Err(InvalidSubtreeRoot::InvalidRootHashLength)
+            ));
+        }
+
+        #[test]
+        fn a_completing_block_hash_not_32_bytes_is_rejected() {
+            assert!(matches!(
+                SubtreeRoot::from_wire_parts(vec![0xaa; 32], vec![0xbb; 31], 100),
+                Err(InvalidSubtreeRoot::InvalidCompletingBlockHashLength)
+            ));
+        }
+
+        #[test]
+        fn a_completing_block_height_past_u32_max_is_rejected() {
+            assert!(matches!(
+                SubtreeRoot::from_wire_parts(vec![0xaa; 32], vec![0xbb; 32], super::TOO_TALL),
+                Err(InvalidSubtreeRoot::InvalidCompletingBlockHeight)
+            ));
+        }
+    }
+
+    mod compact_sapling_spend {
+        use super::super::CompactSaplingSpend;
+
+        #[test]
+        fn a_32_byte_nullifier_is_accepted() {
+            assert_eq!(
+                CompactSaplingSpend::from_wire(vec![0xaa; 32]).unwrap().nullifier,
+                [0xaa; 32]
+            );
+        }
+
+        #[test]
+        fn a_wrong_length_nullifier_is_rejected() {
+            for len in [0, 31, 33] {
+                assert!(CompactSaplingSpend::from_wire(vec![0xaa; len]).is_err(), "len {len}");
+            }
+        }
+    }
+
+    mod compact_orchard_action {
+        use super::super::CompactOrchardAction;
+
+        /// The nullifier is the one field the deprecated nullifiers-only fetch exists to serve,
+        /// so it alone is validated.
+        #[test]
+        fn a_32_byte_nullifier_is_accepted() {
+            let action =
+                CompactOrchardAction::from_wire(vec![0xaa; 32], vec![], vec![], vec![]).unwrap();
+            assert_eq!(action.nullifier, [0xaa; 32]);
+        }
+
+        #[test]
+        fn a_wrong_length_nullifier_is_rejected() {
+            assert!(CompactOrchardAction::from_wire(vec![0xaa; 31], vec![], vec![], vec![]).is_err());
+        }
+
+        /// A nullifiers-only fetch serves an Orchard action with its output data hollowed out
+        /// (empty, not omitted): regression coverage for the eager-validation bug that broke
+        /// this exact shape. See crate-level notes on [`super::super::CompactOrchardAction`].
+        #[test]
+        fn empty_output_payload_is_accepted_unvalidated() {
+            let action =
+                CompactOrchardAction::from_wire(vec![0xaa; 32], vec![], vec![], vec![]).unwrap();
+            assert!(action.cmx.is_empty());
+            assert!(action.ephemeral_key.is_empty());
+            assert!(action.ciphertext.is_empty());
+        }
+
+        /// The payload fields pass through byte-for-byte, whatever their length: only the
+        /// nullifier is shape-checked.
+        #[test]
+        fn arbitrary_output_payload_passes_through_unchanged() {
+            let action = CompactOrchardAction::from_wire(
+                vec![0xaa; 32],
+                vec![1, 2, 3],
+                vec![4; 32],
+                vec![5; 52],
+            )
+            .unwrap();
+            assert_eq!(action.cmx, vec![1, 2, 3]);
+            assert_eq!(action.ephemeral_key, vec![4; 32]);
+            assert_eq!(action.ciphertext, vec![5; 52]);
+        }
+    }
+
+    mod compact_tx_in {
+        use super::super::CompactTxIn;
+        use zcash_protocol::TxId;
+
+        #[test]
+        fn a_32_byte_txid_is_accepted() {
+            let tx_in = CompactTxIn::from_wire(vec![0xaa; 32], 3).unwrap();
+            assert_eq!(tx_in.prevout_txid, TxId::from_bytes([0xaa; 32]));
+            assert_eq!(tx_in.prevout_index, 3);
+        }
+
+        #[test]
+        fn a_wrong_length_txid_is_rejected() {
+            assert!(CompactTxIn::from_wire(vec![0xaa; 20], 0).is_err());
+        }
+    }
+
+    mod compact_tx {
+        use super::super::{CompactTx, CompactTxIn};
+        use zcash_protocol::TxId;
+
+        #[test]
+        fn a_32_byte_txid_is_accepted() {
+            let tx = CompactTx::from_wire_parts(
+                0,
+                vec![0xaa; 32],
+                0,
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            assert_eq!(tx.txid, TxId::from_bytes([0xaa; 32]));
+        }
+
+        #[test]
+        fn a_wrong_length_txid_is_rejected() {
+            assert!(
+                CompactTx::from_wire_parts(0, vec![0xaa; 31], 0, vec![], vec![], vec![], vec![], vec![], vec![])
+                    .is_err()
+            );
+        }
+
+        /// Composing a transaction from already-validated nested components needs no further
+        /// validation of its own: the struct carries whatever its caller already proved valid.
+        /// This is what the structural change buys over a proto-typed contract — the bundling
+        /// step itself has nothing left to check.
+        #[test]
+        fn already_validated_nested_components_pass_through_unchanged() {
+            let spend = CompactTxIn::from_wire(vec![0xbb; 32], 1).unwrap();
+            let tx = CompactTx::from_wire_parts(
+                0,
+                vec![0xaa; 32],
+                1000,
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![spend],
+                vec![],
+            )
+            .unwrap();
+            assert_eq!(tx.fee, 1000);
+            assert_eq!(tx.vin, vec![spend]);
+        }
+    }
+
+    mod compact_block {
+        use super::super::CompactBlock;
+        use zcash_primitives::block::BlockHash;
+
+        fn parts() -> (u64, Vec<u8>, Vec<u8>) {
+            (100, vec![0xaa; 32], vec![0xbb; 32])
+        }
+
+        #[test]
+        fn valid_parts_build() {
+            let (height, hash, prev_hash) = parts();
+            let block =
+                CompactBlock::from_wire_parts(height, hash, prev_hash, 0, vec![], vec![], None)
+                    .unwrap();
+            assert_eq!(block.hash, BlockHash([0xaa; 32]));
+            assert_eq!(block.prev_hash, BlockHash([0xbb; 32]));
+        }
+
+        #[test]
+        fn a_height_past_u32_max_is_rejected() {
+            let (_, hash, prev_hash) = parts();
+            assert!(
+                CompactBlock::from_wire_parts(super::TOO_TALL, hash, prev_hash, 0, vec![], vec![], None)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn a_wrong_length_hash_is_rejected() {
+            let (height, _, prev_hash) = parts();
+            assert!(
+                CompactBlock::from_wire_parts(height, vec![0xaa; 20], prev_hash, 0, vec![], vec![], None)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn a_wrong_length_prev_hash_is_rejected() {
+            let (height, hash, _) = parts();
+            assert!(
+                CompactBlock::from_wire_parts(height, hash, vec![0xbb; 20], 0, vec![], vec![], None)
+                    .is_err()
+            );
+        }
+    }
+
+    /// [`RawTransaction`]'s wire `height` overloads one `u64` with three meanings. This is the
+    /// exact shape that used to panic (`u32::try_from(height).expect(...)`) on a server-sent
+    /// `0` or `u64::MAX`; it is now a total, type-safe parse.
+    mod raw_transaction {
+        use super::super::{RawTransaction, RawTransactionStatus};
+        use zcash_protocol::consensus::BlockHeight;
+
+        #[test]
+        fn zero_height_means_mempool() {
+            let tx = RawTransaction::from_wire_parts(vec![1, 2, 3], 0).unwrap();
+            assert_eq!(tx.status, RawTransactionStatus::Mempool);
+            assert_eq!(tx.data, vec![1, 2, 3]);
+        }
+
+        #[test]
+        fn u64_max_means_mined_off_main_chain() {
+            let tx = RawTransaction::from_wire_parts(vec![], u64::MAX).unwrap();
+            assert_eq!(tx.status, RawTransactionStatus::MinedOffMainChain);
+        }
+
+        #[test]
+        fn any_other_height_means_mined_at_that_height() {
+            let tx = RawTransaction::from_wire_parts(vec![], 12345).unwrap();
+            assert_eq!(tx.status, RawTransactionStatus::Mined(BlockHeight::from_u32(12345)));
+        }
+
+        /// A height that is neither sentinel and does not fit a `BlockHeight` is a genuine
+        /// parse failure, not a silent wraparound or a panic.
+        #[test]
+        fn a_mined_height_past_u32_max_is_rejected() {
+            assert!(RawTransaction::from_wire_parts(vec![], super::TOO_TALL).is_err());
+        }
+    }
+
+    mod get_address_utxos_reply {
+        use super::super::GetAddressUtxosReply;
+        use zcash_protocol::consensus::BlockHeight;
+
+        fn valid() -> (String, Vec<u8>, i32, Vec<u8>, i64, u64) {
+            ("t1abc".to_string(), vec![0xaa; 32], 0, vec![], 1000, 100)
+        }
+
+        #[test]
+        fn valid_parts_build() {
+            let (address, txid, index, script, value, height) = valid();
+            let reply =
+                GetAddressUtxosReply::from_wire_parts(address, txid, index, script, value, height)
+                    .unwrap();
+            assert_eq!(reply.value, 1000);
+            assert_eq!(reply.height, BlockHeight::from_u32(100));
+        }
+
+        #[test]
+        fn a_wrong_length_txid_is_rejected() {
+            let (address, _, index, script, value, height) = valid();
+            assert!(
+                GetAddressUtxosReply::from_wire_parts(address, vec![0xaa; 20], index, script, value, height)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn a_height_past_u32_max_is_rejected() {
+            let (address, txid, index, script, value, _) = valid();
+            assert!(
+                GetAddressUtxosReply::from_wire_parts(address, txid, index, script, value, super::TOO_TALL)
+                    .is_err()
+            );
+        }
+    }
+
+    mod block_id {
+        use super::super::BlockId;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::consensus::BlockHeight;
+
+        #[test]
+        fn from_height_carries_no_hash() {
+            let id = BlockId::from_height(BlockHeight::from_u32(5));
+            assert_eq!(id.height, BlockHeight::from_u32(5));
+            assert_eq!(id.hash, None);
+        }
+
+        #[test]
+        fn a_32_byte_hash_is_kept() {
+            let id = BlockId::from_wire_parts(5, vec![0xaa; 32]).unwrap();
+            assert_eq!(id.hash, Some(BlockHash([0xaa; 32])));
+        }
+
+        /// `hash` is a secondary, optional identifier here: a malformed one does not reject the
+        /// whole value, it is simply treated as absent. Only `height` is load-bearing.
+        #[test]
+        fn a_wrong_length_hash_is_treated_as_absent_not_rejected() {
+            let id = BlockId::from_wire_parts(5, vec![0xaa; 20]).unwrap();
+            assert_eq!(id.hash, None);
+        }
+
+        #[test]
+        fn a_height_past_u32_max_is_rejected() {
+            assert!(BlockId::from_wire_parts(super::TOO_TALL, vec![]).is_err());
+        }
+    }
+
+    mod pool_type_wire_value {
+        use super::super::pool_type_wire_value;
+        use zcash_protocol::{PoolType, ShieldedPool};
+
+        #[test]
+        fn every_pool_maps_to_its_own_wire_value() {
+            assert_eq!(pool_type_wire_value(PoolType::Transparent), 1);
+            assert_eq!(pool_type_wire_value(PoolType::Shielded(ShieldedPool::Sapling)), 2);
+            assert_eq!(pool_type_wire_value(PoolType::Shielded(ShieldedPool::Orchard)), 3);
+            assert_eq!(pool_type_wire_value(PoolType::Shielded(ShieldedPool::Ironwood)), 4);
+        }
+    }
 }
