@@ -439,7 +439,7 @@ mod test {
     /// whenever the UA carries an orchard receiver, Sapling only when that
     /// is the best on offer. This is the guarantee the LocalNet test
     /// `diversified_addresses_receive_funds_in_best_pool` enforced with a
-    /// full zebrad+zainod network. The proposal's payment-pool map states
+    /// full zebrad+zingod network. The proposal's payment-pool map states
     /// it directly from synthetic wallet data alone.
     #[test]
     fn proposal_targets_best_pool_per_unified_address() {
