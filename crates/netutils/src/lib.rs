@@ -55,12 +55,13 @@ pub mod network_access;
 mod wire;
 
 pub use crypto::ensure_default_crypto_provider;
-pub(crate) use wire::{ToWire, parse_lightd_info, parse_wire_as_status, stream_rpc, unary_rpc};
-// `ParseWire` itself is never named directly in this file (only `parse_wire_as_status`, which
-// already carries its own bound, is): it is re-exported purely for the `globally-public-
-// transparent` and `socks5-transmit` feature-gated modules, so it is unused without either.
+pub(crate) use wire::{parse_lightd_info, parse_wire_as_status, stream_rpc, unary_rpc};
+// `ToWire`/`ParseWire` are never named directly in this file (every call site goes through
+// `unary_rpc`/`stream_rpc`/`unary_rpc_raw`, which already carry the bounds): re-exported purely
+// for the `globally-public-transparent` and `socks5-transmit` feature-gated modules, so both
+// are unused without either.
 #[allow(unused_imports)]
-pub(crate) use wire::ParseWire;
+pub(crate) use wire::{ParseWire, ToWire};
 
 /// The stdout line prefix the spawnable `nym-proxy` binary uses to announce
 /// its local SOCKS5 address (ADR 0011, consumption model A). Defined here so
