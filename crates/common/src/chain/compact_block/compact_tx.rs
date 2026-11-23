@@ -31,6 +31,7 @@ pub struct CompactTx {
 impl CompactTx {
     /// Parses a compact transaction's own scalar fields, taking its nested components
     /// (spends, outputs, actions, transparent inputs and outputs) already parsed.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_wire_parts(
         index: u64,
         txid: Vec<u8>,
