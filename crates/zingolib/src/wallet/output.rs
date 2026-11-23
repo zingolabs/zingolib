@@ -441,20 +441,23 @@ impl LightWallet {
         Ok(self
             .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|judged_note| !forbidden_ids.contains(&judged_note.note.output_id()))
+            .filter(|judged_note| !is_in(judged_note.note, &forbidden_ids))
             .filter_map(|judged_note| {
                 judged_note
                     .verdict
                     .certainty()
                     .map(|certain| note_selection::Candidate {
                         certain,
-                        reserved_for_migration: reserved_for_migration
-                            .contains(&judged_note.note.output_id()),
+                        reserved_for_migration: is_in(judged_note.note, reserved_for_migration),
                         note: judged_note.note.clone(),
                     })
             })
             .collect())
     }
+}
+
+fn is_in<N: OutputInterface>(note: &N, output_ids: &HashSet<OutputId>) -> bool {
+    output_ids.contains(&note.output_id())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
