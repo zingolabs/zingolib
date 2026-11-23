@@ -31,7 +31,8 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
-use crate::{ParseWire, parse_lightd_info, status_of};
+use crate::wire::status_of;
+use crate::{ParseWire, parse_lightd_info};
 use lightwallet_protocol::{
     BlockId as WireBlockId, ChainSpec, CompactTxStreamerClient, Empty,
     LightdInfo as WireLightdInfo, RawTransaction, StandardFee as WireStandardFee, TxFilter,
