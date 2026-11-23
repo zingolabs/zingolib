@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use tokio::sync::mpsc;
 
@@ -140,14 +140,31 @@ pub(crate) async fn scan_transactions(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
     pending_transactions: &HashMap<TxId, Vec<u8>>,
+    target_free_triples: BTreeMap<BlockHeight, chaff::Triple>,
 ) -> Result<ScannedTransactions, ScanError> {
     let mut transactions = HashMap::with_capacity(scan_targets.len());
     let mut dropped_targets = BTreeSet::new();
+    let target_txids = scan_targets
+        .iter()
+        .filter_map(ScanTarget::txid)
+        .collect::<HashSet<_>>();
+    let mut target_free_triples = target_free_triples
+        .into_iter()
+        .filter(|(_, triple)| !triple.txids().any(|txid| target_txids.contains(&txid)))
+        .peekable();
+    let mut send_target_free_triples = |below: Option<BlockHeight>| {
+        while let Some((_, triple)) = target_free_triples
+            .next_if(|(block_height, _)| below.is_none_or(|below| *block_height < below))
+        {
+            let _ignore_error = fetch_request_sender.send(FetchRequest::TargetFreeTriple(triple));
+        }
+    };
 
     for scan_target in scan_targets {
         let Some(txid) = scan_target.txid() else {
             continue;
         };
+        send_target_free_triples(Some(scan_target.block_height()));
 
         let stored_or_fetched = match stored_transaction(
             consensus_parameters,
@@ -233,6 +250,7 @@ pub(crate) async fn scan_transactions(
         )?;
         transactions.insert(txid, wallet_transaction);
     }
+    send_target_free_triples(None);
 
     Ok(ScannedTransactions {
         transactions,
@@ -816,6 +834,7 @@ mod tests {
             &mut BTreeMap::new(),
             HashMap::new(),
             pending_transactions,
+            BTreeMap::new(),
         )
         .await
     }
@@ -971,6 +990,7 @@ mod tests {
                 &mut BTreeMap::new(),
                 HashMap::new(),
                 &HashMap::new(),
+                BTreeMap::new(),
             )
             .await;
 
@@ -983,6 +1003,70 @@ mod tests {
                 Some((*target, block_txids.clone()))
             );
         }
+    }
+
+    #[tokio::test]
+    async fn target_free_triples_are_sent_in_height_order_among_the_targets() {
+        #[derive(Debug, PartialEq)]
+        enum Sent {
+            Target(TxId),
+            TargetFree(TxId),
+        }
+        let target = TxId::from_bytes([2; 32]);
+        let target_height = BlockHeight::from_u32(100);
+        let below = chaff::Triple::alone(TxId::from_bytes([1; 32]));
+        let beside_the_target = chaff::Triple::alone(target);
+        let above = chaff::Triple::alone(TxId::from_bytes([3; 32]));
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+
+        let target_free_triples = BTreeMap::from([
+            (target_height - 1, below.clone()),
+            (target_height, beside_the_target),
+            (target_height + 1, above.clone()),
+        ]);
+        let scanned = async move {
+            scan_transactions(
+                fetch_request_sender,
+                &MAIN_NETWORK,
+                &HashMap::new(),
+                BTreeSet::from([ScanTarget::new(target_height, Some(target))]),
+                DecryptedNoteData::new(),
+                &BTreeMap::new(),
+                &mut BTreeMap::new(),
+                HashMap::new(),
+                &HashMap::new(),
+                target_free_triples,
+            )
+            .await
+        };
+        let fetcher = async {
+            let mut sent = Vec::new();
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, triple) => {
+                        sent.push(Sent::Target(triple.target()));
+                        let _ignore_error =
+                            reply_sender.send(Err(tonic::Status::not_found("no such transaction")));
+                    }
+                    FetchRequest::TargetFreeTriple(triple) => {
+                        sent.push(Sent::TargetFree(triple.target()));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+            sent
+        };
+        let (scanned, sent) = tokio::join!(scanned, fetcher);
+
+        assert!(scanned.is_ok());
+        assert_eq!(
+            sent,
+            vec![
+                Sent::TargetFree(below.target()),
+                Sent::Target(target),
+                Sent::TargetFree(above.target()),
+            ]
+        );
     }
 
     #[tokio::test]

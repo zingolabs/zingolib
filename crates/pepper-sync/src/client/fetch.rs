@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use tracing::instrument;
 use zcash_primitives::transaction::TxId;
@@ -34,6 +34,15 @@ pub(crate) async fn fetch<C>(
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
+    let (target_free_triple_sender, target_free_triple_receiver) = unbounded_channel();
+    let target_free_client = client.clone();
+    tokio::spawn(chaff::request_target_free(
+        target_free_triple_receiver,
+        move |txid| {
+            let mut client = target_free_client.clone();
+            async move { get_transaction(&mut client, txid).await }
+        },
+    ));
 
     loop {
         // `fetcher` returns `Ok` here when all requests have successfully been fetched and the
@@ -45,7 +54,7 @@ pub(crate) async fn fetch<C>(
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, request).await;
+            fetch_from_server(&mut client, &target_free_triple_sender, request).await;
         }
     }
 }
@@ -96,8 +105,11 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 }
 
 //
-async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
-where
+async fn fetch_from_server<C>(
+    client: &mut C,
+    target_free_triple_sender: &UnboundedSender<chaff::Triple>,
+    fetch_request: FetchRequest,
+) where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     match fetch_request {
@@ -139,6 +151,9 @@ where
             tracing::debug!("Fetching tree state. {:?}", &block_height);
             let tree_state = get_tree_state(client, block_height).await;
             let _ignore_error = sender.send(tree_state);
+        }
+        FetchRequest::TargetFreeTriple(triple) => {
+            let _ignore_error = target_free_triple_sender.send(triple);
         }
         FetchRequest::Transaction(sender, triple) => {
             tracing::debug!("Fetching transaction. {:?}", triple.target());

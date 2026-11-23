@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a block join its last triple. Sync discards the replies to the other
   requests. A transaction whose block the scan does not hold is requested
   alone, as before.
+- Sync requests a triple that holds no wallet transaction in about one
+  scanned block in 1,024, and discards the replies. Without these requests,
+  every triple shows the indexer that the wallet has a transaction in that
+  block. A keyed hash of the wallet's viewing key and the block hash selects
+  the block and the triple, so the indexer cannot predict the choice and a
+  rescan repeats it. One such triple is in flight at a time, and the scan
+  waits for none of them.
+- The crate depends on `blake2b_simd` directly. The choice above needs a
+  keyed hash with a specified output, because the choice must stay the same
+  across releases, and the standard library's hasher does not promise that.
+  The crate already compiled `blake2b_simd` through `orchard`,
+  `sapling-crypto`, `zcash_primitives`, `zcash_keys` and `zip32`, so the
+  build gains no crate. The choice lives in this crate and not in a
+  consumer, so that every consumer gets the same protection and none can
+  omit it.
 - Sync sends no request for an unconfirmed transaction the wallet stores,
   when the scanned block at the transaction's height lists its txid. Sync
   confirms the transaction from the stored copy.

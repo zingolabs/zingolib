@@ -1,11 +1,20 @@
-use std::future::Future;
+use std::{collections::HashMap, future::Future};
 
-use futures::{StreamExt, stream::FuturesUnordered};
-use tokio::sync::oneshot;
+use futures::{StreamExt, future::join_all, stream::FuturesUnordered};
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
+use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus;
+use zip32::AccountId;
 use zl_netutils::lightwallet_protocol::RawTransaction;
 
 pub(crate) const TRIPLE_SIZE: usize = 3;
+pub(crate) const TARGET_FREE_BLOCK_INTERVAL: u64 = 1_024;
+
+const SELECTOR_KEY_BYTES: usize = 32;
+const SELECTION_BYTES: usize = 2 * size_of::<u64>();
+const SELECTOR_KEY_PERSONALIZATION: &[u8; blake2b_simd::PERSONALBYTES] = b"zl_chaff_sel_key";
+const SELECTION_PERSONALIZATION: &[u8; blake2b_simd::PERSONALBYTES] = b"zl_chaff_select_";
 
 const TARGET_REPLY_LOST: &str = "the task that requests the triple stopped before the target reply";
 
@@ -58,6 +67,58 @@ impl Triple {
     }
 }
 
+pub(crate) struct TargetFreeSelector {
+    key: [u8; SELECTOR_KEY_BYTES],
+}
+
+impl TargetFreeSelector {
+    pub(crate) fn new(
+        consensus_parameters: &impl consensus::Parameters,
+        ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
+    ) -> Option<Self> {
+        let (_, ufvk) = ufvks.iter().min_by_key(|(account_id, _)| **account_id)?;
+        let key = blake2b_simd::Params::new()
+            .hash_length(SELECTOR_KEY_BYTES)
+            .personal(SELECTOR_KEY_PERSONALIZATION)
+            .hash(ufvk.encode(consensus_parameters).ok()?.as_bytes());
+
+        Some(Self {
+            key: *key.as_bytes().first_chunk()?,
+        })
+    }
+
+    pub(crate) fn triple_in(&self, block_hash: &[u8], block_txids: &[TxId]) -> Option<Triple> {
+        let selection = blake2b_simd::Params::new()
+            .hash_length(SELECTION_BYTES)
+            .key(&self.key)
+            .personal(SELECTION_PERSONALIZATION)
+            .hash(block_hash);
+        let block_draw = u64::from_le_bytes(*selection.as_bytes().first_chunk()?);
+        let position_draw = u64::from_le_bytes(*selection.as_bytes().last_chunk()?);
+        if block_draw % TARGET_FREE_BLOCK_INTERVAL != 0 {
+            return None;
+        }
+        let position =
+            usize::try_from(position_draw.checked_rem(u64::try_from(block_txids.len()).ok()?)?)
+                .ok()?;
+
+        Some(Triple::in_block(block_txids, *block_txids.get(position)?))
+    }
+}
+
+/// - Sends one request for each transaction of every triple that `triples` yields.
+/// - Awaits every reply of one triple before it takes the next triple.
+pub(crate) async fn request_target_free<Request>(
+    mut triples: UnboundedReceiver<Triple>,
+    mut request_transaction: impl FnMut(TxId) -> Request,
+) where
+    Request: Future<Output = Result<RawTransaction, tonic::Status>>,
+{
+    while let Some(triple) = triples.recv().await {
+        join_all(triple.txids().map(&mut request_transaction)).await;
+    }
+}
+
 /// - Spawns a task that sends one request for each transaction of `triple`.
 /// - The task outlives this call until every chaff request has its reply.
 pub(crate) async fn request<Request>(
@@ -95,10 +156,143 @@ mod tests {
     use std::collections::BTreeSet;
 
     use tokio::sync::{mpsc, watch};
+    use zcash_keys::keys::UnifiedSpendingKey;
+    use zcash_protocol::consensus::MAIN_NETWORK;
 
     use super::*;
 
     const LONGEST_BLOCK: u8 = 3 * 3 + 2;
+    const EXPECTED_SELECTED_BLOCKS: u32 = 64;
+    const SAMPLED_BLOCKS: u32 = EXPECTED_SELECTED_BLOCKS * 1_024;
+    const PINNED_SELECTED_BLOCKS: usize = 63;
+    const PINNED_FIRST_SELECTED_BLOCK: u32 = 3_502;
+
+    fn selector(seed_byte: u8) -> TargetFreeSelector {
+        let ufvk = UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &[seed_byte; 32], AccountId::ZERO)
+            .expect("a seed of 32 bytes derives the spending key of account zero")
+            .to_unified_full_viewing_key();
+
+        TargetFreeSelector::new(&MAIN_NETWORK, &HashMap::from([(AccountId::ZERO, ufvk)]))
+            .expect("a wallet with one viewing key has a selector")
+    }
+
+    fn block_hash(index: u32) -> [u8; 32] {
+        let mut block_hash = [0; 32];
+        block_hash[..size_of::<u32>()].copy_from_slice(&index.to_le_bytes());
+        block_hash
+    }
+
+    fn selected_blocks(selector: &TargetFreeSelector) -> Vec<u32> {
+        let block_txids = block_txids(LONGEST_BLOCK);
+        (0..SAMPLED_BLOCKS)
+            .filter(|index| {
+                selector
+                    .triple_in(&block_hash(*index), &block_txids)
+                    .is_some()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_wallet_selects_the_same_blocks_every_time_and_another_wallet_selects_others() {
+        let selected = selected_blocks(&selector(0));
+
+        assert_eq!(selected, selected_blocks(&selector(0)));
+        assert_ne!(selected, selected_blocks(&selector(1)));
+    }
+
+    #[test]
+    fn about_one_block_in_the_interval_is_selected() {
+        assert_eq!(u64::from(SAMPLED_BLOCKS) / TARGET_FREE_BLOCK_INTERVAL, 64);
+        for seed_byte in 0..4 {
+            let selected = selected_blocks(&selector(seed_byte)).len();
+            assert!(
+                (EXPECTED_SELECTED_BLOCKS as usize / 2..=EXPECTED_SELECTED_BLOCKS as usize * 2)
+                    .contains(&selected),
+                "seed {seed_byte} selected {selected} blocks"
+            );
+        }
+    }
+
+    #[test]
+    fn the_selection_of_a_known_wallet_is_pinned() {
+        let selected = selected_blocks(&selector(0));
+
+        assert_eq!(
+            (selected.len(), selected.first().copied()),
+            (PINNED_SELECTED_BLOCKS, Some(PINNED_FIRST_SELECTED_BLOCK))
+        );
+    }
+
+    #[test]
+    fn a_selected_block_gives_one_of_its_triples_and_an_empty_block_gives_none() {
+        let selector = selector(0);
+        let block_txids = block_txids(LONGEST_BLOCK);
+        let selected = selected_blocks(&selector);
+        assert!(!selected.is_empty());
+
+        for index in selected {
+            let triple = selector
+                .triple_in(&block_hash(index), &block_txids)
+                .expect("the block was selected with the same transactions");
+            assert_eq!(triple, Triple::in_block(&block_txids, triple.target()));
+            assert_eq!(selector.triple_in(&block_hash(index), &[]), None);
+        }
+    }
+
+    #[test]
+    fn a_wallet_without_a_viewing_key_has_no_selector() {
+        assert!(TargetFreeSelector::new(&MAIN_NETWORK, &HashMap::new()).is_none());
+    }
+
+    #[tokio::test]
+    async fn target_free_triples_are_requested_one_triple_at_a_time() {
+        #[derive(Debug, PartialEq)]
+        enum Event {
+            Sent(TxId),
+            Answered(TxId),
+        }
+        let first_triple = Triple::in_block(&block_txids(3), txid(0));
+        let second_triple = Triple::in_block(&block_txids(6), txid(5));
+        let (triple_sender, triple_receiver) = mpsc::unbounded_channel();
+        let (event_log, mut events) = mpsc::unbounded_channel();
+        for triple in [&first_triple, &second_triple] {
+            triple_sender
+                .send(triple.clone())
+                .expect("the test holds the receiver of the triples");
+        }
+        drop(triple_sender);
+
+        request_target_free(triple_receiver, |txid| {
+            let event_log = event_log.clone();
+            async move {
+                event_log
+                    .send(Event::Sent(txid))
+                    .expect("the test holds the receiver of the event log");
+                tokio::task::yield_now().await;
+                event_log
+                    .send(Event::Answered(txid))
+                    .expect("the test holds the receiver of the event log");
+                Ok(raw_transaction(txid))
+            }
+        })
+        .await;
+
+        let mut logged = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            logged.push(event);
+        }
+        let expected = [&first_triple, &second_triple]
+            .into_iter()
+            .flat_map(|triple| {
+                triple
+                    .txids()
+                    .map(Event::Sent)
+                    .chain(triple.txids().map(Event::Answered))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(logged, expected);
+    }
 
     fn txid(index: u8) -> TxId {
         TxId::from_bytes([index; 32])

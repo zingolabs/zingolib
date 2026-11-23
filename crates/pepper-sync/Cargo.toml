@@ -68,6 +68,7 @@ hex.workspace = true
 
 # Documentation
 simple-mermaid.workspace = true
+blake2b_simd.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

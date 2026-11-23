@@ -85,6 +85,7 @@ pub enum FetchRequest {
         oneshot::Sender<Result<RawTransaction, tonic::Status>>,
         chaff::Triple,
     ),
+    TargetFreeTriple(chaff::Triple),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(

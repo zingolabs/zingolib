@@ -236,6 +236,7 @@ where
         &mut outpoint_map,
         HashMap::new(), // no need to scan transparent bundles as all relevant txs will not be evaded during scanning
         &pending_transactions,
+        BTreeMap::new(),
     )
     .await?;
 
