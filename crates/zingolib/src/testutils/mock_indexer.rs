@@ -1,6 +1,6 @@
 //! In-process stateful mock of the `CompactTxStreamer` service, a
 //! fabricated chain the real sync pipeline can scan, with no zebrad or
-//! zainod involved.
+//! zingod involved.
 //!
 //! [`MockChain`] holds compact blocks (with correct `prev_hash` linkage
 //! and cumulative `chain_metadata` tree sizes), full transaction bytes
@@ -2057,7 +2057,7 @@ impl CompactTxStreamer for MockIndexerService {
     ) -> Result<Response<Self::GetSubtreeRootsStream>, Status> {
         let fault = self.fault_for(Rpc::SubtreeRoots).await?;
         // A short regtest chain has no completed shards; an empty stream
-        // is exactly what zainod serves in the live suites.
+        // is exactly what zingod serves in the live suites.
         Ok(Response::new(stream_with_fault(Vec::new(), fault)))
     }
 
@@ -2106,7 +2106,7 @@ impl CompactTxStreamer for MockIndexerService {
         }
         // The validator rejects resubmitted bytes rather than
         // re-accepting them, with a phase-specific message; reproduce
-        // both rejections verbatim as zainod 0.6.0-rc.1 surfaces them
+        // both rejections verbatim as zingod 0.6.0-rc.1 surfaces them
         // (zingolabs/zaino#1392), so client handling is exercised
         // against the messages it really receives.
         if chain.mempool.contains(&bytes) {

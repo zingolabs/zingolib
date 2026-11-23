@@ -25,7 +25,7 @@ mock chain, twin, guarantee, testnet cell.
    2026-11-20: `libtonode-tests` folded into `zingolib`, so the cells sit
    under `crates/zingolib/tests/testnet/`, behind the `testnet` feature of
    `zingolib`.
-3. **The node is a zingolabs-operated zainod on a tagged release, serving
+3. **The node is a zingolabs-operated zingod on a tagged release, serving
    TLS, with NU6.3 active.** It does not exist yet. The fixture keeps one
    constant, `TESTNET_INDEXER`; the gated file's doc bullet names the node
    criterion, and one commit changes the constant and adds the nightly job

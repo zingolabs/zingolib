@@ -116,7 +116,7 @@
 
 **LightClient** — The user-facing entry point. Owns the connection to the Indexer, manages the sync lifecycle, and exposes operations such as send, shield, rescan, and balance.
 
-**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zl_netutils::GrpcIndexer`. The implementation this repo targets is **zainod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zainod exclusively (the Core stack — see the test-infrastructure glossary).
+**Indexer** — Any gRPC server that serves compact blocks and transaction data to the LightClient. Abstracted behind `zl_netutils::GrpcIndexer`. The implementation this repo targets is **zingod** (Rust, part of the zaino project); public-server deployments such as `zec.rocks:443` speak the same lightwallet gRPC protocol. This repo's test suites run zingod exclusively (the Core stack — see the test-infrastructure glossary). _Avoid_: zainod, the daemon's obsolete name.
 
 **ClientConfig** — Construction-time configuration for `LightClient`: indexer URI (optional), chain type, and wallet directory.
 
@@ -371,7 +371,7 @@
 
 ## Testing
 
-**Testnet cells** — Chain-bound tests in `crates/zingolib/tests/testnet.rs`, behind the non-default `testnet` feature of `zingolib`, that drive the wallet in-process through `LightClient` against the zingolabs zainod testnet node. They lived in the `libtonode-tests` crate until November 2026, when that crate folded into `zingolib`. The regtest suite of that crate, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
+**Testnet cells** — Chain-bound tests in `crates/zingolib/tests/testnet.rs`, behind the non-default `testnet` feature of `zingolib`, that drive the wallet in-process through `LightClient` against the zingolabs zingod testnet node. They lived in the `libtonode-tests` crate until November 2026, when that crate folded into `zingolib`. The regtest suite of that crate, and the `zcash_local_net` network combos it ran against, left with the regtest removal of October 2026; every guarantee that suite pinned now lives in a mock-chain twin, a testnet cell, or zaino's own suite, per `docs/testing/regtest-removal-ledger.md`. The vocabulary (testnet cell, twin, guarantee, mock chain) is defined in `docs/testing/CONTEXT.md`.
 
 **darkside-tests** — Deterministic reorg and edge-case tests that inject arbitrary blocks without mining. Their authoritative home is the mock-indexer darkside module inside zingolib, which runs offline; the standalone `darkside-tests` crate (driving the legacy indexer's "darkside" mode) is retired by the package-simplification work, its nine tests having been long ignored.
 
