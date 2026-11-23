@@ -441,14 +441,15 @@ impl LightWallet {
         Ok(self
             .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|judged_note| !judged_note.note_is_in(&forbidden_ids))
+            .filter(|judged_note| !forbidden_ids.contains(&judged_note.note.output_id()))
             .filter_map(|judged_note| {
                 judged_note
                     .verdict
                     .certainty()
                     .map(|certain| note_selection::Candidate {
                         certain,
-                        reserved_for_migration: judged_note.note_is_in(reserved_for_migration),
+                        reserved_for_migration: reserved_for_migration
+                            .contains(&judged_note.note.output_id()),
                         note: judged_note.note.clone(),
                     })
             })
@@ -495,12 +496,6 @@ impl Verdict {
 pub(crate) struct Judged<'a, N> {
     pub(crate) note: &'a N,
     pub(crate) verdict: Verdict,
-}
-
-impl<N: OutputInterface> Judged<'_, N> {
-    fn note_is_in(&self, output_ids: &HashSet<OutputId>) -> bool {
-        output_ids.contains(&self.note.output_id())
-    }
 }
 
 pub(crate) struct Judgement<'a> {
