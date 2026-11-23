@@ -16,7 +16,8 @@ use zingolib::sync::SyncModeError;
 use zingolib::testutils::chain_generics::conduct_chain::ConductChain;
 use zingolib::testutils::chain_generics::networked::NetworkedTestEnvironment;
 use zingolib::testutils::{default_test_wallet_settings, tempfile::TempDir};
-use zl_netutils::lightwallet_protocol::{GetSubtreeRootsArg, ShieldedProtocol};
+use zl_common::chain::GetSubtreeRootsArg;
+use zl_netutils::lightwallet_protocol::ShieldedProtocol;
 use zl_netutils::{GrpcIndexer, Indexer};
 
 use super::TESTNET_INDEXER;
@@ -132,12 +133,12 @@ async fn server_roots(grpc_client: &mut GrpcIndexer, pool: ShieldedPool) -> Vec<
         )
         .await
         .expect("the indexer streams its subtree roots");
-    while let Some(root) = stream
-        .message()
+    while let Some(root) = futures::StreamExt::next(&mut stream)
         .await
+        .transpose()
         .expect("the subtree root stream delivers every root")
     {
-        roots.push(root.root_hash);
+        roots.push(root.root_hash.to_vec());
     }
     roots
 }
@@ -176,7 +177,8 @@ async fn add_subtree_roots() {
         .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
         .await
         .expect("the testnet indexer serves its latest block")
-        .height as u32;
+        .height;
+    let tip = u32::from(tip);
 
     let temp_dir = TempDir::new().expect("the host provides a temporary wallet directory");
     let config = ClientConfig::builder()
