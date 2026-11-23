@@ -188,11 +188,7 @@ impl TransmitTarget for NakednetTarget {
         let mut client = self.0.clone();
         let data = raw_tx.to_vec();
         let _ = height;
-        async move {
-            client
-                .send_transaction(data, DEFAULT_REQUEST_TIMEOUT)
-                .await
-        }
+        async move { client.send_transaction(data, DEFAULT_REQUEST_TIMEOUT).await }
     }
 
     fn knows_transaction(&self, txid: &TxId) -> impl Future<Output = bool> + Send {
