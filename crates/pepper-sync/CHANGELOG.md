@@ -29,8 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every triple shows the indexer that the wallet has a transaction in that
   block. A keyed hash of the wallet's viewing key and the block hash selects
   the block and the triple, so the indexer cannot predict the choice and a
-  rescan repeats it. One such triple is in flight at a time, and the scan
-  waits for none of them.
+  rescan repeats it.
+- One worker requests every triple, with or without a wallet transaction,
+  one triple at a time and in the order the scan sends them. A scan sends
+  all the triples of its range before it reads a reply. The indexer
+  therefore sees the same pattern of requests for both kinds of triple. A
+  wallet transaction can wait behind the few other triples sent before it.
 - The crate depends on `blake2b_simd` directly. The choice above needs a
   keyed hash with a specified output, because the choice must stay the same
   across releases, and the standard library's hasher does not promise that.

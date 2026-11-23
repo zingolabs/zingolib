@@ -109,6 +109,11 @@ pub(crate) fn serialize_pending_transactions<'a>(
         .collect()
 }
 
+enum TransactionSource {
+    Stored(Box<Transaction>),
+    Requested(chaff::Triple, client::TransactionReply),
+}
+
 fn stored_transaction(
     consensus_parameters: &impl consensus::Parameters,
     pending_transactions: &HashMap<TxId, Vec<u8>>,
@@ -160,28 +165,45 @@ pub(crate) async fn scan_transactions(
         }
     };
 
+    let mut sources = Vec::with_capacity(scan_targets.len());
     for scan_target in scan_targets {
         let Some(txid) = scan_target.txid() else {
             continue;
         };
         send_target_free_triples(Some(scan_target.block_height()));
 
-        let stored_or_fetched = match stored_transaction(
+        let source = match stored_transaction(
             consensus_parameters,
             pending_transactions,
             wallet_blocks,
             &scan_target,
             txid,
         ) {
-            Some(transaction) => Ok((transaction, scan_target.block_height())),
+            Some(transaction) => TransactionSource::Stored(Box::new(transaction)),
             None => {
+                let triple = wallet_blocks.get(&scan_target.block_height()).map_or_else(
+                    || chaff::Triple::alone(txid),
+                    |wallet_block| chaff::Triple::in_block(wallet_block.txids(), txid),
+                );
+                let first_reply = client::request_transaction(&fetch_request_sender, &triple)?;
+                TransactionSource::Requested(triple, first_reply)
+            }
+        };
+        sources.push((scan_target, txid, source));
+    }
+    send_target_free_triples(None);
+
+    for (scan_target, txid, source) in sources {
+        let stored_or_fetched = match source {
+            TransactionSource::Stored(transaction) => {
+                Ok((*transaction, scan_target.block_height()))
+            }
+            TransactionSource::Requested(triple, first_reply) => {
                 client::get_transaction_and_block_height(
                     fetch_request_sender.clone(),
                     consensus_parameters,
-                    &wallet_blocks.get(&scan_target.block_height()).map_or_else(
-                        || chaff::Triple::alone(txid),
-                        |wallet_block| chaff::Triple::in_block(wallet_block.txids(), txid),
-                    ),
+                    &triple,
+                    first_reply,
                 )
                 .await
             }
@@ -250,7 +272,6 @@ pub(crate) async fn scan_transactions(
         )?;
         transactions.insert(txid, wallet_transaction);
     }
-    send_target_free_triples(None);
 
     Ok(ScannedTransactions {
         transactions,

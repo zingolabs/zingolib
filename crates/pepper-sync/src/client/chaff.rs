@@ -1,6 +1,6 @@
 use std::{collections::HashMap, future::Future};
 
-use futures::{StreamExt, future::join_all, stream::FuturesUnordered};
+use futures::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
@@ -15,8 +15,6 @@ const SELECTOR_KEY_BYTES: usize = 32;
 const SELECTION_BYTES: usize = 2 * size_of::<u64>();
 const SELECTOR_KEY_PERSONALIZATION: &[u8; blake2b_simd::PERSONALBYTES] = b"zl_chaff_sel_key";
 const SELECTION_PERSONALIZATION: &[u8; blake2b_simd::PERSONALBYTES] = b"zl_chaff_select_";
-
-const TARGET_REPLY_LOST: &str = "the task that requests the triple stopped before the target reply";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Triple {
@@ -106,49 +104,40 @@ impl TargetFreeSelector {
     }
 }
 
-/// - Sends one request for each transaction of every triple that `triples` yields.
+pub(crate) type TargetReplySender = oneshot::Sender<Result<RawTransaction, tonic::Status>>;
+
+pub(crate) struct TripleRequest {
+    pub(crate) triple: Triple,
+    pub(crate) target_reply_sender: Option<TargetReplySender>,
+}
+
+/// - Sends one request for each transaction of every triple that `triple_requests` yields.
+/// - Sends the reply for the target of a triple to its reply sender, if the triple has one.
 /// - Awaits every reply of one triple before it takes the next triple.
-pub(crate) async fn request_target_free<Request>(
-    mut triples: UnboundedReceiver<Triple>,
+pub(crate) async fn request_triples<Request>(
+    mut triple_requests: UnboundedReceiver<TripleRequest>,
     mut request_transaction: impl FnMut(TxId) -> Request,
 ) where
     Request: Future<Output = Result<RawTransaction, tonic::Status>>,
 {
-    while let Some(triple) = triples.recv().await {
-        join_all(triple.txids().map(&mut request_transaction)).await;
-    }
-}
-
-/// - Spawns a task that sends one request for each transaction of `triple`.
-/// - The task outlives this call until every chaff request has its reply.
-pub(crate) async fn request<Request>(
-    triple: &Triple,
-    request_transaction: impl FnMut(TxId) -> Request,
-) -> Result<RawTransaction, tonic::Status>
-where
-    Request: Future<Output = Result<RawTransaction, tonic::Status>> + Send + 'static,
-{
-    let target = triple.target();
-    let mut requests = triple
-        .txids()
-        .zip(triple.txids().map(request_transaction))
-        .map(|(txid, request)| async move { (txid, request.await) })
-        .collect::<FuturesUnordered<_>>();
-    let (target_reply_sender, target_reply_receiver) = oneshot::channel();
-    tokio::spawn(async move {
-        let mut target_reply_sender = Some(target_reply_sender);
+    while let Some(TripleRequest {
+        triple,
+        mut target_reply_sender,
+    }) = triple_requests.recv().await
+    {
+        let mut requests = triple
+            .txids()
+            .zip(triple.txids().map(&mut request_transaction))
+            .map(|(txid, request)| async move { (txid, request.await) })
+            .collect::<FuturesUnordered<_>>();
         while let Some((txid, reply)) = requests.next().await {
-            if txid == target
+            if txid == triple.target()
                 && let Some(target_reply_sender) = target_reply_sender.take()
             {
                 let _ignore_error = target_reply_sender.send(reply);
             }
         }
-    });
-
-    target_reply_receiver
-        .await
-        .unwrap_or_else(|_| Err(tonic::Status::cancelled(TARGET_REPLY_LOST)))
+    }
 }
 
 #[cfg(test)]
@@ -246,7 +235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn target_free_triples_are_requested_one_triple_at_a_time() {
+    async fn a_triple_with_a_target_and_a_triple_without_one_are_requested_alike() {
         #[derive(Debug, PartialEq)]
         enum Event {
             Sent(TxId),
@@ -254,16 +243,25 @@ mod tests {
         }
         let first_triple = Triple::in_block(&block_txids(3), txid(0));
         let second_triple = Triple::in_block(&block_txids(6), txid(5));
-        let (triple_sender, triple_receiver) = mpsc::unbounded_channel();
+        let (triple_request_sender, triple_request_receiver) = mpsc::unbounded_channel();
         let (event_log, mut events) = mpsc::unbounded_channel();
-        for triple in [&first_triple, &second_triple] {
-            triple_sender
-                .send(triple.clone())
-                .expect("the test holds the receiver of the triples");
+        let (target_reply_sender, target_reply) = oneshot::channel();
+        for (triple, target_reply_sender) in [
+            (&first_triple, Some(target_reply_sender)),
+            (&second_triple, None),
+        ] {
+            assert!(
+                triple_request_sender
+                    .send(TripleRequest {
+                        triple: triple.clone(),
+                        target_reply_sender,
+                    })
+                    .is_ok()
+            );
         }
-        drop(triple_sender);
+        drop(triple_request_sender);
 
-        request_target_free(triple_receiver, |txid| {
+        request_triples(triple_request_receiver, |txid| {
             let event_log = event_log.clone();
             async move {
                 event_log
@@ -282,16 +280,22 @@ mod tests {
         while let Ok(event) = events.try_recv() {
             logged.push(event);
         }
-        let expected = [&first_triple, &second_triple]
-            .into_iter()
-            .flat_map(|triple| {
-                triple
-                    .txids()
-                    .map(Event::Sent)
-                    .chain(triple.txids().map(Event::Answered))
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(logged, expected);
+        let mut logged = logged.as_slice();
+        for triple in [&first_triple, &second_triple] {
+            let triple_size = triple.txids().count();
+            let (sent, rest) = logged.split_at(triple_size);
+            let (answered, rest) = rest.split_at(triple_size);
+            assert_eq!(sent, triple.txids().map(Event::Sent).collect::<Vec<_>>());
+            for txid in triple.txids() {
+                assert!(answered.contains(&Event::Answered(txid)));
+            }
+            logged = rest;
+        }
+        assert!(logged.is_empty());
+        assert_eq!(
+            target_reply.await.map(Result::ok),
+            Ok(Some(raw_transaction(first_triple.target())))
+        );
     }
 
     fn txid(index: u8) -> TxId {
@@ -380,8 +384,18 @@ mod tests {
         let (release_chaff, chaff_released) = watch::channel(false);
         let (request_log, mut requested) = mpsc::unbounded_channel();
         let (reply_log, mut replied) = mpsc::unbounded_channel();
+        let (triple_request_sender, triple_request_receiver) = mpsc::unbounded_channel();
+        let (target_reply_sender, target_reply) = oneshot::channel();
+        assert!(
+            triple_request_sender
+                .send(TripleRequest {
+                    triple: Triple::in_block(&block_txids, target),
+                    target_reply_sender: Some(target_reply_sender),
+                })
+                .is_ok()
+        );
 
-        let reply = request(&Triple::in_block(&block_txids, target), |txid| {
+        tokio::spawn(request_triples(triple_request_receiver, move |txid| {
             let mut chaff_released = chaff_released.clone();
             let request_log = request_log.clone();
             let reply_log = reply_log.clone();
@@ -400,11 +414,12 @@ mod tests {
                     .expect("the test holds the receiver of the reply log");
                 Ok(raw_transaction(txid))
             }
-        })
-        .await
-        .expect("the request for the target answers with a transaction");
+        }));
+        let reply = target_reply
+            .await
+            .expect("the worker holds the reply sender until the target reply arrives");
 
-        assert_eq!(reply, raw_transaction(target));
+        assert_eq!(reply.ok(), Some(raw_transaction(target)));
         let mut requested_in_order = Vec::new();
         while let Ok(txid) = requested.try_recv() {
             requested_in_order.push(txid);
@@ -433,18 +448,30 @@ mod tests {
     async fn a_failed_chaff_request_does_not_fail_the_target() {
         let target = txid(1);
 
-        let reply = request(
-            &Triple::in_block(&block_txids(3), target),
-            |txid| async move {
-                if txid == target {
-                    Ok(raw_transaction(txid))
-                } else {
-                    Err(tonic::Status::not_found("no such transaction"))
-                }
-            },
-        )
+        let (triple_request_sender, triple_request_receiver) = mpsc::unbounded_channel();
+        let (target_reply_sender, target_reply) = oneshot::channel();
+        assert!(
+            triple_request_sender
+                .send(TripleRequest {
+                    triple: Triple::in_block(&block_txids(3), target),
+                    target_reply_sender: Some(target_reply_sender),
+                })
+                .is_ok()
+        );
+        drop(triple_request_sender);
+
+        request_triples(triple_request_receiver, |txid| async move {
+            if txid == target {
+                Ok(raw_transaction(txid))
+            } else {
+                Err(tonic::Status::not_found("no such transaction"))
+            }
+        })
         .await;
 
-        assert!(matches!(reply, Ok(raw_transaction) if raw_transaction.data == target.as_ref()));
+        assert_eq!(
+            target_reply.await.map(Result::ok),
+            Ok(Some(raw_transaction(target)))
+        );
     }
 }

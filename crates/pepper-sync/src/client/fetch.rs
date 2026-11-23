@@ -34,12 +34,12 @@ pub(crate) async fn fetch<C>(
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
-    let (target_free_triple_sender, target_free_triple_receiver) = unbounded_channel();
-    let target_free_client = client.clone();
-    tokio::spawn(chaff::request_target_free(
-        target_free_triple_receiver,
+    let (triple_request_sender, triple_request_receiver) = unbounded_channel();
+    let triple_client = client.clone();
+    tokio::spawn(chaff::request_triples(
+        triple_request_receiver,
         move |txid| {
-            let mut client = target_free_client.clone();
+            let mut client = triple_client.clone();
             async move { get_transaction(&mut client, txid).await }
         },
     ));
@@ -54,7 +54,7 @@ pub(crate) async fn fetch<C>(
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, &target_free_triple_sender, request).await;
+            fetch_from_server(&mut client, &triple_request_sender, request).await;
         }
     }
 }
@@ -107,7 +107,7 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 //
 async fn fetch_from_server<C>(
     client: &mut C,
-    target_free_triple_sender: &UnboundedSender<chaff::Triple>,
+    triple_request_sender: &UnboundedSender<chaff::TripleRequest>,
     fetch_request: FetchRequest,
 ) where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
@@ -153,16 +153,17 @@ async fn fetch_from_server<C>(
             let _ignore_error = sender.send(tree_state);
         }
         FetchRequest::TargetFreeTriple(triple) => {
-            let _ignore_error = target_free_triple_sender.send(triple);
+            let _ignore_error = triple_request_sender.send(chaff::TripleRequest {
+                triple,
+                target_reply_sender: None,
+            });
         }
         FetchRequest::Transaction(sender, triple) => {
             tracing::debug!("Fetching transaction. {:?}", triple.target());
-            let transaction = chaff::request(&triple, |txid| {
-                let mut client = client.clone();
-                async move { get_transaction(&mut client, txid).await }
-            })
-            .await;
-            let _ignore_error = sender.send(transaction);
+            let _ignore_error = triple_request_sender.send(chaff::TripleRequest {
+                triple,
+                target_reply_sender: Some(sender),
+            });
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
             tracing::debug!(
