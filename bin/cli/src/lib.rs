@@ -1238,7 +1238,7 @@ async fn build_zingo_config(filled_template: &CliConfigTemplate) -> std::io::Res
                     .map_err(|e| commands::render_error_chain(&e))?
                     .get_latest_block(DEFAULT_REQUEST_TIMEOUT)
                     .await
-                    .map(|block_id| block_id.height as u32)
+                    .map(|block_id| u32::from(block_id.height))
                     .map_err(|e| commands::render_error_chain(&e))
             }
             .await

@@ -16,7 +16,7 @@ use zcash_protocol::{
 };
 use zcash_transparent::address::Script;
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
+use zl_common::chain::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
 
 use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
 use crate::{
@@ -710,7 +710,7 @@ fn set_checkpoint_retentions<L>(
 #[cfg(test)]
 mod tests {
     use zcash_primitives::transaction::TxId;
-    use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
+    use zl_common::chain::{ChainMetadata, CompactTx};
 
     use super::*;
 
@@ -734,9 +734,9 @@ mod tests {
 
     fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
         CompactBlock {
-            height: 100,
-            hash: vec![1; 32],
-            prev_hash: vec![0; 32],
+            height: BlockHeight::from_u32(100),
+            hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
             time: 0,
             header: vec![],
             vtx: vec![],
@@ -771,7 +771,7 @@ mod tests {
     /// be counted by the scanner without building a real note.
     fn compact_ironwood_action() -> CompactOrchardAction {
         CompactOrchardAction {
-            nullifier: vec![0; 32],
+            nullifier: [0; 32],
             cmx: vec![0; 32],
             ephemeral_key: vec![0; 32],
             ciphertext: vec![0; 52],
@@ -783,14 +783,14 @@ mod tests {
         metadata_ironwood_size: u32,
     ) -> CompactBlock {
         CompactBlock {
-            height: 100,
-            hash: vec![1; 32],
-            prev_hash: vec![0; 32],
+            height: BlockHeight::from_u32(100),
+            hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
             time: 0,
             header: vec![],
             vtx: vec![CompactTx {
                 index: 0,
-                txid: vec![3; 32],
+                txid: TxId::from_bytes([3; 32]),
                 fee: 0,
                 spends: vec![],
                 outputs: vec![],
@@ -852,10 +852,10 @@ mod tests {
     fn checkpoints_are_placed_on_the_checkpoint_heights_only() {
         let first = block_with_served_ironwood_actions(5, 105);
         let mut second = block_with_served_ironwood_actions(5, 110);
-        second.height = 101;
-        second.hash = vec![2; 32];
-        second.prev_hash = first.hash.clone();
-        second.vtx[0].txid = vec![4; 32];
+        second.height = BlockHeight::from_u32(101);
+        second.hash = BlockHash([2; 32]);
+        second.prev_hash = first.hash;
+        second.vtx[0].txid = TxId::from_bytes([4; 32]);
 
         let scan_data = scan_compact_blocks(
             vec![first, second],
@@ -1081,8 +1081,8 @@ mod tests {
     ) -> CompactBlock {
         let script = Script::from(external_address(ufvk, index).script());
         let mut compact_block = block_with_served_ironwood_actions(0, 10);
-        compact_block.height = height;
-        compact_block.vtx[0].vout = vec![zl_netutils::lightwallet_protocol::TxOut {
+        compact_block.height = BlockHeight::from_u32(height as u32);
+        compact_block.vtx[0].vout = vec![zl_common::chain::TxOut {
             value: 100_000,
             script_pub_key: script.0.0,
         }];
@@ -1221,12 +1221,12 @@ mod tests {
     fn outpoints_only_collected_above_transparent_scan_floor() {
         fn block_spending_outpoint(height: u64, hash: u8, prevout_txid: [u8; 32]) -> CompactBlock {
             let mut compact_block = block_with_served_ironwood_actions(0, 10);
-            compact_block.height = height;
-            compact_block.hash = vec![hash; 32];
-            compact_block.prev_hash = vec![hash - 1; 32];
-            compact_block.vtx[0].txid = vec![hash + 10; 32];
-            compact_block.vtx[0].vin = vec![zl_netutils::lightwallet_protocol::CompactTxIn {
-                prevout_txid: prevout_txid.to_vec(),
+            compact_block.height = BlockHeight::from_u32(height as u32);
+            compact_block.hash = BlockHash([hash; 32]);
+            compact_block.prev_hash = BlockHash([hash - 1; 32]);
+            compact_block.vtx[0].txid = TxId::from_bytes([hash + 10; 32]);
+            compact_block.vtx[0].vin = vec![zl_common::chain::CompactTxIn {
+                prevout_txid: TxId::from_bytes(prevout_txid),
                 prevout_index: 0,
             }];
             compact_block

@@ -917,7 +917,8 @@ pub fn init_new(connection: IndexerConnection, birthday: u32) -> Result<String, 
                             .map_err(|e| chain_text(&e))
                     })
                     .map_err(ZingolibError::init)?
-                    .height as u32
+                    .height
+                    .into()
                 }
                 None => {
                     if birthday > 0 {

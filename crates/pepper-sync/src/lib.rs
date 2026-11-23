@@ -132,7 +132,7 @@ pub mod test_support {
     /// Per-transaction counts.
     pub mod transaction {
         use zcash_protocol::ShieldedPool;
-        use zl_netutils::lightwallet_protocol::CompactTx;
+        use zl_common::chain::CompactTx;
 
         /// Counts the outputs `compact_tx` appends to `pool`'s note commitment tree.
         pub fn shielded_output_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
@@ -149,7 +149,7 @@ pub mod test_support {
     /// the same name over `vtx`.
     pub mod block {
         use zcash_protocol::ShieldedPool;
-        use zl_netutils::lightwallet_protocol::CompactBlock;
+        use zl_common::chain::CompactBlock;
 
         /// Counts the outputs `compact_block` appends to `pool`'s note commitment tree.
         pub fn shielded_output_count(compact_block: &CompactBlock, pool: ShieldedPool) -> u32 {

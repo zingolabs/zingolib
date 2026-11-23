@@ -12,7 +12,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use zl_netutils::lightwallet_protocol::CompactBlock;
+use zl_common::chain::CompactBlock;
 
 #[cfg(any(test, feature = "test-features"))]
 use crate::engine::SyncStateOps;

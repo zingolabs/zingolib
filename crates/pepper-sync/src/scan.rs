@@ -12,7 +12,7 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
+use zl_common::chain::{CompactBlock, CompactTx};
 
 use crate::engine::ScanTargetOps;
 use crate::{
@@ -165,12 +165,12 @@ where
         .first()
         .expect("compacts blocks should not be empty")
         .height
-        != u64::from(scan_range.block_range().start)
+        != scan_range.block_range().start
         || compact_blocks
             .last()
             .expect("compacts blocks should not be empty")
             .height
-            != u64::from(scan_range.block_range().end - 1)
+            != scan_range.block_range().end - 1
     {
         panic!("compact blocks do not match scan range!")
     }
@@ -335,7 +335,7 @@ fn collect_nullifiers_compact(
     let sapling = transaction
         .spends
         .iter()
-        .map(|spend| sapling_crypto::Nullifier::from_slice(spend.nf.as_slice()))
+        .map(|spend| sapling_crypto::Nullifier::from_slice(&spend.nullifier))
         .collect::<Result<Vec<_>, TryFromSliceError>>()?;
     let orchard = transaction
         .actions
@@ -369,11 +369,8 @@ fn collect_outpoints_compact(
     let txid = transaction::get_compact_txid(transaction);
 
     transaction.vin.iter().for_each(|outpoint| {
-        let mut txid_bytes = [0u8; 32];
-        txid_bytes.copy_from_slice(&outpoint.prevout_txid);
-        let prevout_txid = TxId::from_bytes(txid_bytes);
         outpoint_map.insert(
-            OutputId::new(prevout_txid, outpoint.prevout_index),
+            OutputId::new(outpoint.prevout_txid, outpoint.prevout_index),
             ScanTarget::internal(block_height, txid),
         );
     });

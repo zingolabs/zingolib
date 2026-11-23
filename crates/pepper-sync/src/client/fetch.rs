@@ -7,20 +7,16 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::instrument;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zl_common::chain::TreeState;
-use zl_netutils::{
-    Indexer, TransparentIndexer,
-    lightwallet_protocol::{
-        BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
-        PoolType, RawTransaction, TransparentAddressBlockFilter, TxFilter,
-    },
+use zcash_protocol::{PoolType, ShieldedPool};
+use zl_common::chain::{
+    BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply,
+    GetSubtreeRootsArg, RawTransaction, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
+use zl_netutils::{CompactBlockStream, Indexer, TransparentIndexer};
 
-use crate::client::FetchRequest;
+use crate::client::{FetchRequest, SubtreeRootStream};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
-
-use zl_netutils::lightwallet_protocol::{GetSubtreeRootsArg, SubtreeRoot};
 
 /// Receives [`self::FetchRequest`]'s via an [`tokio::sync::mpsc::UnboundedReceiver`] for queueing,
 /// prioritisation and fetching from the server.
@@ -168,11 +164,16 @@ where
 }
 
 #[instrument(skip(client), name = "fetch::get_lightd_info", err, level = "info")]
-pub(super) async fn get_lightd_info<C>(client: &mut C) -> Result<LightdInfo, tonic::Status>
+pub(super) async fn get_lightwallet_protocol_version<C>(
+    client: &mut C,
+) -> Result<String, tonic::Status>
 where
     C: Indexer,
 {
-    client.get_lightd_info(UNARY_RPC_TIMEOUT).await
+    Ok(client
+        .get_lightd_info(UNARY_RPC_TIMEOUT)
+        .await?
+        .lightwallet_protocol_version)
 }
 
 #[instrument(skip(client), name = "fetch::get_latest_block", err, level = "info")]
@@ -191,13 +192,7 @@ where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client
-        .get_block(
-            BlockId {
-                height: u64::from(block_height),
-                hash: vec![],
-            },
-            UNARY_RPC_TIMEOUT,
-        )
+        .get_block(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
         .await
 }
 
@@ -207,33 +202,27 @@ async fn get_block_range<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
     include_transparent: bool,
-) -> Result<tonic::Streaming<CompactBlock>, tonic::Status>
+) -> Result<CompactBlockStream, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client
         .get_block_range(
             BlockRange {
-                start: Some(BlockId {
-                    height: u64::from(block_range.start),
-                    hash: vec![],
-                }),
-                end: Some(BlockId {
-                    height: u64::from(block_range.end) - 1,
-                    hash: vec![],
-                }),
+                start: BlockId::from_height(block_range.start),
+                end: BlockId::from_height(block_range.end - 1),
                 pool_types: if include_transparent {
                     vec![
-                        PoolType::Transparent as i32,
-                        PoolType::Sapling as i32,
-                        PoolType::Orchard as i32,
-                        PoolType::Ironwood as i32,
+                        PoolType::Transparent,
+                        PoolType::Shielded(ShieldedPool::Sapling),
+                        PoolType::Shielded(ShieldedPool::Orchard),
+                        PoolType::Shielded(ShieldedPool::Ironwood),
                     ]
                 } else {
                     vec![
-                        PoolType::Sapling as i32,
-                        PoolType::Orchard as i32,
-                        PoolType::Ironwood as i32,
+                        PoolType::Shielded(ShieldedPool::Sapling),
+                        PoolType::Shielded(ShieldedPool::Orchard),
+                        PoolType::Shielded(ShieldedPool::Ironwood),
                     ]
                 },
             },
@@ -246,21 +235,15 @@ where
 async fn get_block_range_nullifiers<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, tonic::Status>
+) -> Result<CompactBlockStream, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client
         .get_block_range_nullifiers(
             BlockRange {
-                start: Some(BlockId {
-                    height: u64::from(block_range.start),
-                    hash: vec![],
-                }),
-                end: Some(BlockId {
-                    height: u64::from(block_range.end) - 1,
-                    hash: vec![],
-                }),
+                start: BlockId::from_height(block_range.start),
+                end: BlockId::from_height(block_range.end - 1),
                 pool_types: vec![],
             },
             FINITE_STREAM_TIMEOUT,
@@ -273,11 +256,11 @@ async fn get_subtree_roots<C>(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status>
+) -> Result<SubtreeRootStream, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    client
+    let stream = client
         .get_subtree_roots(
             GetSubtreeRootsArg {
                 start_index,
@@ -286,7 +269,8 @@ where
             },
             FINITE_STREAM_TIMEOUT,
         )
-        .await
+        .await?;
+    Ok(Box::pin(stream))
 }
 
 #[instrument(skip(client), name = "fetch::get_tree_state", err, level = "info")]
@@ -298,13 +282,7 @@ where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client
-        .get_tree_state(
-            BlockId {
-                height: block_height.into(),
-                hash: vec![],
-            },
-            UNARY_RPC_TIMEOUT,
-        )
+        .get_tree_state(BlockId::from_height(block_height), UNARY_RPC_TIMEOUT)
         .await
 }
 
@@ -317,7 +295,7 @@ where
             TxFilter {
                 block: None,
                 index: 0,
-                hash: txid.as_ref().to_vec(),
+                hash: Some(txid),
             },
             UNARY_RPC_TIMEOUT,
         )
@@ -333,8 +311,7 @@ async fn get_address_utxos<C>(
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
-    let start_height: u64 = start_height.into();
-    Ok(client
+    client
         .get_address_utxos(
             GetAddressUtxosArg {
                 addresses,
@@ -343,8 +320,7 @@ where
             },
             UNARY_RPC_TIMEOUT,
         )
-        .await?
-        .address_utxos)
+        .await
 }
 
 #[allow(deprecated)]
@@ -352,19 +328,13 @@ async fn get_taddress_txs<C>(
     client: &mut C,
     address: String,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<RawTransaction>, tonic::Status>
+) -> Result<zl_netutils::RawTransactionStream, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let range = Some(BlockRange {
-        start: Some(BlockId {
-            height: block_range.start.into(),
-            hash: vec![],
-        }),
-        end: Some(BlockId {
-            height: u64::from(block_range.end) - 1,
-            hash: vec![],
-        }),
+        start: BlockId::from_height(block_range.start),
+        end: BlockId::from_height(block_range.end - 1),
         pool_types: vec![],
     });
 
@@ -381,7 +351,7 @@ where
 /// This is not called from the fetch request framework and is intended to be called independently.
 pub(crate) async fn get_mempool_stream<C>(
     client: &mut C,
-) -> Result<tonic::Streaming<RawTransaction>, tonic::Status>
+) -> Result<zl_netutils::RawTransactionStream, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {

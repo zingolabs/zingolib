@@ -17,10 +17,12 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use zl_common::chain::TreeState;
+use futures::Stream;
+use zl_common::chain::{
+    BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
+};
 use zl_netutils::{
-    Indexer, TransparentIndexer,
-    lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
+    CompactBlockStream, Indexer, SubtreeRootStream, TransparentIndexer,
 };
 
 use crate::{
@@ -28,20 +30,24 @@ use crate::{
     witness::Frontiers,
 };
 
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
-
 pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
-async fn next_stream_item<T>(
-    stream: &mut tonic::Streaming<T>,
+/// Pulls the next item from any item-at-a-time stream, bounding the wait by
+/// [`STREAM_MSG_TIMEOUT`]. Works over [`tonic::Streaming`] (a gRPC response stream) and over a
+/// mapped [`Stream`] alike, since both yield `Result<T, tonic::Status>` per item.
+pub(crate) async fn next_stream_item<T, S>(
+    stream: &mut S,
     what: &'static str,
-) -> Result<Option<T>, tonic::Status> {
-    match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
-        Ok(res) => res,
+) -> Result<Option<T>, tonic::Status>
+where
+    S: Stream<Item = Result<T, tonic::Status>> + Unpin,
+{
+    match tokio::time::timeout(STREAM_MSG_TIMEOUT, futures::StreamExt::next(stream)).await {
+        Ok(item) => item.transpose(),
         Err(_) => Err(tonic::Status::deadline_exceeded(format!(
             "{what} stream message timeout"
         ))),
@@ -51,7 +57,6 @@ async fn next_stream_item<T>(
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
-#[derive(Debug)]
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
@@ -64,13 +69,13 @@ pub enum FetchRequest {
     ///
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<CompactBlockStream, tonic::Status>>,
         Range<BlockHeight>,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<CompactBlockStream, tonic::Status>>,
         Range<BlockHeight>,
     ),
     /// Gets the tree states for a specified block height.
@@ -81,6 +86,7 @@ pub enum FetchRequest {
     /// Get a full transaction by txid.
     Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
+    /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
         oneshot::Sender<Result<Vec<GetAddressUtxosReply>, tonic::Status>>,
@@ -88,12 +94,12 @@ pub enum FetchRequest {
     ),
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
-        oneshot::Sender<Result<tonic::Streaming<RawTransaction>, tonic::Status>>,
+        oneshot::Sender<Result<zl_netutils::RawTransactionStream, tonic::Status>>,
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
-        oneshot::Sender<Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>,
+        oneshot::Sender<Result<SubtreeRootStream, tonic::Status>>,
         u32,
         i32,
         u32,
@@ -112,9 +118,7 @@ pub(crate) async fn check_lightwallet_protocol_version<C>(client: &mut C) -> Res
 where
     C: Indexer,
 {
-    let version = fetch::get_lightd_info(client)
-        .await?
-        .lightwallet_protocol_version;
+    let version = fetch::get_lightwallet_protocol_version(client).await?;
 
     if parse_protocol_version(&version)
         .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION)
@@ -157,7 +161,7 @@ pub(crate) async fn get_chain_height(
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
 
-    Ok(BlockHeight::from_u32(chain_tip.height as u32))
+    Ok(chain_tip.height)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -187,7 +191,7 @@ pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
     include_transparent: bool,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<CompactBlockStream, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
@@ -213,7 +217,7 @@ pub(crate) async fn get_compact_block_range(
 pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<CompactBlockStream, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::NullifierRange(reply_sender, block_range))
@@ -370,8 +374,9 @@ pub(crate) async fn get_transaction_and_block_height(
             Err(status) => return Err(ServerError::RequestFailed(status)),
         }
     };
-    let block_height =
-        BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
+    let zl_common::chain::RawTransactionStatus::Mined(block_height) = raw_transaction.status else {
+        return Err(ServerError::UnexpectedUnminedTransaction);
+    };
     let transaction = Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
@@ -461,9 +466,11 @@ pub(crate) async fn get_transparent_address_transactions(
     let transactions = raw_transactions
         .into_iter()
         .map(|raw_transaction| {
-            let block_height = BlockHeight::from_u32(
-                u32::try_from(raw_transaction.height).expect("should be valid u32"),
-            );
+            let zl_common::chain::RawTransactionStatus::Mined(block_height) =
+                raw_transaction.status
+            else {
+                return Err(ServerError::UnexpectedUnminedTransaction);
+            };
 
             let transaction = Transaction::read(
                 &raw_transaction.data[..],
@@ -484,7 +491,7 @@ pub(crate) async fn get_transparent_address_transactions(
 pub(crate) async fn get_mempool_transaction_stream<C>(
     client: &mut C,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
+) -> Result<zl_netutils::RawTransactionStream, MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {

@@ -22,6 +22,9 @@ lightwallet-protocol.workspace = true
 # The domain vocabulary a `TreeState` (and future primitives) parse into at this crate's wire
 # boundary, instead of handing the raw proto type further up the stack.
 zl-common.workspace = true
+# `StreamExt::map`, to parse each streamed `SubtreeRoot` at the boundary. Already a transitive
+# dependency through tonic, so this adds no new node to the dependency graph.
+futures.workspace = true
 tokio-stream = { workspace = true, optional = true }
 
 # Nym mixnet transport (zingo-adrs zingolib/0011), optional. The stack
