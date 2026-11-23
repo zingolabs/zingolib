@@ -11258,7 +11258,6 @@ dependencies = [
  "jubjub",
  "log",
  "orchard",
- "prost 0.14.4",
  "sapling-crypto",
  "serde",
  "shardtree",
