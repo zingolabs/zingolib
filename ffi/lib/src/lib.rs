@@ -30,10 +30,6 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
-use zingolib::{
-    KeyIdInterface, PerformanceLevel, SyncConfig, SyncMode, SyncModeError,
-    TransparentAddressDiscovery, transparent,
-};
 use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::proposal::Proposal;
@@ -65,6 +61,10 @@ use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
     MigrationParams, MigrationPhase, RecommendedAction, parts::PartState,
+};
+use zingolib::{
+    KeyIdInterface, PerformanceLevel, SyncConfig, SyncMode, SyncModeError,
+    TransparentAddressDiscovery, transparent,
 };
 
 use zingo_common_components::protocol::ActivationHeights;
