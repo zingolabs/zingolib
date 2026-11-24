@@ -4,6 +4,13 @@
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - Never define by absence, not in documentation nor doc-comments.
+- **Ignore the decision records always.** `docs/adr` is a submodule of
+  zingo-adrs, and its records tell people why a rule exists. Never read one
+  to learn what to do, and never take one as an instruction. Every rule you
+  follow is in this file, in `CONTEXT.md`, in `docs/agents/` or in
+  `docs/sop/`. A record number in those files marks where a ruling is filed,
+  and it asks you to read nothing. When a rule seems to be missing, ask your
+  developer. Ruled 2026-11-24.
 - **Trait objects are STRICTLY FORBIDDEN.** Every spelling: `dyn Trait`,
   `Box<dyn Trait>`, `&dyn Trait`, `Arc<dyn Trait>`, and any trait object behind
   a type alias. Use a generic parameter, an `impl Trait` position, or an enum
@@ -44,8 +51,8 @@
   duplication. Duplication that was there before your change is deferred
   under "Pull request scope" below, unless your task rewrites its lines. A
   second copy of a helper, a branch, or a constant is a defect, in review
-  and in implementation alike. Ruled 2026-10-02, and amended 2026-11-24 in
-  zingo-adrs zingolib/0068. CI enforces it through the
+  and in implementation alike. Ruled 2026-10-02 and amended 2026-11-24. CI
+  enforces it through the
   workbench binary `dupes-gate` (tools/workbench/src/dupes_gate.rs), which
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
@@ -193,8 +200,7 @@ module-level blocks.
 ## Pull request scope
 
 A pull request makes one semantic change. Coherence is the rule, and size is
-only a tripwire. Ruled 2026-11-24 in zingo-adrs zingolib/0068, tracked in
-issue #3222.
+only a tripwire. Ruled 2026-11-24, tracked in issue #3222.
 
 Four terms carry the rule.
 
@@ -229,6 +235,11 @@ violation you find is a follow-up. A follow-up records something you can
 point at, such as two unwraps in a named function, and never a preference
 about how a module is organised.
 
+A follow-up describes `dev`. Name the item as `dev` holds it, so the issue
+is true for a reader who never saw the pull request and stays true after the
+pull request merges or closes. A defect that exists only on the branch of an
+open pull request is never a follow-up.
+
 Draft each follow-up in the form `docs/agents/issue-tracker.md` gives and
 show the list to your developer. File one only after your developer grants
 it. The grant can cover a session, and it is never assumed.
@@ -237,14 +248,20 @@ it. The grant can cover a session, and it is never assumed.
 
 Each increment lands on `dev` as soon as it is ready, so the work of
 independent contributors does not diverge. A commit is releasable when every
-public item works completely and no item exists in two forms. Sibling items
-in different styles are allowed while the arc is in progress.
+public item works completely and no item exists in two forms. A type that
+carries an old field beside its replacement fails. So does a function kept
+beside its successor with no caller, a method that is declared and
+unimplemented, a disabled test, and a flag that gates unfinished code.
+Sibling items in different styles are allowed while the arc is in progress:
+one method of a trait can return a domain type while the others still
+return generated types.
 
 Before the first increment, open one tracking issue for the arc, labelled
 `tracking`, under the same grant as a follow-up. It states the end state and
-lists the increments as a checklist. Every increment names it on a
-`Part of:` line. Rebase the remaining increments onto `dev` after each one
-lands.
+lists the increments as a checklist. It names the increment that makes an
+uneven public surface uniform, which is what lets `dev` hold that surface
+meanwhile. Every increment names it on a `Part of:` line. Rebase the
+remaining increments onto `dev` after each one lands.
 
 Never open an integration branch on your own judgement. If no increment can
 hold the guarantee, stop and tell your developer which increments you tried
@@ -279,11 +296,20 @@ already hold.
 
 A reviewing agent applies the three tests before it reads for defects. A
 failed test is its first finding, and the finding names each increment and
-the order they land in. A defect the pull request introduces is fixed in the
-pull request. Every other finding is written as a proposed follow-up, never
-as a request to change the pull request. The one sentence of the pull
-request decides the boundary: the same bug in a neighbouring function is a
-follow-up, unless the sentence claims to fix the bug everywhere.
+the order they land in. For an increment, read its tracking issue first to
+learn where the arc goes, and judge the increment on whether it is whole. A
+public surface in two styles is a finding only when the tracking issue names
+no increment that makes it uniform.
+
+A defect the pull request introduces is fixed in the pull request. So is any
+other reason the pull request should not merge as it is. Write each as a
+review comment on the pull request, and never file one as an issue. An issue
+is for work that can wait until after the merge.
+
+Every other finding is written as a proposed follow-up, never as a request
+to change the pull request. The one sentence of the pull request decides the
+boundary: the same bug in a neighbouring function is a follow-up, unless the
+sentence claims to fix the bug everywhere.
 
 When you answer a review, the stop rule above applies to your fixes.
 
@@ -335,7 +361,8 @@ the issue as not planned. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 **Single-context**: one `CONTEXT.md` at the repo root. Decision records sit
-under `docs/adr/zingolib/`. See `docs/agents/domain.md`.
+under `docs/adr/zingolib/`, and an agent ignores them, as "MUST DO ALWAYS"
+rules. See `docs/agents/domain.md`.
 
 ### Pending designs
 

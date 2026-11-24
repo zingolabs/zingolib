@@ -38,6 +38,12 @@ A follow-up is an issue for work that a pull request found and left out
 - the condition that closes the issue,
 - a link to the pull request that found it.
 
+A follow-up describes `dev`. It names the item as `dev` holds it, so the
+issue is true for a reader who never saw the pull request. A defect that
+exists only on the branch of an open pull request is never a follow-up, and
+neither is a finding that blocks a merge. That finding is a review comment
+on the pull request.
+
 It carries the labels `follow-up` and `needs-triage` beside its component
 label. Before you file one, search the open issues for the same file and
 item (`gh issue list --label follow-up --search <item>`) and comment on a
@@ -50,7 +56,8 @@ grants it.
 
 An arc has one tracking issue, labelled `tracking`, opened before its first
 increment. Its body states the end state and lists the increments as a
-checklist. Each increment names it on the `Part of:` line of its pull
+checklist. It names the increment that makes an uneven public surface
+uniform. Each increment names it on the `Part of:` line of its pull
 request, and its author ticks the box when the increment merges.
 
 ## When a skill says "publish to the issue tracker"
