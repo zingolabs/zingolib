@@ -249,11 +249,11 @@ mod tests {
         let client = funded_client().await;
         {
             let mut wallet = client.wallet().write().await;
-            for transaction in wallet.wallet_transactions.values_mut() {
-                for note in transaction.orchard_notes_mut() {
-                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
-                }
-            }
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                TxId::from_bytes([9; 32]),
+                |_| true,
+            );
         }
         let violations = client.wallet().read().await.invariant_violations();
         assert!(
@@ -277,14 +277,11 @@ mod tests {
                     ConfirmationStatus::Failed(5.into()),
                 ),
             );
-            for transaction in wallet.wallet_transactions.values_mut() {
-                if transaction.txid() == failed {
-                    continue;
-                }
-                for note in transaction.orchard_notes_mut() {
-                    note.set_spending_transaction(Some(failed));
-                }
-            }
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                failed,
+                |note| note.output_id().txid() != failed,
+            );
         }
         let violations = client.wallet().read().await.invariant_violations();
         assert!(
