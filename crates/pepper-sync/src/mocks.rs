@@ -10,8 +10,45 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
+use tokio::sync::mpsc;
 use zcash_protocol::{TxId, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use zl_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+
+use crate::client::FetchRequest;
+
+pub(crate) const EMPTY_TREE_HEX: &str = "000000";
+pub(crate) const OMITTED_TREE_HEX: &str = "";
+pub(crate) const ZERO_HASH_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+
+pub(crate) fn empty_trees(block_height: BlockHeight) -> TreeState {
+    TreeState {
+        height: u64::from(block_height),
+        hash: ZERO_HASH_HEX.to_string(),
+        sapling_tree: EMPTY_TREE_HEX.to_string(),
+        orchard_tree: EMPTY_TREE_HEX.to_string(),
+        ironwood_tree: EMPTY_TREE_HEX.to_string(),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn spawn_tree_state_fetcher(
+    tree_state_at: impl Fn(BlockHeight) -> TreeState + Send + 'static,
+) -> mpsc::UnboundedSender<FetchRequest> {
+    let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(fetch_request) = fetch_request_receiver.recv().await {
+            match fetch_request {
+                FetchRequest::TreeState(reply_sender, block_height) => {
+                    let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+                }
+                _ => panic!("unexpected fetch request"),
+            }
+        }
+    });
+
+    fetch_request_sender
+}
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {

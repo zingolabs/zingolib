@@ -515,6 +515,7 @@ mod tests {
     use zl_netutils::lightwallet_protocol::TreeState;
 
     use super::*;
+    use crate::mocks;
 
     const SAPLING_ACTIVATION: u32 = 100;
     const ORCHARD_ACTIVATION: u32 = 200;
@@ -534,44 +535,23 @@ mod tests {
         nu7: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
-    /// Serialized empty commitment tree, as served at and above a pool's activation height.
-    const EMPTY_TREE: &str = "000000";
+    fn omitting(mut tree_state: TreeState, pool: ShieldedPool) -> TreeState {
+        let tree = match pool {
+            ShieldedPool::Sapling => &mut tree_state.sapling_tree,
+            ShieldedPool::Orchard => &mut tree_state.orchard_tree,
+            ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
+        };
+        *tree = mocks::OMITTED_TREE_HEX.to_string();
+
+        tree_state
+    }
 
     /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
     /// is left empty.
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
-        let tree = |pool: ShieldedPool| {
-            if pool == omitted_pool {
-                String::new()
-            } else {
-                EMPTY_TREE.to_string()
-            }
-        };
-        let (sapling_tree, orchard_tree, ironwood_tree) = (
-            tree(ShieldedPool::Sapling),
-            tree(ShieldedPool::Orchard),
-            tree(ShieldedPool::Ironwood),
-        );
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::TreeState(reply_sender, block_height) => {
-                        let _ignore_error = reply_sender.send(Ok(TreeState {
-                            height: u64::from(block_height),
-                            hash: "00".repeat(32),
-                            sapling_tree: sapling_tree.clone(),
-                            orchard_tree: orchard_tree.clone(),
-                            ironwood_tree: ironwood_tree.clone(),
-                            ..Default::default()
-                        }));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-
-        fetch_request_sender
+        mocks::spawn_tree_state_fetcher(move |block_height| {
+            omitting(mocks::empty_trees(block_height), omitted_pool)
+        })
     }
 
     /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at

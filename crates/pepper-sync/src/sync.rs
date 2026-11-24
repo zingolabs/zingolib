@@ -4922,6 +4922,8 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
         use zl_netutils::lightwallet_protocol::TreeState;
 
+        use crate::mocks;
+
         use crate::{
             client::FetchRequest,
             error::SyncError,
@@ -4984,7 +4986,6 @@ mod test {
         /// Answers tree state requests with an orchard commitment tree of `ORCHARD_TREE_SIZE` note commitments and
         /// empty sapling and ironwood commitment trees, counting the requests.
         fn spawn_counting_fetcher() -> (mpsc::UnboundedSender<FetchRequest>, Arc<AtomicUsize>) {
-            const EMPTY_TREE: &str = "000000";
             let mut orchard_tree = CommitmentTree::<
                 MerkleHashOrchard,
                 { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
@@ -5000,23 +5001,11 @@ mod test {
 
             let request_count = Arc::new(AtomicUsize::new(0));
             let counted_requests = request_count.clone();
-            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    match fetch_request {
-                        FetchRequest::TreeState(reply_sender, block_height) => {
-                            counted_requests.fetch_add(1, atomic::Ordering::Release);
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: orchard_tree.clone(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
-                        }
-                        _ => panic!("unexpected fetch request"),
-                    }
+            let fetch_request_sender = mocks::spawn_tree_state_fetcher(move |block_height| {
+                counted_requests.fetch_add(1, atomic::Ordering::Release);
+                TreeState {
+                    orchard_tree: orchard_tree.clone(),
+                    ..mocks::empty_trees(block_height)
                 }
             });
 
@@ -5199,7 +5188,9 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zl_netutils::lightwallet_protocol::RawTransaction;
+
+        use crate::mocks;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5245,7 +5236,6 @@ mod test {
         fn spawn_fetcher(
             spending_transaction: Option<&TransactionRecord>,
         ) -> mpsc::UnboundedSender<FetchRequest> {
-            const EMPTY_TREE: &str = "000000";
             let spending_transaction_data = spending_transaction.map(|spending_transaction| {
                 let mut data = Vec::new();
                 spending_transaction.transaction().write(&mut data).unwrap();
@@ -5256,14 +5246,8 @@ mod test {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
+                            let _ignore_error =
+                                reply_sender.send(Ok(mocks::empty_trees(block_height)));
                         }
                         FetchRequest::Transaction(reply_sender, _txid) => {
                             // the request fails when the reply sender is dropped.
@@ -5762,7 +5746,8 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
-        use zl_netutils::lightwallet_protocol::TreeState;
+
+        use crate::mocks;
 
         use crate::{
             client::FetchRequest,
@@ -5811,27 +5796,7 @@ mod test {
 
         /// Answers tree state requests with empty note commitment trees.
         fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
-            const EMPTY_TREE: &str = "000000";
-            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    match fetch_request {
-                        FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
-                        }
-                        _ => panic!("unexpected fetch request"),
-                    }
-                }
-            });
-
-            fetch_request_sender
+            mocks::spawn_tree_state_fetcher(mocks::empty_trees)
         }
 
         fn wallet(scan_ranges: Vec<ScanRange>, blocks: Vec<u32>) -> MockWallet {
@@ -6107,7 +6072,7 @@ mod test {
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
-        use crate::mocks::{MockWalletBuilder, subtree_root};
+        use crate::mocks::{self, MockWalletBuilder, subtree_root};
         use crate::sync::{ScanPriority, ScanRange, state, truncate_to_pool_activation_height};
         use crate::wallet::{
             ScanTarget, ScanTargetOrigin, ShardTrees, SyncState, TransactionRecord, TreeBounds,
@@ -6142,34 +6107,18 @@ mod test {
         /// Answers tree state requests with empty note commitment trees, omitting the ironwood tree state below the
         /// ironwood activation height.
         fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
-            const EMPTY_TREE: &str = "000000";
-            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    match fetch_request {
-                        FetchRequest::TreeState(reply_sender, block_height) => {
-                            let ironwood_tree = if NETWORK
-                                .is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height)
-                            {
-                                EMPTY_TREE.to_string()
-                            } else {
-                                String::new()
-                            };
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree,
-                                ..Default::default()
-                            }));
-                        }
-                        _ => panic!("unexpected fetch request"),
-                    }
+            mocks::spawn_tree_state_fetcher(|block_height| {
+                let ironwood_tree =
+                    if NETWORK.is_nu_active(consensus::NetworkUpgrade::Nu6_3, block_height) {
+                        mocks::EMPTY_TREE_HEX
+                    } else {
+                        mocks::OMITTED_TREE_HEX
+                    };
+                TreeState {
+                    ironwood_tree: ironwood_tree.to_string(),
+                    ..mocks::empty_trees(block_height)
                 }
-            });
-
-            fetch_request_sender
+            })
         }
 
         /// A pool rescan clears the pool's shard tree, so the pool's shard ranges are cleared with it and both are
