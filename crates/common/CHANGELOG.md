@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each tree as hex, or returns `chain::InvalidTreeState`, which names the
   malformed field. The crate depends on `hex` directly for this; the
   package was already in its graph.
+- `chain` gains the other domain types of the indexer protocol, each built
+  from plain integers, bytes, and strings by a constructor that checks its
+  invariants. The replies are `CompactBlock` with `ChainMetadata`,
+  `CompactTx`, `CompactSaplingSpend`, `CompactSaplingOutput`,
+  `CompactOrchardAction`, `CompactTxIn`, and `TxOut`; `RawTransaction` with
+  `RawTransactionStatus`; `SubtreeRoot`; `GetAddressUtxosReply`;
+  `LightdInfo`; and `StandardFee`. The requests are `BlockId`, `BlockRange`,
+  `TxFilter`, `GetAddressUtxosArg`, `GetSubtreeRootsArg`, and
+  `TransparentAddressBlockFilter`. No other crate uses these types yet.
 - `keys` module: `UnifiedKeyStore`, `UnifiedAddressId`, `ReceiverSelection`,
   `KeyError`, `encode_ufvk` and the `KEY_TYPE_EMPTY`, `KEY_TYPE_VIEW` and
   `KEY_TYPE_SPEND` constants. `UnifiedKeyStore::determine_nth_valid_sapling_diversifier`
