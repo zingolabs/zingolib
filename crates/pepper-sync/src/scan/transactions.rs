@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use tokio::sync::mpsc;
 
@@ -37,7 +37,7 @@ use crate::engine::{
     TransparentCoinOps, WalletNoteOps,
 };
 use crate::{
-    client::{self, FetchRequest},
+    client::{self, FetchRequest, chaff},
     error::{ScanError, ServerError, status_is_network_weather},
     keys::{self, KeyId, transparent::TransparentAddressId},
     wallet::{
@@ -93,6 +93,47 @@ pub(crate) struct ScannedTransactions {
     pub(crate) dropped_targets: BTreeSet<ScanTarget>,
 }
 
+pub(crate) fn serialize_pending_transactions<'a>(
+    wallet_transactions: impl Iterator<Item = &'a TransactionRecord>,
+) -> HashMap<TxId, Vec<u8>> {
+    wallet_transactions
+        .filter(|wallet_transaction| !wallet_transaction.status().is_confirmed())
+        .filter_map(|wallet_transaction| {
+            let mut transaction_bytes = Vec::new();
+            wallet_transaction
+                .transaction()
+                .write(&mut transaction_bytes)
+                .ok()
+                .map(|()| (wallet_transaction.txid(), transaction_bytes))
+        })
+        .collect()
+}
+
+enum TransactionSource {
+    Stored(Box<Transaction>),
+    Requested(chaff::Triple, client::TransactionReply),
+}
+
+fn stored_transaction(
+    consensus_parameters: &impl consensus::Parameters,
+    pending_transactions: &HashMap<TxId, Vec<u8>>,
+    wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+    scan_target: &ScanTarget,
+    txid: TxId,
+) -> Option<Transaction> {
+    let block_height = scan_target.block_height();
+    if !wallet_blocks.get(&block_height)?.txids().contains(&txid) {
+        return None;
+    }
+
+    Transaction::read(
+        &pending_transactions.get(&txid)?[..],
+        consensus::BranchId::for_height(consensus_parameters, block_height),
+    )
+    .ok()
+    .filter(|transaction| transaction.txid() == txid)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn scan_transactions(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
@@ -103,22 +144,71 @@ pub(crate) async fn scan_transactions(
     wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     transparent_inuse_addresses: HashMap<String, TransparentAddressId>,
+    pending_transactions: &HashMap<TxId, Vec<u8>>,
+    target_free_triples: BTreeMap<BlockHeight, chaff::Triple>,
 ) -> Result<ScannedTransactions, ScanError> {
     let mut transactions = HashMap::with_capacity(scan_targets.len());
     let mut dropped_targets = BTreeSet::new();
+    let target_txids = scan_targets
+        .iter()
+        .filter_map(ScanTarget::txid)
+        .collect::<HashSet<_>>();
+    let mut target_free_triples = target_free_triples
+        .into_iter()
+        .filter(|(_, triple)| !triple.txids().any(|txid| target_txids.contains(&txid)))
+        .peekable();
+    let mut send_target_free_triples = |below: Option<BlockHeight>| {
+        while let Some((_, triple)) = target_free_triples
+            .next_if(|(block_height, _)| below.is_none_or(|below| *block_height < below))
+        {
+            let _ignore_error = fetch_request_sender.send(FetchRequest::TargetFreeTriple(triple));
+        }
+    };
 
+    let mut sources = Vec::with_capacity(scan_targets.len());
     for scan_target in scan_targets {
         let Some(txid) = scan_target.txid() else {
             continue;
         };
+        send_target_free_triples(Some(scan_target.block_height()));
 
-        let (transaction, block_height) = match client::get_transaction_and_block_height(
-            fetch_request_sender.clone(),
+        let source = match stored_transaction(
             consensus_parameters,
+            pending_transactions,
+            wallet_blocks,
+            &scan_target,
             txid,
-        )
-        .await
-        {
+        ) {
+            Some(transaction) => TransactionSource::Stored(Box::new(transaction)),
+            None => {
+                let triple = wallet_blocks.get(&scan_target.block_height()).map_or_else(
+                    || chaff::Triple::alone(txid),
+                    |wallet_block| chaff::Triple::in_block(wallet_block.txids(), txid),
+                );
+                let first_reply = client::request_transaction(&fetch_request_sender, &triple)?;
+                TransactionSource::Requested(triple, first_reply)
+            }
+        };
+        sources.push((scan_target, txid, source));
+    }
+    send_target_free_triples(None);
+
+    for (scan_target, txid, source) in sources {
+        let stored_or_fetched = match source {
+            TransactionSource::Stored(transaction) => {
+                Ok((*transaction, scan_target.block_height()))
+            }
+            TransactionSource::Requested(triple, first_reply) => {
+                client::get_transaction_and_block_height(
+                    fetch_request_sender.clone(),
+                    consensus_parameters,
+                    &triple,
+                    first_reply,
+                )
+                .await
+            }
+        };
+        let (transaction, block_height) = match stored_or_fetched {
             Ok(fetched) => fetched,
             // the server answered that it does not serve the transaction. a consumer's target may name a txid
             // that never existed, or one a re-org removed, and is dropped rather than failing every scan of its
@@ -712,7 +802,13 @@ fn collect_outpoints<A: TransparentAuthorization>(
 
 #[cfg(test)]
 mod tests {
+    use zcash_primitives::block::BlockHash;
     use zcash_protocol::consensus::MAIN_NETWORK;
+
+    use crate::{
+        engine::{WalletBlockOps, WalletBlockParts},
+        wallet::TreeBounds,
+    };
 
     use super::*;
 
@@ -740,17 +836,101 @@ mod tests {
         scan_target: ScanTarget,
         status: tonic::Status,
     ) -> Result<ScannedTransactions, ScanError> {
+        scan_stored(scan_target, status, &HashMap::new(), &BTreeMap::new()).await
+    }
+
+    async fn scan_stored(
+        scan_target: ScanTarget,
+        status: tonic::Status,
+        pending_transactions: &HashMap<TxId, Vec<u8>>,
+        wallet_blocks: &BTreeMap<BlockHeight, WalletBlock>,
+    ) -> Result<ScannedTransactions, ScanError> {
         scan_transactions(
             fetcher_answering(status),
             &MAIN_NETWORK,
             &HashMap::new(),
             BTreeSet::from([scan_target]),
             DecryptedNoteData::new(),
-            &BTreeMap::new(),
+            wallet_blocks,
             &mut BTreeMap::new(),
             HashMap::new(),
+            pending_transactions,
+            BTreeMap::new(),
         )
         .await
+    }
+
+    fn wallet_block(block_height: BlockHeight, txids: Vec<TxId>) -> WalletBlock {
+        WalletBlock::from_parts(WalletBlockParts {
+            block_height,
+            block_hash: BlockHash([1; 32]),
+            prev_hash: BlockHash([0; 32]),
+            time: 0,
+            txids,
+            tree_bounds: TreeBounds {
+                sapling_initial_tree_size: 0,
+                sapling_final_tree_size: 0,
+                orchard_initial_tree_size: 0,
+                orchard_final_tree_size: 0,
+                ironwood_initial_tree_size: 0,
+                ironwood_final_tree_size: 0,
+            },
+        })
+    }
+
+    fn pending_record(block_height: BlockHeight) -> TransactionRecord {
+        let status = ConfirmationStatus::Transmitted(block_height);
+        let txid = TransactionRecord::new_for_test(TxId::from_bytes([0; 32]), status)
+            .transaction()
+            .txid();
+        TransactionRecord::new_for_test(txid, status)
+    }
+
+    #[tokio::test]
+    async fn a_stored_transaction_its_block_lists_is_confirmed_without_a_request() {
+        let block_height = BlockHeight::from_u32(100);
+        let pending_record = pending_record(block_height);
+        let txid = pending_record.txid();
+
+        let scanned = scan_stored(
+            ScanTarget::internal(block_height, txid),
+            tonic::Status::not_found("no such transaction"),
+            &serialize_pending_transactions([&pending_record].into_iter()),
+            &BTreeMap::from([(block_height, wallet_block(block_height, vec![txid]))]),
+        )
+        .await
+        .expect("a stored transaction needs no reply from the server");
+
+        assert_eq!(
+            scanned
+                .transactions
+                .get(&txid)
+                .map(TransactionRecord::status),
+            Some(ConfirmationStatus::Confirmed(block_height))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stored_transaction_its_block_does_not_list_is_requested() {
+        let block_height = BlockHeight::from_u32(100);
+        let pending_record = pending_record(block_height);
+        let txid = pending_record.txid();
+
+        for wallet_blocks in [
+            BTreeMap::new(),
+            BTreeMap::from([(block_height, wallet_block(block_height, Vec::new()))]),
+        ] {
+            assert!(matches!(
+                scan_stored(
+                    ScanTarget::internal(block_height, txid),
+                    tonic::Status::not_found("no such transaction"),
+                    &serialize_pending_transactions([&pending_record].into_iter()),
+                    &wallet_blocks,
+                )
+                .await,
+                Err(ScanError::TransactionNotServed { txid: unserved, .. }) if unserved == txid
+            ));
+        }
     }
 
     #[tokio::test]
@@ -794,6 +974,120 @@ mod tests {
                     if status.code() == tonic::Code::Unavailable
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn a_target_in_a_held_block_is_requested_with_its_triple() {
+        let block_height = BlockHeight::from_u32(100);
+        let block_txids = (1..=chaff::TRIPLE_SIZE)
+            .map(|index| TxId::from_bytes([u8::try_from(index).unwrap_or(u8::MAX); 32]))
+            .collect::<Vec<_>>();
+        let wallet_block = wallet_block(block_height, block_txids.clone());
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        let (triple_log, mut requested_triples) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, triple) => {
+                        triple_log
+                            .send(triple)
+                            .expect("the test holds the receiver of the triple log");
+                        let _ignore_error =
+                            reply_sender.send(Err(tonic::Status::not_found("no such transaction")));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+
+        for target in &block_txids {
+            let scanned = scan_transactions(
+                fetch_request_sender.clone(),
+                &MAIN_NETWORK,
+                &HashMap::new(),
+                BTreeSet::from([ScanTarget::new(block_height, Some(*target))]),
+                DecryptedNoteData::new(),
+                &BTreeMap::from([(block_height, wallet_block.clone())]),
+                &mut BTreeMap::new(),
+                HashMap::new(),
+                &HashMap::new(),
+                BTreeMap::new(),
+            )
+            .await;
+
+            assert!(scanned.is_ok());
+            assert_eq!(
+                requested_triples
+                    .recv()
+                    .await
+                    .map(|triple| (triple.target(), triple.txids().collect::<Vec<_>>())),
+                Some((*target, block_txids.clone()))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn target_free_triples_are_sent_in_height_order_among_the_targets() {
+        #[derive(Debug, PartialEq)]
+        enum Sent {
+            Target(TxId),
+            TargetFree(TxId),
+        }
+        let target = TxId::from_bytes([2; 32]);
+        let target_height = BlockHeight::from_u32(100);
+        let below = chaff::Triple::alone(TxId::from_bytes([1; 32]));
+        let beside_the_target = chaff::Triple::alone(target);
+        let above = chaff::Triple::alone(TxId::from_bytes([3; 32]));
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+
+        let target_free_triples = BTreeMap::from([
+            (target_height - 1, below.clone()),
+            (target_height, beside_the_target),
+            (target_height + 1, above.clone()),
+        ]);
+        let scanned = async move {
+            scan_transactions(
+                fetch_request_sender,
+                &MAIN_NETWORK,
+                &HashMap::new(),
+                BTreeSet::from([ScanTarget::new(target_height, Some(target))]),
+                DecryptedNoteData::new(),
+                &BTreeMap::new(),
+                &mut BTreeMap::new(),
+                HashMap::new(),
+                &HashMap::new(),
+                target_free_triples,
+            )
+            .await
+        };
+        let fetcher = async {
+            let mut sent = Vec::new();
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, triple) => {
+                        sent.push(Sent::Target(triple.target()));
+                        let _ignore_error =
+                            reply_sender.send(Err(tonic::Status::not_found("no such transaction")));
+                    }
+                    FetchRequest::TargetFreeTriple(triple) => {
+                        sent.push(Sent::TargetFree(triple.target()));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+            sent
+        };
+        let (scanned, sent) = tokio::join!(scanned, fetcher);
+
+        assert!(scanned.is_ok());
+        assert_eq!(
+            sent,
+            vec![
+                Sent::TargetFree(below.target()),
+                Sent::Target(target),
+                Sent::TargetFree(above.target()),
+            ]
+        );
     }
 
     #[tokio::test]

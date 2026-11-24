@@ -18,6 +18,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
+- Sync requests a wallet transaction together with the other transactions
+  of its triple. A triple is three consecutive transactions of one block,
+  counted from the first transaction of the block, and the last transactions
+  of a block join its last triple. Sync discards the replies to the other
+  requests. A transaction whose block the scan does not hold is requested
+  alone, as before.
+- Sync requests a triple that holds no wallet transaction in about one
+  scanned block in 1,024, and discards the replies. Without these requests,
+  every triple shows the indexer that the wallet has a transaction in that
+  block. A keyed hash of the wallet's viewing key and the block hash selects
+  the block and the triple, so the indexer cannot predict the choice and a
+  rescan repeats it.
+- One worker requests every triple, with or without a wallet transaction,
+  one triple at a time and in the order the scan sends them. A scan sends
+  all the triples of its range before it reads a reply. The indexer
+  therefore sees the same pattern of requests for both kinds of triple. A
+  wallet transaction can wait behind the few other triples sent before it.
+- The crate depends on `blake2b_simd` directly. The choice above needs a
+  keyed hash with a specified output, because the choice must stay the same
+  across releases, and the standard library's hasher does not promise that.
+  The crate already compiled `blake2b_simd` through `orchard`,
+  `sapling-crypto`, `zcash_primitives`, `zcash_keys` and `zip32`, so the
+  build gains no crate. The choice lives in this crate and not in a
+  consumer, so that every consumer gets the same protection and none can
+  omit it.
+- Sync sends no request for an unconfirmed transaction the wallet stores,
+  when the scanned block at the transaction's height lists its txid. Sync
+  confirms the transaction from the stored copy.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,

@@ -16,7 +16,7 @@ use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
 
 use crate::engine::ScanTargetOps;
 use crate::{
-    client::FetchRequest,
+    client::{FetchRequest, chaff},
     error::{ScanError, ServerError},
     keys::transparent::TransparentAddressId,
     sync::ScanPriority,
@@ -156,6 +156,7 @@ where
         mut scan_targets,
         mut transparent_inuse_addresses,
         transparent_gap_addresses,
+        pending_transactions,
         transparent_scan_floor,
         chain_height,
         highest_scanned_height,
@@ -252,6 +253,18 @@ where
 
     scan_targets.append(&mut decrypted_scan_targets);
     transparent_inuse_addresses.extend(new_transparent_inuse_addresses.clone());
+    let target_free_triples = chaff::TargetFreeSelector::new(consensus_parameters, ufvks)
+        .map(|selector| {
+            wallet_blocks
+                .iter()
+                .filter_map(|(block_height, wallet_block)| {
+                    selector
+                        .triple_in(&wallet_block.block_hash().0, wallet_block.txids())
+                        .map(|triple| (*block_height, triple))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let ScannedTransactions {
         transactions: wallet_transactions,
@@ -265,6 +278,8 @@ where
         &wallet_blocks,
         &mut outpoints,
         transparent_inuse_addresses,
+        &pending_transactions,
+        target_free_triples,
     )
     .await?;
 

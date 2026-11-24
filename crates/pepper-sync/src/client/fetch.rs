@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use tracing::instrument;
 use zcash_primitives::transaction::TxId;
@@ -15,7 +15,7 @@ use zl_netutils::{
     },
 };
 
-use crate::client::FetchRequest;
+use crate::client::{FetchRequest, chaff};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
@@ -34,6 +34,15 @@ pub(crate) async fn fetch<C>(
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
+    let (triple_request_sender, triple_request_receiver) = unbounded_channel();
+    let triple_client = client.clone();
+    tokio::spawn(chaff::request_triples(
+        triple_request_receiver,
+        move |txid| {
+            let mut client = triple_client.clone();
+            async move { get_transaction(&mut client, txid).await }
+        },
+    ));
 
     loop {
         // `fetcher` returns `Ok` here when all requests have successfully been fetched and the
@@ -45,7 +54,7 @@ pub(crate) async fn fetch<C>(
         let fetch_request = select_fetch_request(&mut fetch_request_queue);
 
         if let Some(request) = fetch_request {
-            fetch_from_server(&mut client, request).await;
+            fetch_from_server(&mut client, &triple_request_sender, request).await;
         }
     }
 }
@@ -96,8 +105,11 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 }
 
 //
-async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
-where
+async fn fetch_from_server<C>(
+    client: &mut C,
+    triple_request_sender: &UnboundedSender<chaff::TripleRequest>,
+    fetch_request: FetchRequest,
+) where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     match fetch_request {
@@ -140,10 +152,18 @@ where
             let tree_state = get_tree_state(client, block_height).await;
             let _ignore_error = sender.send(tree_state);
         }
-        FetchRequest::Transaction(sender, txid) => {
-            tracing::debug!("Fetching transaction. {:?}", txid);
-            let transaction = get_transaction(client, txid).await;
-            let _ignore_error = sender.send(transaction);
+        FetchRequest::TargetFreeTriple(triple) => {
+            let _ignore_error = triple_request_sender.send(chaff::TripleRequest {
+                triple,
+                target_reply_sender: None,
+            });
+        }
+        FetchRequest::Transaction(sender, triple) => {
+            tracing::debug!("Fetching transaction. {:?}", triple.target());
+            let _ignore_error = triple_request_sender.send(chaff::TripleRequest {
+                triple,
+                target_reply_sender: Some(sender),
+            });
         }
         FetchRequest::UtxoMetadata(sender, (addresses, start_height)) => {
             tracing::debug!(

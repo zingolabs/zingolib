@@ -18,11 +18,14 @@ use crate::{
     client::{self, FetchRequest},
     error::{ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    scan::task::{ScanTask, TaskId},
+    scan::{
+        task::{ScanTask, TaskId},
+        transactions::serialize_pending_transactions,
+    },
     sync::ScanRange,
     wallet::{
         InitialSyncState, SyncState, TreeBounds, WalletBlock,
-        traits::{SyncBlocks, SyncNullifiers, SyncWallet},
+        traits::{SyncBlocks, SyncNullifiers, SyncTransactions, SyncWallet},
         wallet_block_from_compact_block,
     },
 };
@@ -140,7 +143,7 @@ pub(crate) fn create_scan_task<W>(
     task_id: TaskId,
 ) -> Result<Option<ScanTask>, W::Error>
 where
-    W: SyncWallet + SyncBlocks + SyncNullifiers,
+    W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
 {
     if let Some(selected_range) = wallet
         .get_sync_state_mut()?
@@ -167,6 +170,7 @@ where
                 None,
                 None,
                 BTreeSet::new(),
+                HashMap::new(),
                 HashMap::new(),
                 HashMap::new(),
                 transparent_scan_floor,
@@ -219,6 +223,7 @@ where
                 scan_targets,
                 transparent_inuse_addresses,
                 transparent_gap_addresses,
+                serialize_pending_transactions(wallet.get_wallet_transactions()?.values()),
                 transparent_scan_floor,
                 chain_height,
                 highest_scanned_height,

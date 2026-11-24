@@ -11,7 +11,7 @@ use std::{
 
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::{
     PoolType, ShieldedPool,
     consensus::{self, BlockHeight},
@@ -31,6 +31,7 @@ use crate::{
 
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
+pub(crate) mod chaff;
 pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
@@ -80,7 +81,11 @@ pub enum FetchRequest {
         BlockHeight,
     ),
     /// Get a full transaction by txid.
-    Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
+    Transaction(
+        oneshot::Sender<Result<RawTransaction, tonic::Status>>,
+        chaff::Triple,
+    ),
+    TargetFreeTriple(chaff::Triple),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
@@ -344,20 +349,32 @@ pub(crate) async fn get_frontiers(
 
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
 
-/// - Sends a transaction request to the fetcher, and sends it again after each
-///   refusal that carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
+pub(crate) type TransactionReply = oneshot::Receiver<Result<RawTransaction, tonic::Status>>;
+
+/// - Sends a transaction request to the fetcher.
+pub(crate) fn request_transaction(
+    fetch_request_sender: &UnboundedSender<FetchRequest>,
+    triple: &chaff::Triple,
+) -> Result<TransactionReply, ServerError> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(FetchRequest::Transaction(reply_sender, triple.clone()))
+        .map_err(|_| ServerError::FetcherDropped)?;
+
+    Ok(reply_receiver)
+}
+
+/// - Sends the transaction request to the fetcher again after each refusal that
+///   carries [`SNAPSHOT_RETRY_HINT`], at most [`MAX_RETRIES`] times.
 pub(crate) async fn get_transaction_and_block_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     consensus_parameters: &impl consensus::Parameters,
-    txid: TxId,
+    triple: &chaff::Triple,
+    first_reply: TransactionReply,
 ) -> Result<(Transaction, BlockHeight), ServerError> {
     let mut retry_count = 0;
+    let mut reply_receiver = first_reply;
     let raw_transaction = loop {
-        let (reply_sender, reply_receiver) = oneshot::channel();
-        fetch_request_sender
-            .send(FetchRequest::Transaction(reply_sender, txid))
-            .map_err(|_| ServerError::FetcherDropped)?;
-
         match reply_receiver
             .await
             .map_err(|_| ServerError::FetcherDropped)?
@@ -367,6 +384,7 @@ pub(crate) async fn get_transaction_and_block_height(
                 if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
             {
                 retry_count += 1;
+                reply_receiver = request_transaction(&fetch_request_sender, triple)?;
             }
             Err(status) => return Err(ServerError::RequestFailed(status)),
         }
@@ -511,6 +529,7 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
+    use zcash_primitives::transaction::TxId;
     use zcash_protocol::local_consensus::LocalNetwork;
     use zl_netutils::lightwallet_protocol::TreeState;
 
@@ -623,6 +642,14 @@ mod tests {
         fetch_request_sender
     }
 
+    async fn request_and_await(
+        fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
+        triple: &chaff::Triple,
+    ) -> Result<(Transaction, BlockHeight), ServerError> {
+        let first_reply = request_transaction(&fetch_request_sender, triple)?;
+        get_transaction_and_block_height(fetch_request_sender, &NETWORK, triple, first_reply).await
+    }
+
     fn snapshot_race() -> tonic::Status {
         tonic::Status::unknown(
             "Chain index error: unavailable: mempool is not coherent with the requested \
@@ -648,10 +675,9 @@ mod tests {
             .chain([tonic::Status::not_found("gone")])
             .collect();
         let status = status_of(
-            get_transaction_and_block_height(
+            request_and_await(
                 spawn_transaction_fetcher(within_ceiling),
-                &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );
@@ -662,10 +688,9 @@ mod tests {
             .chain([tonic::Status::not_found("never asked")])
             .collect();
         let status = status_of(
-            get_transaction_and_block_height(
+            request_and_await(
                 spawn_transaction_fetcher(beyond_ceiling),
-                &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );
@@ -677,10 +702,9 @@ mod tests {
     #[tokio::test]
     async fn an_unrelated_failure_is_not_retried() {
         let status = status_of(
-            get_transaction_and_block_height(
+            request_and_await(
                 spawn_transaction_fetcher(vec![tonic::Status::internal("broken")]),
-                &NETWORK,
-                TxId::from_bytes([0; 32]),
+                &chaff::Triple::alone(TxId::from_bytes([0; 32])),
             )
             .await,
         );
