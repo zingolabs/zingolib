@@ -582,6 +582,80 @@ mod tests {
         }
     }
 
+    const MALFORMED_HASH_HEX: &str = "zz";
+    const SHORT_HASH_HEX: &str = "00ff";
+    const HEIGHT_BEYOND_32_BITS: u64 = u32::MAX as u64 + 1;
+
+    async fn frontiers_of(tree_state: TreeState) -> Result<Frontiers, ServerError> {
+        get_frontiers(
+            mocks::spawn_tree_state_fetcher(move |_| tree_state.clone()),
+            &NETWORK,
+            IRONWOOD_ACTIVATION.into(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn each_malformed_field_keeps_its_report() {
+        let well_formed = mocks::empty_trees(IRONWOOD_ACTIVATION.into());
+        for (malformed, report) in [
+            (
+                TreeState {
+                    hash: MALFORMED_HASH_HEX.to_string(),
+                    ..well_formed.clone()
+                },
+                "Block hash is not valid hex: InvalidHexCharacter { c: 'z', index: 0 }",
+            ),
+            (
+                TreeState {
+                    height: HEIGHT_BEYOND_32_BITS,
+                    ..well_formed.clone()
+                },
+                "Invalid block height",
+            ),
+            (
+                TreeState {
+                    hash: SHORT_HASH_HEX.to_string(),
+                    ..well_formed.clone()
+                },
+                "Invalid block hash length.",
+            ),
+        ] {
+            let frontiers = frontiers_of(malformed).await;
+
+            assert!(
+                matches!(
+                    &frontiers,
+                    Err(ServerError::InvalidFrontier(invalid)) if invalid.to_string() == report
+                ),
+                "a malformed tree state was reported as {:?}",
+                frontiers.map(|_| "valid frontiers")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
+        let frontiers = frontiers_of(TreeState {
+            hash: MALFORMED_HASH_HEX.to_string(),
+            ironwood_tree: mocks::OMITTED_TREE_HEX.to_string(),
+            ..mocks::empty_trees(IRONWOOD_ACTIVATION.into())
+        })
+        .await;
+
+        assert!(
+            matches!(
+                frontiers,
+                Err(ServerError::TreeStateNotServed {
+                    pool: PoolType::Shielded(ShieldedPool::Ironwood),
+                    height,
+                }) if height == IRONWOOD_ACTIVATION.into()
+            ),
+            "an omitted Ironwood tree was reported as {:?}",
+            frontiers.map(|_| "valid frontiers")
+        );
+    }
+
     /// Answers transaction requests with each status of `replies` in turn, then
     /// panics, so a caller that asks more often than the script allows fails.
     fn spawn_transaction_fetcher(
