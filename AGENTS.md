@@ -10,7 +10,7 @@
   over the known implementors. Never add one. Existing ones are debt to retire,
   not precedent to follow. Ruled 2026-08-18.
   - **One sanctioned exception:** `Arc<dyn ProxyHosting>` in
-    `zingo-netutils/src/provider.rs`. A platform host is implemented outside
+    `crates/netutils/src/provider.rs`. A platform host is implemented outside
     this workspace and reached across an FFI boundary, so its concrete type is
     unnameable here. The alternatives were weighed and both cost more than the
     rule saves: a type parameter reaches `Acquirer`, `Pools`, and `LightClient`,
@@ -48,15 +48,31 @@
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
   the ceiling `MAX_NEAR` in that module, and a baseline entry whose group
-  is gone. Never add an entry for a new group, with one exception: a
+  is gone. Never add an entry for a new group, with two exceptions: a
   trait-delegation pair, where one type implements two traits whose
   methods delegate identically and cannot share an impl, takes an entry
-  whose reason names the pair. Otherwise remove the duplication, then run
+  whose reason names the pair; and an FFI export pair, where the same
+  call runs under the write lock storing its result and under the read
+  lock previewing it (`send`/`preview_send`), takes one entry for the
+  functions and one for their lock closures, each naming the pair. The
+  gate erases identifiers, so it cannot tell the two apart (ruled
+  2026-10-28, zingolib#3104). Otherwise remove the duplication, then run
   `dupes-gate cleanup` and commit the result. When a near group
   disappears, lower `MAX_NEAR` to the new count; the ceiling only moves
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
   dupes-gate -- <cargo-dupes arguments>`.
+- **A pull request merges into `dev` only when `dev` could be released the
+  moment it lands.** Releases are cut from `dev` with no `stable` branch
+  (zingo-adrs zingolib/0064), so a candidate can be taken on any day. Work
+  that would leave `dev` mid-way through a larger feature or refactor, with
+  a dead code path, a half-migrated type, a disabled test or an unfinished
+  flag, targets an integration branch `integration/<name>` and reaches
+  `dev` when the arc is whole. Every change writes its changelog lines in
+  the same pull request, a dependency moves only to a version on crates.io
+  or a git pin the team accepts shipping, and the `[X.Y.Z]` section of a
+  cut changelog is never edited after the cut. The procedure is
+  `docs/sop/SOP001-release.md`. Ruled 2026-11-02 in zingo-adrs zingolib/0064.
 
 ## Writing & Code Style
 
@@ -169,6 +185,37 @@ module-level blocks.
 ### Tooling
 
 - No heredocs (<< EOF, << 'EOF') in bash or other shell scripts. They're hard to read, break on escaping, and bury content that should be its own file. Use a real file, a templating step, or printf with explicit lines instead.
+
+## Changelogs
+
+Each crate's `CHANGELOG.md` keeps a Keep a Changelog `[Unreleased]` section.
+An entry there describes the change a consumer sees between the crate's last
+release and the next one, never a step between two unreleased states. When a
+later change on `dev` supersedes, reverts or reshapes an unreleased entry,
+rewrite that entry to the net result rather than appending a second one; an
+entry whose subject arrived and left again within the same unreleased span is
+removed. The release itself then needs no editing beyond the version
+heading. `bindings/CHANGELOG.md` is generated from the audited crates'
+changelogs per publication and is never edited by hand.
+
+Before adding an entry, do this, and a reviewer checks it:
+
+1. Read the crate's whole `[Unreleased]` section. If the subject of the
+   change already has an entry (the same command, flag, function, type,
+   constant or dependency), edit that entry; a second entry about one
+   subject is the fault this rule exists to prevent.
+2. Name the last release: the heading under `[Unreleased]`, whose tag is
+   `<crate>_v<version>` (`zingolib_v7.0.0`, `pepper-sync_v0.6.0`). State the
+   change against that tag's code and behaviour, which `git grep <pattern>
+   <tag> -- <crate>` answers; "where it used to" and "no longer" refer to
+   the release, never to an earlier commit on `dev`.
+3. A subject that did not exist at the release is an addition, however many
+   times `dev` reshaped it since; describe its final shape under `Added`,
+   not its history under `Changed`. A subject the release had and the
+   change removes goes under `Removed`, once.
+4. A pull request that changes behaviour an unreleased entry records
+   rewrites that entry, in the same pull request, even when the entry
+   belongs to another author's change.
 
 ## Agent skills
 

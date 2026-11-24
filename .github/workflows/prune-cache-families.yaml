@@ -13,9 +13,11 @@
 # the entry before the newest, so the second survivor keeps those runs
 # warm. A delete that fails does not stop the others; an entry that
 # GitHub evicted in the meantime counts as done. The tool leaves every
-# entry outside rust-cache's `v0-rust-` keys alone: setup-gradle's
-# bundles are content-addressed and restored by exact key, and the
-# newest gradle-home entry may still name an older bundle.
+# entry outside rust-cache's `v0-rust-` keys alone, except the
+# nightly's `testnet-faucet-<run id>` entries, which form one family of
+# the same shape: setup-gradle's bundles are content-addressed and
+# restored by exact key, and the newest gradle-home entry may still name
+# an older bundle.
 name: Prune the cache families
 
 on:

@@ -2,15 +2,722 @@
 
 The workbench tool `binding-changelog` writes every section below, one per entry
 of `bindings/published.toml`, from the lines that the entry's audited crate changelogs
-gained after the previous entry's commit, named as `Since`, up to the
-entry's commit, which the section heading names, each under the
-headings it sits beneath in its changelog. The check in CI
-regenerates every section and fails when the committed file differs. The
+gained after its `Since` commits, up to the entry's commit, which the
+section heading names, each under the headings it sits beneath in its
+changelog. The `Since` commits of an entry are the earlier entries that
+are ancestors of its commit and of no other such entry (the first entry
+names its own). A release line candidate therefore follows the candidate
+it fixes, not the last entry, and the first entry after the line merges
+back follows both the line's candidate and the last entry of `dev`, with
+the lines that neither had. The check in CI regenerates every section
+and fails when the committed file differs. The
 audited crates of an entry are the two Binding Layer crates and their
 direct dependencies in this repository at the entry's commit, as the
 publish workflow recorded them from `cargo metadata`; each section names them
 in its `Audited` line. A change in another crate of this repository appears
 only where one of those changelogs records it.
+
+## bb149ecae37607151c6c51ef186880dcb884a0b9
+
+Since bb4b42def2f9be982f4bed4e231b8dd1148b2cd3.
+
+Audited `zingolib-ffi`, `pepper-sync`, `zingolib`, `zingolib-nym-proxy-ffi`, `zl-netutils`.
+
+### zingolib-ffi
+
+#### [Unreleased]
+
+##### Changed
+- **Breaking:** the package is `zingolib-ffi`, renamed from `zingo`, and its
+  proxy feature is `zingolib-nym-proxy-ffi`, renamed from `zingo-nym-proxy-ffi`.
+  The `[lib]` table pins the library name `zingo`, so the built libraries
+  (`libuniffi_zingo.so` on Android, `libzingo.a` on iOS), the UniFFI namespace
+  `zingo`, the Kotlin load name `uniffi_zingo`, the Kotlin package
+  `uniffi.zingo` and the Swift source `zingo.swift` with the `zingoFFI` module
+  are unchanged.
+- `default_indexer("mainnet")` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Added
+- `pending_spends` reports the wallet's outputs that its pending transactions
+  spend, derived from each pending transaction's inputs every time it is
+  called.
+
+##### Changed
+- BREAKING: the crate depends on `zl-memo`, `zl-status` and
+  `zl-netutils`, renamed from `zingo-memo`, `zingo-status` and
+  `zingo-netutils`. A consumer that names a type of those crates moves to
+  the new package names.
+- `scan_pending_transaction` records no spend on the wallet's outputs. A
+  pending transaction's spends derive through `pending_spends` from its
+  inputs, so `set_transactions_failed` releases them by the record's status
+  alone, and only the scan that finds a mined block records a spend on an
+  output. Truncation still resets recorded spends: it rescans the affected
+  blocks.
+
+##### Fixed
+- A Sync Session with `shutdown_on_completion` set no longer runs forever
+  after its last scan range is scanned. The scanner set the loader's
+  loading flag after it sent the scan task, so a loader that finished the
+  task first left the flag set, and the scan never completed. The scanner
+  alone now records the load it awaits from the loader, and the loader is
+  loading until that load arrives. The scan workers follow the same rule
+  for the scan results the scanner awaits from each of them.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightWallet::invariant_violations` reports every violated wallet
+  invariant: outputs stored under foreign txids, spends recorded on
+  transactions that do not carry the input, spends released by failed
+  transactions, and balance lines that disagree with the raw notes. The
+  zingolib-cli `doctor` command prints the list and its remedy.
+- The `GetStandardFee` RPC: at every connect (`go_online`,
+  `set_indexer_uri`, and construction against a configured indexer) the
+  client fetches the backend's standard fee report once and caches it in
+  wallet state, and `LightClient::standard_fee` reads the report back, or
+  `None` before first contact. Every proposal, shield, OP_RETURN send, and
+  migration now prices with the effective fee rule, whose marginal fee is
+  the backend's reported standard fee clamped between the ZIP 317 standard
+  marginal fee in force at the expected mining height and the weight-ratio
+  cap over it, so the wallet never pays below the standard and never pays
+  past the point where extra fee stops buying inclusion. The revision in
+  force follows ZIP 2009: Revision 1 prices at 5,000 zatoshi per logical
+  action with a weight-ratio cap of 4 (20,000), and Revision 2 prices at
+  1,000 zatoshi with a cap of 10 (10,000) from Mainnet block 3,590,000
+  (expected 19 November 2026); Testnet and a regtest chain reduce with
+  NU7 itself. A wallet that cannot name the mining height, a report whose
+  fee-estimator version is not the static one, a backend that does not
+  answer `GetStandardFee` (an old lightwalletd answers `Unimplemented`),
+  and any fetch failure all keep the revision's standard rule, and where
+  8.0.0 priced every transaction by the standard rule alone this release
+  keeps that posture: the connect itself never fails on the fee, and
+  there is no retry loop, the next connect fetches again.
+  Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
+  5,000 now raises the marginal fee to its report, at most to 20,000.
+
+##### Changed
+- **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
+  returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
+  selection checks a reservation in constant time. A consumer that indexed
+  or sorted the vector collects the set first.
+- `InputSource::select_spendable_notes` on `LightWallet` returns each pool's
+  notes in the order note selection takes them, which depends only on the
+  notes' values and output ids. It followed the iteration order of the
+  wallet's transaction map, which differed from run to run. A consumer that
+  shows the notes of a proposal sees a stable order.
+  client holds a `zl_netutils::NetworkAccess`, which owns `indexer_uri`
+- A pending transaction's spends of the wallet's notes derive from the
+  transaction's inputs each time they are read (`pepper_sync::pending_spends`),
+  and `spending_transaction` on a note records only a spend the scanner saw
+  in a scanned block. Balances, note selection, and the spend-status listings
+  read the two together, so a pending send shows its inputs spent until the
+  transaction confirms or fails, where 8.0.0 stored the pending spend on the
+  notes and every failure path erased it again.
+- `default_indexer_for(Mainnet)` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
+##### Fixed
+- A transaction the wallet believes failed, whose block later reaches the
+  wallet, lands as a spent note with no phantom unspent copy beside it: the
+  failure releases the input by status alone and the scan that sees the block
+  records the spend once. 8.0.0 reset the recorded spend on failure, so a
+  send mined at a height the wallet had already scanned (its block invisible
+  to a forward scan after a fork) left the spent note standing in the balance
+  as spendable.
+- Reading a wallet file below version 32 returns an `InvalidData` or
+  `UnexpectedEof` error where it panicked, when the file stores a corrupt
+  orchard nullifier, sapling rseed, sapling diversifier, address string or
+  witness-cache height, when a note is truncated, and when the wallet holds no
+  viewing key for a stored note's pool.
+
+### zingolib-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- **Breaking:** the package is `zingolib-nym-proxy-ffi`, renamed from
+  `zingo-nym-proxy-ffi`. The `[lib]` table pins the library name
+  `zingo_nym_proxy_ffi`, so the Android library `libzingo_nym_proxy_ffi.so`, the
+  UniFFI namespace `zingo_nym_proxy_ffi`, the Kotlin package
+  `uniffi.zingo_nym_proxy_ffi` and the Swift source `zingo_nym_proxy_ffi.swift`
+  with the `zingo_nym_proxy_ffiFFI` module are unchanged.
+
+### zl-netutils
+
+#### [Unreleased]
+
+##### Added
+- `Indexer::get_standard_fee` and `Socks5Indexer::get_standard_fee`, the
+  `GetStandardFee` RPC beside `get_lightd_info` on both transport routes.
+  It returns the backend's `StandardFee`: the ZIP 317 marginal fee,
+  zatoshis per logical action, the backend's `getstandardfee` RPC reports,
+  with the fee-estimator version. Backends predating the RPC answer
+  `Unimplemented`. The trait method is new and required, so out-of-tree
+  `Indexer` implementors must add it.
+
+##### Changed
+- BREAKING: the package is `zl-netutils` and its library
+  `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- `MAINNET_DEFAULT_INDEXER` moved from `mainnet.zainod.zingolabs.dev` to `zec.global`.
+
+## bb4b42def2f9be982f4bed4e231b8dd1148b2cd3
+
+Since 81d799775f11e882896e8710e8af12d6d4d29a41.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `get_value_transfers` answers each value transfer with `op_return_data`, the
+  UTF-8 text of its transaction's OP_RETURN outputs.
+
+##### Changed
+- Testnet has a Default Indexer, `https://testnet.zec.rocks:443`.
+  `default_indexer` answers it for a testnet hint, where it answered nothing,
+  and `IndexerChoice::Default` on testnet attaches to it, where the four
+  `init_*` calls failed `Init` and `change_server` failed `InvalidInput`.
+  Regtest is the one chain left without a Default Indexer.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `ValueTransfer::op_return_data` and `TransactionSummary::op_return_data`
+  carry the UTF-8 text of each OP_RETURN output of the transaction, in output
+  order, and their JSON carries it as `op_return_data`. A Maya or THORChain
+  payout to a transparent address arrives with `OUT:<inbound hash>` there, and
+  a refund with `REFUND:<inbound hash>`.
+- `LightClient::is_online` reports whether the client's `NetworkAccess`
+  holds a live `indexer`, the one posture question.
+- `LightClient::connected_indexer_uri` reports the URI of the indexer the
+  client is connected to, or `None` while offline: what `indexer_uri`
+  answered before this release.
+- `LightClient::go_online` connects to the Session Indexer and returns the
+  URI it bound: the one the consumer named, else the chain's Default Indexer
+  (zingo-adrs zingolib/0063). A chain without a Default Indexer, and no
+  named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
+
+##### Changed
+- Testnet has a Default Indexer, `https://testnet.zec.rocks:443`, so
+  `IndexerChoice::Default` resolves on testnet and an offline testnet client
+  that named no indexer holds it undialed for `go_online`.
+  `ChooseIndexerError::NoDefaultIndexer` is now reachable only on regtest.
+- BREAKING: `LightClient::indexer_uri` reports the Session Indexer URI the
+  client holds whether or not it is online, where it answered `None` for an
+  offline client. An offline mainnet client now answers the chain's Default
+  Indexer, undialed. Consumers that tested posture with `indexer_uri` read
+  `is_online` instead.
+- `LightClient::go_offline` drops `indexer` but keeps the Session
+  Indexer URI, so `go_online` dials the same indexer again, and
+  `choose_indexer(IndexerChoice::Offline)` is the same act. A failed
+  `set_indexer_uri` or `choose_indexer` leaves the client as it was. The
+  client holds a `zingo_netutils::NetworkAccess`, which owns `indexer_uri`
+  and `indexer` together.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Added
+- `NetworkAccess`, the wallet's access to the network as a type: the
+  Session Indexer URI (zingo-adrs zingolib/0063) a session attaches to
+  as `indexer_uri`, beside `indexer`, the live `GrpcIndexer`, which is
+  `Some` only while online. `offline(uri)` holds a URI without dialing,
+  `online(uri)` dials it, `go_online` dials the held `indexer_uri` and
+  returns it, `go_offline` drops `indexer` and keeps `indexer_uri`,
+  `connect_to` and `connect_to_lazy` replace both together, and
+  `is_online`, `indexer_uri`, `indexer` and `connected` read them.
+  `indexer_uri` and `indexer` change only together, and a failed dial
+  changes nothing.
+- `GetClientError::NoIndexerUri`, the refusal when a `NetworkAccess` that
+  holds no URI is asked to go online.
+- `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
+  Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
+  exists (zingo-adrs zingolib/0063, amended 2026-11-06).
+
+##### Changed
+- BREAKING: `default_indexer` returns `http::Uri` in place of
+  `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
+- BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so
+  `GrpcIndexer::uri` is removed. The value is connected by construction and
+  holds the live client alone; the URI lives in the `NetworkAccess` beside
+  it.
+
+## 81d799775f11e882896e8710e8af12d6d4d29a41
+
+Since d496bea8c7c476f2dd54f437674f7b4d1cc19b87.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+## d496bea8c7c476f2dd54f437674f7b4d1cc19b87
+
+Since 3fb32d277ef956e75da124c1442526fb4d91d97a.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- The committed `src/exported_surface.snapshot.txt` pins the exported surface: every
+- `preview_send(send_json)`, `preview_send_all(address, memo)` and
+  `preview_shield()` answer exactly what `send`, `send_all` and `shield`
+  answer, without storing a proposal or pausing sync. They are the calls for
+  a screen that shows a fee while the user is still deciding. A proposal
+  made only to show a fee held a continuous sync session paused with nothing
+  to resume it (zingolib#3104). They answer on the read lock.
+- `decline()` drops the proposal `send`, `send_all` or `shield` stored,
+  without transmitting it, and lets sync resume: the counterpart of
+  `confirm`. It succeeds with no proposal stored. A stored proposal holds
+  sync paused until `confirm` or `decline` settles it, and the docs of the
+  three proposing calls now say so.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `LightClient::preview_send`, `preview_send_all` and `preview_shield` create
+  the proposal the matching `propose_*` would store and return it without
+  storing it or pausing sync, the display-only reads beside `max_send_value`
+  for a consumer that shows a fee while its user is still deciding. A consumer
+  that proposed only to show a fee left the stored proposal's pause on a
+  continuous sync session with nothing to resume it (#3104). The
+  `lightclient::propose` module docs now state the contract: a stored proposal
+  holds sync paused until the consumer settles it, confirming with
+  `send_stored_proposal` or `calculate_stored_proposal`, or declining with
+  `clear_proposal`.
+- `data::proposal::ProportionalFeeProposal` and `ProportionalFeeShieldProposal`,
+  the aliases `propose_send`, `propose_shield` and the previews return, are
+  public, so a consumer can name them.
+
+## 3fb32d277ef956e75da124c1442526fb4d91d97a
+
+Since 755c3adaea5906cf55357e69ad1b0a27d746cdb8.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- **BREAKING** The private migration's driving functions `plan_ironwood_migration`,
+  `start_ironwood_migration`, `continue_note_splitting`, `quick_split`,
+  `split_status`, `reschedule_parts`, `window_timeline`, `execute_due_parts` and
+  `execute_due_parts_status` are now the methods `plan`, `start`,
+  `continue_splitting`, `quick_split`, `reschedule_parts`, `window_timeline`,
+  `execute_due_parts` and `progress` of the object `PrivateMigrationDriver`,
+  which the module `private_migration_drivers` exports only under the
+  non-default feature `unstable`. `progress` answers `{ split, batch }`, the
+  two polls in one, since the write lock lets only one of them run at a time. The published Binding Sets are
+  built without that feature and no longer carry them; zingo-mobile offers only
+  the drain. `migration_status`, `reconcile_migration` and
+  `cancel_ironwood_migration` stay, since the mobile client cancels a private
+  migration a beta build left in flight.
+
+## 755c3adaea5906cf55357e69ad1b0a27d746cdb8
+
+Since 625f617b63070855d1a4b2a2f61d071cb27c6f82.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `ClientConfig::migrated_from` reports the legacy path a wallet file was
+  copied from by `ClientConfigBuilder::build`, so a consumer can tell its user.
+
+##### Changed
+- `InputSource::select_spendable_notes` on `LightWallet` selects from the
+  pools the input selector names alone. In 7.0.0 a request those pools could
+  not cover was topped up from Sapling, Orchard and Ironwood in that order,
+  and all-funds selection drew on every pool whatever the request named. The
+  greedy input selector rejects a note from a pool it did not name, so the
+  shortfall now reaches the consumer as insufficient funds.
+
+##### Fixed
+- On Linux and other non-macOS, non-Windows desktops, a wallet left in the
+  legacy default directory `~/.zcash` is found again. The default moved to the
+  user's data directory (`~/.local/share/.zcash`) and nothing carried existing
+  wallets over, so a consumer updating past that change failed to open them
+  with `ENOENT`. `ClientConfigBuilder::build`, when it uses the default
+  directory, copies the named wallet file over from `~/.zcash` (with its chain's
+  subdirectory) when it is only there. Only that file is copied, never the
+  directory, which zcashd also uses. The copy is staged and renamed into place,
+  and the original is kept.
+
+## 625f617b63070855d1a4b2a2f61d071cb27c6f82
+
+Since c060a45041adeeb3f36571bbbdc645a582701bcc.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Added
+- `stop_sync()` asks the running session to stop after its next batch, without
+  waiting for it; `poll_sync` tells when it has ended. Stopping when nothing
+  runs answers "Sync already stopped." rather than failing.
+- `sync_caught_up()` answers `{ caught_up, percent }` from the engine's
+  published status alone: false with a null percent until the session has
+  published one. Unlike `status_sync`, it never reads a stale wallet as
+  complete.
+- `default_indexer(chain_hint)` answers the chain's Default Indexer as the URI
+  text a consumer passes back as `IndexerChoice::Named`, or nothing for a chain
+  without one (testnet, regtest). The hint takes the spellings
+  `IndexerConnection.chain_hint` takes, and an unknown hint is an `Init` error.
+  The value is zingolib's `MAINNET_DEFAULT_INDEXER`, so a consumer no longer
+  restates it.
+
+##### Changed
+- Sync is continuous: wallets are created and loaded with
+  `shutdown_on_completion: false`, so a session launched by `run_sync` stays at
+  the chain tip and never ends on its own. `poll_sync` answers "Sync task is
+  not complete." for as long as it runs; relaunching on that answer is no
+  longer needed. Loading overrides the stored settings, so wallets saved by
+  earlier releases sync continuously too.
+- Wallets are created and loaded with `TransparentAddressDiscovery::default()`
+  (gap limit 10) in place of `minimal()` (gap limit 1), wallets saved by
+  earlier releases included.
+- Every `init_*` stops the replaced client's sync session. Dropping a client
+  never ended its engine, which kept scanning against the old server.
+- `change_server` stops the running session, which keeps the indexer it was
+  launched with; the next `run_sync` uses the new one.
+- `status_sync` answers with the status the engine last published, and
+  computes it from the wallet only when none has been published.
+- The `bucket_index` of a migration window (`migration_status`'s
+  `upcoming_windows`, `window_timeline`) numbers the chain's ZIP 318 grid,
+  whose boundaries sit three times as many blocks apart from NU7 activation,
+  and the window times count 25 seconds a block from there (zingo-adrs
+  zingolib/0056, amended). Below the activation nothing changes.
+- BREAKING: moves to the librustzcash NU7 release cohort zingolib pins
+  (`zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives`
+  0.31.0, `zcash_protocol` 0.11.0 and their siblings), which sets the NU7
+  mainnet activation height, 3,543,405. The viewing key parser lists a P2SH
+  viewing key item as `transparent` beside a P2PKH one, and a shielded
+  unified address with a transparent receiver is rendered with that
+  receiver.
+- BREAKING: `change_server(choice: IndexerChoice)` takes the uniffi enum
+  `IndexerChoice` of `Offline`, `Default`, and `Named { uri }` in place of a
+  `serveruri: String`. `Offline` disconnects the session through
+  `go_offline` instead of binding a never-dialed placeholder URI, `Default`
+  attaches to the chain's Default Indexer (mainnet's is
+  `InvalidInput`), and `Named` carries the URI the string carried before
+  (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
+  label `serveruri`, so the Swift label stays `serveruri:`.
+  `init_from_bytes` take one `IndexerConnection` record (`indexer`, an
+  `IndexerChoice` where `Offline` replaces the empty server string and
+  `Default` attaches to the chain's Default Indexer, failing `Init` on a
+  chain without one; `chain_hint`; and `sync`) in place of the four loose
+  arguments, and `set_config_wallet_to_prod` takes one `SyncSettings` record
+  (`performance_level` and `min_confirmations`).
+
+##### Fixed
+  the strategy the proxy library already used in its former workspace. The
+  iOS app links both static archives into one binary, and
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Changed
+- BREAKING: the Zcash stack moves to the librustzcash NU7 release cohort:
+  `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, replacing their pre-releases. The cohort sets the NU7 mainnet
+  activation height, 3,543,405.
+- The anchor-checkpoint retention policy runs on the chain's block spacing
+  (`zcash_protocol::zip318::BlockSpacing`): from NU7 activation the ZIP 318
+  anchor grid's boundaries sit three times as many blocks apart, and the
+  retained checkpoints and the retention window, measured in reference
+  blocks, follow them.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `wallet::keys::transparent_address_from_encoded` decodes a transparent
+  address the wallet stores encoded, for a network. `zcash_transparent` 0.11.0
+  dropped the `TryFromAddress` conversion that did this inline.
+
+##### Changed
+- **Breaking:** the Zcash stack moves to the librustzcash NU7 release cohort,
+  pinned exactly: `zcash_client_backend` 0.25.0, `zcash_keys` 0.17.0, `zcash_primitives` 0.31.0, `zcash_proofs` 0.31.0, `zcash_protocol` 0.11.0, `zcash_address` 0.14.0, `zcash_transparent` 0.11.0, and `zcash_pool_migration` 0.2.0, replacing their
+  pre-releases. The cohort sets the NU7 mainnet activation height, 3,543,405,
+  so a mainnet session crosses NU7 on the network's schedule and commits to
+  the NU7 branch id `0x77190AD9` above it. Every type these crates export
+  through zingolib's public API moves with them, so a consumer pins the same
+  cohort.
+- A unified address encodes with every receiver it carries, so a shielded
+  address with a transparent receiver renders with it again in the address
+  listing's `encoded_address` and wherever a wallet address is shown.
+  `zcash_keys` 0.17.0 restored that to `UnifiedAddress::encode`; 7.0.0 had
+  followed the pre-release, which omitted it.
+- A proposal places change only in a pool the account's viewing key receives
+  in, with transparent change as a P2PKH output: `LightWallet` answers the new
+  `InputSource::get_change_receivers` from the account's unified viewing key,
+  and the change strategies consult it. The greedy input selector also
+  spends from a later shielded pool when the preferred pool's change alone
+  would be dust, where it reported insufficient funds.
+- `wallet::expiry::NU7_TX_EXPIRY_DELTA` is `zcash_primitives`'
+  `NU7_DEFAULT_TX_EXPIRY_DELTA` and the pre-NU7 delta is its
+  `BLOSSOM_DEFAULT_TX_EXPIRY_DELTA`; the values, 120 and 40 blocks, are
+  unchanged, and the builder's own default now agrees with the wallet's.
+- `data::transaction_request_from_receivers` returns
+  `Zip321Error::SproutRecipient` for a Sprout recipient, which ZIP 321
+  forbids and `zip321` 0.10.0 refuses.
+- **Breaking:** the pool migration schedule follows ZIP 318's NU7 scaling
+  (zingo-adrs zingolib/0056, amended). Bucket boundaries are the chain's
+  ZIP 318 grid, the multiples of `M` below the NU7 activation and of `3·M`
+  from it, the transfer delays are drawn in reference blocks, and the
+  canonical expiry grid spans three times as many blocks from activation,
+  so every duration keeps its length in time at 25-second blocks. A bucket
+  index is now the ordinal of a grid boundary, which equals `height / M`
+  below the activation and departs from it above: the new
+  `migration::BucketGrid`, built by `MigrationParams::grid` from the chain,
+  answers `index_of` and `boundary_of` where `migration::bucket_index` took
+  a modulus, and that function is gone; `TransmissionWindow` and
+  `WindowReport` keep their `bucket_index` with the new meaning. The window
+  times they estimate count 25 seconds a block from activation. A part
+  whose window straddles the activation, the last bucket below it, is built
+  against the activation height once the chain has crossed it, so its
+  transaction commits to the branch the network validates; the heights a
+  part was built against travel with the proof as `migration::ProvedPart`
+  and are recorded unchanged. `MigrationParams` moves to version 3. A
+  migration section written before this release is renumbered at read: an
+  index below the activation is unchanged, a window above it that the grid
+  does not open moves to the next boundary, and such an anchor is redrawn.
+- A part that slipped past its window counts as within tolerance for two
+  hours of chain time, 96 reference blocks, rather than 96 blocks.
+  (zingo-adrs zingolib/0063), over one transmit target for the whole send:
+  the session's live indexer client on nakednet, or one SOCKS5 client over
+  the mixnet. The Destination draw, the hedged race across Destinations, and
+  the per-Destination Health filter are gone. An Indexerless session refuses
+  a send, and a migration part, with `LightClientError::Offline` on every
+  wire, where a ready mixnet once carried it to drawn Destinations; a
+  bootstrapping or dead mixnet still refuses both with `MixnetNotReady`.
+
+### zingo-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- The Binding Layer builder compiles the Android library and the wallet
+  library into one target directory, `target/binding-layer/android`, where
+  each had its own, so the crates the two share compile once per ABI and sit
+  once in the CI cache. The library now lands at
+  `target/binding-layer/android/<triple>/mobile/libzingo_nym_proxy_ffi.so`,
+  where `android/proxy/` held it. The host plan merges the same way under
+  `target/binding-layer/host`. The two cargo invocations stay separate, so
+  each crate keeps its own feature set. A workbench test pins the Android
+  builds to one directory.
+- The crate joins the root workspace, with zingo-netutils and its verifier
+  shim. Its own lockfile, `[patch]` stanza and nextest configuration are
+  gone; the root lockfile resolves it, and the root CI's nym feature job
+  tests it without `live-mixnet` (zingo-adrs zingolib/0011, amended
+  2026-10-21).
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Changed
+- The crate, its verifier shim and the proxy crate are members of the root
+  workspace, which holds one lockfile for the wallet and nym stacks; the
+  crate's own workspace and lockfile are gone (zingo-adrs zingolib/0011,
+  amended 2026-10-21). Members consume the crate with `nym` off; only the
+  proxy crate turns it on.
+
+## c060a45041adeeb3f36571bbbdc645a582701bcc
+
+Since 4f04d38c16cb032edffe1823d07bfc75bcf9103b.
+
+Audited `zingo`, `pepper-sync`, `zingolib`, `zingo-nym-proxy-ffi`, `zingo-netutils`.
+
+### zingo
+
+#### [Unreleased]
+
+##### Changed
+- The iOS Prebuilt Bundle ships one archive. `Zingolib.xcframework` now
+  carries the proxy crate's UniFFI surface beside the wallet's, built under
+  the crate's new `zingo-nym-proxy-ffi` feature, and
+  `ZingoNymProxyFFI.xcframework` is gone. The app then links one Rust std
+  and one `rust_eh_personality` beside its C++ and Objective-C personality
+  routines, the three that compact unwind encodes. Two archives brought two,
+  and the linker of Xcode 26.3 refused the app's link with "Too many
+  personality routines for compact unwind to encode". The `ZingoBindings`
+  product, which the app imports, is unchanged.
+
+##### Removed
+- BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
+  Indexer like every Transmission (zingo-adrs zingolib/0063), so there is no
+  dedicated migration transmission endpoint to set.
+
+##### Fixed
+- `send_swap_deposit` answers `InvalidInput` for a malformed or a
+  non-transparent `vault_address`. It answered `Send`, the class a consumer
+  retries.
+
+### pepper-sync
+
+#### [Unreleased]
+
+##### Fixed
+- The mempool stream is opened without a call deadline. It was opened with
+  the 20 s bound meant for a finite download, sent to the server as
+  `grpc-timeout`, so on mainnet almost every stream ended with
+  `DEADLINE_EXCEEDED` before the next block, logged a warning, and was
+  reopened with the whole mempool resent. The stream now ends when the
+  server ends it at the next block, which is the signal the monitor
+  already treats as a mined block.
+- The finite streams (block ranges, subtree roots, transparent address
+  transactions) are bounded at 120 s for the whole download in place of
+  20 s. A stall between messages is still caught after 15 s.
+
+### zingolib
+
+#### [Unreleased]
+
+##### Added
+- `mixnet::speed::WAVE_WIDTH`, the fixed width of every speed-priority wave,
+  which the retired `lightclient::select::SURVEY_WAVE_WIDTH` carried.
+- `mixnet::MixnetProxyError::NoSessionIndexer`: the typed refusal of an attach
+  or a hosted enable on a session that holds no Session Indexer.
+
+##### Changed
+- **Breaking:** `LightClient::attach_mixnet` and
+  `LightClient::enable_mixnet_via_host` require a Session Indexer. The attach
+  readiness round trip reaches the Session Indexer instead of the census
+  member `zec.rocks`, so an Indexerless session refuses typed with
+  `MixnetProxyError::NoSessionIndexer` before it dials anything (zingo-adrs
+  zingolib/0063).
+- Boot proves three exits, not four. The roles are PriceFetch,
+  IndexerClient, and Spare, assigned in the order the exits confirm; the
+  IndexerSweep role retired with the Server-Selection Sweep (zingo-adrs
+  zingolib/0063). An online session whose exit directory offers fewer than
+  three exits still refuses the enable.
+- **Breaking:** every Transmission and every migration part goes to the Session
+  Indexer over the resolved wire, as one pull under the existing retry policy
+  (zingo-adrs zingolib/0063). The Destination draw, the hedged race across
+  Destinations, and the per-Destination Health filter are gone. An Indexerless
+  session refuses a send with `LightClientError::Offline` on every wire, where
+  a ready mixnet once carried it to drawn Destinations.
+- **Breaking:** `lightclient::indexer_history::FaultDomain` and the attribution
+  of a failed attempt move from `destination::health`, which is removed. The
+  history no longer folds attempts into a Health.
+- `LightClient::probe_destinations` probes the Session Indexer when no target
+  is named, in place of the census's mixnet-reachable entries. An Indexerless
+  session refuses with `LightClientError::Offline`, and a Session Indexer
+  outside the `https` port 443 shape refuses with
+  `LightClientError::IneligibleProbeTarget`, as a named target always did,
+  where the probe used to answer with an empty list.
+- A send builds one transmit target for the whole send, the session's live
+  indexer client on nakednet or one SOCKS5 client over the mixnet, where it
+  opened a fresh lazy connection to the Session Indexer per transaction.
+- A migration part resolves its wire exactly as a send does, so an
+  Indexerless session with a bootstrapping or dead mixnet refuses the part
+  with `MixnetNotReady` as it refuses a send, where it answered `Offline`.
+
+##### Removed
+- **Breaking:** the `zingolib::indexers` and `zingolib::netutils::indexers`
+  re-exports of the indexer census, and the `destination::Correspondable`
+  implementation for its `Indexer` entry. The census is deleted; the
+  Default Indexer table in `zingo_netutils::default_indexer` replaces it,
+  and `config::default_indexer_for` reads it (zingo-adrs zingolib/0063).
+- `lightclient::select`, the Server-Selection Sweep runner:
+  `LightClient::run_server_selection_sweep`, `ServerSelectionError`,
+  `SweepProgress`, `SWEEP_HEIGHT_TOLERANCE`, `MAX_SWEEP_EXIT_DRAWS`, and
+  `SURVEY_WAVE_WIDTH`; and `mixnet::sweep`, its pure judgment: `Selection`,
+  `LiveCandidate`, `SurveyResult`, `RefusalTally`, `SweepError`,
+  `live_cohort`, `select`, `healthy_draw_verdict`, `assigned_selection`, and
+  `wave_order`. The Session Indexer receives every operation, so no survey
+  selects one (zingo-adrs zingolib/0063).
+- `destination::Operator`, which only the sweep's one-ticket-per-operator
+  draw consumed.
+- The `sweep_harness` test target.
+- **Breaking:** `destination::servers` (`DestinationServerSet`, `IndexerConfig`,
+  `Trust`, `Role`, `Location`, `Transport`, `Draw`, `NoEligibleDestinations`),
+  `destination::rotation`, `destination::health`, and
+  `destination::same_operator`; the `config::{IndexerConfig, Location, Role,
+  Trust}` re-exports; `ClientConfigBuilder::{add_indexer,
+  set_remote_indexer_trust, set_migration_transmission_uri}` and
+  `ClientConfig::{indexers, remote_indexer_trust, migration_transmission_uri}`;
+  `LightClient::{add_indexer, set_destination_servers_for_tests}`; and
+  `LightClientError::{NoEligibleDestination,
+  MigrationTransmissionTargetIsSyncEndpoint}` (zingo-adrs zingolib/0063).
+- **Breaking:** `mixnet::sweep::Selection::transmit_candidates`. The sweep no
+  longer computes the cohort minus the sync operator, because no transmitting
+  surface draws from it (zingo-adrs zingolib/0063).
+
+### zingo-nym-proxy-ffi
+
+#### [Unreleased]
+
+##### Changed
+- The Android library builds under the workspace's `mobile` profile, the one
+  profile of the Binding Layer, and the `proxy` profile is gone. The nym stack
+  beneath the crate now compiles with the same size optimization and overflow
+  checks on both platforms, where the one-archive iOS build had left it checked
+  on iOS and wrapping on Android. A plain-operator overflow in a nym crate is a
+  panic on both platforms, which ends its tokio task and leaves the process
+  running.
+- On iOS the crate ships inside `Zingolib.xcframework`, the one archive of the
+  `ZingoBindings` package, which the wallet crate builds with its
+  `zingo-nym-proxy-ffi` feature. `ZingoNymProxyFFI.xcframework` is gone. The
+  app then links one Rust std and one `rust_eh_personality` beside its C++
+  and Objective-C personality routines, the three that compact unwind
+  encodes. Two archives brought two, and the linker of Xcode 26.3 refused
+  the app's link. The `ZingoBindings` product, which the app imports, is
+  unchanged.
+
+### zingo-netutils
+
+#### [Unreleased]
+
+##### Changed
+- BREAKING: `IndexerChain` lives in `default_indexer`, the table of Default
+  Indexers keyed by chain, now that the census module it partitioned is gone
+  (zingo-adrs zingolib/0063).
+- `Indexer::get_mempool_stream` takes no timeout. The stream is a
+  subscription the server ends at the next block, so a call deadline only
+  ever cut it short. `GrpcIndexer` sends no `grpc-timeout` on it, and the
+  connection it opens on stays bounded by `time::INDEXER_CONNECT_TIMEOUT`.
+- `time::HEAVY_UNARY_TIMEOUT` is `time::FINITE_STREAM_TIMEOUT`, 120 s in
+  place of 20 s. Every caller was a finite server stream (a block range,
+  the subtree roots, a transparent address's transactions) and the bound
+  covers the whole download, which the old value cut short on a slow
+  server or link. A stall between messages is still caught by
+  `time::STREAM_MSG_TIMEOUT`.
+
+##### Removed
+- BREAKING: the `indexers` module: the census `Indexer`, `INDEXERS`, the
+  uptime leaderboard `MOST_UP_INDEXER_URIS`, `active`, `mixnet_eligible`,
+  and `Indexer::operator`. A session attaches to one indexer, the chain's
+  Default Indexer or the one the consumer names, so no table of foreign
+  endpoints remains to draw from (zingo-adrs zingolib/0063).
+- BREAKING: `time::SERVER_RANKING_TIMEOUT`, which only the retired
+  nakednet server-selection probe read.
+- BREAKING: `live_indexer_discovery` and the `live-indexer-discovery` bin. The
+  over-mixnet census survey retired with zingo-adrs zingolib/0063.
+- BREAKING: `indexers::MIXNET_HEALTH_INDEXER`. The attach readiness round trip reaches
+  the Session Indexer, not a census member.
+- BREAKING: `time::TRANSMISSION_HEDGE_INTERVAL`. The send's hedged race across
+  Destinations retired with zingo-adrs zingolib/0063.
 
 ## 4f04d38c16cb032edffe1823d07bfc75bcf9103b
 

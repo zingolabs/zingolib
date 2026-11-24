@@ -1,7 +1,7 @@
-# The Publication Record of the Binding Layer: zingolib's own record of the
-# Prebuilt Bundles it has published, one entry per Published Commit, oldest
-# first. Each entry records what the registry holds for its commit. The
-# publish workflow, started by `gh workflow run binding-layer-publish.yaml`,
+# The Publication Record, defined in zingolib/CONTEXT.md#consumers:
+# one entry per Published Commit, oldest first. Each entry records what the
+# registry holds for its commit. The publish workflow, started by
+# `gh workflow run publish-bindings.yaml`,
 # pushes the bundles, appends the entry with its digests and its audited
 # crates, regenerates bindings/CHANGELOG.md in the same commit on the branch
 # record/<commit>, and opens the pull request that merges it. An entry is
@@ -60,3 +60,51 @@ commit = "4f04d38c16cb032edffe1823d07bfc75bcf9103b"
 audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
 android = "sha256:4303c0f64686824316a8fa1cb808c8e35935d3e27a2af2877ae66ad2520be034"
 ios = "sha256:47f954b37da9b182eeb2828481916b4b079bb368538a9effe6eaeb974f692810"
+
+[[entry]]
+commit = "c060a45041adeeb3f36571bbbdc645a582701bcc"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:ffa8e20e3ca4f5934d6daf37f76f81407eb661163848ea72fdc9b67305c09e92"
+ios = "sha256:ac219448a0cb070facd351cca14903c7e48f40210935f31a58bfae80c3519d42"
+
+[[entry]]
+commit = "625f617b63070855d1a4b2a2f61d071cb27c6f82"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:3b4884c448854abb540d17e6fe5e9d5f517f5b4250ceba98a850531a8759eceb"
+ios = "sha256:5175312fa492e9e76bc6640019633e76075b810951747438a65c82c0a45a5934"
+
+[[entry]]
+commit = "755c3adaea5906cf55357e69ad1b0a27d746cdb8"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:13d4dc60a75919026025e37d6388851a3ccf547e1ab7e511916ffd146a590080"
+ios = "sha256:d851f057ff7cb3b3b802da5341c2245971240920d9d0c646c43f276c2ff62879"
+
+[[entry]]
+commit = "3fb32d277ef956e75da124c1442526fb4d91d97a"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:f78a8bce0f300fe2bfbd78964c27d0661cd874f3a84121024fbd4b00f405a78b"
+ios = "sha256:e1c629971678fd713439880ef2be848c383cb40da34fde78fb47d0648d8a8521"
+
+[[entry]]
+commit = "d496bea8c7c476f2dd54f437674f7b4d1cc19b87"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:830af8fcfcebb24ebc968cad749937af261a6dc2e7d73fb64b51e684e01d09c7"
+ios = "sha256:6b26c296643f318f74e8bef99e0c5451f1acff5d4a459ef363eb0efa8fc557a9"
+
+[[entry]]
+commit = "81d799775f11e882896e8710e8af12d6d4d29a41"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:31e3e370e42b8d8d3a36fd732562343e2c99aa20bbc07f78b2d699d06315638b"
+ios = "sha256:5ebccd1eb10ebf5b2741f8dfe4a9a1a839289fc7a74180fdef53755c1dc1d183"
+
+[[entry]]
+commit = "bb4b42def2f9be982f4bed4e231b8dd1148b2cd3"
+audited = ["zingo (zingo-ffi/lib)", "pepper-sync (pepper-sync)", "zingolib (zingolib)", "zingo-nym-proxy-ffi (zingo-netutils/nym-proxy-ffi)", "zingo-netutils (zingo-netutils)"]
+android = "sha256:450bb39abcd631d7d70735e93a6ef9821b4af297daff0dfb097d98d940071cda"
+ios = "sha256:69ad86979804b34300ce2e345a88a1760da61b1a7de3a8c8d5961ce64c3a8090"
+
+[[entry]]
+commit = "bb149ecae37607151c6c51ef186880dcb884a0b9"
+audited = ["zingolib-ffi (ffi/lib)", "pepper-sync (crates/pepper-sync)", "zingolib (crates/zingolib)", "zingolib-nym-proxy-ffi (crates/netutils/nym-proxy-ffi)", "zl-netutils (crates/netutils)"]
+android = "sha256:92dbf7943563588c2a137efd35b8cdd1a661eae6ed677ce70a505bced15015d2"
+ios = "sha256:4e8df861e6a31fa2bdd859db38cbf8998c4a3aa7360f48f309f28e63d5123628"

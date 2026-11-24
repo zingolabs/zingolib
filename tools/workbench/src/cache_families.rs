@@ -7,6 +7,9 @@ pub const SAVING_REF: &str = "refs/heads/dev";
 const LIST_LIMIT: &str = "500";
 const LISTING: &str = r#".[] | "\(.id)\t\(.key)\t\(.createdAt)""#;
 const RUST_CACHE_PREFIX: &str = "v0-rust-";
+// The nightly saves the synced testnet faucet wallet under this prefix and
+// the run id, one entry per night, restored by the prefix alone.
+const FAUCET_CACHE_PREFIX: &str = "testnet-faucet-";
 const LOCKFILE_HASH_LEN: usize = 8;
 pub const KEPT_PER_FAMILY: usize = 2;
 
@@ -40,6 +43,12 @@ pub struct Entry {
 }
 
 pub fn family(key: &str) -> &str {
+    if let Some(run_id) = key.strip_prefix(FAUCET_CACHE_PREFIX) {
+        if !run_id.is_empty() && run_id.bytes().all(|byte| byte.is_ascii_digit()) {
+            return FAUCET_CACHE_PREFIX.trim_end_matches('-');
+        }
+        return key;
+    }
     if !key.starts_with(RUST_CACHE_PREFIX) {
         return key;
     }
@@ -210,6 +219,14 @@ mod tests {
             family("v0-rust-nym-feature-Linux-x64-26e84094-c5b5aea0"),
             "v0-rust-nym-feature-Linux-x64-26e84094"
         );
+    }
+
+    #[test]
+    fn the_faucet_entries_share_one_family_keyed_by_run_id() {
+        assert_eq!(family("testnet-faucet-39829487746"), "testnet-faucet");
+        assert_eq!(family("testnet-faucet-1"), "testnet-faucet");
+        assert_eq!(family("testnet-faucet-"), "testnet-faucet-");
+        assert_eq!(family("testnet-faucet-notarun"), "testnet-faucet-notarun");
     }
 
     #[test]

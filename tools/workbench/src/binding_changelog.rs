@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
@@ -12,6 +13,7 @@ const TITLE: &str = "# Binding Layer changelog";
 const SECTION_MARK: &str = "## ";
 const SINCE_PREFIX: &str = "Since ";
 const SINCE_SUFFIX: char = '.';
+const SINCE_AND: &str = " and ";
 const AUDITED_PREFIX: &str = "Audited ";
 const CRATE_MARK: &str = "### ";
 const HEADING_MARK: char = '#';
@@ -38,10 +40,14 @@ const DIFF_ARGS: [&str; 8] = [
     "diff",
     "--no-color",
     "--no-ext-diff",
-    "--no-renames",
+    "--find-renames",
     "--diff-algorithm=myers",
     "--indent-heuristic",
 ];
+const RENAMES_ARGS: [&str; 4] = ["diff", "--find-renames", "--name-status", "--diff-filter=R"];
+const ANY_CHANGELOG: &str = ":(glob)**/CHANGELOG.md";
+const STATUS_SEPARATOR: char = '\t';
+const STATUS_FIELDS: usize = 1;
 const CONTEXT_FLAG: &str = "--unified=";
 const WHOLE_FILE_CONTEXT: i32 = i32::MAX / 2;
 const TITLE_LEVEL: usize = 1;
@@ -49,7 +55,7 @@ const TITLE_LEVEL: usize = 1;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Section {
     pub commit: String,
-    pub since: String,
+    pub since: Vec<String>,
     pub entries: Vec<(String, Vec<String>)>,
 }
 
@@ -333,10 +339,15 @@ pub fn render_header() -> String {
         "{TITLE}\n\n\
          The workbench tool `{BINARY}` writes every section below, one per entry\n\
          of `{}`, from the lines that the entry's audited crate changelogs\n\
-         gained after the previous entry's commit, named as `Since`, up to the\n\
-         entry's commit, which the section heading names, each under the\n\
-         headings it sits beneath in its changelog. The check in CI\n\
-         regenerates every section and fails when the committed file differs. The\n\
+         gained after its `Since` commits, up to the entry's commit, which the\n\
+         section heading names, each under the headings it sits beneath in its\n\
+         changelog. The `Since` commits of an entry are the earlier entries that\n\
+         are ancestors of its commit and of no other such entry (the first entry\n\
+         names its own). A release line candidate therefore follows the candidate\n\
+         it fixes, not the last entry, and the first entry after the line merges\n\
+         back follows both the line's candidate and the last entry of `dev`, with\n\
+         the lines that neither had. The check in CI regenerates every section\n\
+         and fails when the committed file differs. The\n\
          audited crates of an entry are the two Binding Layer crates and their\n\
          direct dependencies in this repository at the entry's commit, as the\n\
          publish workflow recorded them from `cargo metadata`; each section names them\n\
@@ -363,8 +374,84 @@ pub fn render_section(section: &Section) -> String {
         .join(crate::LIST_SEPARATOR);
     block(&format!(
         "{SECTION_MARK}{}\n\n{SINCE_PREFIX}{}{SINCE_SUFFIX}\n\n{AUDITED_PREFIX}{audited}{SINCE_SUFFIX}\n\n{entries}",
-        section.commit, section.since
+        section.commit,
+        since_list(&section.since)
     ))
+}
+
+fn since_list(since: &[String]) -> String {
+    match since.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => [rest.join(crate::LIST_SEPARATOR), last.clone()].join(SINCE_AND),
+    }
+}
+
+/// The lines of the first list that every other list holds, a repeated line as often as every
+/// list repeats it, under the headings of the first list that still lead a line. Headings and
+/// blank lines are context, not gains, so a section with several `Since` commits carries the
+/// lines gained against each of them and the headings those lines sit beneath.
+fn common(mut lists: Vec<Vec<String>>) -> Vec<String> {
+    if lists.is_empty() {
+        return Vec::new();
+    }
+    let first = lists.remove(0);
+    let mut counts: Vec<HashMap<&str, usize>> = lists
+        .iter()
+        .map(|list| {
+            let mut counts = HashMap::new();
+            for line in list {
+                *counts.entry(line.as_str()).or_insert(0) += 1;
+            }
+            counts
+        })
+        .collect();
+    let mut kept = Vec::new();
+    for (line, kind) in first.iter().zip(kinds(first.iter().map(String::as_str))) {
+        let context = is_blank(line) || matches!(kind, Kind::Heading(_));
+        let held = context
+            || counts
+                .iter()
+                .all(|counts| counts.get(line.as_str()).is_some_and(|count| *count > 0));
+        if held && !context {
+            for counts in &mut counts {
+                if let Some(count) = counts.get_mut(line.as_str()) {
+                    *count -= 1;
+                }
+            }
+        }
+        if held {
+            kept.push(line.clone());
+        }
+    }
+    tidy(without_empty_headings(kept))
+}
+
+/// Drops every heading that no line below it, before the next heading at its level or above,
+/// is a line of text. A heading left by a deeper empty heading is dropped on the next pass.
+fn without_empty_headings(lines: Vec<String>) -> Vec<String> {
+    let mut kept: Vec<(String, Kind)> = {
+        let kinds: Vec<Kind> = kinds(lines.iter().map(String::as_str)).collect();
+        lines.into_iter().zip(kinds).collect()
+    };
+    loop {
+        let empty = kept.iter().enumerate().position(|(index, (_, kind))| {
+            let Kind::Heading(level) = *kind else {
+                return false;
+            };
+            kept[index + 1..]
+                .iter()
+                .find(|(line, _)| !is_blank(line))
+                .is_none_or(|(_, next)| matches!(next, Kind::Heading(below) if *below <= level))
+        });
+        match empty {
+            Some(index) => {
+                kept.remove(index);
+            }
+            None => break,
+        }
+    }
+    kept.into_iter().map(|(line, _)| line).collect()
 }
 
 fn block(text: &str) -> String {
@@ -390,7 +477,7 @@ fn relative_changelog(found: &binding_manifest::AuditedCrate) -> Result<String, 
 fn gather(
     root: &Path,
     crates: &[binding_manifest::AuditedCrate],
-    since: &str,
+    since: &[String],
     commit: &str,
 ) -> Result<Section, Error> {
     let entries = crates
@@ -404,25 +491,46 @@ fn gather(
                     commit: commit.to_string(),
                 });
             }
-            Ok((
-                found.name.clone(),
-                gained_lines(&changelog_diff(root, since, commit, &relative)?)?,
-            ))
+            let gained = since
+                .iter()
+                .map(|since| gained_lines(&changelog_diff(root, since, commit, &relative)?))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((found.name.clone(), common(gained)))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Section {
         commit: commit.to_string(),
-        since: since.to_string(),
+        since: since.to_vec(),
         entries,
     })
 }
 
 /// - Runs `git diff` in `root`.
+fn path_at(root: &Path, since: &str, commit: &str, relative: &str) -> Result<String, Error> {
+    let args = [
+        RENAMES_ARGS.as_slice(),
+        &[since, commit, "--", ANY_CHANGELOG],
+    ]
+    .concat();
+    let renames = crate::git_in(root, &args)?;
+    let before = renames
+        .lines()
+        .filter_map(|row| {
+            let mut paths = row.split(STATUS_SEPARATOR).skip(STATUS_FIELDS);
+            Some((paths.next()?, paths.next()?))
+        })
+        .find(|(_, after)| *after == relative)
+        .map_or(relative, |(before, _)| before);
+    Ok(before.to_string())
+}
+
+/// - Runs `git diff` in `root`.
 fn changelog_diff(root: &Path, since: &str, commit: &str, relative: &str) -> Result<String, Error> {
     let context = format!("{CONTEXT_FLAG}{WHOLE_FILE_CONTEXT}");
+    let before = path_at(root, since, commit, relative)?;
     let args = [
         DIFF_ARGS.as_slice(),
-        &[&context, since, commit, "--", relative],
+        &[&context, since, commit, "--", &before, relative],
     ]
     .concat();
     Ok(crate::git_in(root, &args)?)
@@ -433,7 +541,7 @@ fn regenerated(root: &Path) -> Result<String, Error> {
 }
 
 fn regenerated_from(root: &Path, entries: &[binding_manifest::Entry]) -> Result<String, Error> {
-    let sections = binding_manifest::publication_commits(entries)
+    let sections = binding_manifest::publication_commits(root, entries)?
         .iter()
         .zip(entries)
         .rev()
@@ -480,6 +588,7 @@ pub fn main() -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const SINCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -490,7 +599,7 @@ mod tests {
                     --- a/x/CHANGELOG.md\n\
                     +++ b/x/CHANGELOG.md\n\
                     @@ -1,1 +1,10 @@\n\
-                    +# zingo-netutils changelog\n\
+                    +# zl-netutils changelog\n\
                     +All notable changes to this project will be documented in this file.\n\
                     +The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),\n\
                     +Entries follow the house style.\n\
@@ -619,7 +728,7 @@ mod tests {
                     \x20```\n";
         let section = Section {
             commit: COMMIT.to_string(),
-            since: SINCE.to_string(),
+            since: vec![SINCE.to_string()],
             entries: vec![("zingolib".to_string(), gained_lines(diff)?)],
         };
         let rendered = render_section(&section);
@@ -743,8 +852,7 @@ mod tests {
 
     #[test]
     fn the_diff_carries_a_heading_far_above_the_change_as_context() -> Result<(), Error> {
-        let repo = crate::scratch_dir("changelog-context")?;
-        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        let repo = scratch_repo("changelog-context")?;
         let changelog = repo.join(CRATE_CHANGELOG);
         let old = "## [Unreleased]\n\n### Added\n- a\n- b\n- c\n- d\n- e\n- f\n";
         crate::write(&changelog, old)?;
@@ -769,7 +877,7 @@ mod tests {
     fn a_section_keeps_paragraph_breaks_and_omits_silent_crates() {
         let section = Section {
             commit: COMMIT.to_string(),
-            since: SINCE.to_string(),
+            since: vec![SINCE.to_string()],
             entries: vec![
                 (
                     "zingolib".to_string(),
@@ -804,6 +912,150 @@ mod tests {
             render_file(&header, &[newest.clone(), older.clone()]),
             format!("{header}\n{newest}\n{older}")
         );
+    }
+
+    fn bullets(items: &[&str]) -> String {
+        items.iter().map(|item| format!("- {item}\n")).collect()
+    }
+
+    fn changelog_commit(
+        repo: &Path,
+        dir: &str,
+        added: &[&str],
+        fixed: &[&str],
+    ) -> Result<String, Vec<String>> {
+        let file = repo.join(dir).join(CRATE_CHANGELOG);
+        crate::create_parent(&file)?;
+        crate::write(
+            &file,
+            format!(
+                "# Changelog\n\n## [Unreleased]\n\n### Added\n{}\n### Changed\n\n### Fixed\n{}",
+                bullets(added),
+                bullets(fixed)
+            ),
+        )?;
+        crate::hermetic_git(repo, &["add", "--all"])?;
+        binding_manifest::commit_on(repo, "changelog")
+    }
+
+    fn scratch_repo(name: &str) -> Result<crate::ScratchDir, Vec<String>> {
+        let repo = crate::scratch_dir(name)?;
+        crate::hermetic_git(&repo, &["init", "--quiet", "--initial-branch", "main"])?;
+        Ok(repo)
+    }
+
+    fn entry(dir: &str, commit: &str, since: Option<&str>) -> binding_manifest::Entry {
+        binding_manifest::Entry {
+            commit: commit.to_string(),
+            since: since.map(str::to_string),
+            digests: Vec::new(),
+            audited: vec![binding_manifest::AuditedCrate {
+                name: "a".to_string(),
+                dir: PathBuf::from(dir),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_moved_changelog_gains_only_its_new_items() -> Result<(), Error> {
+        let repo = scratch_repo("changelog-moved")?;
+        let origin = changelog_commit(&repo, "old", &["one"], &[])?;
+        crate::hermetic_git(&repo, &["mv", "old", "new"])?;
+        let moved = changelog_commit(&repo, "new", &["one", "two"], &[])?;
+        let file = regenerated_from(&repo, &[entry("new", &moved, Some(&origin))])?;
+        assert!(file.contains("- two") && !file.contains("- one"), "{file}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_release_line_section_follows_the_candidate_it_fixes_and_the_merge_back_follows_both(
+    ) -> Result<(), Error> {
+        let repo = scratch_repo("changelog-release-line")?;
+        let dir = "crate-a";
+        let origin = changelog_commit(&repo, dir, &[], &[])?;
+        let candidate = changelog_commit(&repo, dir, &["one"], &[])?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "--create", "release"])?;
+        let fix = changelog_commit(&repo, dir, &["one"], &["fix"])?;
+        crate::hermetic_git(&repo, &["switch", "--quiet", "main"])?;
+        let later = changelog_commit(&repo, dir, &["one", "two"], &[])?;
+        crate::hermetic_git(
+            &repo,
+            &["merge", "--quiet", "--no-ff", "--no-edit", "release"],
+        )?;
+        let after = changelog_commit(&repo, dir, &["one", "two", "three"], &["fix"])?;
+
+        let entries = [
+            entry(dir, &candidate, Some(&origin)),
+            entry(dir, &later, None),
+            entry(dir, &fix, None),
+            entry(dir, &after, None),
+        ];
+        let file = regenerated_from(&repo, &entries)?;
+        let section_start = format!("\n{SECTION_MARK}");
+        let sections: Vec<&str> = file.split(section_start.as_str()).skip(1).collect();
+        let fix_section = sections
+            .iter()
+            .find(|section| section.starts_with(&fix))
+            .expect("the newest section is the release line candidate's");
+        assert!(
+            fix_section.contains(&format!("{SINCE_PREFIX}{candidate}{SINCE_SUFFIX}")),
+            "{fix_section}"
+        );
+        assert!(
+            fix_section.contains("- fix") && !fix_section.contains("- two"),
+            "{fix_section}"
+        );
+        let later_section = sections
+            .iter()
+            .find(|section| section.starts_with(&later))
+            .expect("the later commit of main has its own section");
+        assert!(
+            later_section.contains(&format!("{SINCE_PREFIX}{candidate}{SINCE_SUFFIX}"))
+                && later_section.contains("- two")
+                && !later_section.contains("- fix"),
+            "{later_section}"
+        );
+        let after_section = sections
+            .iter()
+            .find(|section| section.starts_with(&after))
+            .expect("the first commit after the merge-back has its own section");
+        assert!(
+            after_section.contains(&format!(
+                "{SINCE_PREFIX}{later}{SINCE_AND}{fix}{SINCE_SUFFIX}"
+            )) && after_section.contains("- three")
+                && !after_section.contains("- two")
+                && !after_section.contains("- fix")
+                && !after_section.contains("Fixed"),
+            "{after_section}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_since_line_names_every_commit_and_joins_the_last_with_and() {
+        let since = |commits: &[&str]| {
+            since_list(&commits.iter().map(|c| c.to_string()).collect::<Vec<_>>())
+        };
+        assert_eq!(since(&[]), "");
+        assert_eq!(since(&["a"]), "a");
+        assert_eq!(since(&["a", "b"]), "a and b");
+        assert_eq!(since(&["a", "b", "c"]), "a, b and c");
+    }
+
+    #[test]
+    fn common_lines_are_those_gained_against_every_since_and_an_emptied_heading_goes() {
+        let lines = |text: &str| text.lines().map(str::to_string).collect::<Vec<_>>();
+        let against_dev = lines(
+            "##### Added\n- three\n- three\n\n##### Changed\n###### Deep\n- deep\n\n##### Fixed\n- fix\n```sh\n# fenced\n```",
+        );
+        let against_line =
+            lines("##### Added\n- two\n- three\n\n##### Fixed\n```sh\n# fenced\n```");
+        assert_eq!(
+            common(vec![against_dev.clone(), against_line]),
+            lines("##### Added\n- three\n\n##### Fixed\n```sh\n# fenced\n```")
+        );
+        assert_eq!(common(vec![against_dev.clone()]), against_dev);
+        assert_eq!(common(Vec::new()), Vec::<String>::new());
     }
 
     #[test]

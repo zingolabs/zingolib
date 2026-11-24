@@ -1,7 +1,7 @@
 use crate::binding_manifest;
 use std::path;
 
-#[path = "../../../zingolib/short_commit.rs"]
+#[path = "../../../crates/zingolib/short_commit.rs"]
 pub mod short_commit;
 
 /// The language of the Android bindings.
@@ -13,9 +13,9 @@ pub const SWIFT: &str = "swift";
 /// The binding languages that the builder generates.
 pub const LANGUAGES: [&str; 2] = [KOTLIN, SWIFT];
 
-const BINDGEN_PACKAGE: &str = "zingo-uniffi-bindgen";
+const BINDGEN_PACKAGE: &str = "zingolib-uniffi-bindgen";
 
-const BINDGEN_BIN: &str = "zingo-uniffi-bindgen";
+const BINDGEN_BIN: &str = "zingolib-uniffi-bindgen";
 
 /// The wallet crate's library name, from which its library file names derive.
 pub const WALLET_LIB_NAME: &str = "zingo";
@@ -35,11 +35,13 @@ pub fn exported_symbol_patterns(lib_name: &str) -> [String; 2] {
 }
 
 /// The proxy crate's package name, which cargo selects in its own workspace.
-pub const PROXY_PACKAGE: &str = "zingo-nym-proxy-ffi";
+pub const PROXY_PACKAGE: &str = "zingolib-nym-proxy-ffi";
 
-pub const WALLET_CRATE_DIR: &str = "zingo-ffi/lib";
+pub const PROXY_FEATURE_ARGS: [&str; 2] = ["--features", PROXY_PACKAGE];
 
-pub const PROXY_CRATE_DIR: &str = "zingo-netutils/nym-proxy-ffi";
+pub const WALLET_CRATE_DIR: &str = "ffi/lib";
+
+pub const PROXY_CRATE_DIR: &str = "crates/netutils/nym-proxy-ffi";
 
 pub const BINDING_CRATE_DIRS: [&str; 2] = [WALLET_CRATE_DIR, PROXY_CRATE_DIR];
 
@@ -75,6 +77,8 @@ pub const ENGINE_VARIABLE: &str = "CONTAINER_RUNTIME";
 
 pub const PUBLISHED_ANDROID_IMAGE: &str = "ghcr.io/zingolabs/android_builder:019";
 
+pub const IOS_XCODE_VERSION: &str = "26.3";
+
 /// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";
 
@@ -99,14 +103,12 @@ pub const STATIC_SUFFIX: &str = ".a";
 /// The operating system name that Rust reports on macOS.
 pub const MACOS: &str = "macos";
 
-/// The wallet XCFramework.
+pub const WALLET_BINARY_TARGET: &str = "Zingolib";
+
+#[cfg(test)]
+const XCFRAMEWORK_SUFFIX: &str = ".xcframework";
+
 pub const WALLET_XCFRAMEWORK: &str = "Zingolib.xcframework";
-
-/// The proxy XCFramework.
-pub const PROXY_XCFRAMEWORK: &str = "ZingoNymProxyFFI.xcframework";
-
-/// Both XCFrameworks, in the order that the builder creates them.
-pub const XCFRAMEWORKS: [&str; 2] = [WALLET_XCFRAMEWORK, PROXY_XCFRAMEWORK];
 
 const SWIFT_SOURCES_PARENT: &str = "Sources";
 
@@ -121,11 +123,11 @@ pub const SWIFT_LINKED_FRAMEWORK: &str = "SystemConfiguration";
 
 pub const SWIFT_PACKAGE_OUTPUT_DIR: &str = "build";
 
-pub const SWIFT_CONTRACT_TESTS_DIR: &str = "zingo-netutils/nym-proxy-ffi/contract-tests";
+pub const SWIFT_CONTRACT_TESTS_DIR: &str = "crates/netutils/nym-proxy-ffi/contract-tests";
 
 pub const SWIFT_CONTRACT_TESTS_PACKAGE: &str = "ZingoBindingsContractTests";
 
-pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../bindings/swift";
+pub const SWIFT_PACKAGE_FROM_CONTRACT_TESTS: &str = "../../../../bindings/swift";
 
 const SWIFTPM_PACKAGE_SCHEME_SUFFIX: &str = "-Package";
 
@@ -151,7 +153,7 @@ const SIMCTL_DEVICE_FIELDS: usize = 3;
 
 const VERSION_SEPARATOR: char = '.';
 
-pub const SWIFT_CONTRACT_TEST_COUNT: usize = 3;
+pub const SWIFT_CONTRACT_TEST_COUNT: usize = 4;
 
 const XCODEBUILD_EXECUTED: &str = "Executed ";
 
@@ -315,7 +317,7 @@ pub const ARTIFACT_WILDCARD: &str = "*";
 const ARTIFACT_SEPARATOR: &str = "-";
 const SLICE_SEGMENT: &str = "slice";
 pub const ARCHIVE_SUFFIX: &str = ".tar.gz";
-pub const WALLET_MANIFEST: &str = "zingolib/Cargo.toml";
+pub const WALLET_MANIFEST: &str = "crates/zingolib/Cargo.toml";
 const MANIFEST_VERSION_PATH: [&str; 2] = ["package", "version"];
 pub const ANDROID_BUILD_DIR: &str = "bindings/android/build";
 pub const MAVEN_REPOSITORY_DIR: &str = "repository";
@@ -602,19 +604,29 @@ pub enum Generation {
     Proxy,
 }
 
-impl Generation {
-    /// The prefix of this binding set's output directory names.
-    pub fn label(self) -> &'static str {
-        match self {
-            Generation::Wallet => "wallet",
-            Generation::Proxy => "proxy",
-        }
-    }
+pub struct GenerationNames {
+    pub label: &'static str,
+    pub lib_name: &'static str,
+    pub crate_dir: &'static str,
+}
 
-    pub fn lib_name(self) -> &'static str {
+const WALLET_NAMES: GenerationNames = GenerationNames {
+    label: "wallet",
+    lib_name: WALLET_LIB_NAME,
+    crate_dir: WALLET_CRATE_DIR,
+};
+
+const PROXY_NAMES: GenerationNames = GenerationNames {
+    label: "proxy",
+    lib_name: PROXY_LIB_NAME,
+    crate_dir: PROXY_CRATE_DIR,
+};
+
+impl Generation {
+    pub fn names(self) -> &'static GenerationNames {
         match self {
-            Generation::Wallet => WALLET_LIB_NAME,
-            Generation::Proxy => PROXY_LIB_NAME,
+            Generation::Wallet => &WALLET_NAMES,
+            Generation::Proxy => &PROXY_NAMES,
         }
     }
 }
@@ -629,10 +641,7 @@ pub enum Profile {
     Debug,
     /// Cargo's `--release` profile, which writes to the `release` directory.
     Release,
-    /// The `mobile` profile of the root workspace, which the builder ships the wallet library under.
     Mobile,
-    /// The `proxy` profile of the root workspace, the plain release profile the proxy library ships under.
-    Proxy,
 }
 
 impl Profile {
@@ -642,7 +651,6 @@ impl Profile {
             Profile::Debug => &[],
             Profile::Release => &["--release"],
             Profile::Mobile => &["--profile", "mobile"],
-            Profile::Proxy => &["--profile", "proxy"],
         }
     }
 
@@ -652,7 +660,6 @@ impl Profile {
             Profile::Debug => "debug",
             Profile::Release => "release",
             Profile::Mobile => "mobile",
-            Profile::Proxy => "proxy",
         }
     }
 }
@@ -673,28 +680,9 @@ pub fn binding_sets() -> impl Iterator<Item = (Generation, &'static str)> {
         .flat_map(|generation| LANGUAGES.map(|language| (generation, language)))
 }
 
-/// A directory that a bindgen run starts in, which decides whose `uniffi.toml` library mode applies.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Workdir {
-    WalletCrate,
-    /// The wallet-side workspace's directory, where library mode sees no proxy configuration.
-    WalletWorkspace,
-    /// The proxy crate's directory, where library mode applies the proxy's configuration.
-    ProxyCrate,
-}
-
-/// The directory that the builder generates one binding set in one language from.
-pub fn bindgen_workdir(generation: Generation, language: &str) -> Workdir {
-    match (generation, language) {
-        (Generation::Wallet, _) => Workdir::WalletCrate,
-        (Generation::Proxy, KOTLIN) => Workdir::ProxyCrate,
-        (Generation::Proxy, _) => Workdir::WalletWorkspace,
-    }
-}
-
 /// The name of the directory that holds one binding set in one language.
 pub fn output_name(generation: Generation, language: &str) -> String {
-    format!("{}-{language}", generation.label())
+    format!("{}-{language}", generation.names().label)
 }
 
 pub fn bindgen_args(inputs: &BindgenInputs, library: &str, out_dir: &str) -> Vec<String> {
@@ -757,7 +745,7 @@ mod tests {
 
     #[test]
     fn the_descriptor_env_is_the_one_the_build_script_emits() {
-        let build_script = include_str!("../../../zingolib/build.rs");
+        let build_script = include_str!("../../../crates/zingolib/build.rs");
         assert!(build_script.contains(&format!(
             "const DESCRIPTOR_ENV: &str = \"{DESCRIPTOR_ENV}\";"
         )));
@@ -912,6 +900,84 @@ mod tests {
     }
 
     #[test]
+    fn the_wallet_xcframework_is_the_binary_target_with_the_suffix() {
+        assert_eq!(
+            WALLET_XCFRAMEWORK.strip_suffix(XCFRAMEWORK_SUFFIX),
+            Some(WALLET_BINARY_TARGET)
+        );
+    }
+
+    #[test]
+    fn the_swift_package_links_one_binary_target_so_the_app_links_one_std() {
+        let manifest = include_str!("../../../bindings/swift/Package.swift");
+        assert_eq!(manifest.matches(".binaryTarget(").count(), 1);
+        assert!(manifest.contains(&format!("name: \"{WALLET_BINARY_TARGET}\"")));
+        assert!(manifest.contains(&format!("/{WALLET_XCFRAMEWORK}\"")));
+        assert!(manifest.contains(&format!("dependencies: [\"{WALLET_BINARY_TARGET}\"]")));
+    }
+
+    #[test]
+    fn the_wallet_crate_offers_the_proxy_feature_the_ios_build_enables() -> Result<(), Vec<String>>
+    {
+        let manifest: toml_edit::DocumentMut = include_str!("../../../ffi/lib/Cargo.toml")
+            .parse()
+            .map_err(|error| {
+                vec![format!(
+                    "{WALLET_CRATE_DIR}/{} does not parse: {error}",
+                    crate::MANIFEST
+                )]
+            })?;
+        let [flag, feature] = PROXY_FEATURE_ARGS;
+        assert_eq!(flag, "--features");
+        let dependency = crate::required(
+            manifest
+                .get("dependencies")
+                .and_then(|table| table.get(PROXY_PACKAGE)),
+            "the proxy dependency of the wallet crate",
+        )?;
+        assert_eq!(
+            dependency
+                .get("optional")
+                .and_then(toml_edit::Item::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            dependency
+                .get("workspace")
+                .and_then(toml_edit::Item::as_bool),
+            Some(true)
+        );
+        let root: toml_edit::DocumentMut = include_str!("../../../Cargo.toml")
+            .parse()
+            .map_err(|error| vec![format!("{} does not parse: {error}", crate::MANIFEST)])?;
+        let relative = crate::required(
+            root.get("workspace")
+                .and_then(|table| table.get("dependencies"))
+                .and_then(|table| table.get(PROXY_PACKAGE))
+                .and_then(|entry| entry.get("path"))
+                .and_then(toml_edit::Item::as_str),
+            "the proxy entry's path in the workspace dependency table",
+        )?;
+        assert_eq!(path::Path::new(relative), path::Path::new(PROXY_CRATE_DIR));
+        let enabled = crate::required(
+            manifest
+                .get("features")
+                .and_then(|table| table.get(feature))
+                .and_then(toml_edit::Item::as_array),
+            "the proxy feature of the wallet crate",
+        )?;
+        let dependency_feature = format!("dep:{PROXY_PACKAGE}");
+        assert!(enabled
+            .iter()
+            .any(|value| value.as_str() == Some(&dependency_feature)));
+        let source = include_str!("../../../ffi/lib/src/lib.rs");
+        assert!(source.contains(&format!(
+            "#[cfg(feature = \"{feature}\")]\nextern crate {PROXY_LIB_NAME};"
+        )));
+        Ok(())
+    }
+
+    #[test]
     fn the_android_gradle_files_name_the_maven_publication() {
         let manifest = include_str!("../../../bindings/android/build.gradle.kts");
         let settings = include_str!("../../../bindings/android/settings.gradle.kts");
@@ -1001,16 +1067,21 @@ mod tests {
         lexical(&path::Path::new(base).join(relative))
     }
 
+    const SWIFT_CONTRACT_FIXTURE_TARGET: &str = "AppPersonalities";
+
     #[test]
     fn the_contract_tests_manifest_names_the_shipped_package() -> Result<(), Vec<String>> {
         let manifest =
-            include_str!("../../../zingo-netutils/nym-proxy-ffi/contract-tests/Package.swift");
+            include_str!("../../../crates/netutils/nym-proxy-ffi/contract-tests/Package.swift");
         assert!(manifest.contains(&format!("name: \"{SWIFT_CONTRACT_TESTS_PACKAGE}\"")));
         assert!(manifest.contains(&format!(
             ".package(name: \"{SWIFT_PACKAGE}\", path: \"{SWIFT_PACKAGE_FROM_CONTRACT_TESTS}\")"
         )));
         assert!(manifest.contains(&format!(
-            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\")"
+            ".product(name: \"{SWIFT_PACKAGE}\", package: \"{SWIFT_PACKAGE}\"), \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
+        )));
+        assert!(manifest.contains(&format!(
+            ".target(\n            name: \"{SWIFT_CONTRACT_FIXTURE_TARGET}\""
         )));
         assert!(!manifest.contains("products:"));
         let shipped_package = crate::required(
@@ -1103,7 +1174,7 @@ mod tests {
     #[test]
     fn the_swift_contract_test_count_is_the_number_of_xctest_methods() {
         let suite = include_str!(
-            "../../../zingo-netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
+            "../../../crates/netutils/nym-proxy-ffi/contract-tests/swift/GoldenWireContractTests.swift"
         );
         assert_eq!(xctest_methods(suite), SWIFT_CONTRACT_TEST_COUNT);
         let mixed = [
@@ -1128,7 +1199,7 @@ mod tests {
 
     #[test]
     fn the_wallet_crate_builds_no_bindgen() {
-        let manifest = include_str!("../../../zingo-ffi/lib/Cargo.toml");
+        let manifest = include_str!("../../../ffi/lib/Cargo.toml");
         assert!(!manifest.contains("[[bin]]"));
         assert!(!manifest.contains("\"cli\""));
     }
@@ -1153,9 +1224,9 @@ mod tests {
                 crate::MANIFEST_PATH_FLAG,
                 "/w/Cargo.toml",
                 "--package",
-                "zingo-uniffi-bindgen",
+                "zingolib-uniffi-bindgen",
                 "--bin",
-                "zingo-uniffi-bindgen",
+                "zingolib-uniffi-bindgen",
                 "--",
                 "generate",
                 "--library",
@@ -1254,18 +1325,23 @@ mod tests {
             .all(|abi| abi.cc().contains(ANDROID_API_LEVEL)));
     }
 
+    // The wallet's patterns cover the proxy's exports by prefix today. The
+    // hide step lists both crates' patterns, so the proxy stays exported
+    // when its lib name stops sharing the prefix.
     #[test]
-    fn only_the_proxy_kotlin_generates_where_the_proxy_configuration_applies() {
-        assert_eq!(
-            bindgen_workdir(Generation::Proxy, KOTLIN),
-            Workdir::ProxyCrate
-        );
-        assert_eq!(
-            bindgen_workdir(Generation::Proxy, SWIFT),
-            Workdir::WalletWorkspace
-        );
-        assert!(LANGUAGES
+    fn the_wallet_export_patterns_cover_the_proxy_exports_by_prefix_alone() {
+        for (wallet, proxy) in exported_symbol_patterns(WALLET_LIB_NAME)
             .iter()
-            .all(|language| bindgen_workdir(Generation::Wallet, language) == Workdir::WalletCrate));
+            .zip(exported_symbol_patterns(PROXY_LIB_NAME))
+        {
+            let stem = wallet.trim_end_matches(SYMBOL_WILDCARD);
+            assert!(proxy.starts_with(stem), "{proxy} escapes {wallet}");
+        }
+    }
+
+    #[test]
+    fn each_generation_generates_from_its_own_crate() {
+        assert_eq!(Generation::Wallet.names().crate_dir, WALLET_CRATE_DIR);
+        assert_eq!(Generation::Proxy.names().crate_dir, PROXY_CRATE_DIR);
     }
 }

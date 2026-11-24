@@ -22,10 +22,14 @@ on:
       # The runner of the per-ABI build job: the Linux runner that the
       # CI_LINUX_RUNNER repository variable names, falling back to
       # WarpBuild's sixteen-core label. Each ABI compiles the wallet, the
-      # proxy and the bindgen for its target. cargo compiles independent
-      # crates in parallel; the mobile profile's codegen-units = 1 keeps each
-      # crate's own codegen serial. Measured on 2026-10-16: the x86_64 build
-      # took 7.3 minutes on sixteen cores against 11 to 17 on four.
+      # proxy and the bindgen for its target, all under the mobile profile.
+      # cargo compiles independent crates in parallel. The profile sets
+      # codegen-units to 1, which keeps each crate's own codegen serial.
+      # Measured on 2026-10-16, when the wallet built under the mobile
+      # profile and the proxy under a plain release profile with the
+      # default codegen units: the x86_64 build took 7.3 minutes on sixteen
+      # cores against 11 to 17 on four. The proxy's share of that time
+      # under the mobile profile is unmeasured.
       runner:
         required: false
         type: string
@@ -96,7 +100,8 @@ jobs:
       # its components; the image holds that toolchain until the pin moves,
       # and the builder adds the ABI's target to it itself. The cache holds
       # the dependencies of the wallet, the proxy, and the bindgen, built
-      # for this ABI, and the workbench's own build. The image already
+      # once for this ABI into the one target directory the wallet and the
+      # proxy share, and the workbench's own build. The image already
       # holds the cargo-installed tools, so the cache leaves CARGO_HOME/bin
       # out. The builder's plan clears only its output directory, never
       # target/binding-layer, so a restored cache stays usable.
@@ -125,8 +130,8 @@ jobs:
           retention-days: 3
           overwrite: true
 
-  # A push to dev or stable reruns ci-pr on the merge commit whose pull
-  # request already packaged the layout, so the push skips this job. The
+  # A push to dev or a release line reruns ci-pr on the merge commit whose
+  # pull request already packaged the layout, so the push skips this job. The
   # build job still runs on a push: its cargo cache lands on the base
   # branch, which is the cache every pull request restores from.
   package:

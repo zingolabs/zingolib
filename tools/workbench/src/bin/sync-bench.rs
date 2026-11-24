@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use workbench::session;
-use workbench::{repo_root, run};
+use workbench::{cargo_make, repo_root, run};
 
 /// Agreeing representations of `zingolib::lightclient::sync`'s minted log
 /// markers, restated because the workbench is deliberately std-only and
@@ -37,10 +37,7 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The indexer every run pins, so arms compare like with like.
-const PINNED_INDEXER: &str = "https://zec.rocks:443";
-
-/// The zingo-cli feature a nakednet arm needs to go online at all, since a
+/// The zingolib-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.
 const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
 
@@ -51,7 +48,7 @@ const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
 /// session cannot slow the scan by routing it. What it can do is compete
 /// for cores, and these are the two competitors: the wallet doing the scan
 /// and the proxy doing Sphinx crypto and cover traffic.
-const WALLET_PROCESS: &str = "zingo-cli";
+const WALLET_PROCESS: &str = "zingolib-cli";
 
 /// The proxy child, absent entirely from a nakednet arm.
 const PROXY_PROCESS: &str = "nym-proxy";
@@ -424,17 +421,16 @@ fn build_dir(root: &Path, arm: Arm) -> PathBuf {
     bench_dir(root).join("builds").join(arm.name())
 }
 
-/// The `makers run-cli` invocation the prebuild and every session share.
+/// The `cargo make run-cli` invocation the prebuild and every session share.
 ///
 /// Both go through here so the two cannot drift in profile, features, or
 /// build directory, and the profile is release because an unoptimized
 /// core-second answers nothing about what the mixnet costs a user.
 fn run_cli(root: &Path, arm: Arm) -> Command {
-    let mut command = Command::new("makers");
+    let mut command = cargo_make("run-cli");
     command
         .current_dir(root)
         .env("RUST_LOG", LOG_FILTER)
-        .arg("run-cli")
         .arg("--release")
         .arg("--target-dir")
         .arg(build_dir(root, arm));
@@ -459,7 +455,7 @@ fn prebuild(root: &Path, arm: Arm) -> Result<(), Vec<String>> {
     let status = run_cli(root, arm)
         .arg("--build-only")
         .status()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli --build-only: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli --build-only: {e}")])?;
     if status.success() {
         return Ok(());
     }
@@ -480,8 +476,6 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut command = run_cli(root, arm);
     command
         .arg("--online")
-        .arg("--server")
-        .arg(PINNED_INDEXER)
         .arg("--seed")
         .arg(GUARD_MNEMONIC)
         .arg("--birthday")
@@ -496,7 +490,7 @@ fn session(root: &Path, birthday: u32, arm: Arm) -> Result<Outcome, Vec<String>>
     let mut child = command
         .process_group(0)
         .spawn()
-        .map_err(|e| vec![format!("cannot spawn makers run-cli: {e}")])?;
+        .map_err(|e| vec![format!("cannot spawn cargo make run-cli: {e}")])?;
 
     let spawned = Instant::now();
     let mut launched: Option<Instant> = None;

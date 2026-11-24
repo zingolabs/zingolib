@@ -23,8 +23,11 @@ pub mod binding_manifest;
 pub mod binding_publish;
 pub mod cache_families;
 pub mod closed_pr_runs;
+#[cfg(test)]
+mod crate_move;
 pub mod dupes_gate;
 pub mod nextest_ceilings;
+pub mod no_network_gate;
 pub mod orasust;
 pub mod panic_strategy;
 pub mod runner_labels;
@@ -128,6 +131,15 @@ pub fn finished_in(
 pub const CARGO: &str = "cargo";
 pub const GH: &str = "gh";
 const VERSION_FLAG: &str = "--version";
+const MAKE: &str = "make";
+
+// The cargo-make front door, reached as a cargo subcommand because a
+// host that installs only the `cargo-make` binary has no `makers`.
+pub fn cargo_make(task: &str) -> Command {
+    let mut command = Command::new(CARGO);
+    command.arg(MAKE).arg(task);
+    command
+}
 
 /// - Runs `cargo <name> --version` as a child process, with stderr inherited, and waits for it.
 pub fn cargo_subcommand_version(name: &str, install_command: &str) -> Result<String, Vec<String>> {
@@ -836,8 +848,8 @@ mod tests {
     fn the_manifest_above_a_nested_member_source_is_that_member() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert_eq!(
-            manifest_above(&root.join("zingo-ffi/lib/src"))?,
-            root.join("zingo-ffi/lib").join(MANIFEST)
+            manifest_above(&root.join("ffi/lib/src"))?,
+            root.join("ffi/lib").join(MANIFEST)
         );
         assert_eq!(manifest_above(&root.join("docs"))?, root.join(MANIFEST));
         Ok(())
@@ -847,7 +859,7 @@ mod tests {
     fn a_virtual_manifest_declares_no_package() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert!(!declares_a_package(&root.join(MANIFEST))?);
-        assert!(declares_a_package(&root.join("zingo-cli").join(MANIFEST))?);
+        assert!(declares_a_package(&root.join("bin/cli").join(MANIFEST))?);
         Ok(())
     }
 
@@ -855,7 +867,7 @@ mod tests {
     fn the_root_workspace_members_include_the_nested_ones() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         let members = workspace_members(&root.join(MANIFEST))?;
-        for member in ["zingo-ffi/lib", "zingo-ffi/uniffi-bindgen", "zingo-cli"] {
+        for member in ["ffi/lib", "ffi/uniffi-bindgen", "bin/cli"] {
             assert!(
                 members.contains(&root.join(member).join(MANIFEST)),
                 "{member}"
@@ -877,12 +889,55 @@ mod tests {
         Ok(())
     }
 
+    const VERIFIER_SHIM: &str = "rustls-platform-verifier";
+    const PACKAGE_KEY: &str = "package";
+    const NAME_KEY: &str = "name";
+    const SOURCE_KEY: &str = "source";
+
+    #[test]
+    fn the_verifier_shim_patch_is_in_effect() -> Result<(), Vec<String>> {
+        let lockfile = repo_root()?.join(LOCKFILE);
+        let text = at_path(&lockfile, "read", |path| std::fs::read_to_string(path))?;
+        let document: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|error| vec![format!("{} does not parse: {error}", lockfile.display())])?;
+        let packages = document
+            .get(PACKAGE_KEY)
+            .and_then(|item| item.as_array_of_tables())
+            .ok_or_else(|| {
+                vec![format!(
+                    "{} holds no [[package]] tables",
+                    lockfile.display()
+                )]
+            })?;
+        let verifiers: Vec<&toml_edit::Table> = packages
+            .iter()
+            .filter(|package| {
+                package.get(NAME_KEY).and_then(|name| name.as_str()) == Some(VERIFIER_SHIM)
+            })
+            .collect();
+        let shim = match verifiers.as_slice() {
+            [shim] => shim,
+            other => {
+                return Err(vec![format!(
+                    "the lockfile holds {} entries for {VERIFIER_SHIM}, not one: the zingo-adrs zingolib/0021 patch table is not in effect",
+                    other.len()
+                )]);
+            }
+        };
+        assert!(
+            shim.get(SOURCE_KEY).is_none(),
+            "the lockfile resolves {VERIFIER_SHIM} from a registry, so the zingo-adrs zingolib/0021 patch table is not in effect"
+        );
+        Ok(())
+    }
+
     #[test]
     fn a_deleted_file_resolves_through_its_nearest_existing_directory() -> Result<(), Vec<String>> {
         let root = repo_root()?;
         assert_eq!(
-            existing_dir_of(&root, Path::new("zingo-cli/src/gone/file.rs")),
-            root.join("zingo-cli/src")
+            existing_dir_of(&root, Path::new("bin/cli/src/gone/file.rs")),
+            root.join("bin/cli/src")
         );
         assert_eq!(existing_dir_of(&root, Path::new("README.md")), root);
         Ok(())

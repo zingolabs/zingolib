@@ -1,6 +1,44 @@
 ## Zingolib
 [![license](https://img.shields.io/github/license/zingolabs/zingolib)](LICENSE) [![coverage](https://img.shields.io/endpoint?url=https://zingolabs.org/zingolib/coverage/badge.json)](https://zingolabs.org/zingolib/coverage/)
-This repo provides both a library for zingo-mobile, as well as an included cli application to interact with the Zcash blockchain through a chain indexer.
+zingolib is an API that provides high-level abstractions for Zcash light
+wallet developers.
+
+It includes Prebuilt Bundles suitable for consumption in both Swift and Kotlin
+environments. The bindings are matched, so a React Native developer finds the
+same API on both platforms.
+
+zingo-cli is a full-featured command-line application, suitable for development
+and for other terminal-driven projects.
+
+### Known consumers
+* [zingo-mobile](https://github.com/zingolabs/zingo-mobile)
+* [Edge](https://github.com/EdgeApp/edge-react-gui)
+* [zingo-pc](https://github.com/zingolabs/zingo-pc)
+* [zingo-tui](https://github.com/zingolabs/zingolib-tui)
+* [zingo-cli](bin/cli/README.md)
+* [Zingo Delegator (mobile)](https://github.com/zingolabs/crosslink-mobile-client)
+* [zingo-desktop-delegator](https://github.com/zingolabs/zingo-desktop-delegator)
+
+## Layout
+
+```mermaid
+flowchart TD
+    cli["bin/cli<br/>zingolib-cli"] --> zingolib
+    ffi["ffi/lib<br/>zingolib-ffi"] --> zingolib
+    zingolib["crates/zingolib<br/>zingolib"] --> ff
+    zingolib --> ps
+    ps["crates/pepper-sync<br/>pepper-sync"] --> net["crates/netutils<br/>zl-netutils"]
+    ps --> common
+    subgraph nonet["no network code"]
+        ff["crates/file-format<br/>zl-file-format"] --> common["crates/common<br/>zl-common"]
+    end
+```
+
+An arrow means "depends on". The diagram shows the five library crates and the
+two crates that consume them in this workspace. It leaves out a direct
+dependency that a path of arrows already implies: `zingolib`, for example, also
+depends directly on `zl-common` and `zl-netutils`. It also leaves out the helper
+crates, such as `zingolib-nym-proxy-ffi`.
 
 # Security Vulnerability Disclosure
 
@@ -9,8 +47,8 @@ If you believe you have discovered a security issue, please contact us at:
 zingodisclosure@proton.me
 
 ## Zingo CLI
-`zingo-cli` is a command line indexer client. Its own README,
-[zingo-cli/README.md](zingo-cli/README.md), holds everything specific to it:
+zingo-cli is a command line indexer client. Its own README,
+[bin/cli/README.md](bin/cli/README.md), holds everything specific to it:
 the one procedure that builds it, which bundles the `nym-proxy` binary beside
 it, and how to launch it, take it online, choose a network (regtest included),
 create or restore a wallet, and set its session options. Releases are currently
@@ -29,6 +67,15 @@ Zingo-CLI does automatic note and utxo management, which means it doesn't allow 
 * Will automatically shield your sapling funds at the first opportunity
     * When sending an outgoing transaction to a shielded address, Zingo-CLI can decide to use the transaction to additionally shield your sapling funds (i.e., send your sapling funds to your own orchard address in the same transaction)
 * Transparent funds are only spent via explicit shield operations
+
+## Mobile releases
+
+zingolib supports React Native mobile development. A mobile app links the
+Binding Layer, the uniffi-exported wallet and proxy crates with their Kotlin
+and Swift Binding Sets, and consumes it as Prebuilt Bundles published from
+commits of `dev`. [bindings/README.md](bindings/README.md) explains how a
+zingolib developer builds the Binding Layer locally and how a publication
+runs, from the workflow dispatch to the Publication Record.
 
 ## Architecture decision records
 

@@ -8,15 +8,14 @@ context.
 ## Wallet-library domain
 
 The domain of the shipped artifacts: the wallet, its keys, pools,
-sync engine, send flow, and consumers (zingo-mobile, zingo-cli).
+sync engine, send flow, and consumers (zingo-mobile, zingolib-cli).
 
-- Glossary: [`zingolib/CONTEXT.md`](zingolib/CONTEXT.md)
+- Glossary: [`crates/zingolib/CONTEXT.md`](crates/zingolib/CONTEXT.md)
 
 ## Test infrastructure
 
 The domain of the test infrastructure: the mock chain, the testnet cells,
-and the terms the regtest removal ruled on. Entries that name the retired
-regtest harness stand as history until the glossary is pruned.
+and the terms the regtest removal ruled on.
 
 - Glossary: [`docs/testing/CONTEXT.md`](docs/testing/CONTEXT.md)
 
