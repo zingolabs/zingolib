@@ -514,6 +514,18 @@ mod tests {
     }
 
     #[test]
+    fn a_subtree_root_whose_hash_is_not_32_bytes_is_invalid() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let mut short_root = orchard_subtree_root(MerkleHashOrchard::empty_leaf());
+        short_root.root_hash.pop();
+
+        assert!(matches!(
+            add_subtree_roots(0, vec![short_root], &mut shard_trees.orchard),
+            Err(ServerError::InvalidSubtreeRoot)
+        ));
+    }
+
+    #[test]
     fn fetched_roots_replace_bare_roots_and_keep_scanned_shards() {
         let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
         let tree = &mut shard_trees.orchard;

@@ -511,6 +511,7 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
+    use zcash_primitives::block::BlockHash;
     use zcash_protocol::local_consensus::LocalNetwork;
     use zl_netutils::lightwallet_protocol::TreeState;
 
@@ -593,6 +594,30 @@ mod tests {
             IRONWOOD_ACTIVATION.into(),
         )
         .await
+    }
+
+    const BLOCK_HASH_BYTES: usize = 32;
+    const MARKED_BYTE: u8 = 0x01;
+
+    #[tokio::test]
+    async fn a_well_formed_tree_state_keeps_its_height_and_reverses_its_block_hash() {
+        let mut wire_hash = [0; BLOCK_HASH_BYTES];
+        wire_hash[0] = MARKED_BYTE;
+        let mut reversed_hash = [0; BLOCK_HASH_BYTES];
+        reversed_hash[BLOCK_HASH_BYTES - 1] = MARKED_BYTE;
+
+        let frontiers = frontiers_of(TreeState {
+            hash: hex::encode(wire_hash),
+            ..mocks::empty_trees(IRONWOOD_ACTIVATION.into())
+        })
+        .await;
+
+        assert_eq!(
+            frontiers
+                .map(|frontiers| (frontiers.block_height(), frontiers.block_hash()))
+                .map_err(|unread| unread.to_string()),
+            Ok((IRONWOOD_ACTIVATION.into(), BlockHash(reversed_hash)))
+        );
     }
 
     #[tokio::test]

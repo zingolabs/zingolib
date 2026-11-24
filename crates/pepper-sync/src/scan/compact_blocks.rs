@@ -709,6 +709,8 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use orchard::note_encryption::OrchardDomain;
+    use sapling_crypto::note_encryption::SaplingDomain;
     use zcash_primitives::transaction::TxId;
     use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
@@ -776,6 +778,34 @@ mod tests {
             ephemeral_key: vec![0; 32],
             ciphertext: vec![0; 52],
         }
+    }
+
+    const NOT_A_FIELD_ELEMENT: [u8; 32] = [u8::MAX; 32];
+
+    #[test]
+    fn a_sapling_output_whose_commitment_is_outside_the_field_is_invalid() {
+        let placeholder = compact_ironwood_action();
+        let output = CompactSaplingOutput {
+            cmu: NOT_A_FIELD_ELEMENT.to_vec(),
+            ephemeral_key: placeholder.ephemeral_key,
+            ciphertext: placeholder.ciphertext,
+        };
+
+        assert!(matches!(
+            calculate_sapling_leaves_and_retentions::<SaplingDomain>(&[output], &HashMap::new()),
+            Err(ScanError::InvalidSaplingOutput)
+        ));
+    }
+
+    #[test]
+    fn an_orchard_action_whose_nullifier_is_not_32_bytes_is_invalid() {
+        let mut action = compact_ironwood_action();
+        action.nullifier.pop();
+
+        assert!(matches!(
+            calculate_orchard_leaves_and_retentions::<OrchardDomain>(&[action], &HashMap::new()),
+            Err(ScanError::InvalidOrchardAction)
+        ));
     }
 
     fn block_with_served_ironwood_actions(
