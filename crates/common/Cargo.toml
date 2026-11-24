@@ -55,7 +55,6 @@ memuse.workspace = true
 
 # Serialization
 byteorder.workspace = true
-hex.workspace = true
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- BREAKING: `Indexer::get_tree_state` and `Indexer::get_latest_tree_state`
+  return `tree_state::TreeState` in place of the generated
+  `lightwallet_protocol::TreeState`. The new type is opaque. It reports
+  whether the indexer omitted the tree of each pool, and `validate` decodes
+  it into `tree_state::Validated` or returns `tree_state::Invalid`, which
+  names the malformed field. A consumer that read the fields of the reply
+  calls `validate` first. An implementor of `Indexer` builds the reply from
+  `tree_state::WireParts`.
+- The crate depends on `hex`, which `tree_state::TreeState::validate` uses.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

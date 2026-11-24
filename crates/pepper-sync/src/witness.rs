@@ -9,12 +9,14 @@ use incrementalmerkletree::{
     frontier::{CommitmentTree, Frontier},
 };
 use orchard::tree::MerkleHashOrchard;
-use sapling_crypto::Node;
 use shardtree::LocatedPrunableTree;
 use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
-use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
+use zcash_primitives::{
+    block::BlockHash,
+    merkle_tree::{HashSer, read_commitment_tree},
+};
 use zcash_protocol::consensus::BlockHeight;
-use zl_common::chain::TreeState;
+use zl_netutils::tree_state;
 
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
@@ -301,59 +303,27 @@ impl Frontiers {
     }
 }
 
-impl TryFrom<TreeState> for Frontiers {
+impl TryFrom<tree_state::Validated> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(value: TreeState) -> Result<Self, Self::Error> {
+    fn try_from(value: tree_state::Validated) -> Result<Self, Self::Error> {
         Ok(Frontiers::new(
-            value.height,
-            value.hash,
-            get_sapling_tree(&value.sapling_tree)?.to_frontier(),
-            get_orchard_tree(&value.orchard_tree)?.to_frontier(),
-            get_ironwood_tree(&value.ironwood_tree)?.to_frontier(),
+            BlockHeight::from_u32(value.height),
+            BlockHash(value.hash),
+            commitment_tree(&value.sapling_tree)?.to_frontier(),
+            commitment_tree(&value.orchard_tree)?.to_frontier(),
+            commitment_tree(&value.ironwood_tree)?.to_frontier(),
         ))
     }
 }
 
-/// Deserializes and returns the Sapling note commitment tree from its already-decoded bytes.
-pub(crate) fn get_sapling_tree(
+fn commitment_tree<Leaf: HashSer, const DEPTH: u8>(
     tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>> {
+) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
     if tree_bytes.is_empty() {
         Ok(CommitmentTree::empty())
     } else {
-        read_commitment_tree::<Node, _, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>(tree_bytes)
-    }
-}
-
-/// Deserializes and returns the Orchard note commitment tree from its already-decoded bytes.
-pub(crate) fn get_orchard_tree(
-    tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_bytes.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            tree_bytes,
-        )
-    }
-}
-
-/// Deserializes and returns the Ironwood note commitment tree from its already-decoded bytes.
-/// Servers omit the field below the ironwood activation height, so an empty field means the
-/// tree is empty. See [`crate::client::get_frontiers`] for the rejection of an omitted field at
-/// or above the activation height.
-pub(crate) fn get_ironwood_tree(
-    tree_bytes: &[u8],
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_bytes.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            tree_bytes,
-        )
+        read_commitment_tree(tree_bytes)
     }
 }
 

@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the crate depends on `zl-netutils`, renamed from
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
+- **Breaking:** `client::FetchRequest::TreeState` replies with
+  `zl_netutils::tree_state::TreeState` in place of the generated
+  `lightwallet_protocol::TreeState`. A fetcher builds the reply from
+  `zl_netutils::tree_state::WireParts`. The errors of a tree state fetch do
+  not change: an omitted tree of an active pool is
+  `ServerError::TreeStateNotServed`, and a malformed field is
+  `ServerError::InvalidFrontier`.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status

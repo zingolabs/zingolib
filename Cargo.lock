@@ -11220,7 +11220,6 @@ dependencies = [
  "bip0039 0.14.0",
  "bip32 0.6.0",
  "byteorder",
- "hex",
  "incrementalmerkletree",
  "jubjub",
  "memuse",
@@ -11278,6 +11277,7 @@ name = "zl-netutils"
 version = "7.0.0"
 dependencies = [
  "futures-channel",
+ "hex",
  "http 1.5.0",
  "http-body-util",
  "hyper 1.11.1",
@@ -11312,7 +11312,6 @@ dependencies = [
  "tower",
  "webpki-roots 1.0.9",
  "x509-parser",
- "zl-common",
 ]
 
 [[package]]

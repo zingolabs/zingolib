@@ -38,7 +38,6 @@ use lightwallet_protocol::{
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
     TreeState as WireTreeState, TxFilter,
 };
-use zl_common::chain::TreeState;
 
 #[cfg(feature = "ping-very-insecure")]
 use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
@@ -71,6 +70,7 @@ pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
+pub mod tree_state;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use network_access::NetworkAccess;
@@ -263,16 +263,12 @@ pub trait Indexer {
         timeout: Duration,
     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
-    /// Fetch the note commitment tree state for the given block.
-    ///
-    /// Returns Sapling and Orchard commitment tree frontiers as of the
-    /// end of the specified block. The block can be identified by height,
-    /// hash, or both via [`BlockId`]. Requesting an unmined block is an error.
+    /// - Sends one `GetTreeState` request to the indexer.
     fn get_tree_state(
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<tree_state::TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -355,14 +351,11 @@ pub trait Indexer {
         &mut self,
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
-    /// Return the note commitment tree state at the chain tip.
-    ///
-    /// Equivalent to calling [`get_tree_state`](Indexer::get_tree_state) with
-    /// the current tip height, but avoids the need to query the tip first.
+    /// - Sends one `GetLatestTreeState` request to the indexer.
     fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<tree_state::TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -502,18 +495,14 @@ mod send_response_parsing {
     }
 }
 
-/// Parses a wire [`TreeState`](WireTreeState) into the validated domain [`TreeState`], mapping
-/// a parse failure into the same [`tonic::Status`] channel every other `Indexer` method answers
-/// through.
-fn parse_tree_state(wire: WireTreeState) -> Result<TreeState, tonic::Status> {
-    zl_common::chain::TreeState::from_wire_parts(
-        wire.height,
-        &wire.hash,
-        &wire.sapling_tree,
-        &wire.orchard_tree,
-        &wire.ironwood_tree,
-    )
-    .map_err(|error| tonic::Status::new(tonic::Code::Internal, error.to_string()))
+fn received_tree_state(wire: WireTreeState) -> tree_state::TreeState {
+    tree_state::TreeState::from(tree_state::WireParts {
+        height: wire.height,
+        hash_hex: wire.hash,
+        sapling_tree_hex: wire.sapling_tree,
+        orchard_tree_hex: wire.orchard_tree,
+        ironwood_tree_hex: wire.ironwood_tree,
+    })
 }
 
 impl Indexer for GrpcIndexer {
@@ -569,15 +558,15 @@ impl Indexer for GrpcIndexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<tree_state::TreeState, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        parse_tree_state(
+        Ok(received_tree_state(
             self.clear_net_client
                 .get_tree_state(request)
                 .await?
                 .into_inner(),
-        )
+        ))
     }
 
     async fn get_block(
@@ -675,15 +664,15 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<tree_state::TreeState, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        parse_tree_state(
+        Ok(received_tree_state(
             self.clear_net_client
                 .get_latest_tree_state(request)
                 .await?
                 .into_inner(),
-        )
+        ))
     }
 
     async fn get_subtree_roots(

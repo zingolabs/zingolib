@@ -7,13 +7,13 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::instrument;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
-use zl_common::chain::TreeState;
 use zl_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{
         BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
         PoolType, RawTransaction, TransparentAddressBlockFilter, TxFilter,
     },
+    tree_state,
 };
 
 use crate::client::FetchRequest;
@@ -293,7 +293,7 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<TreeState, tonic::Status>
+) -> Result<tree_state::TreeState, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
