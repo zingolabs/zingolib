@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 const BLOCK_HASH_BYTES: usize = 32;
 const SAPLING: &str = "Sapling";
 const ORCHARD: &str = "Orchard";
