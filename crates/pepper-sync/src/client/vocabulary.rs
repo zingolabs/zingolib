@@ -87,7 +87,7 @@ mod tests {
                     orchard: false,
                     ironwood: true,
                 },
-                field: chain::InvalidTreeState::HashHex(_),
+                field: chain::InvalidTreeState::InvalidHashHex(_),
             })
         ));
     }
