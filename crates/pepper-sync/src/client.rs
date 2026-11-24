@@ -517,6 +517,7 @@ mod tests {
     use zcash_protocol::local_consensus::LocalNetwork;
 
     use super::*;
+    use crate::mocks;
 
     const SAPLING_ACTIVATION: u32 = 100;
     const ORCHARD_ACTIVATION: u32 = 200;
@@ -536,56 +537,26 @@ mod tests {
         nu7: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
-    const EMPTY_TREE_HEX: &str = "000000";
-    const OMITTED_TREE_HEX: &str = "";
-    const ZERO_HASH_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     const MALFORMED_HASH_HEX: &str = "zz";
 
-    fn spawn_fetcher_of(
-        hash_hex: &'static str,
-        trees_hex: [&'static str; 3],
-    ) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::TreeState(reply_sender, block_height) => {
-                        let [sapling_tree_hex, orchard_tree_hex, ironwood_tree_hex] =
-                            trees_hex.map(str::to_string);
-                        let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
-                            tree_state::WireParts {
-                                height: u64::from(block_height),
-                                hash_hex: hash_hex.to_string(),
-                                sapling_tree_hex,
-                                orchard_tree_hex,
-                                ironwood_tree_hex,
-                            },
-                        )));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
+    fn omitting(
+        mut wire_parts: tree_state::WireParts,
+        pool: ShieldedPool,
+    ) -> tree_state::WireParts {
+        let tree_hex = match pool {
+            ShieldedPool::Sapling => &mut wire_parts.sapling_tree_hex,
+            ShieldedPool::Orchard => &mut wire_parts.orchard_tree_hex,
+            ShieldedPool::Ironwood => &mut wire_parts.ironwood_tree_hex,
+        };
+        *tree_hex = mocks::OMITTED_TREE_HEX.to_string();
 
-        fetch_request_sender
+        wire_parts
     }
 
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
-        spawn_fetcher_of(
-            ZERO_HASH_HEX,
-            [
-                ShieldedPool::Sapling,
-                ShieldedPool::Orchard,
-                ShieldedPool::Ironwood,
-            ]
-            .map(|pool| {
-                if pool == omitted_pool {
-                    OMITTED_TREE_HEX
-                } else {
-                    EMPTY_TREE_HEX
-                }
-            }),
-        )
+        mocks::spawn_tree_state_fetcher(move |block_height| {
+            omitting(mocks::empty_trees(block_height), omitted_pool)
+        })
     }
 
     /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
@@ -619,16 +590,17 @@ mod tests {
     fn spawn_fetcher_of_a_malformed_tree_state(
         ironwood_tree_hex: &'static str,
     ) -> mpsc::UnboundedSender<FetchRequest> {
-        spawn_fetcher_of(
-            MALFORMED_HASH_HEX,
-            [EMPTY_TREE_HEX, EMPTY_TREE_HEX, ironwood_tree_hex],
-        )
+        mocks::spawn_tree_state_fetcher(move |block_height| tree_state::WireParts {
+            hash_hex: MALFORMED_HASH_HEX.to_string(),
+            ironwood_tree_hex: ironwood_tree_hex.to_string(),
+            ..mocks::empty_trees(block_height)
+        })
     }
 
     #[tokio::test]
     async fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
         let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(EMPTY_TREE_HEX),
+            spawn_fetcher_of_a_malformed_tree_state(mocks::EMPTY_TREE_HEX),
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
         )
@@ -644,7 +616,7 @@ mod tests {
     #[tokio::test]
     async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
         let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(OMITTED_TREE_HEX),
+            spawn_fetcher_of_a_malformed_tree_state(mocks::OMITTED_TREE_HEX),
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
         )

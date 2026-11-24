@@ -10,8 +10,52 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
+use tokio::sync::mpsc;
 use zcash_protocol::{TxId, consensus::BlockHeight};
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use zl_netutils::tree_state;
+
+use crate::client::FetchRequest;
+
+pub(crate) const EMPTY_TREE_HEX: &str = "000000";
+pub(crate) const OMITTED_TREE_HEX: &str = "";
+pub(crate) const ZERO_HASH_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
+
+pub(crate) fn empty_trees(block_height: BlockHeight) -> tree_state::WireParts {
+    tree_state::WireParts {
+        height: u64::from(block_height),
+        hash_hex: ZERO_HASH_HEX.to_string(),
+        sapling_tree_hex: EMPTY_TREE_HEX.to_string(),
+        orchard_tree_hex: EMPTY_TREE_HEX.to_string(),
+        ironwood_tree_hex: EMPTY_TREE_HEX.to_string(),
+    }
+}
+
+pub(crate) fn fetched_tree_state(
+    wire_parts: tree_state::WireParts,
+) -> Result<tree_state::TreeState, tonic::Status> {
+    Ok(tree_state::TreeState::from(wire_parts))
+}
+
+pub(crate) fn spawn_tree_state_fetcher(
+    wire_parts_at: impl Fn(BlockHeight) -> tree_state::WireParts + Send + 'static,
+) -> mpsc::UnboundedSender<FetchRequest> {
+    let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(fetch_request) = fetch_request_receiver.recv().await {
+            match fetch_request {
+                FetchRequest::TreeState(reply_sender, block_height) => {
+                    let _ignore_error =
+                        reply_sender.send(fetched_tree_state(wire_parts_at(block_height)));
+                }
+                _ => panic!("unexpected fetch request"),
+            }
+        }
+    });
+
+    fetch_request_sender
+}
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {
