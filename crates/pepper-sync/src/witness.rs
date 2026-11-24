@@ -15,8 +15,11 @@ use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{HashSer, read_commitment_tree},
 };
-use zcash_protocol::consensus::BlockHeight;
-use zl_common::chain;
+use zcash_protocol::{
+    PoolType, ShieldedPool,
+    consensus::{self, BlockHeight},
+};
+use zl_common::{chain, wallet::PoolActivation};
 
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
@@ -303,23 +306,61 @@ impl Frontiers {
     }
 }
 
-impl TryFrom<chain::TreeState> for Frontiers {
+impl Frontiers {
+    pub(crate) fn of_tree_state(
+        tree_state: chain::TreeStateReply,
+        consensus_parameters: &impl consensus::Parameters,
+        block_height: BlockHeight,
+    ) -> Result<Self, ServerError> {
+        match not_served_pool(&tree_state, consensus_parameters, block_height) {
+            Some(pool) => Err(ServerError::TreeStateNotServed {
+                pool: PoolType::Shielded(pool),
+                height: block_height,
+            }),
+            None => Self::try_from(tree_state).map_err(ServerError::InvalidFrontier),
+        }
+    }
+}
+
+// servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
+// empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
+// pool.
+fn not_served_pool(
+    tree_state: &chain::TreeStateReply,
+    consensus_parameters: &impl consensus::Parameters,
+    block_height: BlockHeight,
+) -> Option<ShieldedPool> {
+    tree_state.trees().find_map(|(pool, tree)| {
+        (matches!(tree, chain::Tree::Omitted)
+            && PoolActivation::of(consensus_parameters, pool)
+                .is_some_and(|activation| activation.height() <= block_height))
+        .then_some(pool)
+    })
+}
+
+impl TryFrom<chain::TreeStateReply> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(value: chain::TreeState) -> Result<Self, Self::Error> {
+    fn try_from(value: chain::TreeStateReply) -> Result<Self, Self::Error> {
         Ok(Frontiers::new(
-            value.height,
-            value.hash,
-            commitment_tree(&value.sapling_tree)?.to_frontier(),
-            commitment_tree(&value.orchard_tree)?.to_frontier(),
-            commitment_tree(&value.ironwood_tree)?.to_frontier(),
+            value.height.map_err(invalid_tree_state)?,
+            value.hash.map_err(invalid_tree_state)?,
+            commitment_tree(ShieldedPool::Sapling, &value.sapling_tree)?.to_frontier(),
+            commitment_tree(ShieldedPool::Orchard, &value.orchard_tree)?.to_frontier(),
+            commitment_tree(ShieldedPool::Ironwood, &value.ironwood_tree)?.to_frontier(),
         ))
     }
 }
 
+fn invalid_tree_state(invalid: chain::InvalidTreeState) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, invalid)
+}
+
 fn commitment_tree<Leaf: HashSer, const DEPTH: u8>(
-    tree_bytes: &[u8],
+    pool: ShieldedPool,
+    tree: &chain::Tree,
 ) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
+    let tree_bytes = tree.bytes(pool).map_err(invalid_tree_state)?;
     if tree_bytes.is_empty() {
         Ok(CommitmentTree::empty())
     } else {

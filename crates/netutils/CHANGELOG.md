@@ -50,11 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new: a consumer implements it once, on a type of its own, to say which
   domain type each reply becomes. The indexer calls
   `Vocabulary::tree_state` once on the reply, as `tree_state::WireParts`,
-  before it returns. A failed request is `tree_state::Failure::Request`, and
-  a reply that the vocabulary refuses is `tree_state::Failure::Invalid`.
-  The crate names no domain type and gains no dependency. A consumer names
-  its vocabulary at the call, as `get_tree_state::<V>`; an implementor of
-  `Indexer` calls `V::tree_state`.
+  before it returns. `Vocabulary::tree_state` is total: it returns a
+  `TreeState` for every reply, so the domain type records a malformed field
+  as data. The only error of both methods is the `tonic::Status` of a failed
+  request, as before. A consumer names its vocabulary at the call, as
+  `get_tree_state::<V>`. An implementor of `Indexer` calls `V::tree_state`.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

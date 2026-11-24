@@ -12,13 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the wallet, split out of `zingolib`. `zingolib` re-exports each at
   its old path.
 - `chain` module: `ChainType` and `InvalidChainType`.
-- `chain::TreeState`, the note commitment trees of the shielded pools at the
-  end of one block: the block's `BlockHeight` and `BlockHash`, and the
-  serialized tree of each pool as bytes. `TreeState::from_wire_parts` builds
-  one from the height, the block hash as hex in reversed byte order, and
-  each tree as hex, or returns `chain::InvalidTreeState`, which names the
-  malformed field. The crate depends on `hex` directly for this; the
-  package was already in its graph.
+- `chain::TreeStateReply`, an indexer's reply about the note commitment
+  trees of the shielded pools at the end of one block. Each field holds its
+  own verdict. The height and the hash are a `BlockHeight` and a `BlockHash`,
+  or the `chain::InvalidTreeState` that names the malformed field. Each
+  pool's tree is a `chain::Tree`: `Omitted`, `Served` with the serialized
+  bytes, or `Malformed`. `TreeStateReply::block_height`,
+  `TreeStateReply::block_hash` and `Tree::from_hex` build the fields from the
+  height, the block hash as hex in reversed byte order, and a tree as hex.
+  `TreeStateReply::trees` lists each tree with its `ShieldedPool`, and
+  `Tree::bytes` gives a tree's bytes or the `InvalidTreeState` of its pool.
+  The crate depends on `hex` directly for this. The package was already in
+  its graph.
 - `chain` gains the other domain types of the indexer protocol, each built
   from plain integers, bytes, and strings by a constructor that checks its
   invariants. The replies are `CompactBlock` with `ChainMetadata`,

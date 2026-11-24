@@ -63,13 +63,11 @@ rayon.workspace = true
 # Error handling
 thiserror.workspace = true
 
-# Serialization
-hex.workspace = true
-
 # Documentation
 simple-mermaid.workspace = true
 
 [dev-dependencies]
+hex.workspace = true
 proptest.workspace = true
 zcash_protocol = { workspace = true, features = [ "local-consensus"] }
 zl-common = { workspace = true, features = ["test-features"] }

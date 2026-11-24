@@ -32,5 +32,5 @@ pub use raw_transaction::{InvalidRawTransaction, RawTransaction, RawTransactionS
 pub use standard_fee::StandardFee;
 pub use subtree_root::{InvalidSubtreeRoot, SubtreeRoot};
 pub use transparent_address_block_filter::TransparentAddressBlockFilter;
-pub use tree_state::{InvalidTreeState, TreeState};
+pub use tree_state::{InvalidTreeState, Tree, TreeStateReply};
 pub use tx_filter::TxFilter;

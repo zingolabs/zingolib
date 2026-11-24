@@ -12,16 +12,12 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::{
-    PoolType, ShieldedPool,
-    consensus::{self, BlockHeight},
-};
+use zcash_protocol::consensus::{self, BlockHeight};
 
 use zl_common::chain;
 use zl_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
-    tree_state,
 };
 
 use crate::{
@@ -77,9 +73,7 @@ pub enum FetchRequest {
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<
-            Result<chain::TreeState, tree_state::Failure<vocabulary::InvalidTreeState>>,
-        >,
+        oneshot::Sender<Result<chain::TreeStateReply, tonic::Status>>,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
@@ -309,53 +303,11 @@ pub(crate) async fn get_frontiers(
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let tree_state = match reply_receiver
+    let tree_state = reply_receiver
         .await
-        .map_err(|_| ServerError::FetcherDropped)?
-    {
-        Ok(tree_state) => Ok(tree_state),
-        Err(tree_state::Failure::Request(status)) => {
-            return Err(ServerError::RequestFailed(status));
-        }
-        Err(tree_state::Failure::Invalid(invalid)) => Err(invalid),
-    };
-    let omitted_trees = match &tree_state {
-        Ok(tree_state) => vocabulary::OmittedTrees::of(tree_state),
-        Err(invalid) => invalid.omitted_trees,
-    };
+        .map_err(|_| ServerError::FetcherDropped)??;
 
-    // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
-    // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
-    // pool.
-    for (pool, tree_is_omitted, network_upgrade) in [
-        (
-            ShieldedPool::Sapling,
-            omitted_trees.sapling,
-            consensus::NetworkUpgrade::Sapling,
-        ),
-        (
-            ShieldedPool::Orchard,
-            omitted_trees.orchard,
-            consensus::NetworkUpgrade::Nu5,
-        ),
-        (
-            ShieldedPool::Ironwood,
-            omitted_trees.ironwood,
-            consensus::NetworkUpgrade::Nu6_3,
-        ),
-    ] {
-        if tree_is_omitted && consensus_parameters.is_nu_active(network_upgrade, block_height) {
-            return Err(ServerError::TreeStateNotServed {
-                pool: PoolType::Shielded(pool),
-                height: block_height,
-            });
-        }
-    }
-
-    tree_state
-        .map_err(|invalid| std::io::Error::new(std::io::ErrorKind::InvalidData, invalid))
-        .and_then(Frontiers::try_from)
-        .map_err(ServerError::InvalidFrontier)
+    Frontiers::of_tree_state(tree_state, consensus_parameters, block_height)
 }
 
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
@@ -527,9 +479,11 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
-    use zcash_protocol::local_consensus::LocalNetwork;
+    use zcash_protocol::{PoolType, ShieldedPool, local_consensus::LocalNetwork};
+    use zl_netutils::tree_state;
 
     use super::*;
+    use crate::mocks;
 
     const SAPLING_ACTIVATION: u32 = 100;
     const ORCHARD_ACTIVATION: u32 = 200;
@@ -549,60 +503,28 @@ mod tests {
         nu7: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
-    const EMPTY_TREE_HEX: &str = "000000";
-    const OMITTED_TREE_HEX: &str = "";
-    const ZERO_HASH_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     const MALFORMED_HASH_HEX: &str = "zz";
 
-    /// - Spawns a task that answers each tree state request with a tree state of this block hash and these
-    ///   trees, in the order Sapling, Orchard, Ironwood.
-    fn spawn_fetcher_of(
-        hash_hex: &'static str,
-        trees_hex: [&'static str; 3],
-    ) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::TreeState(reply_sender, block_height) => {
-                        let [sapling_tree_hex, orchard_tree_hex, ironwood_tree_hex] =
-                            trees_hex.map(str::to_string);
-                        let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
-                            tree_state::WireParts {
-                                height: u64::from(block_height),
-                                hash_hex: hash_hex.to_string(),
-                                sapling_tree_hex,
-                                orchard_tree_hex,
-                                ironwood_tree_hex,
-                            },
-                        ));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
+    fn omitting(
+        mut wire_parts: tree_state::WireParts,
+        pool: ShieldedPool,
+    ) -> tree_state::WireParts {
+        let tree_hex = match pool {
+            ShieldedPool::Sapling => &mut wire_parts.sapling_tree_hex,
+            ShieldedPool::Orchard => &mut wire_parts.orchard_tree_hex,
+            ShieldedPool::Ironwood => &mut wire_parts.ironwood_tree_hex,
+        };
+        *tree_hex = mocks::OMITTED_TREE_HEX.to_string();
 
-        fetch_request_sender
+        wire_parts
     }
 
     /// - Spawns a task that answers each tree state request with an empty tree for every pool except
     ///   `omitted_pool`, whose tree is omitted.
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
-        spawn_fetcher_of(
-            ZERO_HASH_HEX,
-            [
-                ShieldedPool::Sapling,
-                ShieldedPool::Orchard,
-                ShieldedPool::Ironwood,
-            ]
-            .map(|pool| {
-                if pool == omitted_pool {
-                    OMITTED_TREE_HEX
-                } else {
-                    EMPTY_TREE_HEX
-                }
-            }),
-        )
+        mocks::spawn_tree_state_fetcher(move |block_height| {
+            omitting(mocks::empty_trees(block_height), omitted_pool)
+        })
     }
 
     /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
@@ -638,16 +560,17 @@ mod tests {
     fn spawn_fetcher_of_a_malformed_tree_state(
         ironwood_tree_hex: &'static str,
     ) -> mpsc::UnboundedSender<FetchRequest> {
-        spawn_fetcher_of(
-            MALFORMED_HASH_HEX,
-            [EMPTY_TREE_HEX, EMPTY_TREE_HEX, ironwood_tree_hex],
-        )
+        mocks::spawn_tree_state_fetcher(move |block_height| tree_state::WireParts {
+            hash_hex: MALFORMED_HASH_HEX.to_string(),
+            ironwood_tree_hex: ironwood_tree_hex.to_string(),
+            ..mocks::empty_trees(block_height)
+        })
     }
 
     #[tokio::test]
     async fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
         let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(EMPTY_TREE_HEX),
+            spawn_fetcher_of_a_malformed_tree_state(mocks::EMPTY_TREE_HEX),
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
         )
@@ -663,7 +586,7 @@ mod tests {
     #[tokio::test]
     async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
         let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(OMITTED_TREE_HEX),
+            spawn_fetcher_of_a_malformed_tree_state(mocks::OMITTED_TREE_HEX),
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
         )

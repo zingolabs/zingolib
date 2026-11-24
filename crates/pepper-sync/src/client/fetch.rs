@@ -13,7 +13,6 @@ use zl_netutils::{
         BlockId, BlockRange, CompactBlock, GetAddressUtxosArg, GetAddressUtxosReply, LightdInfo,
         PoolType, RawTransaction, TransparentAddressBlockFilter, TxFilter,
     },
-    tree_state,
 };
 
 use zl_common::chain;
@@ -295,7 +294,7 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<chain::TreeState, tree_state::Failure<vocabulary::InvalidTreeState>>
+) -> Result<chain::TreeStateReply, tonic::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {

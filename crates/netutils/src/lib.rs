@@ -270,7 +270,7 @@ pub trait Indexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<V::TreeState, tree_state::Failure<V::InvalidTreeState>>> + Send;
+    ) -> impl Future<Output = Result<V::TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -358,7 +358,7 @@ pub trait Indexer {
     fn get_latest_tree_state<V: wire::Vocabulary>(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<V::TreeState, tree_state::Failure<V::InvalidTreeState>>> + Send;
+    ) -> impl Future<Output = Result<V::TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -500,17 +500,17 @@ mod send_response_parsing {
 
 fn parsed_tree_state<V: wire::Vocabulary>(
     response: Result<tonic::Response<WireTreeState>, tonic::Status>,
-) -> Result<V::TreeState, tree_state::Failure<V::InvalidTreeState>> {
-    let wire = response.map_err(tree_state::Failure::Request)?.into_inner();
-
-    V::tree_state(tree_state::WireParts {
-        height: wire.height,
-        hash_hex: wire.hash,
-        sapling_tree_hex: wire.sapling_tree,
-        orchard_tree_hex: wire.orchard_tree,
-        ironwood_tree_hex: wire.ironwood_tree,
+) -> Result<V::TreeState, tonic::Status> {
+    response.map(|response| {
+        let wire = response.into_inner();
+        V::tree_state(tree_state::WireParts {
+            height: wire.height,
+            hash_hex: wire.hash,
+            sapling_tree_hex: wire.sapling_tree,
+            orchard_tree_hex: wire.orchard_tree,
+            ironwood_tree_hex: wire.ironwood_tree,
+        })
     })
-    .map_err(tree_state::Failure::Invalid)
 }
 
 impl Indexer for GrpcIndexer {
@@ -566,7 +566,7 @@ impl Indexer for GrpcIndexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<V::TreeState, tree_state::Failure<V::InvalidTreeState>> {
+    ) -> Result<V::TreeState, tonic::Status> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
         parsed_tree_state::<V>(self.clear_net_client.get_tree_state(request).await)
@@ -667,7 +667,7 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_tree_state<V: wire::Vocabulary>(
         &mut self,
         timeout: Duration,
-    ) -> Result<V::TreeState, tree_state::Failure<V::InvalidTreeState>> {
+    ) -> Result<V::TreeState, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
         parsed_tree_state::<V>(self.clear_net_client.get_latest_tree_state(request).await)

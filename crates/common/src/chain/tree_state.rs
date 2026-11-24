@@ -1,158 +1,183 @@
 use zcash_primitives::block::BlockHash;
-use zcash_protocol::consensus::BlockHeight;
+use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
-/// A note commitment tree state as served by an indexer for a block: each shielded pool's
-/// serialized commitment tree, already hex-decoded, with a validated height and hash.
-///
-/// Carrying wire bytes unvalidated this far would mean every consumer re-derives validity
-/// (decodable hex? right-sized hash? a height that fits?) on every touch; this type validates
-/// once, at the boundary, so a `TreeState` is trusted structurally wherever it is passed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TreeState {
-    /// The height of the block this tree state is as of.
-    pub height: BlockHeight,
-    /// The hash of the block this tree state is as of.
-    pub hash: BlockHash,
-    /// The Sapling note commitment tree, hex-decoded. Empty below Sapling activation, or when
-    /// the server omits it.
-    pub sapling_tree: Vec<u8>,
-    /// The Orchard note commitment tree, hex-decoded. Empty below Orchard activation, or when
-    /// the server omits it.
-    pub orchard_tree: Vec<u8>,
-    /// The Ironwood note commitment tree, hex-decoded. Empty below Ironwood activation, or when
-    /// the server omits it.
-    pub ironwood_tree: Vec<u8>,
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tree {
+    Omitted,
+    Served(Vec<u8>),
+    Malformed(hex::FromHexError),
 }
 
-/// A [`TreeState`] field that failed to parse from its wire representation.
-#[derive(Debug, thiserror::Error)]
+impl Tree {
+    #[must_use]
+    pub fn from_hex(tree_hex: &str) -> Self {
+        if tree_hex.is_empty() {
+            Self::Omitted
+        } else {
+            hex::decode(tree_hex).map_or_else(Self::Malformed, Self::Served)
+        }
+    }
+
+    pub fn bytes(&self, pool: ShieldedPool) -> Result<&[u8], InvalidTreeState> {
+        match self {
+            Self::Omitted => Ok(&[]),
+            Self::Served(bytes) => Ok(bytes),
+            Self::Malformed(source) => Err(InvalidTreeState::InvalidTreeHex {
+                pool,
+                source: *source,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeStateReply {
+    pub height: Result<BlockHeight, InvalidTreeState>,
+    pub hash: Result<BlockHash, InvalidTreeState>,
+    pub sapling_tree: Tree,
+    pub orchard_tree: Tree,
+    pub ironwood_tree: Tree,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, thiserror::Error)]
 pub enum InvalidTreeState {
-    /// The block height does not fit a [`BlockHeight`].
     #[error("invalid block height")]
     InvalidHeight,
-    /// The block hash is not valid hex.
     #[error("block hash is not valid hex: {0}")]
     InvalidHashHex(hex::FromHexError),
-    /// The block hash did not decode to exactly 32 bytes.
     #[error("invalid block hash length")]
     InvalidHashLength,
-    /// A shielded pool's tree is not valid hex.
-    #[error("{field} tree is not valid hex: {source}")]
+    #[error("{} tree is not valid hex: {source}", PoolType::Shielded(*pool))]
     InvalidTreeHex {
-        /// The pool whose tree failed to decode.
-        field: &'static str,
-        /// The underlying hex decode error.
+        pool: ShieldedPool,
         source: hex::FromHexError,
     },
 }
 
-impl TreeState {
-    /// Parses a tree state from its wire parts: a block height, a byte-reversed hex block
-    /// hash, and three hex-encoded (possibly empty) serialized commitment trees.
-    ///
-    /// Rejects a height that does not fit a [`BlockHeight`], hex that fails to decode, and a
-    /// hash that does not decode to exactly 32 bytes.
-    pub fn from_wire_parts(
-        height: u64,
-        hash_hex: &str,
-        sapling_tree_hex: &str,
-        orchard_tree_hex: &str,
-        ironwood_tree_hex: &str,
-    ) -> Result<Self, InvalidTreeState> {
-        let height = BlockHeight::try_from(height).map_err(|_| InvalidTreeState::InvalidHeight)?;
+impl TreeStateReply {
+    pub fn block_height(height: u64) -> Result<BlockHeight, InvalidTreeState> {
+        BlockHeight::try_from(height).map_err(|_| InvalidTreeState::InvalidHeight)
+    }
 
+    pub fn block_hash(hash_hex: &str) -> Result<BlockHash, InvalidTreeState> {
         let mut hash_bytes = hex::decode(hash_hex).map_err(InvalidTreeState::InvalidHashHex)?;
         // Block-hash hex strings are byte-reversed on the wire.
         hash_bytes.reverse();
-        let hash =
-            BlockHash::try_from_slice(&hash_bytes).ok_or(InvalidTreeState::InvalidHashLength)?;
+        BlockHash::try_from_slice(&hash_bytes).ok_or(InvalidTreeState::InvalidHashLength)
+    }
 
-        let decode_tree =
-            |field: &'static str, hex_str: &str| -> Result<Vec<u8>, InvalidTreeState> {
-                hex::decode(hex_str)
-                    .map_err(|source| InvalidTreeState::InvalidTreeHex { field, source })
-            };
-
-        Ok(Self {
-            height,
-            hash,
-            sapling_tree: decode_tree("sapling", sapling_tree_hex)?,
-            orchard_tree: decode_tree("orchard", orchard_tree_hex)?,
-            ironwood_tree: decode_tree("ironwood", ironwood_tree_hex)?,
-        })
+    pub fn trees(&self) -> impl Iterator<Item = (ShieldedPool, &Tree)> {
+        [
+            (ShieldedPool::Sapling, &self.sapling_tree),
+            (ShieldedPool::Orchard, &self.orchard_tree),
+            (ShieldedPool::Ironwood, &self.ironwood_tree),
+        ]
+        .into_iter()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{InvalidTreeState, TreeState};
     use zcash_primitives::block::BlockHash;
-    use zcash_protocol::consensus::BlockHeight;
+    use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
 
-    /// A height one past `u32::MAX`, the smallest value `BlockHeight::try_from` rejects.
+    use super::{InvalidTreeState, Tree, TreeStateReply};
+
+    const HEIGHT: u32 = 100;
     const TOO_TALL: u64 = u32::MAX as u64 + 1;
+    const HASH_LENGTH: usize = 32;
+    const MARKED_BYTE: u8 = 0x01;
+    const TREE_BYTE: u8 = 0xaa;
+    const TREE_HEX: &str = "aa";
+    const OMITTED_TREE_HEX: &str = "";
+    const NOT_HEX: &str = "not hex";
+    const SHORT_HASH_HEX: &str = "aabb";
 
-    /// Hex for a valid, arbitrary 32-byte hash. Not used to assert anything about byte order;
-    /// see `valid_parts_decode_hex_and_reverse_the_hash` for that.
-    fn some_hash_hex() -> String {
-        hex::encode([0xaa; 32])
+    #[test]
+    fn a_height_that_fits_is_a_block_height() {
+        assert_eq!(
+            TreeStateReply::block_height(u64::from(HEIGHT)),
+            Ok(BlockHeight::from_u32(HEIGHT))
+        );
     }
 
     #[test]
-    fn valid_parts_decode_hex_and_reverse_the_hash() {
-        // chosen so reversal is visible: only the first byte is non-zero on the wire, so only
-        // the LAST byte of the decoded hash should be non-zero.
-        let mut wire_bytes = [0u8; 32];
-        wire_bytes[0] = 0x01;
-        let hash_hex = hex::encode(wire_bytes);
-
-        let tree_state = TreeState::from_wire_parts(100, &hash_hex, "aa", "bb", "cc").unwrap();
-        assert_eq!(tree_state.height, BlockHeight::from_u32(100));
-        let mut expected = [0u8; 32];
-        expected[31] = 0x01;
-        assert_eq!(tree_state.hash, BlockHash(expected));
-        assert_eq!(tree_state.sapling_tree, vec![0xaa]);
-        assert_eq!(tree_state.orchard_tree, vec![0xbb]);
-        assert_eq!(tree_state.ironwood_tree, vec![0xcc]);
-    }
-
-    #[test]
-    fn a_height_past_u32_max_is_rejected() {
-        assert!(matches!(
-            TreeState::from_wire_parts(TOO_TALL, &some_hash_hex(), "", "", ""),
+    fn a_height_past_u32_max_is_invalid() {
+        assert_eq!(
+            TreeStateReply::block_height(TOO_TALL),
             Err(InvalidTreeState::InvalidHeight)
-        ));
+        );
     }
 
     #[test]
-    fn non_hex_hash_is_rejected() {
+    fn a_block_hash_is_reversed_from_its_wire_order() {
+        let mut wire_bytes = [0; HASH_LENGTH];
+        wire_bytes[0] = MARKED_BYTE;
+        let mut reversed_bytes = [0; HASH_LENGTH];
+        reversed_bytes[HASH_LENGTH - 1] = MARKED_BYTE;
+
+        assert_eq!(
+            TreeStateReply::block_hash(&hex::encode(wire_bytes)),
+            Ok(BlockHash(reversed_bytes))
+        );
+    }
+
+    #[test]
+    fn a_block_hash_that_is_not_hex_is_invalid() {
         assert!(matches!(
-            TreeState::from_wire_parts(0, "not hex", "", "", ""),
+            TreeStateReply::block_hash(NOT_HEX),
             Err(InvalidTreeState::InvalidHashHex(_))
         ));
     }
 
     #[test]
-    fn a_hash_not_exactly_32_bytes_is_rejected() {
-        assert!(matches!(
-            TreeState::from_wire_parts(0, "aabb", "", "", ""),
+    fn a_block_hash_of_the_wrong_length_is_invalid() {
+        assert_eq!(
+            TreeStateReply::block_hash(SHORT_HASH_HEX),
             Err(InvalidTreeState::InvalidHashLength)
-        ));
+        );
     }
 
     #[test]
-    fn non_hex_tree_is_rejected_and_names_the_pool() {
-        for (sapling, orchard, ironwood) in [
-            ("not hex", "", ""),
-            ("", "not hex", ""),
-            ("", "", "not hex"),
+    fn each_tree_hex_is_omitted_served_or_malformed() {
+        assert_eq!(Tree::from_hex(OMITTED_TREE_HEX), Tree::Omitted);
+        assert_eq!(Tree::from_hex(TREE_HEX), Tree::Served(vec![TREE_BYTE]));
+        assert!(matches!(Tree::from_hex(NOT_HEX), Tree::Malformed(_)));
+    }
+
+    #[test]
+    fn the_bytes_of_a_malformed_tree_name_its_pool() {
+        for pool in [
+            ShieldedPool::Sapling,
+            ShieldedPool::Orchard,
+            ShieldedPool::Ironwood,
         ] {
-            let err = TreeState::from_wire_parts(0, &some_hash_hex(), sapling, orchard, ironwood)
-                .unwrap_err();
-            assert!(
-                matches!(err, InvalidTreeState::InvalidTreeHex { .. }),
-                "{err}"
-            );
+            assert!(matches!(
+                Tree::from_hex(NOT_HEX).bytes(pool),
+                Err(InvalidTreeState::InvalidTreeHex { pool: named, .. }) if named == pool
+            ));
+            assert_eq!(Tree::from_hex(OMITTED_TREE_HEX).bytes(pool), Ok(&[][..]));
+            assert_eq!(Tree::from_hex(TREE_HEX).bytes(pool), Ok(&[TREE_BYTE][..]));
         }
+    }
+
+    #[test]
+    fn the_trees_are_listed_with_their_pools() {
+        let tree_state = TreeStateReply {
+            height: TreeStateReply::block_height(u64::from(HEIGHT)),
+            hash: TreeStateReply::block_hash(NOT_HEX),
+            sapling_tree: Tree::from_hex(TREE_HEX),
+            orchard_tree: Tree::from_hex(OMITTED_TREE_HEX),
+            ironwood_tree: Tree::from_hex(NOT_HEX),
+        };
+
+        assert_eq!(
+            tree_state.trees().collect::<Vec<_>>(),
+            [
+                (ShieldedPool::Sapling, &tree_state.sapling_tree),
+                (ShieldedPool::Orchard, &tree_state.orchard_tree),
+                (ShieldedPool::Ironwood, &tree_state.ironwood_tree),
+            ]
+        );
     }
 }
