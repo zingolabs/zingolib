@@ -52,14 +52,6 @@ grants it.
 
 `gh issue list --label follow-up --state open` lists everything deferred.
 
-## Tracking issues
-
-An arc has one tracking issue, labelled `tracking`, opened before its first
-increment. Its body states the end state and lists the increments as a
-checklist. It names the increment that makes an uneven public surface
-uniform. Each increment names it on the `Part of:` line of its pull
-request, and its author ticks the box when the increment merges.
-
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue on `zingolabs/zingolib` with `gh issue create`.

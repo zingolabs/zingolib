@@ -256,12 +256,8 @@ Sibling items in different styles are allowed while the arc is in progress:
 one method of a trait can return a domain type while the others still
 return generated types.
 
-Before the first increment, open one tracking issue for the arc, labelled
-`tracking`, under the same grant as a follow-up. It states the end state and
-lists the increments as a checklist. It names the increment that makes an
-uneven public surface uniform, which is what lets `dev` hold that surface
-meanwhile. Every increment names it on a `Part of:` line. Rebase the
-remaining increments onto `dev` after each one lands.
+Rebase the remaining increments onto `dev` after each one lands. When an
+issue tracks the arc, each increment names it on a `Part of:` line.
 
 Never open an integration branch on your own judgement. If no increment can
 hold the guarantee, stop and tell your developer which increments you tried
@@ -296,10 +292,8 @@ already hold.
 
 A reviewing agent applies the three tests before it reads for defects. A
 failed test is its first finding, and the finding names each increment and
-the order they land in. For an increment, read its tracking issue first to
-learn where the arc goes, and judge the increment on whether it is whole. A
-public surface in two styles is a finding only when the tracking issue names
-no increment that makes it uniform.
+the order they land in. Judge an increment on whether it is whole. A public
+surface in two styles passes while the arc is in progress.
 
 A defect the pull request introduces is fixed in the pull request. So is any
 other reason the pull request should not merge as it is. Write each as a

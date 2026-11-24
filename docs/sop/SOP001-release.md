@@ -359,8 +359,7 @@ released the moment it merges.
   unfinished flag all fail. Sibling items in different styles pass.
 - A larger feature or refactor, an arc, lands on `dev` as increments: small
   pull requests that each hold that bar and merge as soon as they are
-  ready. A tracking issue states the end state of the arc and lists its
-  increments (zingo-adrs zingolib/0068, and "Pull request scope" in
+  ready (zingo-adrs zingolib/0068, and "Pull request scope" in
   `AGENTS.md`).
 - An integration branch is for the arc that has no increment able to hold
   the bar. It is a long-lived branch named for the work,
