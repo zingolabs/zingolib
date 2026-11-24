@@ -46,6 +46,7 @@ pub mod crypto;
 pub mod default_indexer;
 pub mod diag;
 pub mod error;
+pub mod key_pin;
 pub mod network_access;
 
 pub use crypto::ensure_default_crypto_provider;
@@ -160,6 +161,23 @@ fn client_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
     config
 }
 
+fn indexer_tls_config(
+    uri: &http::Uri,
+    roots: rustls::RootCertStore,
+) -> Result<rustls::ClientConfig, GetClientError> {
+    let pinned = uri
+        .host()
+        .filter(|_| uri.scheme_str() == Some("https"))
+        .and_then(key_pin::pinned_host);
+    match pinned {
+        Some(pinned) => Ok(key_pin::client_config(
+            pinned,
+            crypto::process_crypto_provider(),
+        )?),
+        None => Ok(client_tls_config(roots)),
+    }
+}
+
 type IndexerHttps = HttpsConnector<HttpConnector>;
 type IndexerStream = <IndexerHttps as tower::Service<http::Uri>>::Response;
 type IndexerDialError = <IndexerHttps as tower::Service<http::Uri>>::Error;
@@ -197,11 +215,12 @@ fn indexer_endpoint(
         return Err(GetClientError::InvalidScheme);
     }
     let authority = uri.authority().ok_or(GetClientError::InvalidAuthority)?;
+    let tls_config = indexer_tls_config(&uri, roots)?;
     let endpoint = Endpoint::from_shared(format!("http://{authority}"))?
         .origin(uri.clone())
         .connect_timeout(crate::time::INDEXER_CONNECT_TIMEOUT);
     let https = HttpsConnectorBuilder::new()
-        .with_tls_config(client_tls_config(roots))
+        .with_tls_config(tls_config)
         .https_or_http() // plaintext only for `http://` URIs, never a fallback
         .enable_http2()
         .wrap_connector(indexer_connector());
@@ -718,7 +737,7 @@ mod tests {
         service::service_fn,
     };
     use hyper_util::rt::TokioIo;
-    use tokio::{net::TcpListener, sync::oneshot, time::timeout};
+    use tokio::{net::TcpListener, time::timeout};
     use tokio_rustls::{TlsAcceptor, rustls};
 
     use super::*;
@@ -840,122 +859,145 @@ mod tests {
 
         std::sync::Arc::new(config)
     }
-    /// Smoke test: adding the committed localhost cert to a rustls root store enables
-    /// a client to complete a TLS handshake and perform an HTTP request.
-    ///
-    /// Implementation notes:
-    /// - Uses a local TLS server with the committed cert/key.
-    /// - Uses strict timeouts to prevent hangs under nextest.
-    /// - Explicitly drains the request body and disables keep-alive so that
-    ///   `serve_connection` terminates deterministically.
-    /// - Installs the rustls crypto provider to avoid provider
-    ///   selection panics in test binaries.
-    #[tokio::test]
-    async fn with_localhost_cert_enables_tls_handshake() {
-        use http_body_util::Full;
-        use hyper::service::service_fn;
-        use hyper_util::rt::TokioIo;
-        use tokio::net::TcpListener;
-        use tokio_rustls::TlsAcceptor;
-        use tokio_rustls::rustls;
+    async fn serve_one_tls_request(
+        listener: TcpListener,
+        acceptor: TlsAcceptor,
+    ) -> std::io::Result<()> {
+        use http_body_util::{BodyExt, Full};
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
-        let addr = listener.local_addr().expect("local_addr failed");
+        let (socket, _) = timeout(LOCAL_TLS_TEST_BOUND, listener.accept()).await??;
+        let tls_stream = timeout(LOCAL_TLS_TEST_BOUND, acceptor.accept(socket)).await??;
 
-        let tls_config = load_test_server_config();
-        let acceptor = TlsAcceptor::from(tls_config);
-
-        let ready = oneshot::channel::<()>();
-        let ready_tx = ready.0;
-        let ready_rx = ready.1;
-
-        let server_task = tokio::spawn(async move {
-            let _ = ready_tx.send(());
-
-            let accept_res = timeout(Duration::from_secs(3), listener.accept()).await;
-            let (socket, _) = accept_res
-                .expect("server accept timed out")
-                .expect("accept failed");
-
-            let tls_stream = timeout(Duration::from_secs(3), acceptor.accept(socket))
-                .await
-                .expect("tls accept timed out")
-                .expect("tls accept failed");
-
-            let io = TokioIo::new(tls_stream);
-
-            let svc = service_fn(|mut req: http::Request<hyper::body::Incoming>| async move {
-                use http_body_util::BodyExt;
-
-                while let Some(frame) = req.body_mut().frame().await {
-                    if frame.is_err() {
-                        break;
-                    }
+        let svc = service_fn(|mut req: Request<Incoming>| async move {
+            while let Some(frame) = req.body_mut().frame().await {
+                if frame.is_err() {
+                    break;
                 }
-
-                let mut resp = http::Response::new(Full::new(Bytes::from_static(b"ok")));
-                resp.headers_mut().insert(
-                    http::header::CONNECTION,
-                    http::HeaderValue::from_static("close"),
-                );
-                Ok::<_, hyper::Error>(resp)
-            });
-
-            timeout(
-                Duration::from_secs(3),
-                hyper::server::conn::http1::Builder::new()
-                    .keep_alive(false)
-                    .serve_connection(io, svc),
-            )
-            .await
-            .expect("serve_connection timed out")
-            .expect("serve_connection failed");
+            }
+            let mut resp = Response::new(Full::new(Bytes::from_static(b"ok")));
+            resp.headers_mut().insert(
+                http::header::CONNECTION,
+                http::HeaderValue::from_static("close"),
+            );
+            Ok::<_, hyper::Error>(resp)
         });
 
-        timeout(Duration::from_secs(1), ready_rx)
-            .await
-            .expect("server ready signal timed out")
-            .expect("server dropped before ready");
+        timeout(
+            LOCAL_TLS_TEST_BOUND,
+            hyper::server::conn::http1::Builder::new()
+                .keep_alive(false)
+                .serve_connection(TokioIo::new(tls_stream), svc),
+        )
+        .await?
+        .map_err(std::io::Error::other)
+    }
 
-        // Build client root store and add the test cert.
-        let roots = with_localhost_cert(rustls::RootCertStore::empty());
+    async fn spawn_test_tls_server() -> (u16, tokio::task::JoinHandle<std::io::Result<()>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
+        let port = listener.local_addr().expect("local_addr failed").port();
+        let acceptor = TlsAcceptor::from(load_test_server_config());
+        (
+            port,
+            tokio::spawn(serve_one_tls_request(listener, acceptor)),
+        )
+    }
 
-        let client_config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+    async fn get_over_tls(
+        client_config: rustls::ClientConfig,
+        port: u16,
+    ) -> Result<Response<Incoming>, hyper_util::client::legacy::Error> {
+        use http_body_util::Full;
 
-        // This MUST allow http1 since the server uses hyper http1 builder.
+        let localhost = rustls::pki_types::ServerName::try_from("localhost")
+            .expect("localhost is a valid DNS name");
         let https = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(client_config)
             .https_only()
+            .with_server_name_resolver(hyper_rustls::FixedServerNameResolver::new(localhost))
             .enable_http1()
             .build();
-
         let client =
             hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
                 .build(https);
 
-        let uri: http::Uri = format!("https://127.0.0.1:{}/", addr.port())
+        let uri: http::Uri = format!("https://127.0.0.1:{port}/")
             .parse()
-            .expect("bad uri");
-
-        let req = http::Request::builder()
+            .expect("a loopback address and a port form a valid URI");
+        let req = Request::builder()
             .method("GET")
             .uri(uri)
             .body(Full::<Bytes>::new(Bytes::new()))
-            .expect("request build failed");
+            .expect("a GET with an empty body is a valid request");
 
-        let res = timeout(Duration::from_secs(3), client.request(req))
+        timeout(LOCAL_TLS_TEST_BOUND, client.request(req))
             .await
-            .expect("client request timed out")
-            .expect("TLS handshake or request failed");
+            .expect("the request settles within LOCAL_TLS_TEST_BOUND")
+    }
 
+    fn key_pin_client_config(pins: &'static [key_pin::SpkiSha256]) -> rustls::ClientConfig {
+        let verifier = key_pin::Verifier::new(pins, &crypto::process_crypto_provider());
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(verifier))
+            .with_no_client_auth()
+    }
+
+    /// Smoke test: adding the committed localhost cert to a rustls root store enables
+    /// a client to complete a TLS handshake and perform an HTTP request.
+    #[tokio::test]
+    async fn with_localhost_cert_enables_tls_handshake() {
+        let (port, server_task) = spawn_test_tls_server().await;
+
+        let roots = with_localhost_cert(rustls::RootCertStore::empty());
+        let client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        let res = get_over_tls(client_config, port)
+            .await
+            .expect("TLS handshake or request failed");
         assert!(res.status().is_success());
 
-        timeout(Duration::from_secs(3), server_task)
+        timeout(LOCAL_TLS_TEST_BOUND, server_task)
             .await
             .expect("server task timed out")
-            .expect("server task failed");
+            .expect("server task panicked")
+            .expect("server failed");
+    }
+
+    #[tokio::test]
+    async fn key_pin_handshake_accepts_the_pinned_key() {
+        let (port, server_task) = spawn_test_tls_server().await;
+
+        let res = get_over_tls(key_pin_client_config(key_pin::tests::LOCALHOST_PINS), port)
+            .await
+            .expect("the localhost key is pinned");
+        assert!(res.status().is_success());
+
+        timeout(LOCAL_TLS_TEST_BOUND, server_task)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked")
+            .expect("server failed");
+    }
+
+    #[tokio::test]
+    async fn key_pin_handshake_refuses_an_unpinned_key() {
+        let (port, server_task) = spawn_test_tls_server().await;
+
+        let err = get_over_tls(key_pin_client_config(key_pin::tests::WRONG_PINS), port)
+            .await
+            .expect_err("no pin of WRONG_PINS is the localhost key");
+        assert!(
+            format!("{err:?}").contains("NoMatchingKey"),
+            "expected a NoMatchingKey failure, got {err:?}"
+        );
+
+        let served = timeout(LOCAL_TLS_TEST_BOUND, server_task)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+        assert!(served.is_err(), "the server must not complete a handshake");
     }
 
     /// Validates that the connector rejects non-HTTP(S) URIs.
@@ -1226,6 +1268,18 @@ mod tests {
             "expected a mainnet server, got chain_name={:?}",
             response.chain_name
         );
+    }
+
+    #[tokio::test]
+    async fn key_pin_default_indexer_answers_through_its_pin() {
+        let uri = default_indexer::default_indexer(default_indexer::IndexerChain::Main);
+        let info = GrpcIndexer::new(uri)
+            .await
+            .expect("the Default Indexer presents a pinned key")
+            .get_lightd_info(LOCAL_TLS_TEST_BOUND)
+            .await
+            .expect("the Default Indexer answers over the pinned channel");
+        assert!(info.block_height > 0, "got {info:?}");
     }
 
     /// The proto spec says:

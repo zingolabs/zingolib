@@ -25,3 +25,11 @@ pub fn ensure_default_crypto_provider() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }
 }
+
+/// - Installs aws-lc-rs as the process-level default when no provider is installed.
+pub(crate) fn process_crypto_provider() -> std::sync::Arc<rustls::crypto::CryptoProvider> {
+    ensure_default_crypto_provider();
+    rustls::crypto::CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+}

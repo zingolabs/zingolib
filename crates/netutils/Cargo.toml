@@ -71,6 +71,8 @@ rand = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 nym-socks5-proxy-helpers = { version = "=1.21.6", optional = true }
 futures-channel = { version = "0.3", optional = true }
+x509-parser.workspace = true
+sha2 = "0.10"
 
 # Not used directly. Each is a transitive of nym-sdk whose 1.22 release
 # broke the 1.21.6 build, and the `=` requirement here holds it at the
@@ -154,5 +156,4 @@ rustls-pemfile.workspace = true
 # timeout regression test; dev-only, so the shipped graph is unchanged.
 tokio = { workspace = true, features = ["test-util", "macros", "rt-multi-thread"] }
 http-body-util.workspace = true
-x509-parser.workspace = true
 

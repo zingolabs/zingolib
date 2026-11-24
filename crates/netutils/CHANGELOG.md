@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the fee-estimator version. Backends predating the RPC answer
   `Unimplemented`. The trait method is new and required, so out-of-tree
   `Indexer` implementors must add it.
+- `key_pin`, the pinned hosts and their key verifier (zingo-adrs
+  zingolib/0070). `PINNED_HOSTS` holds the SHA-256 of each pinned host's
+  SubjectPublicKeyInfo, `pinned_host(host)` looks a host up, and `Verifier`
+  is the rustls `ServerCertVerifier` that accepts a leaf only when its key
+  matches a pin, it covers the host name and the current time, and the
+  handshake signature verifies under its key. No root store takes part.
+  `KeyPinError` types each refusal. The mainnet Default Indexer host
+  `zec.global` is the one entry. It carries four node keys (base64 of the
+  SPKI SHA-256), observed from the network on 2026-10-21 under the host's
+  earlier name `mainnet.zainod.zingolabs.dev` and awaiting the operator's
+  confirmation from each node's private key: us-west-1
+  `PlaJEXXQ5Jm+3Pq1Pr3bNFYAmlxYzu6VxHH4EX4NpP8=`, us-east-1
+  `YSr0xLcrj6vBDqqwLVhUhbdhZg/e25+zDWm3ojvtSlM=`, eu-central-1
+  `CdGeqGp2RAVnsdFn8L0x2OCRJxWOu9my9boSV+Cf9JI=`, and ap-southeast-1
+  `jx8Nlvc+UHV+xdKVxXMxHMtClWjkjIcCQszpVCILH90=`. The offline backup key
+  the record requires does not exist yet.
 
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
@@ -51,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds the live client alone; the URI lives in the `NetworkAccess` beside
   it.
 - `GrpcIndexer` now connects to IPv6 literal hosts (`https://[::1]:9067`).
+- BREAKING: `GetClientError` gains the variant `PinnedTlsConfig`, raised when
+  the rustls configuration for a pinned host cannot be built.
+- `GrpcIndexer::new` and `GrpcIndexer::new_lazy` connect to an `https` URI
+  whose host is in `key_pin::PINNED_HOSTS` through the key verifier, and a key
+  that matches no pin fails the connection. Every other host keeps the
+  verification against the compiled-in webpki bundle.
+- `x509-parser` is a regular dependency where it was a development
+  dependency, and `sha2` joins it. The root workspace lockfile already held
+  both, so it gains no package.
 
 ### Deprecated
 
