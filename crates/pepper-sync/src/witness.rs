@@ -16,7 +16,7 @@ use zcash_primitives::{
     merkle_tree::{HashSer, read_commitment_tree},
 };
 use zcash_protocol::consensus::BlockHeight;
-use zl_netutils::tree_state;
+use zl_common::chain;
 
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
@@ -303,13 +303,13 @@ impl Frontiers {
     }
 }
 
-impl TryFrom<tree_state::Validated> for Frontiers {
+impl TryFrom<chain::TreeState> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(value: tree_state::Validated) -> Result<Self, Self::Error> {
+    fn try_from(value: chain::TreeState) -> Result<Self, Self::Error> {
         Ok(Frontiers::new(
-            BlockHeight::from_u32(value.height),
-            BlockHash(value.hash),
+            value.height,
+            value.hash,
             commitment_tree(&value.sapling_tree)?.to_frontier(),
             commitment_tree(&value.orchard_tree)?.to_frontier(),
             commitment_tree(&value.ironwood_tree)?.to_frontier(),

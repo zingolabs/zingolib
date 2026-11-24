@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the wallet, split out of `zingolib`. `zingolib` re-exports each at
   its old path.
 - `chain` module: `ChainType` and `InvalidChainType`.
+- `chain::TreeState`, the note commitment trees of the shielded pools at the
+  end of one block: the block's `BlockHeight` and `BlockHash`, and the
+  serialized tree of each pool as bytes.
 - `keys` module: `UnifiedKeyStore`, `UnifiedAddressId`, `ReceiverSelection`,
   `KeyError`, `encode_ufvk` and the `KEY_TYPE_EMPTY`, `KEY_TYPE_VIEW` and
   `KEY_TYPE_SPEND` constants. `UnifiedKeyStore::determine_nth_valid_sapling_diversifier`

@@ -17,6 +17,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
+use zl_common::chain;
 use zl_netutils::{
     Indexer, TransparentIndexer,
     lightwallet_protocol::{BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction},
@@ -31,6 +32,7 @@ use crate::{
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
+pub mod tree_state_reply;
 
 const MAX_RETRIES: u8 = 3;
 
@@ -75,7 +77,7 @@ pub enum FetchRequest {
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<Result<tree_state::TreeState, tonic::Status>>,
+        oneshot::Sender<Result<chain::TreeState, tree_state::Failure<tree_state_reply::Invalid>>>,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
@@ -305,10 +307,20 @@ pub(crate) async fn get_frontiers(
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let tree_state = reply_receiver
+    let tree_state = match reply_receiver
         .await
         .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)?;
+    {
+        Ok(tree_state) => Ok(tree_state),
+        Err(tree_state::Failure::Request(status)) => {
+            return Err(ServerError::RequestFailed(status));
+        }
+        Err(tree_state::Failure::Invalid(invalid)) => Err(invalid),
+    };
+    let omitted_trees = match &tree_state {
+        Ok(tree_state) => tree_state_reply::OmittedTrees::of(tree_state),
+        Err(invalid) => invalid.omitted_trees,
+    };
 
     // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
     // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
@@ -316,17 +328,17 @@ pub(crate) async fn get_frontiers(
     for (pool, tree_is_omitted, network_upgrade) in [
         (
             ShieldedPool::Sapling,
-            tree_state.sapling_tree_is_omitted(),
+            omitted_trees.sapling,
             consensus::NetworkUpgrade::Sapling,
         ),
         (
             ShieldedPool::Orchard,
-            tree_state.orchard_tree_is_omitted(),
+            omitted_trees.orchard,
             consensus::NetworkUpgrade::Nu5,
         ),
         (
             ShieldedPool::Ironwood,
-            tree_state.ironwood_tree_is_omitted(),
+            omitted_trees.ironwood,
             consensus::NetworkUpgrade::Nu6_3,
         ),
     ] {
@@ -339,7 +351,6 @@ pub(crate) async fn get_frontiers(
     }
 
     tree_state
-        .validate()
         .map_err(|invalid| std::io::Error::new(std::io::ErrorKind::InvalidData, invalid))
         .and_then(Frontiers::try_from)
         .map_err(ServerError::InvalidFrontier)
@@ -554,15 +565,14 @@ mod tests {
                     FetchRequest::TreeState(reply_sender, block_height) => {
                         let [sapling_tree_hex, orchard_tree_hex, ironwood_tree_hex] =
                             trees_hex.map(str::to_string);
-                        let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
-                            tree_state::WireParts {
+                        let _ignore_error =
+                            reply_sender.send(tree_state_reply::fetched(tree_state::WireParts {
                                 height: u64::from(block_height),
                                 hash_hex: hash_hex.to_string(),
                                 sapling_tree_hex,
                                 orchard_tree_hex,
                                 ironwood_tree_hex,
-                            },
-                        )));
+                            }));
                     }
                     _ => panic!("unexpected fetch request"),
                 }

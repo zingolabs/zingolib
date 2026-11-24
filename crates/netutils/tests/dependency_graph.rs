@@ -4,7 +4,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const LOCK: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock"));
 const TRANSPORT_CRATE: &str = env!("CARGO_PKG_NAME");
-const SHIELDED_PROTOCOL_CRATES: [&str; 3] = ["orchard", "sapling-crypto", "zcash_keys"];
+const WALLET_STACK_CRATES: [&str; 6] = [
+    "zl-common",
+    "zcash_primitives",
+    "zcash_protocol",
+    "zcash_keys",
+    "orchard",
+    "sapling-crypto",
+];
 
 const PACKAGE_HEADER: &str = "[[package]]";
 const NAME_PREFIX: &str = "name = \"";
@@ -61,7 +68,7 @@ fn reached<'lock>(
 }
 
 #[test]
-fn the_transport_crate_reaches_no_shielded_protocol_crate() {
+fn the_transport_crate_reaches_no_wallet_stack_crate() {
     let edges = lock_edges(LOCK);
     assert!(
         edges.contains_key(TRANSPORT_CRATE),
@@ -69,14 +76,14 @@ fn the_transport_crate_reaches_no_shielded_protocol_crate() {
     );
 
     let reached = reached(&edges, TRANSPORT_CRATE);
-    let shielded = SHIELDED_PROTOCOL_CRATES
+    let wallet_stack = WALLET_STACK_CRATES
         .into_iter()
-        .filter(|shielded| reached.contains(shielded))
+        .filter(|wallet_stack| reached.contains(wallet_stack))
         .collect::<Vec<_>>();
 
     assert!(
-        shielded.is_empty(),
-        "{TRANSPORT_CRATE} reaches {shielded:?} among its {} packages",
+        wallet_stack.is_empty(),
+        "{TRANSPORT_CRATE} reaches {wallet_stack:?} among its {} packages",
         reached.len()
     );
 }

@@ -264,11 +264,13 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
     /// - Sends one `GetTreeState` request to the indexer.
-    fn get_tree_state(
+    /// - Calls `parse` once on the reply.
+    fn get_tree_state<Reply, Invalid>(
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tree_state::TreeState, tonic::Status>> + Send;
+        parse: impl FnOnce(tree_state::WireParts) -> Result<Reply, Invalid> + Send,
+    ) -> impl Future<Output = Result<Reply, tree_state::Failure<Invalid>>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -352,10 +354,12 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
 
     /// - Sends one `GetLatestTreeState` request to the indexer.
-    fn get_latest_tree_state(
+    /// - Calls `parse` once on the reply.
+    fn get_latest_tree_state<Reply, Invalid>(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tree_state::TreeState, tonic::Status>> + Send;
+        parse: impl FnOnce(tree_state::WireParts) -> Result<Reply, Invalid> + Send,
+    ) -> impl Future<Output = Result<Reply, tree_state::Failure<Invalid>>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -495,14 +499,20 @@ mod send_response_parsing {
     }
 }
 
-fn received_tree_state(wire: WireTreeState) -> tree_state::TreeState {
-    tree_state::TreeState::from(tree_state::WireParts {
+fn parsed_tree_state<Reply, Invalid>(
+    response: Result<tonic::Response<WireTreeState>, tonic::Status>,
+    parse: impl FnOnce(tree_state::WireParts) -> Result<Reply, Invalid>,
+) -> Result<Reply, tree_state::Failure<Invalid>> {
+    let wire = response.map_err(tree_state::Failure::Request)?.into_inner();
+
+    parse(tree_state::WireParts {
         height: wire.height,
         hash_hex: wire.hash,
         sapling_tree_hex: wire.sapling_tree,
         orchard_tree_hex: wire.orchard_tree,
         ironwood_tree_hex: wire.ironwood_tree,
     })
+    .map_err(tree_state::Failure::Invalid)
 }
 
 impl Indexer for GrpcIndexer {
@@ -554,19 +564,15 @@ impl Indexer for GrpcIndexer {
             .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))
     }
 
-    async fn get_tree_state(
+    async fn get_tree_state<Reply, Invalid>(
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<tree_state::TreeState, tonic::Status> {
+        parse: impl FnOnce(tree_state::WireParts) -> Result<Reply, Invalid> + Send,
+    ) -> Result<Reply, tree_state::Failure<Invalid>> {
         let mut request = Request::new(block_id);
         request.set_timeout(timeout);
-        Ok(received_tree_state(
-            self.clear_net_client
-                .get_tree_state(request)
-                .await?
-                .into_inner(),
-        ))
+        parsed_tree_state(self.clear_net_client.get_tree_state(request).await, parse)
     }
 
     async fn get_block(
@@ -661,18 +667,17 @@ impl Indexer for GrpcIndexer {
             .into_inner())
     }
 
-    async fn get_latest_tree_state(
+    async fn get_latest_tree_state<Reply, Invalid>(
         &mut self,
         timeout: Duration,
-    ) -> Result<tree_state::TreeState, tonic::Status> {
+        parse: impl FnOnce(tree_state::WireParts) -> Result<Reply, Invalid> + Send,
+    ) -> Result<Reply, tree_state::Failure<Invalid>> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(received_tree_state(
-            self.clear_net_client
-                .get_latest_tree_state(request)
-                .await?
-                .into_inner(),
-        ))
+        parsed_tree_state(
+            self.clear_net_client.get_latest_tree_state(request).await,
+            parse,
+        )
     }
 
     async fn get_subtree_roots(

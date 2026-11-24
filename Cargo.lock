@@ -11277,7 +11277,6 @@ name = "zl-netutils"
 version = "7.0.0"
 dependencies = [
  "futures-channel",
- "hex",
  "http 1.5.0",
  "http-body-util",
  "hyper 1.11.1",

@@ -1,3 +1,5 @@
+use zcash_primitives::block::BlockHash;
+use zcash_protocol::consensus::BlockHeight;
 use zingo_common_components::protocol::ActivationHeights;
 
 /// The network types a lightclient can connect to.
@@ -87,6 +89,15 @@ pub(crate) mod consealed {
 #[derive(thiserror::Error, Debug)]
 #[error("Invalid chain type '{0}'. Expected one of: 'mainnet', 'testnet' or 'regtest'.")]
 pub struct InvalidChainType(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeState {
+    pub height: BlockHeight,
+    pub hash: BlockHash,
+    pub sapling_tree: Vec<u8>,
+    pub orchard_tree: Vec<u8>,
+    pub ironwood_tree: Vec<u8>,
+}
 
 #[cfg(test)]
 mod tests {

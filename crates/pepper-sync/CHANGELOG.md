@@ -27,10 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
 - **Breaking:** `client::FetchRequest::TreeState` replies with
-  `zl_netutils::tree_state::TreeState` in place of the generated
-  `lightwallet_protocol::TreeState`. A fetcher builds the reply from
-  `zl_netutils::tree_state::WireParts`. The errors of a tree state fetch do
-  not change: an omitted tree of an active pool is
+  `zl_common::chain::TreeState`, or with
+  `zl_netutils::tree_state::Failure<client::tree_state_reply::Invalid>`, in
+  place of the generated `lightwallet_protocol::TreeState` and a
+  `tonic::Status`. The fetcher parses the reply inside the indexer call, so
+  the tree state is validated when it arrives. The errors of a tree state
+  fetch do not change: an omitted tree of an active pool is
   `ServerError::TreeStateNotServed`, and a malformed field is
   `ServerError::InvalidFrontier`.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
