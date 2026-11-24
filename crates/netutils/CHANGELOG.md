@@ -45,13 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `Indexer::get_tree_state` and `Indexer::get_latest_tree_state`
-  take a `parse` argument and return its result, in place of the generated
-  `lightwallet_protocol::TreeState`. The indexer calls `parse` once on the
-  reply, as `tree_state::WireParts`, before it returns. A failed request is
-  `tree_state::Failure::Request`, and a reply that `parse` refuses is
-  `tree_state::Failure::Invalid`. The caller chooses the type of the parsed
-  reply, so the crate names no domain type and gains no dependency. A
-  consumer passes its parser; an implementor of `Indexer` calls it.
+  are generic over a `wire::Vocabulary` and return its `TreeState`, in place
+  of the generated `lightwallet_protocol::TreeState`. `wire::Vocabulary` is
+  new: a consumer implements it once, on a type of its own, to say which
+  domain type each reply becomes. The indexer calls
+  `Vocabulary::tree_state` once on the reply, as `tree_state::WireParts`,
+  before it returns. A failed request is `tree_state::Failure::Request`, and
+  a reply that the vocabulary refuses is `tree_state::Failure::Invalid`.
+  The crate names no domain type and gains no dependency. A consumer names
+  its vocabulary at the call, as `get_tree_state::<V>`; an implementor of
+  `Indexer` calls `V::tree_state`.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

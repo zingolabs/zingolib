@@ -14,7 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `chain` module: `ChainType` and `InvalidChainType`.
 - `chain::TreeState`, the note commitment trees of the shielded pools at the
   end of one block: the block's `BlockHeight` and `BlockHash`, and the
-  serialized tree of each pool as bytes.
+  serialized tree of each pool as bytes. `TreeState::from_wire_parts` builds
+  one from the height, the block hash as hex in reversed byte order, and
+  each tree as hex, or returns `chain::InvalidTreeState`, which names the
+  malformed field. The crate depends on `hex` directly for this; the
+  package was already in its graph.
 - `keys` module: `UnifiedKeyStore`, `UnifiedAddressId`, `ReceiverSelection`,
   `KeyError`, `encode_ufvk` and the `KEY_TYPE_EMPTY`, `KEY_TYPE_VIEW` and
   `KEY_TYPE_SPEND` constants. `UnifiedKeyStore::determine_nth_valid_sapling_diversifier`

@@ -4922,7 +4922,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
         use zl_netutils::tree_state;
 
-        use crate::client::tree_state_reply;
+        use crate::client::vocabulary;
 
         use crate::{
             client::FetchRequest,
@@ -5008,7 +5008,7 @@ mod test {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
                             counted_requests.fetch_add(1, atomic::Ordering::Release);
-                            let _ignore_error = reply_sender.send(tree_state_reply::fetched(
+                            let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
                                 tree_state::WireParts {
                                     height: u64::from(block_height),
                                     hash_hex: "00".repeat(32),
@@ -5204,7 +5204,7 @@ mod test {
         use zl_common::status::ConfirmationStatus;
         use zl_netutils::{lightwallet_protocol::RawTransaction, tree_state};
 
-        use crate::client::tree_state_reply;
+        use crate::client::vocabulary;
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5261,7 +5261,7 @@ mod test {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(tree_state_reply::fetched(
+                            let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
                                 tree_state::WireParts {
                                     height: u64::from(block_height),
                                     hash_hex: "00".repeat(32),
@@ -5770,7 +5770,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
         use zl_netutils::tree_state;
 
-        use crate::client::tree_state_reply;
+        use crate::client::vocabulary;
 
         use crate::{
             client::FetchRequest,
@@ -5825,7 +5825,7 @@ mod test {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(tree_state_reply::fetched(
+                            let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
                                 tree_state::WireParts {
                                     height: u64::from(block_height),
                                     hash_hex: "00".repeat(32),
@@ -6114,7 +6114,7 @@ mod test {
         use zl_common::status::ConfirmationStatus;
         use zl_netutils::tree_state;
 
-        use crate::client::tree_state_reply;
+        use crate::client::vocabulary;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
@@ -6166,7 +6166,7 @@ mod test {
                             } else {
                                 String::new()
                             };
-                            let _ignore_error = reply_sender.send(tree_state_reply::fetched(
+                            let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
                                 tree_state::WireParts {
                                     height: u64::from(block_height),
                                     hash_hex: "00".repeat(32),

@@ -32,7 +32,7 @@ use crate::{
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
-pub mod tree_state_reply;
+pub mod vocabulary;
 
 const MAX_RETRIES: u8 = 3;
 
@@ -77,7 +77,9 @@ pub enum FetchRequest {
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<Result<chain::TreeState, tree_state::Failure<tree_state_reply::Invalid>>>,
+        oneshot::Sender<
+            Result<chain::TreeState, tree_state::Failure<vocabulary::InvalidTreeState>>,
+        >,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
@@ -318,7 +320,7 @@ pub(crate) async fn get_frontiers(
         Err(tree_state::Failure::Invalid(invalid)) => Err(invalid),
     };
     let omitted_trees = match &tree_state {
-        Ok(tree_state) => tree_state_reply::OmittedTrees::of(tree_state),
+        Ok(tree_state) => vocabulary::OmittedTrees::of(tree_state),
         Err(invalid) => invalid.omitted_trees,
     };
 
@@ -565,14 +567,15 @@ mod tests {
                     FetchRequest::TreeState(reply_sender, block_height) => {
                         let [sapling_tree_hex, orchard_tree_hex, ironwood_tree_hex] =
                             trees_hex.map(str::to_string);
-                        let _ignore_error =
-                            reply_sender.send(tree_state_reply::fetched(tree_state::WireParts {
+                        let _ignore_error = reply_sender.send(vocabulary::fetched_tree_state(
+                            tree_state::WireParts {
                                 height: u64::from(block_height),
                                 hash_hex: hash_hex.to_string(),
                                 sapling_tree_hex,
                                 orchard_tree_hex,
                                 ironwood_tree_hex,
-                            }));
+                            },
+                        ));
                     }
                     _ => panic!("unexpected fetch request"),
                 }

@@ -18,7 +18,7 @@ use zl_netutils::{
 
 use zl_common::chain;
 
-use crate::client::{FetchRequest, tree_state_reply};
+use crate::client::{FetchRequest, vocabulary};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
@@ -295,18 +295,17 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<chain::TreeState, tree_state::Failure<tree_state_reply::Invalid>>
+) -> Result<chain::TreeState, tree_state::Failure<vocabulary::InvalidTreeState>>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
     client
-        .get_tree_state(
+        .get_tree_state::<vocabulary::Zcash>(
             BlockId {
                 height: block_height.into(),
                 hash: vec![],
             },
             UNARY_RPC_TIMEOUT,
-            tree_state_reply::parse,
         )
         .await
 }
