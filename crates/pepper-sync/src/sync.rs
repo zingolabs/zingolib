@@ -4920,7 +4920,7 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::merkle_tree::write_commitment_tree;
         use zcash_protocol::consensus::BlockHeight;
-        use zl_netutils::lightwallet_protocol::TreeState;
+        use zl_netutils::tree_state;
 
         use crate::{
             client::FetchRequest,
@@ -5006,14 +5006,15 @@ mod test {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
                             counted_requests.fetch_add(1, atomic::Ordering::Release);
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: orchard_tree.clone(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
+                            let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
+                                tree_state::WireParts {
+                                    height: u64::from(block_height),
+                                    hash_hex: "00".repeat(32),
+                                    sapling_tree_hex: EMPTY_TREE.to_string(),
+                                    orchard_tree_hex: orchard_tree.clone(),
+                                    ironwood_tree_hex: EMPTY_TREE.to_string(),
+                                },
+                            )));
                         }
                         _ => panic!("unexpected fetch request"),
                     }
@@ -5199,7 +5200,7 @@ mod test {
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::{RawTransaction, TreeState};
+        use zl_netutils::{lightwallet_protocol::RawTransaction, tree_state};
 
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
@@ -5256,14 +5257,15 @@ mod test {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
+                            let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
+                                tree_state::WireParts {
+                                    height: u64::from(block_height),
+                                    hash_hex: "00".repeat(32),
+                                    sapling_tree_hex: EMPTY_TREE.to_string(),
+                                    orchard_tree_hex: EMPTY_TREE.to_string(),
+                                    ironwood_tree_hex: EMPTY_TREE.to_string(),
+                                },
+                            )));
                         }
                         FetchRequest::Transaction(reply_sender, _txid) => {
                             // the request fails when the reply sender is dropped.
@@ -5762,7 +5764,7 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
-        use zl_netutils::lightwallet_protocol::TreeState;
+        use zl_netutils::tree_state;
 
         use crate::{
             client::FetchRequest,
@@ -5817,14 +5819,15 @@ mod test {
                 while let Some(fetch_request) = fetch_request_receiver.recv().await {
                     match fetch_request {
                         FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree: EMPTY_TREE.to_string(),
-                                ..Default::default()
-                            }));
+                            let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
+                                tree_state::WireParts {
+                                    height: u64::from(block_height),
+                                    hash_hex: "00".repeat(32),
+                                    sapling_tree_hex: EMPTY_TREE.to_string(),
+                                    orchard_tree_hex: EMPTY_TREE.to_string(),
+                                    ironwood_tree_hex: EMPTY_TREE.to_string(),
+                                },
+                            )));
                         }
                         _ => panic!("unexpected fetch request"),
                     }
@@ -6103,7 +6106,7 @@ mod test {
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
         use zl_common::status::ConfirmationStatus;
-        use zl_netutils::lightwallet_protocol::TreeState;
+        use zl_netutils::tree_state;
 
         use crate::client::FetchRequest;
         use crate::error::SyncError;
@@ -6155,14 +6158,15 @@ mod test {
                             } else {
                                 String::new()
                             };
-                            let _ignore_error = reply_sender.send(Ok(TreeState {
-                                height: u64::from(block_height),
-                                hash: "00".repeat(32),
-                                sapling_tree: EMPTY_TREE.to_string(),
-                                orchard_tree: EMPTY_TREE.to_string(),
-                                ironwood_tree,
-                                ..Default::default()
-                            }));
+                            let _ignore_error = reply_sender.send(Ok(tree_state::TreeState::from(
+                                tree_state::WireParts {
+                                    height: u64::from(block_height),
+                                    hash_hex: "00".repeat(32),
+                                    sapling_tree_hex: EMPTY_TREE.to_string(),
+                                    orchard_tree_hex: EMPTY_TREE.to_string(),
+                                    ironwood_tree_hex: ironwood_tree,
+                                },
+                            )));
                         }
                         _ => panic!("unexpected fetch request"),
                     }

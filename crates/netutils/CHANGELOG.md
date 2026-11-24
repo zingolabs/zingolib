@@ -40,10 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the fee-estimator version. Backends predating the RPC answer
   `Unimplemented`. The trait method is new and required, so out-of-tree
   `Indexer` implementors must add it.
+- `tree_state` module: the reply of an indexer about the note commitment
+  trees at the end of one block. `tree_state::TreeState` is opaque and is
+  built from `tree_state::WireParts`, the fields of the reply as the
+  indexer sent them. It reports whether the indexer omitted the tree of
+  each pool. `TreeState::validate` decodes it into `tree_state::Validated`,
+  which holds the height, the block hash and the bytes of each tree, or
+  returns `tree_state::Invalid`, which names the malformed field.
 
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- BREAKING: `Indexer::get_tree_state` and `Indexer::get_latest_tree_state`
+  return `tree_state::TreeState` in place of the generated
+  `lightwallet_protocol::TreeState`. A consumer that read the fields of the
+  reply calls `TreeState::validate` first. An implementor of `Indexer`
+  builds the reply from `tree_state::WireParts`.
+- The crate depends on `hex`, which `tree_state::TreeState::validate` uses.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so
