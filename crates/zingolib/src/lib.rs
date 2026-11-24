@@ -30,6 +30,15 @@ pub use zingo_common_components::protocol::ActivationHeights;
 pub use zl_netutils::default_indexer;
 pub use zl_netutils::ensure_default_crypto_provider;
 
+// Re-exported so consumers (`bin/cli`, `ffi/lib`) can name the types that already cross
+// `LightClient`'s own public API (`sync_mode`, `sync_status`, wallet note accessors) without
+// taking a direct dependency on the sync engine.
+pub use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
+pub use pepper_sync::error::{SyncError, SyncModeError, SyncRecoveryObservables, SyncStatusError};
+pub use pepper_sync::keys::transparent;
+pub use pepper_sync::sync::SyncStatus;
+pub use pepper_sync::wallet::{IronwoodNote, KeyIdInterface, OrchardNote, SaplingNote, SyncMode};
+
 // This line includes the generated `git_description()` function directly into this scope.
 include!(concat!(env!("OUT_DIR"), "/git_description.rs"));
 

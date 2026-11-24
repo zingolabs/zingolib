@@ -164,6 +164,16 @@ impl LightClient {
         self.sync_progress.borrow().clone()
     }
 
+    /// Computes the sync status directly from the wallet's current sync state. Unlike
+    /// [`Self::latest_sync_status`], this does not read the sync engine's published progress
+    /// channel, so it also answers while no sync task is running.
+    pub async fn sync_status(
+        &self,
+    ) -> Result<pepper_sync::sync::SyncStatus, pepper_sync::error::SyncStatusError<WalletError>>
+    {
+        pepper_sync::sync_status(&*self.wallet().read().await).await
+    }
+
     /// Subscribes to the status updates the sync engine pushes during the Sync Session the
     /// latest [`Self::sync`] launched.
     ///
