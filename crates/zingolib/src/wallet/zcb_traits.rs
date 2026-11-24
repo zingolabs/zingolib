@@ -953,7 +953,7 @@ impl InputSource for LightWallet {
             .expect("infallible")
             .ok_or(WalletError::NoSyncData)?;
 
-        let reserved = self
+        let reserved_for_migration = self
             .migration
             .as_ref()
             .map(migration::MigrationState::reserved_output_ids)
@@ -961,7 +961,12 @@ impl InputSource for LightWallet {
         let unreserved = HashSet::new();
         let candidates = note_selection::Candidates {
             sapling: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
-            orchard: self.note_candidates(anchor_height, account, exclude, &reserved)?,
+            orchard: self.note_candidates(
+                anchor_height,
+                account,
+                exclude,
+                &reserved_for_migration,
+            )?,
             ironwood: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
         };
         let notes = match note_selection::select(target_value, sources, candidates) {

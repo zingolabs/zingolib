@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use pepper_sync::sync::ScanRange;
 use pepper_sync::wallet::KeyIdInterface;
-use shardtree::store::ShardStore;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::PoolType;
 use zcash_protocol::ShieldedPool;
@@ -12,6 +12,7 @@ use zcash_protocol::consensus::BlockHeight;
 use super::LightWallet;
 use super::error::WalletError;
 use super::note_selection;
+use super::spend_evidence;
 use pepper_sync::wallet::NoteInterface;
 use pepper_sync::wallet::OutputId;
 use pepper_sync::wallet::OutputInterface;
@@ -65,6 +66,14 @@ impl OutputRef {
     pub fn pool_type(&self) -> PoolType {
         self.pool_type
     }
+}
+
+fn output_ids_of_pool(output_refs: &[OutputRef], pool_type: PoolType) -> HashSet<OutputId> {
+    output_refs
+        .iter()
+        .filter(|output_ref| output_ref.pool_type() == pool_type)
+        .map(OutputRef::output_id)
+        .collect()
 }
 
 impl std::fmt::Display for OutputRef {
@@ -277,19 +286,11 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
-        let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
-            return Err(WalletError::NoSyncData);
-        };
         Ok(self
-            .potentially_spendable_notes::<N>(anchor_height, account)?
+            .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|&note| {
-                self.note_spends_confirmed(
-                    self.output_transaction(note).status().get_height(),
-                    spend_evidence_floor,
-                    note.refetch_nullifier_ranges(),
-                )
-            })
+            .filter(|judged_note| judged_note.verdict == Verdict::Certain)
+            .map(|judged_note| judged_note.note)
             .collect())
     }
 
@@ -299,77 +300,71 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
     ) -> Result<Vec<&N>, WalletError> {
-        if self.spend_evidence_floor(false).is_none() {
-            return Err(WalletError::NoSyncData);
-        }
-        if self
-            .shard_trees
-            .ironwood
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Ironwood,
-                height: anchor_height,
-            });
-        }
-        if self
-            .shard_trees
-            .orchard
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Orchard,
-                height: anchor_height,
-            });
-        }
-        if self
-            .shard_trees
-            .sapling
-            .store()
-            .get_checkpoint(&anchor_height)
-            .expect("infallible")
-            .is_none()
-        {
-            return Err(WalletError::CheckpointNotFound {
-                shielded_protocol: ShieldedPool::Sapling,
-                height: anchor_height,
-            });
-        }
+        Ok(self
+            .judged_notes::<N>(anchor_height, account)?
+            .into_iter()
+            .filter_map(|judged_note| judged_note.verdict.certainty().map(|_| judged_note.note))
+            .collect())
+    }
 
-        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn judged_notes<'a, N: NoteInterface>(
+        &'a self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+    ) -> Result<Vec<Judged<'a, N>>, WalletError> {
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
+            return Err(WalletError::NoSyncData);
+        };
+        for shielded_protocol in [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ] {
+            if !self.checkpoint_is_retained(shielded_protocol, anchor_height) {
+                return Err(WalletError::CheckpointNotFound {
+                    shielded_protocol,
+                    height: anchor_height,
+                });
+            }
+        }
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let judgement = Judgement {
+            account,
+            pending_spends: &pending_spends,
+            spend_evidence_floor,
+            scan_ranges: self.sync_state.scan_ranges(),
+        };
+        let judgement = &judgement;
         Ok(self
             .wallet_transactions
             .values()
             .flat_map(|transaction| {
-                if transaction
-                    .status()
-                    .is_confirmed_before_or_at(&anchor_height)
-                {
-                    N::transaction_outputs(transaction)
-                        .iter()
-                        .filter(move |&note| {
-                            note.spending_transaction().is_none()
-                                && !pending_spends.contains_key(&note.output_id())
-                                && note.nullifier().is_some()
-                                && note.position().is_some()
-                                && self.can_build_witness::<N>(
-                                    transaction.status().get_height(),
-                                    anchor_height,
-                                )
-                                && note.key_id().account_id() == account
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                }
+                let confirmation = self.confirmation::<N>(transaction, anchor_height);
+                N::transaction_outputs(transaction)
+                    .iter()
+                    .map(move |note| Judged {
+                        note,
+                        verdict: judgement.judge(note, confirmation),
+                    })
             })
             .collect())
+    }
+
+    pub(crate) fn confirmation<N: NoteInterface>(
+        &self,
+        transaction: &TransactionRecord,
+        anchor_height: BlockHeight,
+    ) -> Confirmation {
+        let status = transaction.status();
+        if !status.is_confirmed_before_or_at(&anchor_height) {
+            return Confirmation::Unanchored;
+        }
+        let height = status.get_height();
+        Confirmation::Anchored {
+            height,
+            witnessable: self.can_build_witness::<N>(height, anchor_height),
+        }
     }
 
     /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
@@ -440,28 +435,115 @@ impl LightWallet {
         anchor_height: BlockHeight,
         account: zip32::AccountId,
         exclude: &[OutputRef],
-        reserved: &HashSet<OutputId>,
+        reserved_for_migration: &HashSet<OutputId>,
     ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
-        let exclude = exclude
-            .iter()
-            .filter(|output_ref| output_ref.pool_type() == N::POOL_TYPE)
-            .map(|output_ref| OutputId::new(output_ref.txid(), output_ref.output_index()))
-            .collect::<HashSet<_>>();
-        let certain = self
-            .spendable_notes::<N>(anchor_height, account)?
-            .into_iter()
-            .map(N::output_id)
-            .collect::<HashSet<_>>();
+        let forbidden_ids = output_ids_of_pool(exclude, N::POOL_TYPE);
         Ok(self
-            .potentially_spendable_notes::<N>(anchor_height, account)?
+            .judged_notes::<N>(anchor_height, account)?
             .into_iter()
-            .filter(|note| !exclude.contains(&note.output_id()))
-            .map(|note| note_selection::Candidate {
-                certain: certain.contains(&note.output_id()),
-                reserved: reserved.contains(&note.output_id()),
-                note: note.clone(),
+            .filter(|judged_note| !is_in(judged_note.note, &forbidden_ids))
+            .filter_map(|judged_note| {
+                judged_note
+                    .verdict
+                    .certainty()
+                    .map(|certain| note_selection::Candidate {
+                        certain,
+                        reserved_for_migration: is_in(judged_note.note, reserved_for_migration),
+                        note: judged_note.note.clone(),
+                    })
             })
             .collect())
+    }
+}
+
+fn is_in<N: OutputInterface>(note: &N, output_ids: &HashSet<OutputId>) -> bool {
+    output_ids.contains(&note.output_id())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Confirmation {
+    Unanchored,
+    Anchored {
+        height: BlockHeight,
+        witnessable: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    Certain,
+    Uncertain,
+    Unanchored,
+    ForeignAccount,
+    Spent,
+    NoNullifier,
+    NoPosition,
+    NoWitness,
+}
+
+impl Verdict {
+    pub(crate) fn certainty(self) -> Option<bool> {
+        match self {
+            Verdict::Certain => Some(true),
+            Verdict::Uncertain => Some(false),
+            Verdict::Unanchored
+            | Verdict::ForeignAccount
+            | Verdict::Spent
+            | Verdict::NoNullifier
+            | Verdict::NoPosition
+            | Verdict::NoWitness => None,
+        }
+    }
+}
+
+pub(crate) struct Judged<'a, N> {
+    pub(crate) note: &'a N,
+    pub(crate) verdict: Verdict,
+}
+
+pub(crate) struct Judgement<'a> {
+    pub(crate) account: zip32::AccountId,
+    pub(crate) pending_spends: &'a HashMap<OutputId, TxId>,
+    pub(crate) spend_evidence_floor: BlockHeight,
+    pub(crate) scan_ranges: &'a [ScanRange],
+}
+
+impl Judgement<'_> {
+    pub(crate) fn judge<N: NoteInterface>(&self, note: &N, confirmation: Confirmation) -> Verdict {
+        let Confirmation::Anchored {
+            height,
+            witnessable,
+        } = confirmation
+        else {
+            return Verdict::Unanchored;
+        };
+        if note.key_id().account_id() != self.account {
+            return Verdict::ForeignAccount;
+        }
+        if note.spending_transaction().is_some()
+            || self.pending_spends.contains_key(&note.output_id())
+        {
+            return Verdict::Spent;
+        }
+        if note.nullifier().is_none() {
+            return Verdict::NoNullifier;
+        }
+        if note.position().is_none() {
+            return Verdict::NoPosition;
+        }
+        if !witnessable {
+            return Verdict::NoWitness;
+        }
+        if spend_evidence::note_spends_confirmed(
+            height,
+            self.spend_evidence_floor,
+            note.refetch_nullifier_ranges(),
+            self.scan_ranges,
+        ) {
+            Verdict::Certain
+        } else {
+            Verdict::Uncertain
+        }
     }
 }
 
@@ -640,3 +722,211 @@ pub mod tests {
     }
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeSet, HashSet};
+
+    use pepper_sync::wallet::OrchardNote;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+
+    const ANCHOR: BlockHeight = BlockHeight::from_u32(20);
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .orchard_note(100_000)
+            .orchard_note(5_000)
+            .build()
+    }
+
+    fn ids<'a>(notes: impl IntoIterator<Item = &'a OrchardNote>) -> BTreeSet<OutputId> {
+        notes.into_iter().map(OutputInterface::output_id).collect()
+    }
+
+    fn candidates(wallet: &LightWallet) -> Vec<note_selection::Candidate<OrchardNote>> {
+        wallet
+            .note_candidates(ANCHOR, ACCOUNT, &[], &HashSet::new())
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn certainly_spendable(wallet: &LightWallet) -> Vec<&OrchardNote> {
+        wallet
+            .spendable_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn plausibly_spendable(wallet: &LightWallet) -> Vec<&OrchardNote> {
+        wallet
+            .potentially_spendable_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn mark_spent(wallet: &mut LightWallet, spent: OutputId) {
+        synthetic_wallet::mark_orchard_notes_spent(wallet, spent.txid(), |note| {
+            note.output_id() == spent
+        });
+    }
+
+    #[test]
+    fn note_candidates_agree_with_spendable_notes() {
+        let wallet = funded_wallet();
+        let candidates = candidates(&wallet);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            ids(candidates.iter().map(|candidate| &candidate.note)),
+            ids(plausibly_spendable(&wallet))
+        );
+        assert_eq!(
+            ids(candidates
+                .iter()
+                .filter(|candidate| candidate.certain)
+                .map(|candidate| &candidate.note)),
+            ids(certainly_spendable(&wallet))
+        );
+    }
+
+    #[test]
+    fn a_spent_note_leaves_the_candidates() {
+        let mut wallet = funded_wallet();
+        let spent = certainly_spendable(&wallet)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .map(OutputInterface::output_id)
+            .expect("the funded wallet holds a 100_000 orchard note");
+        mark_spent(&mut wallet, spent);
+        assert_eq!(
+            ids(plausibly_spendable(&wallet)),
+            ids(certainly_spendable(&wallet))
+        );
+        assert!(!ids(plausibly_spendable(&wallet)).contains(&spent));
+        assert!(
+            candidates(&wallet)
+                .iter()
+                .all(|candidate| candidate.note.output_id() != spent)
+        );
+    }
+
+    fn get_the_100000_zat_spendable_orch_note(wallet: &LightWallet) -> &OrchardNote {
+        certainly_spendable(wallet)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .expect("the funded wallet holds a 100_000 orchard note")
+    }
+
+    fn judgement<'a>(
+        wallet: &'a LightWallet,
+        pending_spends: &'a HashMap<OutputId, TxId>,
+    ) -> Judgement<'a> {
+        Judgement {
+            account: ACCOUNT,
+            pending_spends,
+            spend_evidence_floor: wallet
+                .spend_evidence_floor(false)
+                .expect("the synthetic wallet is synced"),
+            scan_ranges: wallet.sync_state.scan_ranges(),
+        }
+    }
+
+    #[test]
+    fn output_ids_of_pool_keeps_the_ids_of_that_pool_alone() {
+        const FIRST_TXID_BYTE: u8 = 1;
+        const SECOND_TXID_BYTE: u8 = 2;
+        const OUTPUT_INDEX: u32 = 0;
+        let id_with = |byte: u8| OutputId::new(TxId::from_bytes([byte; 32]), OUTPUT_INDEX);
+        let orchard_id = id_with(FIRST_TXID_BYTE);
+        let sapling_id = id_with(SECOND_TXID_BYTE);
+        let output_refs = [
+            OutputRef::new(orchard_id, PoolType::ORCHARD),
+            OutputRef::new(sapling_id, PoolType::SAPLING),
+        ];
+
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::ORCHARD),
+            HashSet::from([orchard_id])
+        );
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::SAPLING),
+            HashSet::from([sapling_id])
+        );
+        assert!(output_ids_of_pool(&output_refs, PoolType::Transparent).is_empty());
+    }
+
+    const ANCHORED: Confirmation = Confirmation::Anchored {
+        height: ANCHOR,
+        witnessable: true,
+    };
+
+    #[test]
+    fn every_note_is_judged_and_the_funded_wallet_is_certain() {
+        let wallet = funded_wallet();
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        assert_eq!(judged.len(), 2);
+        assert!(
+            judged
+                .iter()
+                .all(|judged| judged.verdict == Verdict::Certain)
+        );
+    }
+
+    #[test]
+    fn judge_names_the_first_failing_fact() {
+        let wallet = funded_wallet();
+        let note = get_the_100000_zat_spendable_orch_note(&wallet);
+        let unspent = HashMap::new();
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(note, ANCHORED),
+            Verdict::Certain
+        );
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(note, Confirmation::Unanchored),
+            Verdict::Unanchored
+        );
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(
+                note,
+                Confirmation::Anchored {
+                    height: ANCHOR,
+                    witnessable: false,
+                }
+            ),
+            Verdict::NoWitness
+        );
+        let pending_spend = HashMap::from([(note.output_id(), note.output_id().txid())]);
+        assert_eq!(
+            judgement(&wallet, &pending_spend).judge(note, ANCHORED),
+            Verdict::Spent
+        );
+        let foreign = Judgement {
+            account: zip32::AccountId::try_from(1).expect("1 is a valid account id"),
+            ..judgement(&wallet, &unspent)
+        };
+        assert_eq!(foreign.judge(note, ANCHORED), Verdict::ForeignAccount);
+        let unscanned = Judgement {
+            spend_evidence_floor: ANCHOR + 1,
+            scan_ranges: &[],
+            ..judgement(&wallet, &unspent)
+        };
+        assert_eq!(unscanned.judge(note, ANCHORED), Verdict::Uncertain);
+    }
+
+    #[test]
+    fn a_spent_note_is_judged_spent() {
+        let mut wallet = funded_wallet();
+        let spent = get_the_100000_zat_spendable_orch_note(&wallet).output_id();
+        mark_spent(&mut wallet, spent);
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        let verdict = judged
+            .iter()
+            .find(|judged| judged.note.output_id() == spent)
+            .map(|judged| judged.verdict);
+        assert_eq!(verdict, Some(Verdict::Spent));
+    }
+}
