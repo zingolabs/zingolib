@@ -16,6 +16,7 @@ const NO_PREFIX: &str = "none";
 const FORMAT_FLAG: &str = "--format";
 const PACKAGE_FORMAT: &str = "{p}";
 const FEATURES_FLAG: &str = "--features";
+const ALL_FEATURES_FLAG: &str = "--all-features";
 const LEGACY_FEATURE: &str = "legacy";
 const DEFAULT_FEATURES_LABEL: &str = "default features";
 
@@ -36,10 +37,29 @@ const REQWEST: &str = "reqwest";
 const LIGHTWALLET_PROTOCOL: &str = "lightwallet-protocol";
 const FUTURES: &str = "futures";
 
+const ZCASH_PRIMITIVES: &str = "zcash_primitives";
+const ZCASH_PROTOCOL: &str = "zcash_protocol";
+const ZCASH_KEYS: &str = "zcash_keys";
+const ORCHARD: &str = "orchard";
+const SAPLING_CRYPTO: &str = "sapling-crypto";
+
 const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
 const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
+const WALLET_STACK_REGISTRY: [&str; 5] = [
+    ZCASH_PRIMITIVES,
+    ZCASH_PROTOCOL,
+    ZCASH_KEYS,
+    ORCHARD,
+    SAPLING_CRYPTO,
+];
 
-const RULES: [Rule; 3] = [
+const RULES: [Rule; 4] = [
+    Rule {
+        package: NETUTILS,
+        features: FeatureSet::All,
+        members: &[COMMON],
+        registry: &WALLET_STACK_REGISTRY,
+    },
     Rule {
         package: COMMON,
         features: FeatureSet::Default,
@@ -64,6 +84,7 @@ const RULES: [Rule; 3] = [
 pub enum FeatureSet {
     Default,
     Named(&'static str),
+    All,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +110,9 @@ impl fmt::Display for Rule {
             FeatureSet::Named(feature) => {
                 write!(formatter, "{} ({FEATURES_FLAG} {feature})", self.package)
             }
+            FeatureSet::All => {
+                write!(formatter, "{} ({ALL_FEATURES_FLAG})", self.package)
+            }
         }
     }
 }
@@ -102,6 +126,10 @@ pub enum Failure {
     MemberUnknown {
         rule: Rule,
         member: &'static str,
+    },
+    RegistryUnknown {
+        rule: Rule,
+        dependency: &'static str,
     },
     PackageUnknown {
         rule: Rule,
@@ -140,6 +168,10 @@ impl fmt::Display for Failure {
             Failure::MemberUnknown { rule, member } => write!(
                 formatter,
                 "{rule} forbids {member}, which is no workspace member, so the rule checks nothing"
+            ),
+            Failure::RegistryUnknown { rule, dependency } => write!(
+                formatter,
+                "{rule} forbids {dependency}, which is no package of the lockfile, so the rule checks nothing"
             ),
             Failure::PackageUnknown { rule } => write!(
                 formatter,
@@ -261,12 +293,24 @@ pub fn forbidden_in(rule: Rule, tree: &str) -> Vec<Failure> {
         .collect()
 }
 
-fn unknown_members(rule: Rule, workspace_members: &BTreeSet<String>) -> Vec<Failure> {
-    rule.members
-        .iter()
-        .copied()
-        .filter(|member| !workspace_members.contains(*member))
+fn unknown<'names>(
+    names: &'names [&'static str],
+    known: &'names BTreeSet<String>,
+) -> impl Iterator<Item = &'static str> + 'names {
+    names.iter().copied().filter(|name| !known.contains(*name))
+}
+
+fn unknown_names(
+    rule: Rule,
+    workspace_members: &BTreeSet<String>,
+    locked_packages: &BTreeSet<String>,
+) -> Vec<Failure> {
+    unknown(rule.members, workspace_members)
         .map(|member| Failure::MemberUnknown { rule, member })
+        .chain(
+            unknown(rule.registry, locked_packages)
+                .map(|dependency| Failure::RegistryUnknown { rule, dependency }),
+        )
         .collect()
 }
 
@@ -283,8 +327,10 @@ fn tree_arguments(rule: Rule) -> Vec<&'static str> {
         FORMAT_FLAG,
         PACKAGE_FORMAT,
     ];
-    if let FeatureSet::Named(feature) = rule.features {
-        arguments.extend([FEATURES_FLAG, feature]);
+    match rule.features {
+        FeatureSet::Default => {}
+        FeatureSet::Named(feature) => arguments.extend([FEATURES_FLAG, feature]),
+        FeatureSet::All => arguments.push(ALL_FEATURES_FLAG),
     }
     arguments
 }
@@ -307,8 +353,13 @@ fn tree_of(root: &Path, rule: Rule) -> Result<String, Failure> {
 }
 
 /// - Runs `cargo tree` as a child process in `root` and waits for it.
-fn failures_of(root: &Path, rule: Rule, workspace_members: &BTreeSet<String>) -> Vec<Failure> {
-    let mut failures = unknown_members(rule, workspace_members);
+fn failures_of(
+    root: &Path,
+    rule: Rule,
+    workspace_members: &BTreeSet<String>,
+    locked_packages: &BTreeSet<String>,
+) -> Vec<Failure> {
+    let mut failures = unknown_names(rule, workspace_members, locked_packages);
     match tree_of(root, rule) {
         Ok(tree) => failures.extend(forbidden_in(rule, &tree)),
         Err(failure) => failures.push(failure),
@@ -324,15 +375,21 @@ fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             "{BINARY} takes no argument, got {argument:?}"
         )]);
     }
-    let workspace_members: BTreeSet<String> = metadata_of(&root.join(MANIFEST), false)?
-        .packages
+    let metadata = metadata_of(&root.join(MANIFEST), true)?;
+    let workspace_members: BTreeSet<String> = metadata
+        .workspace_packages()
         .into_iter()
+        .map(|package| package.name.to_string())
+        .collect();
+    let locked_packages: BTreeSet<String> = metadata
+        .packages
+        .iter()
         .map(|package| package.name.to_string())
         .collect();
     verdict(
         RULES
             .iter()
-            .flat_map(|rule| failures_of(root, *rule, &workspace_members))
+            .flat_map(|rule| failures_of(root, *rule, &workspace_members, &locked_packages))
             .map(|failure| failure.to_string())
             .collect(),
     )
@@ -445,8 +502,9 @@ mod tests {
     #[test]
     fn a_forbidden_member_that_the_workspace_lacks_fails_the_rule() {
         let workspace_members = BTreeSet::from([COMMON.to_string()]);
+        let locked_packages = BTreeSet::from([HYPER.to_string()]);
         assert_eq!(
-            unknown_members(RULE, &workspace_members),
+            unknown_names(RULE, &workspace_members, &locked_packages),
             [Failure::MemberUnknown {
                 rule: RULE,
                 member: NETUTILS,
@@ -455,7 +513,29 @@ mod tests {
     }
 
     #[test]
+    fn a_forbidden_registry_package_that_the_lockfile_lacks_fails_the_rule() {
+        let workspace_members = BTreeSet::from([NETUTILS.to_string()]);
+        let locked_packages = BTreeSet::from([COMMON.to_string()]);
+        assert_eq!(
+            unknown_names(RULE, &workspace_members, &locked_packages),
+            [Failure::RegistryUnknown {
+                rule: RULE,
+                dependency: HYPER,
+            }]
+        );
+    }
+
+    #[test]
     fn a_named_feature_rule_passes_the_feature_to_cargo() {
         assert!(tree_arguments(RULE).ends_with(&[FEATURES_FLAG, LEGACY_FEATURE]));
+    }
+
+    #[test]
+    fn an_all_features_rule_passes_the_flag_to_cargo() {
+        let rule = Rule {
+            features: FeatureSet::All,
+            ..RULE
+        };
+        assert!(tree_arguments(rule).ends_with(&[ALL_FEATURES_FLAG]));
     }
 }
