@@ -87,7 +87,7 @@ fn answer_transaction(
     }
 }
 
-pub(crate) type TransactionReply = Result<protocol::RawTransaction, tonic::Status>;
+pub(crate) type TransactionReply = Result<protocol::RawTransaction, protocol::Status>;
 
 pub(crate) fn spawn_tree_state_fetcher(
     tree_state_at: impl Fn(BlockHeight) -> protocol::TreeState + Send + 'static,

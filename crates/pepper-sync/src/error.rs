@@ -7,7 +7,7 @@ use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedPool};
 
-use crate::wallet::OutputId;
+use crate::{protocol, wallet::OutputId};
 
 /// The separator between two layers of a rendered cause chain.
 pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
@@ -174,11 +174,11 @@ impl ServerError {
 // Whether a failed gRPC request hit network weather: a tonic transport error, a client-side timeout or an I/O
 // error in the status's source chain, or one of the codes gRPC names as transient. Every other status is an answer
 // from a server that cannot serve the request.
-pub(crate) fn status_is_network_weather(status: &tonic::Status) -> bool {
+pub(crate) fn status_is_network_weather(status: &protocol::Status) -> bool {
     let mut link = std::error::Error::source(status);
     while let Some(cause) = link {
-        if cause.is::<tonic::transport::Error>()
-            || cause.is::<tonic::TimeoutExpired>()
+        if cause.is::<protocol::transport::Error>()
+            || cause.is::<protocol::TimeoutExpired>()
             || cause.is::<std::io::Error>()
         {
             return true;
@@ -187,11 +187,11 @@ pub(crate) fn status_is_network_weather(status: &tonic::Status) -> bool {
     }
     matches!(
         status.code(),
-        tonic::Code::Unavailable
-            | tonic::Code::DeadlineExceeded
-            | tonic::Code::Cancelled
-            | tonic::Code::ResourceExhausted
-            | tonic::Code::Aborted
+        protocol::Code::Unavailable
+            | protocol::Code::DeadlineExceeded
+            | protocol::Code::Cancelled
+            | protocol::Code::ResourceExhausted
+            | protocol::Code::Aborted
     )
 }
 
@@ -391,7 +391,7 @@ pub enum ScanError {
         /// The block the server's own data placed the transaction in.
         block_height: BlockHeight,
         /// The server's answer.
-        status: tonic::Status,
+        status: protocol::Status,
     },
     /// Txid of transaction returned by the server does not match requested txid.
     #[error(
@@ -490,7 +490,7 @@ pub enum ContinuityError {
 pub enum ServerError {
     /// Server request failed.
     #[error("server request failed")]
-    RequestFailed(#[from] tonic::Status),
+    RequestFailed(#[from] protocol::Status),
     /// Server returned invalid frontier.
     #[error("server returned invalid frontier. {0}")]
     InvalidFrontier(std::io::Error),
@@ -592,7 +592,7 @@ mod tests {
     fn a_failed_server_request_renders_its_status_once() {
         const DETAIL: &str = "the indexer refused the block range";
         let failure: TestSyncError =
-            ServerError::RequestFailed(tonic::Status::unavailable(DETAIL)).into();
+            ServerError::RequestFailed(protocol::Status::unavailable(DETAIL)).into();
         let rendered = chain_rendering(&failure);
         assert_eq!(
             rendered.matches(DETAIL).count(),
@@ -647,7 +647,7 @@ mod tests {
     /// Stands in for `tonic::transport::Error`, which cannot be built
     /// outside tonic, wrapping the client-side timeout as its cause.
     #[derive(Debug)]
-    struct TransportError(tonic::TimeoutExpired);
+    struct TransportError(protocol::TimeoutExpired);
 
     impl std::fmt::Display for TransportError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -664,41 +664,42 @@ mod tests {
     /// A request cut off by the client-side timeout, as tonic reports it:
     /// `Cancelled` with the transport timeout in the source chain.
     fn client_timeout() -> ServerError {
-        let status = tonic::Status::from_error(Box::new(TransportError(tonic::TimeoutExpired(()))));
-        assert_eq!(status.code(), tonic::Code::Cancelled);
+        let status =
+            protocol::Status::from_error(Box::new(TransportError(protocol::TimeoutExpired(()))));
+        assert_eq!(status.code(), protocol::Code::Cancelled);
         ServerError::RequestFailed(status)
     }
 
     /// A connection the peer reset. tonic finds no code in the cause chain
     /// and reports `Unknown`, keeping the I/O error as the source.
     fn connection_reset() -> ServerError {
-        let status = tonic::Status::from_error(Box::new(std::io::Error::from(
+        let status = protocol::Status::from_error(Box::new(std::io::Error::from(
             std::io::ErrorKind::ConnectionReset,
         )));
-        assert_eq!(status.code(), tonic::Code::Unknown);
+        assert_eq!(status.code(), protocol::Code::Unknown);
         ServerError::RequestFailed(status)
     }
 
     /// The codes gRPC names as transient, as a server or the transport
     /// reports them.
-    fn network_weather_statuses() -> [tonic::Status; 5] {
+    fn network_weather_statuses() -> [protocol::Status; 5] {
         [
-            tonic::Status::unavailable("down"),
-            tonic::Status::deadline_exceeded("timeout"),
-            tonic::Status::cancelled("cancelled"),
-            tonic::Status::resource_exhausted("overloaded"),
-            tonic::Status::aborted("aborted"),
+            protocol::Status::unavailable("down"),
+            protocol::Status::deadline_exceeded("timeout"),
+            protocol::Status::cancelled("cancelled"),
+            protocol::Status::resource_exhausted("overloaded"),
+            protocol::Status::aborted("aborted"),
         ]
     }
 
     /// Codes a server answers with when it cannot serve the request.
-    fn server_refusal_statuses() -> [tonic::Status; 5] {
+    fn server_refusal_statuses() -> [protocol::Status; 5] {
         [
-            tonic::Status::unimplemented("no such method"),
-            tonic::Status::invalid_argument("bad request"),
-            tonic::Status::not_found("no such block"),
-            tonic::Status::internal("indexer bug"),
-            tonic::Status::unknown("unknown"),
+            protocol::Status::unimplemented("no such method"),
+            protocol::Status::invalid_argument("bad request"),
+            protocol::Status::not_found("no such block"),
+            protocol::Status::internal("indexer bug"),
+            protocol::Status::unknown("unknown"),
         ]
     }
 
@@ -820,7 +821,7 @@ mod tests {
             #[test]
             fn server_request_refused() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::unimplemented("no such method"))
+                    ServerError::RequestFailed(protocol::Status::unimplemented("no such method"))
                         .into();
                 assert!(!e.recommend_same_server());
             }
@@ -881,7 +882,7 @@ mod tests {
             #[test]
             fn sync_error_from_unavailable() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::unavailable("down")).into();
+                    ServerError::RequestFailed(protocol::Status::unavailable("down")).into();
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::MaybeRecoverableServer
@@ -968,7 +969,7 @@ mod tests {
             #[test]
             fn sync_error_from_request_refused() {
                 let e: TestSyncError =
-                    ServerError::RequestFailed(tonic::Status::unimplemented("no such method"))
+                    ServerError::RequestFailed(protocol::Status::unimplemented("no such method"))
                         .into();
                 assert_eq!(
                     e.recovery_recommendation(),
@@ -1035,7 +1036,7 @@ mod tests {
                 let e: TestSyncError = ScanError::TransactionNotServed {
                     txid: TxId::from_bytes([1; 32]),
                     block_height: BlockHeight::from_u32(100),
-                    status: tonic::Status::not_found("no such transaction"),
+                    status: protocol::Status::not_found("no such transaction"),
                 }
                 .into();
                 assert_eq!(

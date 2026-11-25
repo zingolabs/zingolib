@@ -34,12 +34,12 @@ const MAX_RETRIES: u8 = 3;
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
 async fn next_stream_item<T>(
-    stream: &mut tonic::Streaming<T>,
+    stream: &mut protocol::Streaming<T>,
     what: &'static str,
-) -> Result<Option<T>, tonic::Status> {
+) -> Result<Option<T>, protocol::Status> {
     match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
         Ok(res) => res,
-        Err(_) => Err(tonic::Status::deadline_exceeded(format!(
+        Err(_) => Err(protocol::Status::deadline_exceeded(format!(
             "{what} stream message timeout"
         ))),
     }
@@ -51,46 +51,49 @@ async fn next_stream_item<T>(
 #[derive(Debug)]
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
-    ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
+    ChainTip(oneshot::Sender<Result<BlockId, protocol::Status>>),
     /// Gets  a compact block of the given block height.
     CompactBlock(
-        oneshot::Sender<Result<CompactBlock, tonic::Status>>,
+        oneshot::Sender<Result<CompactBlock, protocol::Status>>,
         BlockHeight,
     ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
     ///
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
-        oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
+        oneshot::Sender<Result<protocol::CompactBlocks, protocol::Status>>,
         Range<BlockHeight>,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
-        oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
+        oneshot::Sender<Result<protocol::CompactBlocks, protocol::Status>>,
         Range<BlockHeight>,
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<Result<TreeState, tonic::Status>>,
+        oneshot::Sender<Result<TreeState, protocol::Status>>,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
-    Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
+    Transaction(
+        oneshot::Sender<Result<RawTransaction, protocol::Status>>,
+        TxId,
+    ),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
-        oneshot::Sender<Result<Vec<GetAddressUtxosReply>, tonic::Status>>,
+        oneshot::Sender<Result<Vec<GetAddressUtxosReply>, protocol::Status>>,
         (Vec<String>, BlockHeight),
     ),
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
-        oneshot::Sender<Result<protocol::RawTransactions, tonic::Status>>,
+        oneshot::Sender<Result<protocol::RawTransactions, protocol::Status>>,
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
-        oneshot::Sender<Result<protocol::SubtreeRoots, tonic::Status>>,
+        oneshot::Sender<Result<protocol::SubtreeRoots, protocol::Status>>,
         u32,
         i32,
         u32,
@@ -259,7 +262,7 @@ pub(crate) async fn get_subtree_roots(
             match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
                 Ok(s) => s,
                 Err(e)
-                    if (e.code() == tonic::Code::DeadlineExceeded
+                    if (e.code() == protocol::Code::DeadlineExceeded
                         || e.message().contains("Unexpected EOF decoding stream."))
                         && retry_count < MAX_RETRIES =>
                 {
@@ -427,7 +430,7 @@ pub(crate) async fn get_transparent_address_transactions(
             match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
                 Ok(s) => s,
                 Err(e)
-                    if (e.code() == tonic::Code::DeadlineExceeded
+                    if (e.code() == protocol::Code::DeadlineExceeded
                         || e.message().contains("Unexpected EOF decoding stream."))
                         && retry_count < MAX_RETRIES =>
                 {
@@ -664,7 +667,7 @@ mod tests {
     /// Answers transaction requests with each status of `replies` in turn, then
     /// panics, so a caller that asks more often than the script allows fails.
     fn spawn_transaction_fetcher(
-        replies: Vec<tonic::Status>,
+        replies: Vec<protocol::Status>,
     ) -> mpsc::UnboundedSender<FetchRequest> {
         let mut replies = replies.into_iter();
         mocks::spawn_transaction_fetcher(move |_txid| {
@@ -674,14 +677,14 @@ mod tests {
         })
     }
 
-    fn snapshot_race() -> tonic::Status {
-        tonic::Status::unknown(
+    fn snapshot_race() -> protocol::Status {
+        protocol::Status::unknown(
             "Chain index error: unavailable: mempool is not coherent with the requested \
              snapshot; retry with a fresh snapshot",
         )
     }
 
-    fn status_of(result: Result<(Transaction, BlockHeight), ServerError>) -> tonic::Status {
+    fn status_of(result: Result<(Transaction, BlockHeight), ServerError>) -> protocol::Status {
         match result {
             Err(ServerError::RequestFailed(status)) => status,
             other => panic!("expected a failed request, got {other:?}"),
@@ -694,9 +697,9 @@ mod tests {
     /// first such status surfaces, or if the ceiling is not enforced.
     #[tokio::test]
     async fn a_snapshot_race_is_retried_up_to_the_ceiling() {
-        let within_ceiling: Vec<tonic::Status> = (0..MAX_RETRIES)
+        let within_ceiling: Vec<protocol::Status> = (0..MAX_RETRIES)
             .map(|_| snapshot_race())
-            .chain([tonic::Status::not_found("gone")])
+            .chain([protocol::Status::not_found("gone")])
             .collect();
         let status = status_of(
             get_transaction_and_block_height(
@@ -706,11 +709,11 @@ mod tests {
             )
             .await,
         );
-        assert_eq!(status.code(), tonic::Code::NotFound, "{status}");
+        assert_eq!(status.code(), protocol::Code::NotFound, "{status}");
 
-        let beyond_ceiling: Vec<tonic::Status> = (0..=MAX_RETRIES)
+        let beyond_ceiling: Vec<protocol::Status> = (0..=MAX_RETRIES)
             .map(|_| snapshot_race())
-            .chain([tonic::Status::not_found("never asked")])
+            .chain([protocol::Status::not_found("never asked")])
             .collect();
         let status = status_of(
             get_transaction_and_block_height(
@@ -720,7 +723,7 @@ mod tests {
             )
             .await,
         );
-        assert_eq!(status.code(), tonic::Code::Unknown, "{status}");
+        assert_eq!(status.code(), protocol::Code::Unknown, "{status}");
     }
 
     /// HYPOTHESIS: any other failed request surfaces at once. Falsified if a
@@ -729,13 +732,13 @@ mod tests {
     async fn an_unrelated_failure_is_not_retried() {
         let status = status_of(
             get_transaction_and_block_height(
-                spawn_transaction_fetcher(vec![tonic::Status::internal("broken")]),
+                spawn_transaction_fetcher(vec![protocol::Status::internal("broken")]),
                 &NETWORK,
                 TxId::from_bytes([0; 32]),
             )
             .await,
         );
-        assert_eq!(status.code(), tonic::Code::Internal, "{status}");
+        assert_eq!(status.code(), protocol::Code::Internal, "{status}");
     }
 
     /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.

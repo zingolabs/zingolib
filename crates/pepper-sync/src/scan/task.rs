@@ -513,19 +513,19 @@ where
                 };
 
                 loop {
-                    let msg_res: Result<Option<CompactBlock>, tonic::Status> =
+                    let msg_res: Result<Option<CompactBlock>, protocol::Status> =
                         match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
                         {
                             Ok(res) => res,
-                            Err(_) => {
-                                Err(tonic::Status::deadline_exceeded("stream message timeout"))
-                            }
+                            Err(_) => Err(protocol::Status::deadline_exceeded(
+                                "stream message timeout",
+                            )),
                         };
 
                     let maybe_block = match msg_res {
                         Ok(b) => b,
                         Err(e)
-                            if e.code() == tonic::Code::DeadlineExceeded
+                            if e.code() == protocol::Code::DeadlineExceeded
                                 || e.message().contains("Unexpected EOF decoding stream.") =>
                         {
                             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -549,7 +549,7 @@ where
                                 }
                             };
 
-                            let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
+                            let first_msg_res: Result<Option<CompactBlock>, protocol::Status> =
                                 match tokio::time::timeout(
                                     STREAM_MSG_TIMEOUT,
                                     block_stream.message(),
@@ -557,7 +557,7 @@ where
                                 .await
                                 {
                                     Ok(res) => res,
-                                    Err(_) => Err(tonic::Status::deadline_exceeded(
+                                    Err(_) => Err(protocol::Status::deadline_exceeded(
                                         "stream message timeout after retry",
                                     )),
                                 };
