@@ -45,10 +45,13 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 pub mod crypto;
 pub mod default_indexer;
 pub mod diag;
+pub mod dns;
 pub mod error;
 pub mod network_access;
 
 pub use crypto::ensure_default_crypto_provider;
+
+use crate::dns::EncryptedResolver;
 
 /// The stdout line prefix the spawnable `nym-proxy` binary uses to announce
 /// its local SOCKS5 address (ADR 0011, consumption model A). Defined here so
@@ -137,8 +140,8 @@ pub mod test_tls {
 /// no bound at all. Through `connect_with_connector` it wraps the whole
 /// connector, TLS included. This one is configured the way tonic's own would be
 /// for these endpoints.
-fn indexer_connector() -> HttpConnector {
-    let mut http = HttpConnector::new();
+fn indexer_connector() -> HttpConnector<EncryptedResolver> {
+    let mut http = HttpConnector::new_with_resolver(EncryptedResolver);
     http.enforce_http(false);
     http.set_nodelay(true);
     http
@@ -160,7 +163,7 @@ fn client_tls_config(roots: rustls::RootCertStore) -> rustls::ClientConfig {
     config
 }
 
-type IndexerHttps = HttpsConnector<HttpConnector>;
+type IndexerHttps = HttpsConnector<HttpConnector<EncryptedResolver>>;
 type IndexerStream = <IndexerHttps as tower::Service<http::Uri>>::Response;
 type IndexerDialError = <IndexerHttps as tower::Service<http::Uri>>::Error;
 

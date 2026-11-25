@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::diag::{NetOpFailure, NetOpStage, chain_texts};
+use crate::dns::EncryptedResolver;
 
 use crate::conduit::ConduitDial;
 use crate::crypto::ensure_default_crypto_provider;
@@ -126,6 +128,7 @@ impl GetRequest<'_> {
     async fn send(&self) -> Result<reqwest::Response, Socks5FetchError> {
         ensure_default_crypto_provider();
         let mut builder = reqwest::Client::builder()
+            .dns_resolver(Arc::new(EncryptedResolver))
             .timeout(self.request_timeout)
             .connect_timeout(self.connect_timeout);
         if let Some(addr) = self.socks5_proxy {

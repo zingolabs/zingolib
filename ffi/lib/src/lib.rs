@@ -1875,11 +1875,10 @@ fn timed_out(error: &impl std::error::Error) -> bool {
 }
 
 async fn resolve(host: &str, port: u16) -> Result<Vec<std::net::IpAddr>, String> {
-    let addresses =
-        tokio::time::timeout(PROBE_CONNECT_TIMEOUT, tokio::net::lookup_host((host, port)))
-            .await
-            .map_err(|elapsed| chain_text(&elapsed))?
-            .map_err(|cause| chain_text(&cause))?;
+    let addresses = tokio::time::timeout(PROBE_CONNECT_TIMEOUT, netutils::dns::lookup(host, port))
+        .await
+        .map_err(|elapsed| chain_text(&elapsed))?
+        .map_err(|cause| chain_text(&cause))?;
     let mut resolved: Vec<std::net::IpAddr> = Vec::new();
     for address in addresses {
         if !resolved.contains(&address.ip()) {

@@ -233,10 +233,10 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 
     // Stage 1: raw TCP proves reachability apart from everything above it.
     let started = Instant::now();
-    let tcp = tokio::time::timeout(
-        stage_timeout,
-        tokio::net::TcpStream::connect((host.as_str(), probe_port(server))),
-    )
+    let tcp = tokio::time::timeout(stage_timeout, async {
+        let addrs = zl_netutils::dns::lookup(&host, probe_port(server)).await?;
+        tokio::net::TcpStream::connect(addrs.as_slice()).await
+    })
     .await;
     let failure = match &tcp {
         Ok(Ok(_)) => None,

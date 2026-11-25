@@ -63,7 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `probe_server(server_uri)` checks an indexer without a wallet and reports
   how far it got as JSON. The `outcome` is `unresolved`, `unreachable`,
   `noAnswer`, `refused` or `verified`, beside the `host`, `port` and
-  `resolved` addresses the probe used. `noAnswer` names the bound that fired
+  `resolved` addresses the probe used, looked up over DNS-over-HTTPS or
+  DNS-over-TLS. `noAnswer` names the bound that fired
   in `after_seconds`, whether the connection or the request ran out of time.
   `unreachable` covers a connection that failed or broke under the request,
   and `refused` is reserved for a status the indexer itself returned. A
@@ -176,6 +177,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 - Testnet has a Default Indexer, `https://testnet.zec.rocks:443`.
+- Indexer connections and the untunneled price fetch resolve host names over
+  DNS-over-HTTPS and DNS-over-TLS, where they asked the operating system's
+  resolver, so no lookup goes out as plaintext DNS.
   `default_indexer` answers it for a testnet hint, where it answered nothing,
   and `IndexerChoice::Default` on testnet attaches to it, where the four
   `init_*` calls failed `Init` and `change_server` failed `InvalidInput`.
