@@ -715,30 +715,24 @@ mod tests {
     use zcash_protocol::consensus::MAIN_NETWORK;
 
     use super::*;
+    use crate::{mocks, protocol};
 
     // A fetcher that answers every transaction request with `status`.
-    fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::Transaction(reply_sender, _) => {
-                        let _ignore_error = reply_sender.send(Err(status.clone()));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-        fetch_request_sender
+    fn fetcher_answering(status: protocol::Status) -> mpsc::UnboundedSender<FetchRequest> {
+        mocks::spawn_transaction_fetcher(move |_txid| Some(Err(status.clone())))
     }
 
     async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {
-        scan_against(scan_target, tonic::Status::not_found("no such transaction")).await
+        scan_against(
+            scan_target,
+            protocol::Status::not_found("no such transaction"),
+        )
+        .await
     }
 
     async fn scan_against(
         scan_target: ScanTarget,
-        status: tonic::Status,
+        status: protocol::Status,
     ) -> Result<ScannedTransactions, ScanError> {
         scan_transactions(
             fetcher_answering(status),
@@ -776,7 +770,7 @@ mod tests {
             Err(ScanError::TransactionNotServed { txid: unserved, block_height, status })
                 if unserved == txid
                     && block_height == BlockHeight::from_u32(100)
-                    && status.code() == tonic::Code::NotFound
+                    && status.code() == protocol::Code::NotFound
         ));
     }
 
@@ -789,9 +783,9 @@ mod tests {
             ScanTarget::internal(BlockHeight::from_u32(100), TxId::from_bytes([1; 32])),
         ] {
             assert!(matches!(
-                scan_against(scan_target, tonic::Status::unavailable("down")).await,
+                scan_against(scan_target, protocol::Status::unavailable("down")).await,
                 Err(ScanError::ServerError(ServerError::RequestFailed(status)))
-                    if status.code() == tonic::Code::Unavailable
+                    if status.code() == protocol::Code::Unavailable
             ));
         }
     }

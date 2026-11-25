@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enables it through `zl-common/serialization`.
 
 ### Fixed
+- A fetch of a block range that ends at height 0 is refused with a
+  `tonic::Status` of code `InvalidArgument`. The fetcher subtracted one from
+  the end height unchecked, which panicked in a debug build and asked the
+  indexer for a range up to `u64::MAX` in a release build.
 - A Sync Session with `shutdown_on_completion` set no longer runs forever
   after its last scan range is scanned. The scanner set the loader's
   loading flag after it sent the scan task, so a loader that finished the

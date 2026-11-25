@@ -175,7 +175,11 @@ where
 
     let mut indexer = timed(
         "follow_proposal::grpc_indexer_connect",
-        zl_netutils::GrpcIndexer::new(environment.lightserver_uri().unwrap()),
+        zl_netutils::GrpcIndexer::new(
+            environment
+                .lightserver_uri()
+                .ok_or("the chain conductor serves no lightserver URI")?,
+        ),
     )
     .await
     .unwrap();

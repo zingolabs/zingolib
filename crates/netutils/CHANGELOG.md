@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the system resolver and has no plaintext fallback. IP literals, `localhost`
   and hosts-file names answer without a query. `dns::EncryptedResolver` is
   the same lookup as a hyper and reqwest resolver.
+- `request` module: `block_id`, `block_range` and `tx_filter` build the
+  three requests that a caller made as struct literals.
 
 ### Changed
 - Every host name netutils dials directly resolves through `dns`: the
@@ -55,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolve at the exit. The crate depends on `hickory-resolver`.
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- BREAKING: `GrpcIndexer::get_clear_net_client` is renamed
+  `GrpcIndexer::get_nakednet_client`.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

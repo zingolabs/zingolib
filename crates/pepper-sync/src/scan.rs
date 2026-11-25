@@ -12,7 +12,8 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
+
+use crate::protocol;
 
 use crate::engine::ScanTargetOps;
 use crate::{
@@ -47,7 +48,7 @@ impl InitialScanData {
     async fn new<P>(
         fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
         consensus_parameters: &P,
-        first_block: &CompactBlock,
+        first_block: &protocol::CompactBlock,
         start_seam_block: Option<WalletBlock>,
         end_seam_block: Option<WalletBlock>,
     ) -> Result<Self, ServerError>
@@ -328,7 +329,7 @@ fn orchard_nullifier(bytes: &[u8]) -> Result<orchard::note::Nullifier, ScanError
 fn collect_nullifiers_compact(
     nullifier_map: &mut NullifierMap,
     block_height: BlockHeight,
-    transaction: &CompactTx,
+    transaction: &protocol::CompactTx,
 ) -> Result<(), ScanError> {
     let scan_target =
         ScanTarget::internal(block_height, transaction::get_compact_txid(transaction));
@@ -364,7 +365,7 @@ fn collect_nullifiers_compact(
 fn collect_outpoints_compact(
     outpoint_map: &mut BTreeMap<OutputId, ScanTarget>,
     block_height: BlockHeight,
-    transaction: &CompactTx,
+    transaction: &protocol::CompactTx,
 ) {
     let txid = transaction::get_compact_txid(transaction);
 

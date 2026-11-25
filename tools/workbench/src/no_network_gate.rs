@@ -3,7 +3,9 @@ use std::fmt;
 use std::path::Path;
 use std::process::Command;
 
-use crate::{metadata_of, verdict, CARGO, LOCKED_FLAG, MANIFEST};
+use crate::{
+    metadata_of, read, verdict, CARGO, LOCKED_FLAG, LOCKFILE, MANIFEST, NAME_KEY, PACKAGE_KEY,
+};
 
 pub const BINARY: &str = "no-network-gate";
 
@@ -11,11 +13,14 @@ const TREE: &str = "tree";
 const PACKAGE_FLAG: &str = "--package";
 const EDGES_FLAG: &str = "--edges";
 const NORMAL_EDGES: &str = "normal";
+const TARGET_FLAG: &str = "--target";
+const ALL_TARGETS: &str = "all";
 const PREFIX_FLAG: &str = "--prefix";
 const NO_PREFIX: &str = "none";
 const FORMAT_FLAG: &str = "--format";
 const PACKAGE_FORMAT: &str = "{p}";
 const FEATURES_FLAG: &str = "--features";
+const ALL_FEATURES_FLAG: &str = "--all-features";
 const LEGACY_FEATURE: &str = "legacy";
 const DEFAULT_FEATURES_LABEL: &str = "default features";
 
@@ -36,10 +41,40 @@ const REQWEST: &str = "reqwest";
 const LIGHTWALLET_PROTOCOL: &str = "lightwallet-protocol";
 const FUTURES: &str = "futures";
 
-const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
-const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
+const ZCASH_PRIMITIVES: &str = "zcash_primitives";
+const ZCASH_PROTOCOL: &str = "zcash_protocol";
+const ZCASH_KEYS: &str = "zcash_keys";
+const ORCHARD: &str = "orchard";
+const SAPLING_CRYPTO: &str = "sapling-crypto";
+const ZCASH_ADDRESS: &str = "zcash_address";
+const ZCASH_ENCODING: &str = "zcash_encoding";
+const ZIP32: &str = "zip32";
+const INCREMENTALMERKLETREE: &str = "incrementalmerkletree";
+const SHARDTREE: &str = "shardtree";
 
-const RULES: [Rule; 3] = [
+const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
+const WALLET_MEMBERS: [&str; 4] = [COMMON, FILE_FORMAT, ZINGOLIB, PEPPER_SYNC];
+const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
+const WALLET_STACK_REGISTRY: [&str; 10] = [
+    ZCASH_PRIMITIVES,
+    ZCASH_PROTOCOL,
+    ZCASH_KEYS,
+    ORCHARD,
+    SAPLING_CRYPTO,
+    ZCASH_ADDRESS,
+    ZCASH_ENCODING,
+    ZIP32,
+    INCREMENTALMERKLETREE,
+    SHARDTREE,
+];
+
+const RULES: [Rule; 4] = [
+    Rule {
+        package: NETUTILS,
+        features: FeatureSet::All,
+        members: &WALLET_MEMBERS,
+        registry: &WALLET_STACK_REGISTRY,
+    },
     Rule {
         package: COMMON,
         features: FeatureSet::Default,
@@ -64,6 +99,7 @@ const RULES: [Rule; 3] = [
 pub enum FeatureSet {
     Default,
     Named(&'static str),
+    All,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +125,9 @@ impl fmt::Display for Rule {
             FeatureSet::Named(feature) => {
                 write!(formatter, "{} ({FEATURES_FLAG} {feature})", self.package)
             }
+            FeatureSet::All => {
+                write!(formatter, "{} ({ALL_FEATURES_FLAG})", self.package)
+            }
         }
     }
 }
@@ -102,6 +141,10 @@ pub enum Failure {
     MemberUnknown {
         rule: Rule,
         member: &'static str,
+    },
+    RegistryUnknown {
+        rule: Rule,
+        dependency: &'static str,
     },
     PackageUnknown {
         rule: Rule,
@@ -140,6 +183,10 @@ impl fmt::Display for Failure {
             Failure::MemberUnknown { rule, member } => write!(
                 formatter,
                 "{rule} forbids {member}, which is no workspace member, so the rule checks nothing"
+            ),
+            Failure::RegistryUnknown { rule, dependency } => write!(
+                formatter,
+                "{rule} forbids {dependency}, which is no package of the lockfile, so the rule checks nothing"
             ),
             Failure::PackageUnknown { rule } => write!(
                 formatter,
@@ -261,12 +308,54 @@ pub fn forbidden_in(rule: Rule, tree: &str) -> Vec<Failure> {
         .collect()
 }
 
-fn unknown_members(rule: Rule, workspace_members: &BTreeSet<String>) -> Vec<Failure> {
-    rule.members
+/// ```
+/// use std::collections::BTreeSet;
+/// use workbench::no_network_gate::locked_packages_of;
+///
+/// let lockfile = concat!(
+///     "[[package]]\nname = \"zl-common\"\nversion = \"0.1.0\"\n\n",
+///     "[[package]]\nname = \"hyper\"\nversion = \"1.11.0\"\n",
+///     "source = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+/// );
+/// assert_eq!(
+///     locked_packages_of(lockfile),
+///     Ok(BTreeSet::from(["hyper".to_string(), "zl-common".to_string()]))
+/// );
+/// assert!(locked_packages_of("version = 4\n").is_err());
+/// ```
+pub fn locked_packages_of(lockfile: &str) -> Result<BTreeSet<String>, String> {
+    let document: toml_edit::DocumentMut = lockfile
+        .parse()
+        .map_err(|error| format!("the lockfile does not parse: {error}"))?;
+    let packages = document
+        .get(PACKAGE_KEY)
+        .and_then(|item| item.as_array_of_tables())
+        .ok_or_else(|| "the lockfile holds no [[package]] tables".to_string())?;
+    Ok(packages
         .iter()
-        .copied()
-        .filter(|member| !workspace_members.contains(*member))
+        .filter_map(|package| package.get(NAME_KEY).and_then(|name| name.as_str()))
+        .map(str::to_string)
+        .collect())
+}
+
+fn unknown<'names>(
+    names: &'names [&'static str],
+    known: &'names BTreeSet<String>,
+) -> impl Iterator<Item = &'static str> + 'names {
+    names.iter().copied().filter(|name| !known.contains(*name))
+}
+
+fn unknown_names(
+    rule: Rule,
+    workspace_members: &BTreeSet<String>,
+    locked_packages: &BTreeSet<String>,
+) -> Vec<Failure> {
+    unknown(rule.members, workspace_members)
         .map(|member| Failure::MemberUnknown { rule, member })
+        .chain(
+            unknown(rule.registry, locked_packages)
+                .map(|dependency| Failure::RegistryUnknown { rule, dependency }),
+        )
         .collect()
 }
 
@@ -278,13 +367,17 @@ fn tree_arguments(rule: Rule) -> Vec<&'static str> {
         rule.package,
         EDGES_FLAG,
         NORMAL_EDGES,
+        TARGET_FLAG,
+        ALL_TARGETS,
         PREFIX_FLAG,
         NO_PREFIX,
         FORMAT_FLAG,
         PACKAGE_FORMAT,
     ];
-    if let FeatureSet::Named(feature) = rule.features {
-        arguments.extend([FEATURES_FLAG, feature]);
+    match rule.features {
+        FeatureSet::Default => {}
+        FeatureSet::Named(feature) => arguments.extend([FEATURES_FLAG, feature]),
+        FeatureSet::All => arguments.push(ALL_FEATURES_FLAG),
     }
     arguments
 }
@@ -307,8 +400,13 @@ fn tree_of(root: &Path, rule: Rule) -> Result<String, Failure> {
 }
 
 /// - Runs `cargo tree` as a child process in `root` and waits for it.
-fn failures_of(root: &Path, rule: Rule, workspace_members: &BTreeSet<String>) -> Vec<Failure> {
-    let mut failures = unknown_members(rule, workspace_members);
+fn failures_of(
+    root: &Path,
+    rule: Rule,
+    workspace_members: &BTreeSet<String>,
+    locked_packages: &BTreeSet<String>,
+) -> Vec<Failure> {
+    let mut failures = unknown_names(rule, workspace_members, locked_packages);
     match tree_of(root, rule) {
         Ok(tree) => failures.extend(forbidden_in(rule, &tree)),
         Err(failure) => failures.push(failure),
@@ -317,6 +415,7 @@ fn failures_of(root: &Path, rule: Rule, workspace_members: &BTreeSet<String>) ->
 }
 
 /// - Runs `cargo metadata` as a child process.
+/// - Reads `Cargo.lock` in `root`.
 /// - Runs `cargo tree` as a child process in `root`, once for each rule.
 fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if let Some(argument) = args.first() {
@@ -329,16 +428,20 @@ fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         .into_iter()
         .map(|package| package.name.to_string())
         .collect();
+    let lockfile = root.join(LOCKFILE);
+    let locked_packages = locked_packages_of(&read(&lockfile)?)
+        .map_err(|error| vec![format!("{}: {error}", lockfile.display())])?;
     verdict(
         RULES
             .iter()
-            .flat_map(|rule| failures_of(root, *rule, &workspace_members))
+            .flat_map(|rule| failures_of(root, *rule, &workspace_members, &locked_packages))
             .map(|failure| failure.to_string())
             .collect(),
     )
 }
 
 /// - Reads the process arguments.
+/// - Reads `Cargo.lock` at the root of the repository.
 /// - Runs `cargo metadata` and `cargo tree` as child processes.
 /// - Exits the process.
 pub fn main() -> ! {
@@ -445,8 +548,9 @@ mod tests {
     #[test]
     fn a_forbidden_member_that_the_workspace_lacks_fails_the_rule() {
         let workspace_members = BTreeSet::from([COMMON.to_string()]);
+        let locked_packages = BTreeSet::from([HYPER.to_string()]);
         assert_eq!(
-            unknown_members(RULE, &workspace_members),
+            unknown_names(RULE, &workspace_members, &locked_packages),
             [Failure::MemberUnknown {
                 rule: RULE,
                 member: NETUTILS,
@@ -455,7 +559,37 @@ mod tests {
     }
 
     #[test]
+    fn a_forbidden_registry_package_that_the_lockfile_lacks_fails_the_rule() {
+        let workspace_members = BTreeSet::from([NETUTILS.to_string()]);
+        let locked_packages = BTreeSet::from([COMMON.to_string()]);
+        assert_eq!(
+            unknown_names(RULE, &workspace_members, &locked_packages),
+            [Failure::RegistryUnknown {
+                rule: RULE,
+                dependency: HYPER,
+            }]
+        );
+    }
+
+    #[test]
     fn a_named_feature_rule_passes_the_feature_to_cargo() {
         assert!(tree_arguments(RULE).ends_with(&[FEATURES_FLAG, LEGACY_FEATURE]));
+    }
+
+    #[test]
+    fn an_all_features_rule_passes_the_flag_to_cargo() {
+        let rule = Rule {
+            features: FeatureSet::All,
+            ..RULE
+        };
+        assert!(tree_arguments(rule).ends_with(&[ALL_FEATURES_FLAG]));
+    }
+
+    #[test]
+    fn a_rule_asks_cargo_for_the_graph_of_every_target() {
+        let target = [TARGET_FLAG, ALL_TARGETS];
+        assert!(tree_arguments(RULE)
+            .windows(target.len())
+            .any(|arguments| arguments == target));
     }
 }

@@ -16,7 +16,8 @@ use zcash_protocol::{
 };
 use zcash_transparent::address::Script;
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
+
+use crate::protocol;
 
 use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
 use crate::{
@@ -42,7 +43,7 @@ mod runners;
 
 #[allow(clippy::complexity)]
 pub(super) fn scan_compact_blocks<P>(
-    compact_blocks: Vec<CompactBlock>,
+    compact_blocks: Vec<protocol::CompactBlock>,
     consensus_parameters: &P,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     initial_scan_data: InitialScanData,
@@ -380,7 +381,7 @@ fn script_from_bytes(bytes: Vec<u8>) -> Script {
 fn trial_decrypt<P>(
     consensus_parameters: &P,
     scanning_keys: &ScanningKeys,
-    compact_blocks: &[CompactBlock],
+    compact_blocks: &[protocol::CompactBlock],
     output_decryptions_in_batch: usize,
 ) -> Result<DecryptionBatchRunners<(), (), ()>, ScanError>
 where
@@ -401,7 +402,7 @@ where
 /// If available, also checks continuity with the blocks adjacent to the `compact_blocks` forming the start and end
 /// seams of the scan ranges.
 fn check_continuity(
-    compact_blocks: &[CompactBlock],
+    compact_blocks: &[protocol::CompactBlock],
     start_seam_block: Option<&WalletBlock>,
     end_seam_block: Option<&WalletBlock>,
 ) -> Result<(), ContinuityError> {
@@ -464,7 +465,7 @@ fn check_continuity(
 /// A zero metadata size is also the protobuf default of a server that does
 /// not report the pool.
 fn check_tree_size(
-    compact_block: &CompactBlock,
+    compact_block: &protocol::CompactBlock,
     wallet_block: &WalletBlock,
 ) -> Result<(), ScanError> {
     let Some(chain_metadata) = &compact_block.chain_metadata else {
@@ -541,7 +542,7 @@ fn calculate_nullifiers_and_positions<D, K, Nf>(
 // TODO: unify sapling and orchard leaf and retention fns
 /// Calculates the sapling note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_sapling_leaves_and_retentions<D: Domain>(
-    outputs: &[CompactSaplingOutput],
+    outputs: &[protocol::CompactSaplingOutput],
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(Node, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -582,7 +583,7 @@ fn calculate_sapling_leaves_and_retentions<D: Domain>(
 
 // calculates the orchard note commitment tree leaves and shardtree retentions for a given compact transaction
 fn calculate_orchard_leaves_and_retentions<D: Domain>(
-    actions: &[CompactOrchardAction],
+    actions: &[protocol::CompactOrchardAction],
     incoming_decrypted_outputs: &HashMap<OutputId, DecryptedOutput<D, ()>>,
 ) -> Result<Vec<(MerkleHashOrchard, Retention<BlockHeight>)>, ScanError> {
     let incoming_output_indexes = incoming_decrypted_outputs
@@ -624,7 +625,7 @@ fn calculate_orchard_leaves_and_retentions<D: Domain>(
 pub(crate) async fn calculate_block_tree_bounds(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    compact_block: &CompactBlock,
+    compact_block: &protocol::CompactBlock,
 ) -> Result<TreeBounds, ServerError> {
     let (sapling_final_tree_size, orchard_final_tree_size, ironwood_final_tree_size) =
         if let Some(chain_metadata) = compact_block.chain_metadata {
@@ -709,8 +710,9 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use orchard::note_encryption as orchard_encryption;
+    use sapling_crypto::note_encryption as sapling_encryption;
     use zcash_primitives::transaction::TxId;
-    use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
 
@@ -732,15 +734,15 @@ mod tests {
         })
     }
 
-    fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
-        CompactBlock {
+    fn compact_block_with_ironwood_size(size: u32) -> protocol::CompactBlock {
+        protocol::CompactBlock {
             height: 100,
             hash: vec![1; 32],
             prev_hash: vec![0; 32],
             time: 0,
             header: vec![],
             vtx: vec![],
-            chain_metadata: Some(ChainMetadata {
+            chain_metadata: Some(protocol::ChainMetadata {
                 sapling_commitment_tree_size: 10,
                 orchard_commitment_tree_size: 10,
                 ironwood_commitment_tree_size: size,
@@ -769,26 +771,80 @@ mod tests {
 
     /// A placeholder action that parses but decrypts to nothing: enough to
     /// be counted by the scanner without building a real note.
-    fn compact_ironwood_action() -> CompactOrchardAction {
-        CompactOrchardAction {
-            nullifier: vec![0; 32],
-            cmx: vec![0; 32],
-            ephemeral_key: vec![0; 32],
-            ciphertext: vec![0; 52],
+    fn compact_ironwood_action() -> protocol::CompactOrchardAction {
+        protocol::CompactOrchardAction {
+            nullifier: vec![0; NULLIFIER_BYTES],
+            cmx: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
         }
+    }
+
+    const NULLIFIER_BYTES: usize = 32;
+    const COMMITMENT_BYTES: usize = 32;
+    const EPHEMERAL_KEY_BYTES: usize = 32;
+    const COMPACT_CIPHERTEXT_BYTES: usize = 52;
+    const NOT_A_FIELD_ELEMENT: [u8; COMMITMENT_BYTES] = [u8::MAX; COMMITMENT_BYTES];
+
+    fn compact_sapling_output() -> protocol::CompactSaplingOutput {
+        protocol::CompactSaplingOutput {
+            cmu: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
+        }
+    }
+
+    fn sapling_leaves_of(output: protocol::CompactSaplingOutput) -> Result<usize, ScanError> {
+        calculate_sapling_leaves_and_retentions::<sapling_encryption::SaplingDomain>(
+            &[output],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
+
+    fn orchard_leaves_of(action: protocol::CompactOrchardAction) -> Result<usize, ScanError> {
+        calculate_orchard_leaves_and_retentions::<orchard_encryption::OrchardDomain>(
+            &[action],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
+
+    #[test]
+    fn a_sapling_output_is_invalid_when_its_commitment_is_outside_the_field() {
+        assert!(sapling_leaves_of(compact_sapling_output()).is_ok());
+        assert!(matches!(
+            sapling_leaves_of(protocol::CompactSaplingOutput {
+                cmu: NOT_A_FIELD_ELEMENT.to_vec(),
+                ..compact_sapling_output()
+            }),
+            Err(ScanError::InvalidSaplingOutput)
+        ));
+    }
+
+    #[test]
+    fn an_orchard_action_is_invalid_when_its_nullifier_is_not_32_bytes() {
+        let mut short_nullifier = compact_ironwood_action();
+        short_nullifier.nullifier.pop();
+
+        assert!(orchard_leaves_of(compact_ironwood_action()).is_ok());
+        assert!(matches!(
+            orchard_leaves_of(short_nullifier),
+            Err(ScanError::InvalidOrchardAction)
+        ));
     }
 
     fn block_with_served_ironwood_actions(
         action_count: usize,
         metadata_ironwood_size: u32,
-    ) -> CompactBlock {
-        CompactBlock {
+    ) -> protocol::CompactBlock {
+        protocol::CompactBlock {
             height: 100,
             hash: vec![1; 32],
             prev_hash: vec![0; 32],
             time: 0,
             header: vec![],
-            vtx: vec![CompactTx {
+            vtx: vec![protocol::CompactTx {
                 index: 0,
                 txid: vec![3; 32],
                 fee: 0,
@@ -801,7 +857,7 @@ mod tests {
                 vin: vec![],
                 vout: vec![],
             }],
-            chain_metadata: Some(ChainMetadata {
+            chain_metadata: Some(protocol::ChainMetadata {
                 sapling_commitment_tree_size: 10,
                 orchard_commitment_tree_size: 10,
                 ironwood_commitment_tree_size: metadata_ironwood_size,
@@ -921,7 +977,7 @@ mod tests {
     fn block_with_served_orchard_actions(
         action_count: usize,
         metadata_orchard_size: u32,
-    ) -> CompactBlock {
+    ) -> protocol::CompactBlock {
         let mut compact_block = block_with_served_ironwood_actions(0, 10);
         compact_block.vtx[0].actions = (0..action_count)
             .map(|_| compact_ironwood_action())
@@ -1078,11 +1134,11 @@ mod tests {
         ufvk: &UnifiedFullViewingKey,
         height: u64,
         index: u32,
-    ) -> CompactBlock {
+    ) -> protocol::CompactBlock {
         let script = Script::from(external_address(ufvk, index).script());
         let mut compact_block = block_with_served_ironwood_actions(0, 10);
         compact_block.height = height;
-        compact_block.vtx[0].vout = vec![zl_netutils::lightwallet_protocol::TxOut {
+        compact_block.vtx[0].vout = vec![protocol::TxOut {
             value: 100_000,
             script_pub_key: script.0.0,
         }];
@@ -1091,7 +1147,7 @@ mod tests {
 
     fn scan_block(
         ufvk: &UnifiedFullViewingKey,
-        compact_block: CompactBlock,
+        compact_block: protocol::CompactBlock,
         inuse_addresses: &HashMap<String, TransparentAddressId>,
         gap_addresses: &HashMap<String, TransparentAddressId>,
     ) -> ScanData {
@@ -1106,7 +1162,7 @@ mod tests {
 
     fn scan_block_above_floor(
         ufvk: &UnifiedFullViewingKey,
-        compact_block: CompactBlock,
+        compact_block: protocol::CompactBlock,
         inuse_addresses: &HashMap<String, TransparentAddressId>,
         gap_addresses: &HashMap<String, TransparentAddressId>,
         transparent_scan_floor: BlockHeight,
@@ -1219,13 +1275,17 @@ mod tests {
     /// discovery has already located all relevant transactions at or below the floor.
     #[test]
     fn outpoints_only_collected_above_transparent_scan_floor() {
-        fn block_spending_outpoint(height: u64, hash: u8, prevout_txid: [u8; 32]) -> CompactBlock {
+        fn block_spending_outpoint(
+            height: u64,
+            hash: u8,
+            prevout_txid: [u8; 32],
+        ) -> protocol::CompactBlock {
             let mut compact_block = block_with_served_ironwood_actions(0, 10);
             compact_block.height = height;
             compact_block.hash = vec![hash; 32];
             compact_block.prev_hash = vec![hash - 1; 32];
             compact_block.vtx[0].txid = vec![hash + 10; 32];
-            compact_block.vtx[0].vin = vec![zl_netutils::lightwallet_protocol::CompactTxIn {
+            compact_block.vtx[0].vin = vec![protocol::CompactTxIn {
                 prevout_txid: prevout_txid.to_vec(),
                 prevout_index: 0,
             }];

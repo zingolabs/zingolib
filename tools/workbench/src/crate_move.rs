@@ -1,6 +1,11 @@
 use crate::{read, repo_root, required, verdict};
 
-const OLD_NAMES: [&str; 7] = [
+const OLD_NAMES: [&str; 12] = [
+    "zingolib-memo",
+    "zingolib-net-diag",
+    "zingolib-status",
+    "zingolib-netutils",
+    "zingolib-price",
     "zingo-memo",
     "zingo-net-diag",
     "zingo-status",
@@ -19,18 +24,23 @@ const SECTION_OPEN: char = '[';
 const DIRECTORY_SECTION_CLOSE: &str = "/*]";
 const UNRELEASED: &str = "## [Unreleased]";
 const NEXT_RELEASE: &str = "\n## [";
-const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 1] = [("crates/pepper-sync/CHANGELOG.md", "zl-")];
+const SOP_LINE_WITH_AN_INTERMEDIATE_NAME: &str = "cargo publish --package zingolib-netutils";
+const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 1] =
+    [("crates/pepper-sync/CHANGELOG.md", "`zingo-netutils`")];
 
 fn text(relative: &str) -> Result<String, Vec<String>> {
     read(&repo_root()?.join(relative))
 }
 
-fn old_name_lines(relative: &str, mark: &str) -> Result<Vec<String>, Vec<String>> {
-    Ok(text(relative)?
-        .lines()
+fn old_names_in(relative: &str, text: &str, mark: &str) -> Vec<String> {
+    text.lines()
         .filter(|line| line.contains(mark) && OLD_NAMES.iter().any(|old| line.contains(old)))
         .map(|line| format!("{relative}: {}", line.trim()))
-        .collect())
+        .collect()
+}
+
+fn old_name_lines(relative: &str, mark: &str) -> Result<Vec<String>, Vec<String>> {
+    Ok(old_names_in(relative, &text(relative)?, mark))
 }
 
 fn unreleased(relative: &str) -> Result<String, Vec<String>> {
@@ -82,4 +92,27 @@ fn each_unreleased_section_records_the_rename_its_consumers_see() -> Result<(), 
         }
     }
     verdict(silent)
+}
+
+#[test]
+fn a_line_that_names_an_intermediate_package_name_is_reported() {
+    assert_eq!(
+        old_names_in(RELEASE_SOP, SOP_LINE_WITH_AN_INTERMEDIATE_NAME, ANY_LINE),
+        [format!(
+            "{RELEASE_SOP}: {SOP_LINE_WITH_AN_INTERMEDIATE_NAME}"
+        )]
+    );
+}
+
+#[test]
+fn every_pinned_subject_names_a_retired_name() -> Result<(), Vec<String>> {
+    verdict(
+        CONSUMER_VISIBLE_RENAMES
+            .iter()
+            .filter(|(_, subject)| !OLD_NAMES.iter().any(|old| subject.contains(old)))
+            .map(|(changelog, subject)| {
+                format!("{changelog} is pinned by `{subject}`, which names no retired package")
+            })
+            .collect(),
+    )
 }
