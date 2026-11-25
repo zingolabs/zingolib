@@ -5227,15 +5227,18 @@ mod test {
                 spending_transaction.transaction().write(&mut data).unwrap();
                 data
             });
-            // a transaction request with no reply fails, because its reply sender is dropped.
-            mocks::spawn_tree_state_and_transaction_fetcher(mocks::empty_trees, move |_txid| {
+            let reply_when_a_spend_exists = move |_txid: TxId| {
                 spending_transaction_data.as_ref().map(|data| {
                     Ok(RawTransaction {
                         data: data.clone(),
                         height: u64::from(SPEND_HEIGHT),
                     })
                 })
-            })
+            };
+            mocks::spawn_tree_state_and_transaction_fetcher(
+                mocks::empty_trees,
+                reply_when_a_spend_exists,
+            )
         }
 
         /// The block at `SPEND_HEIGHT`, which holds the first orchard note commitment of the chain.

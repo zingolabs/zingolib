@@ -306,7 +306,7 @@ pub(crate) async fn get_frontiers(
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let tree_state = reply_receiver
+    let mut tree_state = reply_receiver
         .await
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
@@ -319,7 +319,7 @@ pub(crate) async fn get_frontiers(
         (ShieldedPool::Orchard, consensus::NetworkUpgrade::Nu5),
         (ShieldedPool::Ironwood, consensus::NetworkUpgrade::Nu6_3),
     ] {
-        if witness::tree_hex(&tree_state, pool).is_empty()
+        if witness::tree_hex_mut(&mut tree_state, pool).is_empty()
             && consensus_parameters.is_nu_active(network_upgrade, block_height)
         {
             return Err(ServerError::TreeStateNotServed {
@@ -580,13 +580,15 @@ mod tests {
     }
 
     const MARKED_BYTE: u8 = 0x01;
+    const FIRST_BYTE: usize = 0;
+    const LAST_BYTE: usize = mocks::BLOCK_HASH_BYTES - 1;
 
     #[tokio::test]
     async fn a_well_formed_tree_state_keeps_its_height_and_reverses_its_block_hash() {
         let mut wire_hash = [0; mocks::BLOCK_HASH_BYTES];
-        wire_hash[0] = MARKED_BYTE;
+        wire_hash[FIRST_BYTE] = MARKED_BYTE;
         let mut reversed_hash = [0; mocks::BLOCK_HASH_BYTES];
-        reversed_hash[mocks::BLOCK_HASH_BYTES - 1] = MARKED_BYTE;
+        reversed_hash[LAST_BYTE] = MARKED_BYTE;
 
         let frontiers = frontiers_of(TreeState {
             hash: hex::encode(wire_hash),

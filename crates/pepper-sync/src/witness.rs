@@ -306,7 +306,7 @@ impl Frontiers {
 impl TryFrom<TreeState> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(value: TreeState) -> Result<Self, Self::Error> {
+    fn try_from(mut value: TreeState) -> Result<Self, Self::Error> {
         let mut hash_bytes = hex::decode(&value.hash).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -326,22 +326,13 @@ impl TryFrom<TreeState> for Frontiers {
                     "Invalid block hash length.",
                 )
             })?,
-            commitment_tree(&value, ShieldedPool::Sapling)?.to_frontier(),
-            commitment_tree(&value, ShieldedPool::Orchard)?.to_frontier(),
-            commitment_tree(&value, ShieldedPool::Ironwood)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Sapling)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Orchard)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Ironwood)?.to_frontier(),
         ))
     }
 }
 
-pub(crate) fn tree_hex(tree_state: &TreeState, pool: ShieldedPool) -> &str {
-    match pool {
-        ShieldedPool::Sapling => &tree_state.sapling_tree,
-        ShieldedPool::Orchard => &tree_state.orchard_tree,
-        ShieldedPool::Ironwood => &tree_state.ironwood_tree,
-    }
-}
-
-#[cfg(test)]
 pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &mut String {
     match pool {
         ShieldedPool::Sapling => &mut tree_state.sapling_tree,
@@ -351,10 +342,10 @@ pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &m
 }
 
 fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
-    tree_state: &TreeState,
+    tree_state: &mut TreeState,
     pool: ShieldedPool,
 ) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
-    let tree_hex = tree_hex(tree_state, pool);
+    let tree_hex = tree_hex_mut(tree_state, pool).as_str();
     if tree_hex.is_empty() {
         Ok(CommitmentTree::empty())
     } else {
@@ -508,13 +499,13 @@ mod tests {
     fn report_of_a_tree_that_is_not_hex<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
         pool: ShieldedPool,
     ) -> Option<String> {
-        let tree_state = mocks::with_tree_hex(
+        let mut tree_state = mocks::with_tree_hex(
             mocks::empty_trees(REPLY_HEIGHT.into()),
             pool,
             ODD_LENGTH_HEX,
         );
 
-        commitment_tree::<Leaf, DEPTH>(&tree_state, pool)
+        commitment_tree::<Leaf, DEPTH>(&mut tree_state, pool)
             .err()
             .map(|unread| unread.to_string())
     }
@@ -600,6 +591,8 @@ mod tests {
         );
     }
 
+    const FIRST_SUBTREE_INDEX: usize = 0;
+
     #[test]
     fn a_subtree_root_whose_hash_is_not_32_bytes_is_invalid() {
         let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
@@ -607,7 +600,11 @@ mod tests {
         short_root.root_hash.pop();
 
         assert!(matches!(
-            add_subtree_roots(0, vec![short_root], &mut shard_trees.orchard),
+            add_subtree_roots(
+                FIRST_SUBTREE_INDEX,
+                vec![short_root],
+                &mut shard_trees.orchard
+            ),
             Err(ServerError::InvalidSubtreeRoot)
         ));
     }
