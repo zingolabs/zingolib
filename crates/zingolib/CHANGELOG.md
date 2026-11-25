@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `testnet` feature, off by default. It turns on `nym` and builds the
+  testnet cells of `tests/testnet.rs`, which moved here from the
+  `libtonode-tests` crate. The cells dial the public testnet, spend from
+  one shared testnet wallet, and wait for real blocks, so no consumer has
+  a reason to turn the feature on.
+- `LightClient::fetch_over_mixnet(url, timeout)` GETs one `https` URL on
+  port 443 over the mixnet and returns `mixnet::fetch::MixnetFetch`: the
+  HTTP status, the body as text, the local SOCKS5 endpoint it traveled
+  through, and the round trip. Every HTTP status is a response, so the
+  caller reads the status. The call makes one attempt and refuses in every
+  mixnet state but ready, with no nakednet leg. A session that can create
+  clients uses a client created for the call. `timeout` is the deadline of
+  the whole call, client creation included. A consumer fetches its own
+  third-party data (a forex table) through it instead of asking this crate
+  for more currencies.
+- `mixnet::fetch::MixnetFetchError` and `LightClientError::MixnetFetch` type
+  the fetch's failures: `Ineligible` for a URL outside the exit policy's
+  shape, `ZeroTimeout`, `DeadlineExceeded` for a deadline that elapsed
+  before the request started, `Transport` for a client that could not be
+  acquired, `Request` for a request that failed at a typed stage, and
+  `BodyTooLarge` for a body over `mixnet::fetch::FETCH_BODY_LIMIT` (1 MiB).
 - `LightWallet::invariant_violations` reports every violated wallet
   invariant: outputs stored under foreign txids, spends recorded on
   transactions that do not carry the input, spends released by failed
@@ -27,8 +48,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URI it bound: the one the consumer named, else the chain's Default Indexer
   (zingo-adrs zingolib/0063). A chain without a Default Indexer, and no
   named URI, refuses with `ChooseIndexerError::NoDefaultIndexer`.
+- `UnifiedKeyStore::determine_nth_valid_sapling_diversifier` is public.
+- `price` module, built with the `nym` feature: `PriceError`, `PriceSource`,
+  `RACED_SOURCES`, `get_source_price`, `first_quote`, `RacedPrice`,
+  `PriceRaceFailure`, `REQUEST_TIMEOUT` and `CONNECT_TIMEOUT`, the ZEC price
+  fetch. The items came from the `zl-price` crate (released as
+  `zingo-price` 0.3.0), which is retired, so `zingolib` no longer depends on
+  it. `zingolib` enables the `socks5-fetch` feature of `zl-netutils`
+  under `nym`.
+- The `GetStandardFee` RPC: at every connect (`go_online`,
+  `set_indexer_uri`, and construction against a configured indexer) the
+  client fetches the backend's standard fee report once and caches it in
+  wallet state, and `LightClient::standard_fee` reads the report back, or
+  `None` before first contact. Every proposal, shield, OP_RETURN send, and
+  migration now prices with the effective fee rule, whose marginal fee is
+  the backend's reported standard fee clamped between the ZIP 317 standard
+  marginal fee in force at the expected mining height and the weight-ratio
+  cap over it, so the wallet never pays below the standard and never pays
+  past the point where extra fee stops buying inclusion. The revision in
+  force follows ZIP 2009: Revision 1 prices at 5,000 zatoshi per logical
+  action with a weight-ratio cap of 4 (20,000), and Revision 2 prices at
+  1,000 zatoshi with a cap of 10 (10,000) from Mainnet block 3,590,000
+  (expected 19 November 2026); Testnet and a regtest chain reduce with
+  NU7 itself. A wallet that cannot name the mining height, a report whose
+  fee-estimator version is not the static one, a backend that does not
+  answer `GetStandardFee` (an old lightwalletd answers `Unimplemented`),
+  and any fetch failure all keep the revision's standard rule, and where
+  8.0.0 priced every transaction by the standard rule alone this release
+  keeps that posture: the connect itself never fails on the fee, and
+  there is no retry loop, the next connect fetches again.
+  Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
+  5,000 now raises the marginal fee to its report, at most to 20,000.
 
 ### Changed
+- **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
+  `TransactionRecord`, and every zingolib signature that named it names
+  `TransactionRecord` now, the `LightWallet::wallet_transactions` field
+  included. A consumer replaces the type name; no field or method changes.
+- **Breaking:** `mixnet::speed::WAVE_WIDTH` is
+  `mixnet::speed::MAX_CONCURRENT_REQUESTS`. The value is unchanged: four
+  requests in flight through one Nym client.
 - **Breaking:** `wallet::migration::MigrationState::reserved_output_ids`
   returns a `HashSet<OutputId>` in place of a `Vec<OutputId>`, so note
   selection checks a reservation in constant time. A consumer that indexed
@@ -60,6 +119,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read the two together, so a pending send shows its inputs spent until the
   transaction confirms or fails, where 8.0.0 stored the pending spend on the
   notes and every failure path erased it again.
+- `ChainType`, `InvalidChainType`, `ReadableWriteable`, `UnifiedKeyStore`,
+  `UnifiedAddressId`, `ReceiverSelection`, `encode_ufvk` and `KeyError` come
+  from the new `zl-common` crate. `WalletSettings`, `RecoveryInfo`,
+  `ChainMismatch`, `read_string` and `write_string` come from the new
+  `zl-file-format` crate, which also holds the wallet file reader and
+  writer that `LightWallet` calls. `zingolib` re-exports each item at its old
+  path.
+- `wallet::utils::write_string` takes `&str` where it took `&String`.
+- **Breaking:** `sync::ConfirmationStatus` re-exports
+  `zl_common::status::ConfirmationStatus` where it re-exported
+  `zingo_status::confirmation_status::ConfirmationStatus`, and the
+  `LightWallet::price_list` field is a `zl_common::price::PriceList` where
+  it was a `zingo_price::PriceList`. The wallet's memo is written with
+  `zl_common::memo`, whose encoding is the one `zingo-memo` 0.3.0 wrote. A
+  consumer that names either type through `zingo-status` or `zingo-price`
+  names it through `zingolib` or `zl-common`.
 
 ### Fixed
 - A transaction the wallet believes failed, whose block later reaches the
@@ -78,6 +153,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- **Breaking:** the `wallet::keys::legacy` module, which held the key
+  readers of the wallet file layouts below version 32, and the
+  `ReadableWriteable` impls for
+  `zingo_status::confirmation_status::ConfirmationStatus`,
+  `sapling_crypto::Note` and `orchard::note::Note`, which read the records of
+  those layouts. The `legacy` feature of `zl-file-format` holds these
+  readers as private functions, and `zingolib` exposes them at no path.
+- The `append-only-vec`, `bip32`, `bs58`, `prost`, `zingo-memo` and
+  `zingo-status` dependencies.
 
 ## [8.0.0] - 2026-10-28
 

@@ -9,8 +9,8 @@ use zcash_protocol::PoolType;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
+use zl_common::status::ConfirmationStatus;
 use zl_netutils::Indexer as _;
-use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::lightclient::DEFAULT_REQUEST_TIMEOUT;
 use crate::lightclient::LightClient;

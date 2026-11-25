@@ -3,7 +3,7 @@
 
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::{PoolType, ShieldedPool};
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use crate::lightclient::LightClient;
 use crate::wallet::summary::data::TransactionKind;
@@ -149,6 +149,6 @@ pub async fn lookup_statuses(
         wallet
             .wallet_transactions
             .get(&txid)
-            .map(pepper_sync::wallet::WalletTransaction::status)
+            .map(pepper_sync::wallet::TransactionRecord::status)
     })
 }

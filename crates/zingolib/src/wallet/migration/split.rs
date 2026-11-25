@@ -6,7 +6,8 @@
 //! exactly `denomination + part_fee`, and the denominations of the parts the
 //! wallet will send once splitting completes.
 
-use std::collections::HashSet;
+use zcash_primitives::transaction::fees::FeeRule as _;
+pub(in crate::wallet::migration) use zcash_primitives::transaction::fees::zip317::FeeRule;
 use zcash_protocol::value::Zatoshis;
 
 use super::params::MigrationParams;
@@ -81,30 +82,30 @@ pub(in crate::wallet::migration) fn bundle_actions(
 }
 
 /// The ZIP-317 conventional fee of a fully-shielded transaction whose bundles
-/// carry the given action counts, from the crate's own fee rule.
+/// carry the given action counts, from the given rule.
 ///
 /// ZIP-317's conventional fee depends on nothing but the action counts, so the
 /// rule ignores the network and target height it is handed and the
 /// placeholders below never reach a decision.
 pub(in crate::wallet::migration) fn zip317_fee(
+    rule: &FeeRule,
     orchard_actions: usize,
     ironwood_actions: usize,
 ) -> u64 {
-    use zcash_primitives::transaction::fees::{FeeRule as _, transparent, zip317};
+    use zcash_primitives::transaction::fees::transparent;
 
-    zip317::FeeRule::standard()
-        .fee_required(
-            &zcash_protocol::consensus::MAIN_NETWORK,
-            zcash_protocol::consensus::BlockHeight::from_u32(1),
-            std::iter::empty::<transparent::InputSize>(),
-            std::iter::empty::<usize>(),
-            0,
-            0,
-            orchard_actions,
-            ironwood_actions,
-        )
-        .expect("a shielded action count cannot overflow the fee")
-        .into_u64()
+    rule.fee_required(
+        &zcash_protocol::consensus::MAIN_NETWORK,
+        zcash_protocol::consensus::BlockHeight::from_u32(1),
+        std::iter::empty::<transparent::InputSize>(),
+        std::iter::empty::<usize>(),
+        0,
+        0,
+        orchard_actions,
+        ironwood_actions,
+    )
+    .expect("a shielded action count cannot overflow the fee")
+    .into_u64()
 }
 
 /// The bundle version of the Orchard bundle a migration transaction spends
@@ -120,8 +121,14 @@ fn orchard_version(post_activation: bool) -> orchard::bundle::BundleVersion {
 
 /// The ZIP-317 conventional fee for an Orchard-only note-splitting
 /// transaction with `n_in` spends and `n_out` outputs.
-pub(crate) fn note_split_fee(n_in: usize, n_out: usize, post_activation: bool) -> u64 {
+pub(crate) fn note_split_fee(
+    rule: &FeeRule,
+    n_in: usize,
+    n_out: usize,
+    post_activation: bool,
+) -> u64 {
     zip317_fee(
+        rule,
         bundle_actions(orchard_version(post_activation), n_in, n_out),
         0,
     )
@@ -273,6 +280,7 @@ pub fn plan_hash(plan: &MigrationPlan) -> [u8; 32] {
 /// `note_split_fee`): pass whether the transactions will confirm at or
 /// after the NU6.3 activation height.
 pub fn plan_migration(
+    rule: &FeeRule,
     note_values: &[u64],
     post_activation: bool,
     params: &MigrationParams,
@@ -306,7 +314,7 @@ pub fn plan_migration(
                 continue;
             }
             let merged =
-                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+                group.iter().sum::<u64>() - note_split_fee(rule, group.len(), 1, post_activation);
             // Post-activation, a trailing pair of near-floor notes can merge
             // to at most `sweep_min`: a note the residual policy refuses to
             // spend, and one a replan after an interruption would leave as residual.
@@ -345,7 +353,13 @@ pub fn plan_migration(
                 break denominations;
             }
             let overhead = denominations.len() as u64 * params.part_fee
-                + split_into_fee(pool.len(), denominations.len(), post_activation, params);
+                + split_into_fee(
+                    rule,
+                    pool.len(),
+                    denominations.len(),
+                    post_activation,
+                    params,
+                );
             let denomination_sum: u64 = denominations.iter().sum();
             if denomination_sum + overhead <= total {
                 break denominations;
@@ -370,7 +384,7 @@ pub fn plan_migration(
             // The pool never contains part-ready notes (those were diverted
             // into `parts` above), so sizing is always required here.
             let targets: Vec<u64> = denominations.iter().map(|d| d + params.part_fee).collect();
-            split_rounds.extend(split_into(pool, &targets, post_activation, params));
+            split_rounds.extend(split_into(rule, pool, &targets, post_activation, params));
             parts.extend(denominations);
         }
     }
@@ -404,15 +418,21 @@ fn merge_group_len(n_in: usize, m: usize, params: &MigrationParams) -> usize {
 /// recursing through intermediates when `m` exceeds the per-transaction
 /// budget, and consolidating inputs first when spends plus outputs would
 /// exceed the total budget (mirroring [`split_into`]).
-fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &MigrationParams) -> u64 {
+fn split_into_fee(
+    rule: &FeeRule,
+    n_in: usize,
+    m: usize,
+    post_activation: bool,
+    params: &MigrationParams,
+) -> u64 {
     let max_notes = side_budget(params);
     if m <= max_notes {
         if n_in + m > params.max_actions_per_split_tx {
             let group_len = merge_group_len(n_in, m, params);
-            note_split_fee(group_len, 1, post_activation)
-                + note_split_fee(n_in - group_len + 1, m, post_activation)
+            note_split_fee(rule, group_len, 1, post_activation)
+                + note_split_fee(rule, n_in - group_len + 1, m, post_activation)
         } else {
-            note_split_fee(n_in, m, post_activation)
+            note_split_fee(rule, n_in, m, post_activation)
         }
     } else {
         // One future transaction per chunk of `max_notes` targets, funded by
@@ -422,10 +442,10 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
         let mut remaining = m;
         for _ in 0..chunks {
             let len = remaining.min(max_notes);
-            total += note_split_fee(1, len, post_activation);
+            total += note_split_fee(rule, 1, len, post_activation);
             remaining -= len;
         }
-        total + split_into_fee(n_in, chunks, post_activation, params)
+        total + split_into_fee(rule, n_in, chunks, post_activation, params)
     }
 }
 
@@ -440,6 +460,7 @@ fn split_into_fee(n_in: usize, m: usize, post_activation: bool, params: &Migrati
 /// their own, and the sizing transaction spends the consolidated note
 /// beside the survivors.
 fn split_into(
+    rule: &FeeRule,
     mut inputs: Vec<u64>,
     targets: &[u64],
     post_activation: bool,
@@ -453,7 +474,7 @@ fn split_into(
             inputs.sort_unstable();
             let group: Vec<u64> = inputs.drain(..group_len).collect();
             let merged =
-                group.iter().sum::<u64>() - note_split_fee(group.len(), 1, post_activation);
+                group.iter().sum::<u64>() - note_split_fee(rule, group.len(), 1, post_activation);
             rounds.push(vec![NoteSplitTx {
                 inputs: group,
                 outputs: vec![merged],
@@ -469,9 +490,11 @@ fn split_into(
     let chunks: Vec<&[u64]> = targets.chunks(max_notes).collect();
     let intermediates: Vec<u64> = chunks
         .iter()
-        .map(|chunk| chunk.iter().sum::<u64>() + note_split_fee(1, chunk.len(), post_activation))
+        .map(|chunk| {
+            chunk.iter().sum::<u64>() + note_split_fee(rule, 1, chunk.len(), post_activation)
+        })
         .collect();
-    let mut rounds = split_into(inputs, &intermediates, post_activation, params);
+    let mut rounds = split_into(rule, inputs, &intermediates, post_activation, params);
     rounds.push(
         intermediates
             .iter()
@@ -485,11 +508,21 @@ fn split_into(
     rounds
 }
 
+fn v2_values(notes: Vec<&pepper_sync::wallet::OrchardNote>) -> Vec<u64> {
+    use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
+
+    notes
+        .into_iter()
+        .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
+        .map(|note| note.value())
+        .collect()
+}
+
 impl crate::wallet::LightWallet {
     /// The values (zatoshis) of the account's spendable pre-Ironwood (V2)
     /// Orchard notes, the input to [`plan_migration`].
     ///
-    /// Errors with [`WalletError::SyncIncomplete`] when the spend horizon
+    /// Errors with [`WalletError::SyncIncomplete`] when the Spend-Evidence Floor
     /// withholds every V2 note the anchor would otherwise offer.
     ///
     /// [`WalletError::SyncIncomplete`]: crate::wallet::error::WalletError::SyncIncomplete
@@ -501,65 +534,16 @@ impl crate::wallet::LightWallet {
         let (_, anchor_height) = self
             .get_migration_heights()?
             .ok_or(crate::wallet::error::WalletError::NoSyncData)?;
-        let known_unspent = self.anchored_v2_known_unspent(account, anchor_height)?;
-        let not_known_spent = self.anchored_v2_not_known_spent(account, anchor_height)?;
+        let spendable = v2_values(self.spendable_notes(anchor_height, account)?);
+        let potentially_spendable =
+            v2_values(self.potentially_spendable_notes(anchor_height, account)?);
         // The two sets differ only in the spend-confirmation filter, so
         // an empty first with a non-empty second means spend detection
         // is incomplete below the recorded tip for every note.
-        if known_unspent.is_empty() && !not_known_spent.is_empty() {
+        if spendable.is_empty() && !potentially_spendable.is_empty() {
             return Err(crate::wallet::error::WalletError::SyncIncomplete);
         }
-        Ok(known_unspent)
-    }
-
-    /// The values of the account's anchored V2 notes that sync has proven
-    /// unspent: every block in each note's possible spend window is scanned
-    /// and no spend appeared. Only this set is safe to plan spends from.
-    #[allow(clippy::result_large_err)]
-    fn anchored_v2_known_unspent(
-        &self,
-        account: zip32::AccountId,
-        anchor_height: zcash_protocol::consensus::BlockHeight,
-    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
-        self.anchored_v2_values(account, anchor_height, false)
-    }
-
-    /// The values of the account's anchored V2 notes with no recorded
-    /// spending transaction: the known-unspent set plus the notes whose
-    /// spend status sync cannot yet vouch for. A superset of
-    /// [`Self::anchored_v2_known_unspent`]; the difference is exactly the
-    /// notes awaiting spend detection.
-    #[allow(clippy::result_large_err)]
-    fn anchored_v2_not_known_spent(
-        &self,
-        account: zip32::AccountId,
-        anchor_height: zcash_protocol::consensus::BlockHeight,
-    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
-        self.anchored_v2_values(account, anchor_height, true)
-    }
-
-    /// The shared query behind the named pair above; callers reach it
-    /// through them so the spend-certainty mode always has a name.
-    #[allow(clippy::result_large_err)]
-    fn anchored_v2_values(
-        &self,
-        account: zip32::AccountId,
-        anchor_height: zcash_protocol::consensus::BlockHeight,
-        include_potentially_spent: bool,
-    ) -> Result<Vec<u64>, crate::wallet::error::WalletError> {
-        use pepper_sync::wallet::{NoteInterface as _, OutputInterface as _};
-
-        Ok(self
-            .spendable_notes::<pepper_sync::wallet::OrchardNote>(
-                anchor_height,
-                &HashSet::new(),
-                account,
-                include_potentially_spent,
-            )?
-            .into_iter()
-            .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
-            .map(|note| note.value())
-            .collect())
+        Ok(spendable)
     }
 
     /// The values of the account's live pre-Ironwood (V2) Orchard notes:
@@ -711,12 +695,7 @@ impl crate::wallet::LightWallet {
         // wallet borrow ends before witnessing.
         let (notes, positions): (Vec<orchard::Note>, Vec<incrementalmerkletree::Position>) = {
             let mut candidates: Vec<&pepper_sync::wallet::OrchardNote> = self
-                .spendable_notes::<pepper_sync::wallet::OrchardNote>(
-                    anchor_height,
-                    &HashSet::new(),
-                    account,
-                    false,
-                )?
+                .spendable_notes::<pepper_sync::wallet::OrchardNote>(anchor_height, account)?
                 .into_iter()
                 .filter(|note| note.note().version() == orchard::note::NoteVersion::V2)
                 .collect();
@@ -891,7 +870,7 @@ impl crate::wallet::LightWallet {
             &ufvks,
             self,
             transaction,
-            zl_status::confirmation_status::ConfirmationStatus::Calculated(target_height),
+            zl_common::status::ConfirmationStatus::Calculated(target_height),
             timestamp,
         ) {
             Ok(()) => (),
@@ -954,9 +933,10 @@ mod tests {
     /// follows it by asking them. These figures pin the answer.
     #[test]
     fn note_split_fee_follows_the_activation_boundary() {
-        assert_eq!(note_split_fee(1, 1, false), 10_000);
-        assert_eq!(note_split_fee(32, 1, false), 160_000);
-        assert_eq!(note_split_fee(32, 1, true), 165_000);
+        let rule = FeeRule::standard();
+        assert_eq!(note_split_fee(&rule, 1, 1, false), 10_000);
+        assert_eq!(note_split_fee(&rule, 32, 1, false), 160_000);
+        assert_eq!(note_split_fee(&rule, 32, 1, true), 165_000);
     }
 
     #[test]
@@ -969,6 +949,7 @@ mod tests {
         assert_eq!(
             CANONICAL_PART_FEE,
             zip317_fee(
+                &FeeRule::standard(),
                 bundle_actions(BundleVersion::orchard_v3(), 1, 0),
                 bundle_actions(BundleVersion::ironwood_v3(), 0, 1),
             )
@@ -993,7 +974,7 @@ mod tests {
 
     #[test]
     fn plan_hash_binds_the_plan_content() {
-        let plan = plan_migration(&[123_456_789], true, &params());
+        let plan = plan_migration(&FeeRule::standard(), &[123_456_789], true, &params());
         let hash = plan_hash(&plan);
         assert_eq!(hash, plan_hash(&plan.clone()));
 
@@ -1019,7 +1000,7 @@ mod tests {
     ) -> MigrationPlan {
         use std::collections::HashMap;
         let max_notes = side_budget(params);
-        let plan = plan_migration(notes, post_activation, params);
+        let plan = plan_migration(&FeeRule::standard(), notes, post_activation, params);
 
         let mut available: HashMap<u64, i64> = HashMap::new();
         for &note in notes {
@@ -1048,7 +1029,12 @@ mod tests {
                     tx.outputs.len(),
                     params.max_actions_per_split_tx
                 );
-                let min_fee = note_split_fee(tx.inputs.len(), tx.outputs.len(), post_activation);
+                let min_fee = note_split_fee(
+                    &FeeRule::standard(),
+                    tx.inputs.len(),
+                    tx.outputs.len(),
+                    post_activation,
+                );
                 assert!(tx.fee() >= min_fee, "fee below ZIP-317 conventional");
                 for input in &tx.inputs {
                     let count = available.entry(*input).or_insert(0);
@@ -1146,7 +1132,7 @@ mod tests {
         let mut notes = dust.to_vec();
         notes.extend([params.sweep_min + 1, 2_000_000, 3_000_000]);
         for post_activation in [false, true] {
-            let plan = plan_migration(&notes, post_activation, &params);
+            let plan = plan_migration(&FeeRule::standard(), &notes, post_activation, &params);
             assert_planned_inputs_exceed_sweep_min(&plan, &params);
             assert_eq!(plan.residual, dust.iter().sum::<u64>());
             // The note one zatoshi above the boundary is selected.
@@ -1184,7 +1170,7 @@ mod tests {
         // Post-activation the pair is carried unmerged: the consolidation round
         // merges only the full groups, and the sizing round spends the pair
         // directly.
-        let plan = plan_migration(&notes, true, &params);
+        let plan = plan_migration(&FeeRule::standard(), &notes, true, &params);
         assert_eq!(plan.split_rounds[0].len(), 12);
         assert_eq!(
             plan.split_rounds[1][0]

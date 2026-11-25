@@ -152,7 +152,7 @@ contract and the server binding replaced what 0.4.0 shipped.
   zingolib/0056, amended). Below the activation nothing changes.
 - BREAKING: `--server` names the Session Indexer, the one indexer a session
   holds, and has no default. An online session without it attaches to the
-  chain's Default Indexer (`https://mainnet.zainod.zingolabs.dev:443` on
+  chain's Default Indexer (`https://zec.global:443` on
   mainnet), and a chain without a Default Indexer refuses the launch with a
   typed error naming the chain (zingo-adrs zingolib/0063). A value without
   a scheme completes to `https://`, and a value without a port to its
@@ -164,7 +164,7 @@ contract and the server binding replaced what 0.4.0 shipped.
 - BREAKING: `change_server` takes `offline`, `default`, or a URI; the
   bare and empty forms, which bound an invalid URI, are refused at the
   parse (zingo-adrs zingolib/0063). Its example in the command help names
-  `https://mainnet.zainod.zingolabs.dev:443` instead of `https://zec.rocks:443`.
+  `https://zec.global:443` instead of `https://zec.rocks:443`.
 - `servers`, an interactive-only command, prints the configured Session
   Indexer and probes nothing, where it printed the launch probe's ranking of
   the curated servers.

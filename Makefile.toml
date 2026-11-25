@@ -37,7 +37,7 @@ Zingolib test tasks
 Test front door — `makers test "$@"` is a containerized
 `cargo nextest run "$@"`, so every nextest idiom passes through:
   makers test                 the whole workspace
-  makers test -p zl-memo      one package
+  makers test -p zl-common    one package
   makers test some_test_name  positional test-name filter
   makers test --no-fail-fast  any nextest flag
 
@@ -74,7 +74,7 @@ The local-run task mirrors the PR test defaults:
   cargo nextest run --workspace --profile ci --retries 0
 
 Forward extra nextest flags after the task name:
-  makers container-test -p zl-memo
+  makers container-test -p zl-common
 
 Filter with a nextest expression:
   makers test -E 'package(zingolib) & not test(slow)'
@@ -306,7 +306,7 @@ container_nextest_run "$@"
 # every nextest idiom passes through untouched:
 #
 #   makers test                     the whole workspace
-#   makers test -p zl-memo          one package
+#   makers test -p zl-common        one package
 #   makers test some_test_name      positional test-name filter
 #
 # Two reserved first words expand to canned invocations:
@@ -404,7 +404,7 @@ if [[ "${#set_args[@]}" -gt 0 ]] && has_package_selection_args "$@"; then
 fi
 
 # `set_args` is empty for every invocation without a reserved word — a bare
-# `makers test`, `makers test -p zl-memo`, `makers test some_test_name` —
+# `makers test`, `makers test -p zl-common`, `makers test some_test_name` —
 # so it expands in the empty-array-safe form for the reason given above.
 exec makers container-test ${set_args[@]+"${set_args[@]}"} "$@"
 '''

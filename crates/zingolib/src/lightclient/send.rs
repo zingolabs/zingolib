@@ -10,9 +10,9 @@ use zcash_client_backend::proposal::{Proposal, ProposalError};
 use zcash_client_backend::zip321::TransactionRequest;
 use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zl_common::status::ConfirmationStatus;
 use zl_netutils::Indexer as _;
 use zl_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
-use zl_status::confirmation_status::ConfirmationStatus;
 
 use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
@@ -34,7 +34,7 @@ fn record_send_attempt(
     host: &crate::destination::Host,
     route: AttemptRoute,
     started: std::time::Instant,
-    outcome: &Result<String, zl_net_diag::NetOpFailure>,
+    outcome: &Result<String, zl_netutils::diag::NetOpFailure>,
     fault_domain: Option<FaultDomain>,
 ) {
     history.record(&IndexerAttempt {
@@ -55,7 +55,7 @@ fn record_send_attempt(
 #[error("{host}: {failure}")]
 pub(crate) struct TransmitError {
     host: String,
-    failure: zl_net_diag::NetOpFailure,
+    failure: zl_netutils::diag::NetOpFailure,
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -168,8 +168,12 @@ impl NakednetTarget {
     fn failure(
         status: &zl_netutils::Status,
         host: &crate::destination::Host,
-    ) -> zl_net_diag::NetOpFailure {
-        zl_net_diag::NetOpFailure::from_error(zl_net_diag::NetOpStage::RemoteHttp, host, status)
+    ) -> zl_netutils::diag::NetOpFailure {
+        zl_netutils::diag::NetOpFailure::from_error(
+            zl_netutils::diag::NetOpStage::RemoteHttp,
+            host,
+            status,
+        )
     }
 }
 
@@ -365,7 +369,7 @@ async fn transmit_to<T, F>(
 ) -> Result<(String, TransmitRoute), TransmitError>
 where
     T: TransmitTarget + Sync,
-    F: Fn(&T::Failure, &crate::destination::Host) -> zl_net_diag::NetOpFailure,
+    F: Fn(&T::Failure, &crate::destination::Host) -> zl_netutils::diag::NetOpFailure,
 {
     let started = std::time::Instant::now();
     let outcome = resilient_transmit(
@@ -1099,8 +1103,8 @@ mod transmit_error_seam {
     #[test]
     fn send_attempt_failure_is_classified_from_the_record() {
         let history = IndexerHistoryHandle::default();
-        let failure = zl_net_diag::NetOpFailure::message(
-            zl_net_diag::NetOpStage::RemoteConnect,
+        let failure = zl_netutils::diag::NetOpFailure::message(
+            zl_netutils::diag::NetOpStage::RemoteConnect,
             "indexer.example",
             "connection refused",
         );
@@ -1127,7 +1131,7 @@ mod built_transaction_shape {
     use zcash_protocol::PoolType;
     use zcash_protocol::consensus::{BlockHeight, BranchId};
     use zingo_common_components::protocol::ActivationHeights;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     use crate::lightclient::LightClient;
     use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
@@ -1176,6 +1180,9 @@ mod built_transaction_shape {
         let wallet = SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
             .orchard_note(100_000)
             .tip(tip)
+            // The NU7 expiry delta under test needs the NU7-active
+            // schedule, which the builder default defers.
+            .activation_heights(crate::testutils::mock_activation_heights())
             .build();
         let chain = wallet.chain_type();
 

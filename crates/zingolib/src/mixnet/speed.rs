@@ -1,129 +1,92 @@
-//! The one wave every speed-priority operation runs.
-//!
-//! The price run rides a Proven Client and opens a fixed-width wave through
-//! its Exit Node. Proof belongs to the client's birth, so no Sentinel rides
-//! the wave; the redraw survives as the safety net for an exit dying inside
-//! its epoch, keyed on a wave that not one target answered.
+//! Runs the requests of a speed-priority operation as one batch through
+//! one Proven Client. If no target responds, it draws a new client.
 
 #![forbid(unsafe_code)]
 
 use std::net::SocketAddr;
 
-/// The wave width every speed-priority operation uses: four connections
-/// through the one Nym client, which is the widest fan-out that kept each
-/// near its solo cost instead of blowing every probe's budget together —
-/// the 0-of-17 signature — and which counts connections rather than
-/// processes, so one calibration serves the spawned desktop binary and the
-/// client a mobile host runs in its own process.
-pub const WAVE_WIDTH: usize = 4;
+/// The maximum number of requests in flight at one time. With more than
+/// four connections through one Nym client, all requests exceed their time
+/// budget together.
+pub const MAX_CONCURRENT_REQUESTS: usize = 4;
 
-/// An operation that races targets through one Proven Client in a
-/// fixed-width wave, redrawing when a wave proves the exit died under it.
+/// An operation that sends requests to several targets through one Proven
+/// Client.
 pub(crate) trait SpeedPrioritized {
-    /// What this operation races: an indexer's endpoint, a price source.
+    /// The destination of one request.
     type Target: Send;
 
-    /// What one target yields, whether it answered or refused.
-    type Outcome: Send;
+    /// The result of one request.
+    type Response: Send;
 
-    /// The targets this operation races, in the order the wave takes them.
+    /// The label for log lines.
+    fn log_label(&self) -> &'static str;
+
+    /// The targets, in request order.
     fn targets(&self) -> Vec<Self::Target>;
 
-    /// Races one target through `dial`'s conduit, holding the guard for the
-    /// leg so the conduit counts it as outstanding.
-    fn probe(
+    /// Sends one request to `target` through `dial`.
+    fn request(
         &self,
         dial: zl_netutils::conduit::ConduitDial,
         target: Self::Target,
-    ) -> impl std::future::Future<Output = Self::Outcome> + Send;
+    ) -> impl std::future::Future<Output = Self::Response> + Send;
 
-    /// Whether the outcomes so far settle this operation, which ends the
-    /// wave with every remaining leg cancelled.
-    fn settled(&self, outcomes: &[Self::Outcome]) -> bool;
+    /// Returns true if the responses complete the operation.
+    fn is_complete(&self, responses: &[Self::Response]) -> bool;
 
-    /// Whether any target answered at all, the evidence separating a live
-    /// exit over unhealthy targets from an exit that died under the wave.
-    fn answered(&self, outcomes: &[Self::Outcome]) -> bool;
+    /// Returns true if at least one target responded.
+    fn has_response(&self, responses: &[Self::Response]) -> bool;
 
-    /// Acquires a Proven Client for one attempt, with the address it
-    /// listens on.
+    /// Acquires a Proven Client and its SOCKS5 address.
     fn acquire(
         &self,
     ) -> impl std::future::Future<
         Output = Result<(Member, SocketAddr), crate::mixnet::acquire::TransportError>,
     > + Send;
 
-    /// Disposes of a transport the operation is done with, in the
-    /// background: the answer is already in hand, and teardown is no reason
-    /// to keep a caller waiting.
-    fn dispose(&self, spent: Member);
+    /// Closes the client after a completed operation.
+    fn release(&self, used: Member);
 
-    /// Condemns a transport whose exit died under the operation, in the
-    /// background, remembering the failure before teardown.
-    fn abandon(&self, dead: Member);
-
-    /// Narrates one phase of the attempt.
-    fn narrate(&self, phase: SpeedProgress) {
-        let _ = phase;
-    }
+    /// Records the exit as failed, then closes the client.
+    fn mark_exit_failed(&self, failed: Member);
 }
 
-/// The transport every speed-priority operation rides: one Proven Client
-/// whose exit serves the whole wave.
+/// The client of one batch.
 pub(crate) type Member = crate::mixnet::pools::Member<crate::mixnet::MixnetProxy>;
 
-/// A phase of a speed-priority attempt, for the operation to narrate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SpeedProgress {
-    /// An attempt is acquiring its transport, counting draws from one.
-    Acquiring {
-        /// Which draw this is.
-        draw: usize,
-    },
-    /// The wave went wholly unanswered, so the exit is condemned, its
-    /// outcomes dropped, and a fresh Proven Client drawn.
-    ExitAbandoned {
-        /// Which draw's wave went unanswered.
-        draw: usize,
-    },
-}
-
-/// Runs `operation` until it settles or exhausts its targets, redrawing a
-/// fresh Proven Client whenever a wave goes wholly unanswered.
+/// Runs `operation` until it completes or every target got a request. If
+/// no target in a batch responds, it draws a new client and repeats. One
+/// deadline limits the whole run.
 pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     operation: &T,
-) -> Result<(Vec<T::Outcome>, Member), SpeedError> {
-    // One shared deadline bounds the whole run — every redraw, birth, and
-    // wave together — so the draw and birth budgets can no longer multiply
-    // into an unbounded go-online wait.
+) -> Result<(Vec<T::Response>, Member), SpeedError> {
     let deadline = tokio::time::Instant::now() + zl_netutils::time::SPEED_ACQUISITION_DEADLINE;
     let refusal = |draws: usize| SpeedError::DeadlineExhausted {
         draws,
         budget: zl_netutils::time::SPEED_ACQUISITION_DEADLINE,
     };
     for draw in 1..=MAX_SPEED_EXIT_DRAWS {
-        operation.narrate(SpeedProgress::Acquiring { draw });
+        tracing::info!(
+            "{}: acquiring transport, draw {draw}",
+            operation.log_label()
+        );
         let Ok(acquired) = tokio::time::timeout_at(deadline, operation.acquire()).await else {
             return Err(refusal(draw - 1));
         };
         let (member, socks5) = acquired?;
-        // One conduit per draw, so the count reflects the legs this wave has
-        // in flight and nothing outside it.
         let conduit = zl_netutils::conduit::MixnetConduit::over(socks5);
-        let Ok(wave) = tokio::time::timeout_at(deadline, run_wave(operation, &conduit)).await
+        let Ok(batch) = tokio::time::timeout_at(deadline, run_batch(operation, &conduit)).await
         else {
-            // The deadline, not the exit, ended this wave: the member
-            // retires without a verdict, because nothing was proven.
             member.retire().await;
             return Err(refusal(draw));
         };
-        match wave {
-            WaveEnd::Exhausted(outcomes) if !operation.answered(&outcomes) => {
-                operation.narrate(SpeedProgress::ExitAbandoned { draw });
-                operation.abandon(member);
+        match batch {
+            BatchEnd::Exhausted(responses) if !operation.has_response(&responses) => {
+                operation.mark_exit_failed(member);
             }
-            WaveEnd::Settled(outcomes) | WaveEnd::Exhausted(outcomes) => {
-                return Ok((outcomes, member));
+            BatchEnd::Completed(responses) | BatchEnd::Exhausted(responses) => {
+                return Ok((responses, member));
             }
         }
     }
@@ -133,8 +96,7 @@ pub(crate) async fn run_speed_prioritized<T: SpeedPrioritized>(
     })
 }
 
-/// Why a speed-priority operation reached no answer at all — the two ways
-/// that belong to the wave rather than to what the operation was racing.
+/// The reason a speed-priority operation got no response.
 #[derive(Debug, thiserror::Error)]
 pub enum SpeedError {
     /// The attempt's transport failed, at whatever stage its own error
@@ -153,7 +115,7 @@ pub enum SpeedError {
         /// The budget each was given before it was condemned.
         budget: std::time::Duration,
     },
-    /// The operation's one shared deadline elapsed before any wave settled.
+    /// The deadline passed before a batch completed.
     #[error(
         "the speed-prioritized operation exceeded its {}s acquisition deadline after {draws} draws",
         budget.as_secs()
@@ -166,38 +128,36 @@ pub enum SpeedError {
     },
 }
 
-/// How many exits one operation may draw: the first, and a fresh one for
-/// each wave that went wholly unanswered, bounded so a mixnet failing
-/// everywhere refuses in a stated time rather than drawing forever.
+/// The maximum number of exits that one operation draws.
 pub(crate) const MAX_SPEED_EXIT_DRAWS: usize = 6;
 
-/// How a wave ended.
+/// How a batch ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum WaveEnd<O> {
-    /// The operation settled: its outcomes, ending with the settling one.
-    Settled(Vec<O>),
-    /// Every target was raced and none settled the operation.
-    Exhausted(Vec<O>),
+pub(crate) enum BatchEnd<R> {
+    /// The operation completed.
+    Completed(Vec<R>),
+    /// Every target got a request and the operation did not complete.
+    Exhausted(Vec<R>),
 }
 
-/// Races `operation`'s targets through `conduit` in one full-width wave.
-pub(crate) async fn run_wave<T: SpeedPrioritized>(
+/// Sends the requests of `operation` through `conduit` as one batch.
+pub(crate) async fn run_batch<T: SpeedPrioritized>(
     operation: &T,
     conduit: &zl_netutils::conduit::MixnetConduit,
-) -> WaveEnd<T::Outcome> {
+) -> BatchEnd<T::Response> {
     use futures::StreamExt as _;
 
-    let mut outcomes: Vec<T::Outcome> = Vec::new();
-    let mut legs = futures::stream::iter(operation.targets())
-        .map(|target| operation.probe(conduit.dial(), target))
-        .buffer_unordered(WAVE_WIDTH);
-    while let Some(outcome) = legs.next().await {
-        outcomes.push(outcome);
-        if operation.settled(&outcomes) {
-            return WaveEnd::Settled(outcomes);
+    let mut responses: Vec<T::Response> = Vec::new();
+    let mut requests = futures::stream::iter(operation.targets())
+        .map(|target| operation.request(conduit.dial(), target))
+        .buffer_unordered(MAX_CONCURRENT_REQUESTS);
+    while let Some(response) = requests.next().await {
+        responses.push(response);
+        if operation.is_complete(&responses) {
+            return BatchEnd::Completed(responses);
         }
     }
-    WaveEnd::Exhausted(outcomes)
+    BatchEnd::Exhausted(responses)
 }
 
 #[cfg(test)]
@@ -210,13 +170,17 @@ mod tests {
 
     impl SpeedPrioritized for HangingAcquire {
         type Target = usize;
-        type Outcome = bool;
+        type Response = bool;
+
+        fn log_label(&self) -> &'static str {
+            "hanging acquire"
+        }
 
         fn targets(&self) -> Vec<usize> {
             Vec::new()
         }
 
-        fn probe(
+        fn request(
             &self,
             _dial: zl_netutils::conduit::ConduitDial,
             _target: usize,
@@ -224,11 +188,11 @@ mod tests {
             std::future::ready(false)
         }
 
-        fn settled(&self, _outcomes: &[bool]) -> bool {
+        fn is_complete(&self, _responses: &[bool]) -> bool {
             false
         }
 
-        fn answered(&self, _outcomes: &[bool]) -> bool {
+        fn has_response(&self, _responses: &[bool]) -> bool {
             false
         }
 
@@ -240,11 +204,9 @@ mod tests {
             std::future::pending()
         }
 
-        fn dispose(&self, _spent: Member) {}
+        fn release(&self, _used: Member) {}
 
-        fn abandon(&self, _dead: Member) {}
-
-        fn narrate(&self, _phase: SpeedProgress) {}
+        fn mark_exit_failed(&self, _failed: Member) {}
     }
 
     /// HYPOTHESIS: one shared deadline bounds the whole run, so an
@@ -253,12 +215,12 @@ mod tests {
     /// the run outlives the deadline.
     #[tokio::test(start_paused = true)]
     async fn the_shared_deadline_ends_a_hanging_acquisition() {
-        let outcome = tokio::time::timeout(
+        let ended = tokio::time::timeout(
             zl_netutils::time::SPEED_ACQUISITION_DEADLINE + zl_netutils::time::SENTINEL_BUDGET,
             run_speed_prioritized(&HangingAcquire),
         )
         .await;
-        let Ok(Err(refusal)) = outcome else {
+        let Ok(Err(refusal)) = ended else {
             panic!("the run must refuse at its deadline, not hang past it");
         };
         assert!(
@@ -271,85 +233,85 @@ mod tests {
         );
     }
 
-    /// An operation whose targets answer from a script, so the wave's own
-    /// rules are testable without a tunnel.
+    /// An operation whose targets respond from a script.
     struct Scripted {
-        answers: Vec<bool>,
+        responds: Vec<bool>,
     }
 
     impl SpeedPrioritized for Scripted {
         type Target = usize;
-        type Outcome = bool;
+        type Response = bool;
 
-        fn targets(&self) -> Vec<usize> {
-            (0..self.answers.len()).collect()
+        fn log_label(&self) -> &'static str {
+            "scripted"
         }
 
-        fn probe(
+        fn targets(&self) -> Vec<usize> {
+            (0..self.responds.len()).collect()
+        }
+
+        fn request(
             &self,
             _dial: zl_netutils::conduit::ConduitDial,
             target: usize,
         ) -> impl std::future::Future<Output = bool> + Send {
-            let answered = self.answers[target];
-            async move { answered }
+            let responded = self.responds[target];
+            async move { responded }
         }
 
-        fn settled(&self, outcomes: &[bool]) -> bool {
-            outcomes.iter().any(|answered| *answered)
+        fn is_complete(&self, responses: &[bool]) -> bool {
+            responses.iter().any(|responded| *responded)
         }
 
-        fn answered(&self, outcomes: &[bool]) -> bool {
-            outcomes.iter().any(|answered| *answered)
+        fn has_response(&self, responses: &[bool]) -> bool {
+            responses.iter().any(|responded| *responded)
         }
 
-        // The scripted operation exercises the wave alone, never the redraw
-        // loop, so it acquires nothing and disposes of nothing.
         async fn acquire(
             &self,
         ) -> Result<(Member, SocketAddr), crate::mixnet::acquire::TransportError> {
             Err(crate::mixnet::acquire::TransportError::NoAcquirer)
         }
 
-        fn dispose(&self, _spent: Member) {}
+        fn release(&self, _used: Member) {}
 
-        fn abandon(&self, _dead: Member) {}
+        fn mark_exit_failed(&self, _failed: Member) {}
     }
 
-    /// HYPOTHESIS: the wave runs at its full fixed width, no lane withheld,
-    /// now that proof belongs to the client's birth. Falsified if the width
-    /// varies with the work.
+    /// HYPOTHESIS: the limit of requests in flight is four.
     #[test]
-    fn the_wave_runs_at_full_width() {
-        assert_eq!(WAVE_WIDTH, 4);
+    fn a_batch_keeps_four_requests_in_flight() {
+        assert_eq!(MAX_CONCURRENT_REQUESTS, 4);
     }
 
-    /// HYPOTHESIS: a wave ends the moment its operation settles, carrying
-    /// the settling outcome and no more, and reports exhaustion when
-    /// nothing settles it. Falsified if a settled wave keeps racing or an
-    /// unsettled one claims to have settled.
+    /// HYPOTHESIS: a batch stops when its operation completes, and reports
+    /// exhaustion when it never completes.
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_wave_ends_when_its_operation_settles() {
+    async fn a_batch_ends_when_its_operation_completes() {
         let conduit = zl_netutils::conduit::MixnetConduit::over(
             "127.0.0.1:1".parse().expect("a static address"),
         );
 
-        let settles = Scripted {
-            answers: vec![false, true, false],
+        let completes = Scripted {
+            responds: vec![false, true, false],
         };
-        match run_wave(&settles, &conduit).await {
-            WaveEnd::Settled(outcomes) => {
-                assert!(outcomes.iter().any(|answered| *answered));
-                assert!(outcomes.len() <= 3, "the wave stops at the settling leg");
+        match run_batch(&completes, &conduit).await {
+            BatchEnd::Completed(responses) => {
+                assert!(responses.iter().any(|responded| *responded));
+                assert!(
+                    responses.len() <= 3,
+                    "the batch stops at the completing request"
+                );
             }
-            other => panic!("a settling operation ended as {other:?}"),
+            other => panic!("a completing operation ended as {other:?}"),
         }
 
         let never = Scripted {
-            answers: vec![false, false],
+            responds: vec![false, false],
         };
-        match run_wave(&never, &conduit).await {
-            WaveEnd::Exhausted(outcomes) => assert_eq!(outcomes.len(), 2),
-            other => panic!("an unsettled operation ended as {other:?}"),
+        match run_batch(&never, &conduit).await {
+            BatchEnd::Exhausted(responses) => assert_eq!(responses.len(), 2),
+            other => panic!("an incomplete operation ended as {other:?}"),
         }
     }
 }

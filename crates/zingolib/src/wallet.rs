@@ -1,7 +1,6 @@
 //! Core module, containing `crate::wallet::LightWallet` with methods for all wallet functionality.
 
 use std::collections::{BTreeMap, HashMap};
-use std::num::NonZeroU32;
 
 use bip0039::Mnemonic;
 
@@ -11,13 +10,15 @@ use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zcash_transparent::keys::NonHardenedChildIndex;
 
+use zl_netutils::lightwallet_protocol::StandardFee;
+
 use pepper_sync::keys::transparent::{TransparentScope, encode_address};
 use pepper_sync::wallet::{KeyIdInterface, PoolActivation, ScanTarget, ShardTrees};
 use pepper_sync::{
     keys::transparent::TransparentAddressId,
-    wallet::{NullifierMap, OutputId, SyncState, WalletBlock, WalletTransaction},
+    wallet::{NullifierMap, OutputId, SyncState, TransactionRecord, WalletBlock},
 };
-use zl_price::PriceList;
+use zl_common::price::PriceList;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::data::proposal::ZingoProposal;
@@ -26,13 +27,13 @@ use keys::unified::{UnifiedAddressId, UnifiedKeyStore};
 
 pub mod error;
 pub mod expiry;
-pub(crate) mod legacy;
 pub mod traits;
 pub mod utils;
 
 // these mods contain pieces of the impl LightWallet
 pub mod balance;
 pub mod disk;
+pub mod fees;
 pub mod invariants;
 pub mod keys;
 pub mod locks;
@@ -41,6 +42,7 @@ pub(crate) mod note_selection;
 pub mod output;
 pub mod propose;
 pub mod send;
+pub(crate) mod spend_evidence;
 pub mod summary;
 pub mod sync;
 pub mod transaction;
@@ -50,52 +52,7 @@ mod zcb_traits;
 pub use pepper_sync::config::{
     PerformanceLevel, SyncConfig, TransparentAddressDiscovery, TransparentAddressDiscoveryScopes,
 };
-
-/// Wallet settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WalletSettings {
-    /// Sync configuration.
-    pub sync_config: pepper_sync::config::SyncConfig,
-    /// Minimum confirmations.
-    pub min_confirmations: NonZeroU32,
-}
-
-impl Default for WalletSettings {
-    fn default() -> Self {
-        Self {
-            sync_config: SyncConfig::default(),
-            min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
-        }
-    }
-}
-
-/// Provides necessary information to recover the wallet without the wallet file.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct RecoveryInfo {
-    /// 24-word mnemonic phrase.
-    pub seed_phrase: String,
-    /// Block height wallet was created.
-    pub birthday: u64,
-    /// Number of accounts in use.
-    pub no_of_accounts: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub birthday_adjusted_from: Option<u64>,
-}
-
-impl std::fmt::Display for RecoveryInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Wallet backup info:
-{{
-    seed phrase: {}
-    birthday: {}
-    no_of_accounts: {}
-}}",
-            self.seed_phrase, self.birthday, self.no_of_accounts,
-        )
-    }
-}
+pub use zl_file_format::{RecoveryInfo, WalletSettings};
 
 /// Base data required to construct a new [`crate::wallet::LightWallet`].
 pub(crate) struct WalletBase {
@@ -137,7 +94,7 @@ pub struct LightWallet {
     /// Wallet blocks
     pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
     /// Wallet transactions
-    pub wallet_transactions: HashMap<TxId, WalletTransaction>,
+    pub wallet_transactions: HashMap<TxId, TransactionRecord>,
     /// Nullifier map
     pub nullifier_map: NullifierMap,
     /// Outpoint map
@@ -160,6 +117,11 @@ pub struct LightWallet {
     pub migration: Option<migration::MigrationState>,
     /// Send proposal
     send_proposal: Option<ZingoProposal>,
+    /// The connected indexer's `GetStandardFee` report, fetched once at
+    /// first contact and read back by [`Self::effective_fee_rule`].
+    /// Process-lifetime state beside the proposal locks, never written to
+    /// the wallet file, so an event can carry it (zingolabs/zingolib#2820).
+    standard_fee: Option<fees::StandardFeeReport>,
     /// Advisory output locks reserving an in-flight proposal's inputs. Process
     /// -lifetime state beside `send_proposal`, never written to the wallet file.
     output_locks: locks::OutputLocks,
@@ -249,6 +211,7 @@ impl LightWallet {
             migration: None,
             save_required: true,
             send_proposal: None,
+            standard_fee: None,
             output_locks: locks::OutputLocks::default(),
         };
         wallet.raise_birthday_to_sapling_activation();
@@ -298,6 +261,35 @@ impl LightWallet {
     #[must_use]
     pub fn chain_type(&self) -> ChainType {
         self.chain_type
+    }
+
+    /// Caches the connected indexer's `GetStandardFee` report, `None` for a
+    /// fetch that failed (an old backend answers `Unimplemented`). Each
+    /// connect overwrites the previous indexer's report.
+    pub(crate) fn record_standard_fee(&mut self, fetched: Option<StandardFee>) {
+        self.standard_fee = fetched.map(fees::StandardFeeReport::from);
+    }
+
+    /// Returns the cached `GetStandardFee` report of the indexer this
+    /// session last connected to.
+    #[must_use]
+    pub(crate) fn standard_fee(&self) -> Option<fees::StandardFeeReport> {
+        self.standard_fee
+    }
+
+    /// The fee rule every proposal, shield, OP_RETURN send, and migration
+    /// prices with: ZIP 317 with the marginal fee raised to the node's
+    /// reported standard fee, under the revision in force at the expected
+    /// mining height. The single production definition; see
+    /// [`fees::effective_fee_rule`].
+    pub(crate) fn effective_fee_rule(
+        &self,
+    ) -> zcash_primitives::transaction::fees::zip317::FeeRule {
+        fees::effective_fee_rule(
+            self.standard_fee,
+            &self.chain_type,
+            self.sync_state.last_known_chain_height(),
+        )
     }
 
     /// Returns the wallet's mnemonic for internal operations.
@@ -447,7 +439,7 @@ impl LightWallet {
                     .get_confirmed_height()
                     .is_some_and(|height| height <= fully_scanned_height)
             })
-            .map(pepper_sync::wallet::WalletTransaction::datetime)
+            .map(pepper_sync::wallet::TransactionRecord::datetime)
             .collect();
 
         let prune_below = self
@@ -623,5 +615,19 @@ mod tests {
         ];
         let anchor = orchard::Anchor::from(MerkleHashOrchard::from_bytes(&anchor).unwrap());
         assert_eq!(orchard::Anchor::from(orchard_tree.root()), anchor);
+    }
+}
+
+#[cfg(test)]
+mod shardtree_boundary {
+    use pepper_sync::shardtree_ext::{DOWNSTREAM_BOUNDARY_PATH, assert_raw_boolean_calls_confined};
+
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        assert_raw_boolean_calls_confined(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            None,
+            DOWNSTREAM_BOUNDARY_PATH,
+        );
     }
 }

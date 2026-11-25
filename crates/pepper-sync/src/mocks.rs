@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 
 use crate::wallet::{
-    NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, WalletBlock, WalletTransaction,
+    NullifierMap, OutputId, ScanTarget, ShardTrees, SyncState, TransactionRecord, WalletBlock,
     traits::{
         SyncBlocks, SyncNullifiers, SyncOutPoints, SyncShardTrees, SyncTransactions, SyncWallet,
     },
@@ -10,8 +10,120 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
-use zcash_protocol::{TxId, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use tokio::sync::mpsc;
+use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
+
+use crate::{
+    client,
+    protocol::{self, SubtreeRoot},
+    witness,
+};
+
+pub(crate) const BLOCK_HASH_BYTES: usize = 32;
+pub(crate) const EMPTY_TREE_HEX: &str = "000000";
+pub(crate) const OMITTED_TREE_HEX: &str = "";
+
+pub(crate) fn empty_trees(block_height: BlockHeight) -> protocol::TreeState {
+    protocol::TreeState {
+        height: u64::from(block_height),
+        hash: hex::encode([0u8; BLOCK_HASH_BYTES]),
+        sapling_tree: EMPTY_TREE_HEX.to_string(),
+        orchard_tree: EMPTY_TREE_HEX.to_string(),
+        ironwood_tree: EMPTY_TREE_HEX.to_string(),
+        ..Default::default()
+    }
+}
+
+pub(crate) fn with_tree_hex(
+    mut tree_state: protocol::TreeState,
+    pool: ShieldedPool,
+    tree_hex: &str,
+) -> protocol::TreeState {
+    *witness::tree_hex_mut(&mut tree_state, pool) = tree_hex.to_string();
+
+    tree_state
+}
+
+fn spawn_fetcher(
+    mut answer: impl FnMut(client::FetchRequest) -> Result<(), client::FetchRequest> + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(fetch_request) = fetch_request_receiver.recv().await {
+            if answer(fetch_request).is_err() {
+                panic!("unexpected fetch request");
+            }
+        }
+    });
+
+    fetch_request_sender
+}
+
+fn answer_tree_state(
+    tree_state_at: &impl Fn(BlockHeight) -> protocol::TreeState,
+    fetch_request: client::FetchRequest,
+) -> Result<(), client::FetchRequest> {
+    match fetch_request {
+        client::FetchRequest::TreeState(reply_sender, block_height) => {
+            let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+            Ok(())
+        }
+        other => Err(other),
+    }
+}
+
+fn answer_transaction(
+    reply_to: &mut impl FnMut(TxId) -> Option<TransactionReply>,
+    fetch_request: client::FetchRequest,
+) -> Result<(), client::FetchRequest> {
+    match fetch_request {
+        client::FetchRequest::Transaction(reply_sender, txid) => {
+            if let Some(reply) = reply_to(txid) {
+                let _ignore_error = reply_sender.send(reply);
+            }
+            Ok(())
+        }
+        other => Err(other),
+    }
+}
+
+pub(crate) type TransactionReply = Result<protocol::RawTransaction, protocol::Status>;
+
+pub(crate) fn spawn_tree_state_fetcher(
+    tree_state_at: impl Fn(BlockHeight) -> protocol::TreeState + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| answer_tree_state(&tree_state_at, fetch_request))
+}
+
+pub(crate) fn spawn_transaction_fetcher(
+    mut reply_to: impl FnMut(TxId) -> Option<TransactionReply> + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| answer_transaction(&mut reply_to, fetch_request))
+}
+
+pub(crate) fn spawn_tree_state_and_transaction_fetcher(
+    tree_state_at: impl Fn(BlockHeight) -> protocol::TreeState + Send + 'static,
+    mut reply_to: impl FnMut(TxId) -> Option<TransactionReply> + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| {
+        answer_tree_state(&tree_state_at, fetch_request)
+            .or_else(|fetch_request| answer_transaction(&mut reply_to, fetch_request))
+    })
+}
+
+pub(crate) fn spawn_chain_tip_fetcher(
+    chain_height: u32,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| match fetch_request {
+        client::FetchRequest::ChainTip(reply_sender) => {
+            let _ignore_error = reply_sender.send(Ok(protocol::block_id_at(
+                BlockHeight::from_u32(chain_height),
+            )));
+            Ok(())
+        }
+        other => Err(other),
+    })
+}
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {
@@ -92,7 +204,7 @@ pub(super) struct MockWallet {
     get_sync_state_patch: Option<SyncStatePatch>,
     get_birthday_patch: Option<GetBirthdayPatch>,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    wallet_transactions: HashMap<TxId, TransactionRecord>,
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
@@ -106,7 +218,7 @@ pub(super) struct MockWalletBuilder {
     get_birthday_patch: Option<GetBirthdayPatch>,
     sync_state: SyncState,
     wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
-    wallet_transactions: HashMap<TxId, WalletTransaction>,
+    wallet_transactions: HashMap<TxId, TransactionRecord>,
     nullifier_map: NullifierMap,
     outpoint_map: BTreeMap<OutputId, ScanTarget>,
     shard_trees: ShardTrees,
@@ -141,7 +253,7 @@ impl MockWalletBuilder {
 
     pub(crate) fn wallet_transactions(
         mut self,
-        wallet_transactions: HashMap<TxId, WalletTransaction>,
+        wallet_transactions: HashMap<TxId, TransactionRecord>,
     ) -> Self {
         self.wallet_transactions = wallet_transactions;
         self
@@ -291,7 +403,7 @@ impl SyncTransactions for MockWallet {
     fn get_wallet_transactions(
         &self,
     ) -> Result<
-        &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        &std::collections::HashMap<zcash_protocol::TxId, crate::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&self.wallet_transactions)
@@ -300,7 +412,7 @@ impl SyncTransactions for MockWallet {
     fn get_wallet_transactions_mut(
         &mut self,
     ) -> Result<
-        &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::WalletTransaction>,
+        &mut std::collections::HashMap<zcash_protocol::TxId, crate::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&mut self.wallet_transactions)

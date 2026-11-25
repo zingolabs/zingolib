@@ -30,12 +30,11 @@ nym = ["zingolib/nym"]
 nakednet-test-mode = []
 
 [dependencies]
-pepper-sync = { workspace = true }
 zingo_common_components = { workspace = true }
-# No direct zl-netutils dependency: this consumer funnels through
-# zingolib's re-exports (`zingolib::netutils`, ADR 0024 decision 7). The
-# dev-dependency below reaches netutils' test scaffolding directly, which
-# ships nothing and creates no duplicate copy.
+# This consumer funnels through zingolib's re-exports (`zingolib::netutils`,
+# ADR 0024 decision 7), except for the `diag` failure types, which the funnel
+# does not carry, so netutils is a direct dependency below. The
+# dev-dependency reaches netutils' test scaffolding, which ships nothing.
 zingolib = { workspace = true, features = ["perspective"] }
 
 zcash_address = { workspace = true }
@@ -51,7 +50,6 @@ json = { workspace = true }
 log = { workspace = true }
 nonempty = { workspace = true }
 rustyline = { workspace = true }
-zl-status = { workspace = true }
 shellwords = { workspace = true }
 # macros + time back the transmit heartbeat's select!/interval; rt-multi-thread
 # backs the command runtime (previously inherited via feature unification).
@@ -59,7 +57,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 tracing-subscriber = { workspace = true }
 zip32 = { workspace = true }
 thiserror.workspace = true
-zl-net-diag.workspace = true
+zl-netutils = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -74,5 +72,4 @@ zl-netutils = { workspace = true, features = ["testutils"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "test-util"] }
 tokio-stream = "0.1"
 tonic = { workspace = true }
-zl-net-diag.workspace = true
 zingo_grpc_proxy = { git = "https://github.com/zingolabs/grpc_proxy.git", rev = "bad24e29529a0bb381f71f02f977752c20c26613" }

@@ -1597,6 +1597,7 @@ impl LightClient {
                 let (parts_total, value_total) = match &state.phase {
                     MigrationPhase::Planned | MigrationPhase::NoteSplitting { .. } => {
                         let plan = crate::wallet::migration::plan_migration(
+                            &wallet.effective_fee_rule(),
                             &wallet.live_v2_note_values(state.account),
                             wallet.splits_confirm_post_activation(),
                             &state.params,
@@ -2020,7 +2021,7 @@ impl LightClient {
                 wallet.wallet_transactions.get(txid).is_some_and(|tx| {
                     matches!(
                         tx.status(),
-                        zl_status::confirmation_status::ConfirmationStatus::Calculated(_)
+                        zl_common::status::ConfirmationStatus::Calculated(_)
                     )
                 })
             })
@@ -2265,9 +2266,7 @@ impl LightClient {
                     statuses.iter().enumerate().find_map(|(i, status)| {
                         matches!(
                             status,
-                            Some(zl_status::confirmation_status::ConfirmationStatus::Failed(
-                                _
-                            )) | None
+                            Some(zl_common::status::ConfirmationStatus::Failed(_)) | None
                         )
                         .then_some(txids[i])
                     }),
@@ -2299,6 +2298,7 @@ impl crate::wallet::LightWallet {
     ) -> Result<MigrationPlan, crate::wallet::error::WalletError> {
         let params = MigrationParams::provisional(self.chain_type());
         Ok(plan_migration(
+            &self.effective_fee_rule(),
             &self.migration_note_values(account)?,
             self.splits_confirm_post_activation(),
             &params,
@@ -2371,13 +2371,13 @@ fn immediate_migration_entry_gate(
 }
 
 /// The separator between two layers of a rendered cause chain, matching the
-/// rendering `zl_net_diag` gives its own failure records.
+/// rendering `zl_netutils::diag` gives its own failure records.
 pub(crate) const CAUSE_CHAIN_SEPARATOR: &str = ": ";
 
 /// Renders every layer of a failure's cause chain into the one text a batch
 /// report carries across serde.
 fn render_cause_chain(error: &LightClientError) -> String {
-    zl_net_diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
+    zl_netutils::diag::chain_texts(error).join(CAUSE_CHAIN_SEPARATOR)
 }
 
 /// Records one part submission's own route evidence in the cross-session
@@ -3017,14 +3017,11 @@ mod tests {
                 .grid(wallet.chain_type())
                 .index_of(wallet.sync_state.last_known_chain_height().unwrap());
             // The user insistently spends the reserved note.
-            wallet
-                .wallet_transactions
-                .values_mut()
-                .flat_map(|tx| tx.orchard_notes_mut())
-                .filter(|note| note.output_id() == bound_note.output_id)
-                .for_each(|note| {
-                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
-                });
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                TxId::from_bytes([9; 32]),
+                |note| note.output_id() == bound_note.output_id,
+            );
 
             let mut part = assigned_part_with_witness(bound_note, bucket, bucket - 1);
             let result = wallet
@@ -3178,7 +3175,7 @@ mod tests {
     /// into its denomination cohort. It is never silently skipped
     /// either: reconcile classifies it awaiting its expiry, visible to
     /// status, and the privacy-restoring rebuild follows once the
-    /// Spend-Evidence Height passes the expiry.
+    /// Spend-Evidence Ceiling passes the expiry.
     #[tokio::test]
     async fn overdue_signed_part_is_reported_awaiting_expiry_not_skipped() {
         use zcash_protocol::consensus::BlockHeight;
@@ -3370,11 +3367,11 @@ mod tests {
     /// reporting the migration vanished mid-split.
     #[tokio::test]
     async fn mid_round_status_projects_over_pending_outputs() {
-        use pepper_sync::wallet::{OutputId, WalletTransaction};
+        use pepper_sync::wallet::{OutputId, TransactionRecord};
         use zcash_primitives::transaction::TxId;
         use zcash_protocol::consensus::BlockHeight;
         use zcash_protocol::memo::Memo;
-        use zl_status::confirmation_status::ConfirmationStatus;
+        use zl_common::status::ConfirmationStatus;
 
         use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
 
@@ -3405,7 +3402,7 @@ mod tests {
             .collect();
         wallet.wallet_transactions.insert(
             round_txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            TransactionRecord::new_for_test_with_orchard_notes(
                 round_txid,
                 ConfirmationStatus::Transmitted(BlockHeight::from_u32(361)),
                 outputs,
@@ -3414,6 +3411,7 @@ mod tests {
         );
         let params = MigrationParams::provisional(wallet.chain_type());
         let expected = crate::wallet::migration::plan_migration(
+            &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
             &[600_000_000, 600_000_000],
             wallet.splits_confirm_post_activation(),
             &params,

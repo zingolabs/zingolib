@@ -9,7 +9,7 @@ use pepper_sync::wallet::{
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317::MARGINAL_FEE;
 use zcash_protocol::value::Zatoshis;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use super::LightWallet;
 use super::balance::AccountBalance;
@@ -220,7 +220,7 @@ fn balance_lines<Op: OutputInterface>(
 #[cfg(test)]
 mod tests {
     use zcash_primitives::transaction::TxId;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     use pepper_sync::wallet::OutputInterface as _;
 
@@ -249,11 +249,11 @@ mod tests {
         let client = funded_client().await;
         {
             let mut wallet = client.wallet().write().await;
-            for transaction in wallet.wallet_transactions.values_mut() {
-                for note in transaction.orchard_notes_mut() {
-                    note.set_spending_transaction(Some(TxId::from_bytes([9; 32])));
-                }
-            }
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                TxId::from_bytes([9; 32]),
+                |_| true,
+            );
         }
         let violations = client.wallet().read().await.invariant_violations();
         assert!(
@@ -272,19 +272,16 @@ mod tests {
             let mut wallet = client.wallet().write().await;
             wallet.wallet_transactions.insert(
                 failed,
-                pepper_sync::wallet::WalletTransaction::new_for_test(
+                pepper_sync::wallet::TransactionRecord::new_for_test(
                     failed,
                     ConfirmationStatus::Failed(5.into()),
                 ),
             );
-            for transaction in wallet.wallet_transactions.values_mut() {
-                if transaction.txid() == failed {
-                    continue;
-                }
-                for note in transaction.orchard_notes_mut() {
-                    note.set_spending_transaction(Some(failed));
-                }
-            }
+            crate::testutils::synthetic_wallet::mark_orchard_notes_spent(
+                &mut wallet,
+                failed,
+                |note| note.output_id().txid() != failed,
+            );
         }
         let violations = client.wallet().read().await.invariant_violations();
         assert!(

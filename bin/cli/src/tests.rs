@@ -795,7 +795,7 @@ mod sync {
 
 #[cfg(feature = "nym")]
 mod sync_recovery {
-    use pepper_sync::error::SyncRecoveryObservables;
+    use zingolib::SyncRecoveryObservables;
 
     use crate::{RecoveryAction, SYNC_RECOVERY_ATTEMPT_BUDGET, plan_recovery};
 
@@ -1147,8 +1147,8 @@ mod config_template {
 
     mod zingo_config {
         use super::*;
-        use pepper_sync::config::PerformanceLevel;
         use std::num::NonZeroU32;
+        use zingolib::PerformanceLevel;
         use zingolib::{
             config::WalletConfig,
             wallet::{SyncConfig, TransparentAddressDiscovery},

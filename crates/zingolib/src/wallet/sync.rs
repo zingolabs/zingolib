@@ -174,7 +174,7 @@ impl SyncTransactions for LightWallet {
     fn get_wallet_transactions(
         &self,
     ) -> Result<
-        &HashMap<zcash_primitives::transaction::TxId, pepper_sync::wallet::WalletTransaction>,
+        &HashMap<zcash_primitives::transaction::TxId, pepper_sync::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&self.wallet_transactions)
@@ -183,7 +183,7 @@ impl SyncTransactions for LightWallet {
     fn get_wallet_transactions_mut(
         &mut self,
     ) -> Result<
-        &mut HashMap<zcash_primitives::transaction::TxId, pepper_sync::wallet::WalletTransaction>,
+        &mut HashMap<zcash_primitives::transaction::TxId, pepper_sync::wallet::TransactionRecord>,
         Self::Error,
     > {
         Ok(&mut self.wallet_transactions)

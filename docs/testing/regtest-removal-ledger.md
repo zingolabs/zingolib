@@ -338,7 +338,7 @@ mock indexer** (`crates/zingolib/src/testutils/mock_indexer.rs`): an in-process
 `CompactTxStreamer` server over a fabricated chain, so the wallet's REAL
 pipeline (`GrpcIndexer`, pepper-sync scanning, record building, spend
 bookkeeping, transparent self-receipts) runs end to end with no zebrad
-or zainod. Funding transactions are built (not faked) by synthetic
+or zingod. Funding transactions are built (not faked) by synthetic
 faucet wallets through the build-without-broadcast seam, so their
 outputs decrypt and spend like real ones.
 
@@ -468,7 +468,7 @@ Twins (one `cargo nextest run -p zingolib` invocation):
 | from_t_z_o_tz_to_zo_tzo_to_orchard (mock) | PASS | 80.3s |
 
 Live originals (one `cargo nextest run -p libtonode-tests` invocation,
-zainod + zebrad per test; total wall clock 244s):
+zingod + zebrad per test; total wall clock 244s):
 
 | live original | result | time |
 |---|---|---|
@@ -489,7 +489,7 @@ Both sides green on the same tree, same day. The aggregate cost ratio:
 the eight twins total ~191s (dominated by proving and repeated sync
 rounds, no processes spawned); the eight live originals total ~960s of
 test time across the parallel 244s wall clock, each spawning a
-zebrad + zainod pair. The twins' arithmetic matched the live pins
+zebrad + zingod pair. The twins' arithmetic matched the live pins
 without adjustment on first passing run, including every
 transaction-summary literal in test 7 except the documented
 faucet-economics fee.
@@ -515,7 +515,11 @@ faucet-economics fee.
 Each line names a guarantee that needs a real network and the cell that
 carries it under `libtonode-tests/tests/testnet/`, behind the non-default
 `testnet` feature, compiled on every pull request and run only against the
-zingolabs zainod testnet node once it exists.
+zingolabs zingod testnet node once it exists.
+
+Since 2026-11-20 the cells sit under `crates/zingolib/tests/testnet/`,
+behind the `testnet` feature of `zingolib`: `libtonode-tests` folded into
+`zingolib`, and each cell kept its module and its name.
 
 - reload_wallet_after_short_sync (62) and the four GloryGoddess self-sends from zingolib's send.rs tests: `reload::reload_wallet_after_short_sync` and `glory_goddess::testnet_send_to_self_*`, no longer `#[ignore]`.
 - add_subtree_roots (15): `subtree_roots::add_subtree_roots`, against testnet instead of the mainnet indexer the default suite dialed; the mock chain serves no subtree roots, so both halves are the real indexer's.

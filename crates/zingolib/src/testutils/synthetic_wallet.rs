@@ -27,7 +27,8 @@ use zcash_keys::keys::UnifiedSpendingKey;
 
 use pepper_sync::sync::{ScanPriority, ScanRange};
 use pepper_sync::wallet::{
-    IronwoodNote, OrchardNote, OutputId, SaplingNote, SyncState, TransparentCoin, WalletTransaction,
+    IronwoodNote, OrchardNote, OutputId, OutputInterface as _, SaplingNote, SyncState,
+    TransactionRecord, TransparentCoin,
 };
 use zcash_primitives::transaction::TxId;
 #[cfg(test)]
@@ -37,7 +38,7 @@ use zcash_protocol::consensus::Parameters as _;
 use zcash_protocol::memo::Memo;
 use zcash_protocol::value::Zatoshis;
 use zingo_common_components::protocol::ActivationHeights;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 use crate::config::{ChainType, WalletConfig};
 use crate::mocks::SaplingCryptoNoteBuilder;
@@ -65,12 +66,17 @@ pub struct SyntheticWalletBuilder {
 
 impl SyntheticWalletBuilder {
     /// A regtest wallet for `mnemonic` with birthday 1. The chain is
-    /// considered fully scanned through [`Self::tip`] (default 20).
+    /// considered fully scanned through [`Self::tip`] (default 20). The
+    /// schedule defers NU7, so the suite prices at the revision 1 standard
+    /// its pinned fee literals were derived under; the wallet carries no
+    /// backend report and would otherwise price at the reduced standard.
     pub fn new(mnemonic: &str) -> Self {
         Self {
             mnemonic: mnemonic.to_string(),
             tip: 20,
-            activation_heights: crate::testutils::mock_activation_heights(),
+            activation_heights: crate::testutils::mock_activation_heights_with(|era| {
+                era.set_nu7(None)
+            }),
             ironwood_note_values: Vec::new(),
             orchard_note_values: Vec::new(),
             sapling_note_values: Vec::new(),
@@ -191,7 +197,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_ironwood_notes(
+                TransactionRecord::new_for_test_with_ironwood_notes(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(index).unwrap(),
@@ -232,7 +238,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test_with_orchard_notes(
+                TransactionRecord::new_for_test_with_orchard_notes(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(note_count + index).unwrap(),
@@ -278,7 +284,7 @@ impl SyntheticWalletBuilder {
             .with_nullifier_for_test(sapling_nullifiers.assign_unique_nullifier().build());
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test(
+                TransactionRecord::new_for_test(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(note_count + index).unwrap(),
@@ -347,7 +353,7 @@ impl SyntheticWalletBuilder {
             );
             wallet.wallet_transactions.insert(
                 txid,
-                WalletTransaction::new_for_test(
+                TransactionRecord::new_for_test(
                     txid,
                     ConfirmationStatus::Confirmed(BlockHeight::from_u32(
                         2 + u32::try_from(shielded_note_count + index).unwrap(),
@@ -422,6 +428,21 @@ pub(crate) fn external_tex_address() -> String {
     )
 }
 
+/// - Sets the spending transaction of every orchard note of `wallet` that `selects` accepts to `spending_txid`.
+pub fn mark_orchard_notes_spent(
+    wallet: &mut LightWallet,
+    spending_txid: TxId,
+    selects: impl Fn(&OrchardNote) -> bool,
+) {
+    for transaction in wallet.wallet_transactions.values_mut() {
+        for note in transaction.orchard_notes_mut() {
+            if selects(note) {
+                note.set_spending_transaction(Some(spending_txid));
+            }
+        }
+    }
+}
+
 /// Injects `count` confirmed, unspent legacy-Orchard (V2) notes of `value`
 /// zatoshis into an already-synced wallet, replacing the orchard anchor
 /// checkpoint at `tip` so it covers the appended leaves.
@@ -470,7 +491,7 @@ pub fn inject_confirmed_orchard_notes(wallet: &mut LightWallet, count: u32, valu
         .with_nullifier_for_test(nullifier);
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_orchard_notes(
+            TransactionRecord::new_for_test_with_orchard_notes(
                 txid,
                 ConfirmationStatus::Confirmed(BlockHeight::from_u32(2 + index)),
                 vec![note],

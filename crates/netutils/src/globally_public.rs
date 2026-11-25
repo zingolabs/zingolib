@@ -12,9 +12,8 @@ use lightwallet_protocol::{
     Address, AddressList, Balance, GetAddressUtxosArg, GetAddressUtxosReply,
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
-use tonic::Request;
 
-use super::{GrpcIndexer, Indexer};
+use super::{GrpcIndexer, Indexer, rpc};
 
 /// Extension of [`Indexer`] for transparent address operations.
 ///
@@ -94,13 +93,8 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let mut request = Request::new(filter);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_taddress_txids(request)
-            .await?
-            .into_inner())
+        let request = rpc::timed(filter, timeout);
+        rpc::reply(self.clear_net_client.get_taddress_txids(request)).await
     }
 
     async fn get_taddress_transactions(
@@ -108,13 +102,8 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let mut request = Request::new(filter);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_taddress_transactions(request)
-            .await?
-            .into_inner())
+        let request = rpc::timed(filter, timeout);
+        rpc::reply(self.clear_net_client.get_taddress_transactions(request)).await
     }
 
     async fn get_taddress_balance(
@@ -122,13 +111,8 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: AddressList,
         timeout: Duration,
     ) -> Result<Balance, tonic::Status> {
-        let mut request = Request::new(addresses);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_taddress_balance(request)
-            .await?
-            .into_inner())
+        let request = rpc::timed(addresses, timeout);
+        rpc::reply(self.clear_net_client.get_taddress_balance(request)).await
     }
 
     async fn get_taddress_balance_stream(
@@ -136,11 +120,7 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: Vec<Address>,
     ) -> Result<Balance, tonic::Status> {
         let stream = tokio_stream::iter(addresses);
-        Ok(self
-            .clear_net_client
-            .get_taddress_balance_stream(stream)
-            .await?
-            .into_inner())
+        rpc::reply(self.clear_net_client.get_taddress_balance_stream(stream)).await
     }
 
     async fn get_address_utxos(
@@ -148,13 +128,8 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<GetAddressUtxosReplyList, tonic::Status> {
-        let mut request = Request::new(arg);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_address_utxos(request)
-            .await?
-            .into_inner())
+        let request = rpc::timed(arg, timeout);
+        rpc::reply(self.clear_net_client.get_address_utxos(request)).await
     }
 
     async fn get_address_utxos_stream(
@@ -162,12 +137,7 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status> {
-        let mut request = Request::new(arg);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_address_utxos_stream(request)
-            .await?
-            .into_inner())
+        let request = rpc::timed(arg, timeout);
+        rpc::reply(self.clear_net_client.get_address_utxos_stream(request)).await
     }
 }

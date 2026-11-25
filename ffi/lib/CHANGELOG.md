@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `mixnet_fetch(url, timeout_ms)` GETs one `https` URL on port 443 over the
+  mixnet and answers `{ status, body, via_socks5, rtt_ms }`. Every HTTP
+  status is a response, so the caller reads `status`. The call makes one
+  attempt, and `timeout_ms` is the deadline of the whole call, client
+  creation included. A session that can create clients uses a client
+  created for this call, so the fetch does not share the client that
+  carries wallet traffic. A URL outside that shape or a zero timeout is an
+  `InvalidInput` error. A transport that is not ready, a missed deadline, a
+  failed request, or a body over 1 MiB is a `Mixnet` error. No nakednet leg
+  exists.
 - `get_value_transfers` answers each value transfer with `op_return_data`, the
   UTF-8 text of its transaction's OP_RETURN outputs.
 - `stop_sync()` asks the running session to stop after its next batch, without
@@ -139,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `serveruri: String`. `Offline` disconnects the session through
   `go_offline` instead of binding a never-dialed placeholder URI, `Default`
   attaches to the chain's Default Indexer (mainnet's is
-  `https://mainnet.zainod.zingolabs.dev:443`; a chain without one fails
+  `https://zec.global:443`; a chain without one fails
   `InvalidInput`), and `Named` carries the URI the string carried before
   (zingo-adrs zingolib/0063). `get_latest_block_server` keeps its argument
   label `serveruri`, so the Swift label stays `serveruri:`.
@@ -177,6 +187,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dedicated migration transmission endpoint to set.
 
 ### Fixed
+- An error message no longer repeats a cause that an outer error prints
+  before other text of its own. It already did not repeat a cause printed at
+  the end of the outer text.
 - `send_swap_deposit` answers `InvalidInput` for a malformed or a
   non-transparent `vault_address`. It answered `Send`, the class a consumer
   retries.

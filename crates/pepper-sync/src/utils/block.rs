@@ -1,6 +1,7 @@
 use zcash_primitives::block::{BlockHash, BlockHeader};
 use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::CompactBlock;
+
+use crate::protocol::CompactBlock;
 
 use super::transaction;
 

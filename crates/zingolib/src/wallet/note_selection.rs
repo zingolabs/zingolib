@@ -8,7 +8,7 @@ use zcash_protocol::ShieldedPool;
 pub(crate) struct Candidate<N> {
     pub(crate) note: N,
     pub(crate) certain: bool,
-    pub(crate) reserved: bool,
+    pub(crate) reserved_for_migration: bool,
 }
 
 #[derive(Default)]
@@ -73,8 +73,8 @@ const ALL_FUNDS_STAGES: [Stage; 1] = [Stage::CertainReserved];
 impl Stage {
     fn admits<N>(self, candidate: &Candidate<N>) -> bool {
         match self {
-            Stage::CertainUnreserved => candidate.certain && !candidate.reserved,
-            Stage::AnyUnreserved => !candidate.reserved,
+            Stage::CertainUnreserved => candidate.certain && !candidate.reserved_for_migration,
+            Stage::AnyUnreserved => !candidate.reserved_for_migration,
             Stage::CertainReserved => candidate.certain,
             Stage::AnyReserved => true,
         }
@@ -322,7 +322,7 @@ mod tests {
     fn reserved_notes_are_withheld_until_needed() {
         let mut candidates = candidates_of(&funded_wallet());
         for candidate in &mut candidates.orchard {
-            candidate.reserved = candidate.note.value() == 100_000;
+            candidate.reserved_for_migration = candidate.note.value() == 100_000;
         }
         let Selection::Sufficient { notes } = select(
             at_least(60_000),
@@ -336,7 +336,7 @@ mod tests {
 
         let mut candidates = candidates_of(&funded_wallet());
         for candidate in &mut candidates.orchard {
-            candidate.reserved = candidate.note.value() == 100_000;
+            candidate.reserved_for_migration = candidate.note.value() == 100_000;
         }
         let Selection::Sufficient { notes } = select(
             at_least(150_000),
@@ -623,17 +623,24 @@ mod tests {
                 .expect("the funded wallet holds an orchard note of this value")
         };
         let excluded = id_of(100_000);
-        let reserved = id_of(5_000);
+        let reserved_for_migration = id_of(5_000);
         let candidates: Vec<Candidate<OrchardNote>> = wallet
             .note_candidates(
                 BlockHeight::from_u32(20),
                 zip32::AccountId::ZERO,
                 &[OutputRef::new(excluded, OrchardNote::POOL_TYPE)],
-                &HashSet::from([reserved]),
+                &HashSet::from([reserved_for_migration]),
             )
             .expect("the synthetic wallet is synced");
-        assert_eq!(candidate_ids(&candidates), BTreeSet::from([reserved]));
+        assert_eq!(
+            candidate_ids(&candidates),
+            BTreeSet::from([reserved_for_migration])
+        );
         assert!(candidates.iter().all(|candidate| candidate.certain));
-        assert!(candidates.iter().all(|candidate| candidate.reserved));
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.reserved_for_migration)
+        );
     }
 }

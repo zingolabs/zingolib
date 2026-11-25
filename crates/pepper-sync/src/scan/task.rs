@@ -15,13 +15,14 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::CompactBlock;
 
+use crate::engine::{SyncStateOps, TransactionRecordOps};
 use crate::{
     client::{self, FetchRequest},
     config::PerformanceLevel,
-    error::{ScanError, ServerError, SyncError},
+    error::{ScanError, ServerError, SyncError, stream_error_is_retryable},
     keys::transparent::TransparentAddressId,
+    protocol::{self, CompactBlock},
     sync::{self, ScanPriority, ScanRange},
     utils::block,
     wallet::{
@@ -35,7 +36,7 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
-use zl_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+use zl_netutils::time::SCANNER_SHUTDOWN_TIMEOUT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanTaskRunnerActivity {
@@ -414,15 +415,7 @@ where
                 } else if wallet.get_sync_state()?.scan_complete() {
                     // if sync is complete, all nullifiers will have been re-fetched so this note metadata can be discarded.
                     for transaction in wallet.get_wallet_transactions_mut()?.values_mut() {
-                        for note in transaction.sapling_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.orchard_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
-                        for note in transaction.ironwood_notes.as_mut_slice() {
-                            note.refetch_nullifier_ranges = Vec::new();
-                        }
+                        transaction.set_refetch_nullifier_ranges(&[]);
                     }
                     self.state.completed();
                 }
@@ -520,21 +513,12 @@ where
                 };
 
                 loop {
-                    let msg_res: Result<Option<CompactBlock>, tonic::Status> =
-                        match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
-                        {
-                            Ok(res) => res,
-                            Err(_) => {
-                                Err(tonic::Status::deadline_exceeded("stream message timeout"))
-                            }
-                        };
+                    let msg_res: Result<Option<CompactBlock>, protocol::Status> =
+                        client::next_stream_item(&mut block_stream, "stream message timeout").await;
 
                     let maybe_block = match msg_res {
                         Ok(b) => b,
-                        Err(e)
-                            if e.code() == tonic::Code::DeadlineExceeded
-                                || e.message().contains("Unexpected EOF decoding stream.") =>
-                        {
+                        Err(e) if stream_error_is_retryable(&e) => {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
                             block_stream = match open_block_stream(
@@ -556,18 +540,12 @@ where
                                 }
                             };
 
-                            let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
-                                match tokio::time::timeout(
-                                    STREAM_MSG_TIMEOUT,
-                                    block_stream.message(),
+                            let first_msg_res: Result<Option<CompactBlock>, protocol::Status> =
+                                client::next_stream_item(
+                                    &mut block_stream,
+                                    "stream message timeout after retry",
                                 )
-                                .await
-                                {
-                                    Ok(res) => res,
-                                    Err(_) => Err(tonic::Status::deadline_exceeded(
-                                        "stream message timeout after retry",
-                                    )),
-                                };
+                                .await;
 
                             match first_msg_res {
                                 Ok(b) => b,
@@ -623,7 +601,7 @@ where
                         }
                         if awaiting_first_block {
                             previous_task_first_block = Some(
-                                WalletBlock::from_compact_block(
+                                crate::wallet::wallet_block_from_compact_block(
                                     &consensus_parameters,
                                     fetch_request_sender.clone(),
                                     &compact_block,
@@ -636,7 +614,7 @@ where
                             == scan_task.scan_range.block_range().end - 1
                         {
                             previous_task_last_block = Some(
-                                WalletBlock::from_compact_block(
+                                crate::wallet::wallet_block_from_compact_block(
                                     &consensus_parameters,
                                     fetch_request_sender.clone(),
                                     &compact_block,
@@ -812,7 +790,7 @@ async fn open_block_stream(
     block_range: Range<BlockHeight>,
     fetch_nullifiers_only: bool,
     transparent_scan_floor: BlockHeight,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<protocol::CompactBlocks, ServerError> {
     if fetch_nullifiers_only {
         client::get_nullifier_range(fetch_request_sender, block_range).await
     } else {
@@ -1122,7 +1100,7 @@ impl ScanTask {
 
         let lower_task_last_block = if let Some(block) = lower_compact_blocks.last() {
             Some(
-                WalletBlock::from_compact_block(
+                crate::wallet::wallet_block_from_compact_block(
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     block,
@@ -1134,7 +1112,7 @@ impl ScanTask {
         };
         let upper_task_first_block = if let Some(block) = upper_compact_blocks.first() {
             Some(
-                WalletBlock::from_compact_block(
+                crate::wallet::wallet_block_from_compact_block(
                     consensus_parameters,
                     fetch_request_sender.clone(),
                     block,

@@ -367,11 +367,11 @@ impl LightWallet {
 
 #[cfg(test)]
 mod tests {
-    use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, WalletTransaction};
+    use pepper_sync::wallet::{IronwoodNote, OrchardNote, OutputId, TransactionRecord};
     use zcash_primitives::transaction::TxId;
     use zcash_protocol::memo::Memo;
     use zingo_test_vectors::seeds;
-    use zl_status::confirmation_status::ConfirmationStatus;
+    use zl_common::status::ConfirmationStatus;
 
     use crate::mocks::orchard_note::OrchardCryptoNoteBuilder;
     use crate::wallet::LightWallet;
@@ -422,7 +422,7 @@ mod tests {
         let txid = TxId::from_bytes([1; 32]);
         wallet.wallet_transactions.insert(
             txid,
-            WalletTransaction::new_for_test_with_ironwood_notes(
+            TransactionRecord::new_for_test_with_ironwood_notes(
                 txid,
                 ConfirmationStatus::Confirmed(10.into()),
                 vec![IronwoodNote::new_for_test(
@@ -500,7 +500,7 @@ mod tests {
         );
         wallet.wallet_transactions.insert(
             funding_txid,
-            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(5.into()))
+            TransactionRecord::new_for_test(funding_txid, ConfirmationStatus::Confirmed(5.into()))
                 .with_sapling_notes_for_test(vec![funded_note]),
         );
 
@@ -517,7 +517,7 @@ mod tests {
         );
         wallet.wallet_transactions.insert(
             spent_txid,
-            WalletTransaction::new_for_test(spent_txid, ConfirmationStatus::Confirmed(6.into()))
+            TransactionRecord::new_for_test(spent_txid, ConfirmationStatus::Confirmed(6.into()))
                 .with_outgoing_sapling_notes_for_test(vec![outgoing_note]),
         );
 
@@ -605,7 +605,7 @@ mod tests {
         );
         wallet.wallet_transactions.insert(
             funding_txid,
-            WalletTransaction::new_for_test(funding_txid, ConfirmationStatus::Confirmed(4.into()))
+            TransactionRecord::new_for_test(funding_txid, ConfirmationStatus::Confirmed(4.into()))
                 .with_sapling_notes_for_test(vec![incoming_note]),
         );
 
@@ -657,7 +657,7 @@ mod tests {
             );
             wallet.wallet_transactions.insert(
                 sent_txid,
-                WalletTransaction::new_for_test(
+                TransactionRecord::new_for_test(
                     sent_txid,
                     ConfirmationStatus::Transmitted(5.into()),
                 )

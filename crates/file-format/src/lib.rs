@@ -1,0 +1,220 @@
+#![forbid(unsafe_code)]
+
+use std::collections::{BTreeMap, HashMap};
+use std::io::{self, Read, Write};
+use std::num::NonZeroU32;
+
+use bip0039::Mnemonic;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::consensus::BlockHeight;
+
+use zl_common::price::PriceList;
+use zl_common::{
+    chain::ChainType,
+    config::SyncConfig,
+    keys::{UnifiedAddressId, UnifiedKeyStore, transparent::TransparentAddressId},
+    sync::SyncState,
+    wallet::{NullifierMap, OutputId, ScanTarget, ShardTrees, TransactionRecord, WalletBlock},
+};
+
+mod file;
+#[cfg(feature = "legacy")]
+mod legacy;
+pub mod strings;
+
+pub use file::{
+    AmbiguousV42Tail, ChainMismatch, MAX_RECOVERABLE_BIRTHDAY, MAX_RECOVERABLE_VERSION,
+    UnreadableV42Tail, V42Layout, read_chain, read_recovery_info, serialized_version,
+};
+
+/// Wallet settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalletSettings {
+    /// Sync configuration.
+    pub sync_config: zl_common::config::SyncConfig,
+    /// Minimum confirmations.
+    pub min_confirmations: NonZeroU32,
+}
+
+impl Default for WalletSettings {
+    fn default() -> Self {
+        Self {
+            sync_config: SyncConfig::default(),
+            min_confirmations: NonZeroU32::try_from(3).expect("hard-coded non-zero integer"),
+        }
+    }
+}
+
+/// Provides necessary information to recover the wallet without the wallet file.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RecoveryInfo {
+    /// 24-word mnemonic phrase.
+    pub seed_phrase: String,
+    /// Block height wallet was created.
+    pub birthday: u64,
+    /// Number of accounts in use.
+    pub no_of_accounts: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub birthday_adjusted_from: Option<u64>,
+}
+
+impl std::fmt::Display for RecoveryInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Wallet backup info:
+{{
+    seed phrase: {}
+    birthday: {}
+    no_of_accounts: {}
+}}",
+            self.seed_phrase, self.birthday, self.no_of_accounts,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct WalletFile<M>(WalletFileParts<M>);
+
+impl<M> WalletFile<M> {
+    pub fn into_parts(self) -> WalletFileParts<M> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct WalletFileParts<M> {
+    pub read_version: u64,
+    pub chain_type: ChainType,
+    pub mnemonic: Option<Mnemonic>,
+    pub birthday: BlockHeight,
+    pub unified_key_store: BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+    pub unified_addresses: BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    pub transparent_addresses: BTreeMap<TransparentAddressId, String>,
+    pub wallet_blocks: BTreeMap<BlockHeight, WalletBlock>,
+    pub wallet_transactions: HashMap<TxId, TransactionRecord>,
+    pub nullifier_map: NullifierMap,
+    pub outpoint_map: BTreeMap<OutputId, ScanTarget>,
+    pub shard_trees: ShardTrees,
+    pub sync_state: SyncState,
+    pub wallet_settings: WalletSettings,
+    pub price_list: PriceList,
+    pub migration: Option<M>,
+}
+
+#[derive(Debug)]
+pub struct WalletFileRef<'a, M> {
+    pub chain_type: ChainType,
+    pub mnemonic: Option<&'a Mnemonic>,
+    pub birthday: BlockHeight,
+    pub unified_key_store: &'a BTreeMap<zip32::AccountId, UnifiedKeyStore>,
+    pub unified_addresses: &'a BTreeMap<UnifiedAddressId, UnifiedAddress>,
+    pub transparent_addresses: &'a BTreeMap<TransparentAddressId, String>,
+    pub wallet_blocks: &'a BTreeMap<BlockHeight, WalletBlock>,
+    pub wallet_transactions: &'a HashMap<TxId, TransactionRecord>,
+    pub nullifier_map: &'a NullifierMap,
+    pub outpoint_map: &'a BTreeMap<OutputId, ScanTarget>,
+    pub shard_trees: &'a mut ShardTrees,
+    pub sync_state: &'a mut SyncState,
+    pub wallet_settings: &'a mut WalletSettings,
+    pub price_list: &'a PriceList,
+    pub migration: Option<&'a M>,
+}
+
+pub trait MigrationSection: Sized {
+    fn read<R: Read>(reader: R, chain: ChainType) -> io::Result<Self>;
+
+    fn write<W: Write>(&self, writer: W) -> io::Result<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawMigration(pub Vec<u8>);
+
+impl MigrationSection for RawMigration {
+    fn read<R: Read>(mut reader: R, _chain: ChainType) -> io::Result<Self> {
+        let mut section = Vec::new();
+        reader.read_to_end(&mut section)?;
+        Ok(Self(section))
+    }
+
+    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, HashMap};
+
+    use super::{MigrationSection, RawMigration, WalletFile, WalletFileRef, WalletSettings};
+    use zcash_protocol::consensus::BlockHeight;
+    use zl_common::chain::ChainType;
+    use zl_common::price::PriceList;
+    use zl_common::shardtree_ext::{DOWNSTREAM_BOUNDARY_PATH, assert_raw_boolean_calls_confined};
+    use zl_common::sync::SyncState;
+    use zl_common::wallet::{NullifierMap, ShardTrees};
+
+    #[test]
+    fn into_parts_returns_what_the_writer_wrote() {
+        const BIRTHDAY: u32 = 1_000_000;
+        const SECTION: [u8; 3] = [7, 8, 9];
+        let chain_type = ChainType::Mainnet;
+
+        let mut bytes = Vec::new();
+        WalletFileRef {
+            chain_type,
+            mnemonic: None,
+            birthday: BlockHeight::from_u32(BIRTHDAY),
+            unified_key_store: &BTreeMap::new(),
+            unified_addresses: &BTreeMap::new(),
+            transparent_addresses: &BTreeMap::new(),
+            wallet_blocks: &BTreeMap::new(),
+            wallet_transactions: &HashMap::new(),
+            nullifier_map: &NullifierMap::new(),
+            outpoint_map: &BTreeMap::new(),
+            shard_trees: &mut ShardTrees::new(),
+            sync_state: &mut SyncState::new(),
+            wallet_settings: &mut WalletSettings::default(),
+            price_list: &PriceList::new(),
+            migration: Some(&RawMigration(SECTION.to_vec())),
+        }
+        .write(&mut bytes, &chain_type)
+        .expect("writing into an in-memory Vec<u8> never returns an io::Error");
+
+        let parts = WalletFile::<RawMigration>::read(bytes.as_slice(), chain_type)
+            .expect("the bytes were written by the writer of this crate")
+            .into_parts();
+
+        assert_eq!(parts.read_version, crate::serialized_version());
+        assert_eq!(parts.chain_type, chain_type);
+        assert!(parts.mnemonic.is_none());
+        assert_eq!(parts.birthday, BlockHeight::from_u32(BIRTHDAY));
+        assert_eq!(parts.wallet_settings, WalletSettings::default());
+        assert_eq!(parts.migration, Some(RawMigration(SECTION.to_vec())));
+    }
+
+    #[test]
+    fn raw_migration_round_trips_every_byte() {
+        const SECTION_LENGTH: u8 = 32;
+        let section = RawMigration((0..SECTION_LENGTH).collect());
+
+        let mut written = Vec::new();
+        section
+            .write(&mut written)
+            .expect("writing into an in-memory Vec<u8> never returns an io::Error");
+        let read_back = RawMigration::read(written.as_slice(), ChainType::Mainnet)
+            .expect("reading the rest of an in-memory slice never fails");
+
+        assert_eq!(read_back, section);
+    }
+
+    #[test]
+    fn raw_boolean_calls_route_through_the_wrapper() {
+        assert_raw_boolean_calls_confined(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            None,
+            DOWNSTREAM_BOUNDARY_PATH,
+        );
+    }
+}

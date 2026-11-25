@@ -28,10 +28,9 @@ carry. The last section states what that asks of every pull request.
 
 A release is one or more of these, each done from one release commit:
 
-- a crate version published to crates.io, for the eight crates the
-  workspace publishes: `zingolib`, `pepper-sync`, `zl-netutils`,
-  `zl-net-diag`, `zl-memo`, `zl-status`, `zl-price` and
-  `zingolib-cli`.
+- a crate version published to crates.io, for the six crates the
+  workspace publishes: `zingolib`, `pepper-sync`, `zl-common`,
+  `zl-file-format`, `zl-netutils` and `zingolib-cli`.
 - a signed annotated tag per released crate, `<crate>_vX.Y.Z`, whose
   message is `<crate> release X.Y.Z`.
 - a publication of the Binding Layer, which zingolib/0062 defines as the
@@ -90,10 +89,10 @@ patch, and only a crate that exposes the dependency's types in its public
 API inherits the major. A compatible bump of a dependency forces nothing:
 the requirement already admits it, and the dependent crate releases when
 its own section says so. Cargo orders the set by dependency at publish
-time, so the order needs no thought here. The current order, read from a
-dry run on 2026-10-29, is `zl-memo`, `zl-net-diag`,
-`zl-status`, `zl-netutils`, `pepper-sync`, `zl-price`,
-`zingolib`, `zingolib-cli`.
+time, so the order needs no thought here. By dependency, `zl-common` and
+`zl-netutils` come first, then `zl-file-format`, `pepper-sync`, `zingolib`
+and `zingolib-cli`. No dry run has confirmed this order since the crates
+were restructured.
 
 `zingolib-cli` is a crate of the set like any other, with a version of its own
 that does not track zingolib's. It stays in this workspace because it is
@@ -354,15 +353,21 @@ taken on any day, and every pull request is judged on whether `dev` could be
 released the moment it merges.
 
 - A pull request merges into `dev` only when the work it describes is
-  complete. A portion of a larger feature or refactor that would leave
-  `dev` mid-way, with a dead code path, a half-migrated type, a disabled
-  test or a feature behind an unfinished flag, targets an integration
-  branch instead.
-- An integration branch is a long-lived branch named for the work,
-  `integration/<name>`, that takes the small pull requests of one arc. It
-  merges into `dev` when the arc is complete, or earlier when its author and
-  reviewer judge that `dev` with the branch merged is no less releasable
-  than `dev` without it. The pull request that merges it states which.
+  complete. `dev` is releasable when every public item works completely and
+  no item exists in two forms, so a dead code path, a type that carries an
+  old field beside its replacement, a disabled test and a feature behind an
+  unfinished flag all fail. Sibling items in different styles pass.
+- A larger feature or refactor, an arc, lands on `dev` as increments: small
+  pull requests that each hold that bar and merge as soon as they are
+  ready (zingo-adrs zingolib/0068, and "Pull request scope" in
+  `AGENTS.md`).
+- An integration branch is for the arc that has no increment able to hold
+  the bar. It is a long-lived branch named for the work,
+  `integration/<name>`, that a person opens and that merges `dev` into
+  itself daily. It merges into `dev` when the arc is complete, or earlier
+  when its author and reviewer judge that `dev` with the branch merged is no
+  less releasable than `dev` without it. The pull request that merges it
+  states which.
 - Pull requests into an integration branch are reviewed as pull requests
   into `dev` are, and CI runs on them, since the branch's merge into `dev`
   is one large diff that nobody can review line by line at that point.

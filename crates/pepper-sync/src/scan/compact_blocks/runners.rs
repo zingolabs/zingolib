@@ -17,7 +17,8 @@ use zcash_protocol::consensus;
 
 use memuse::DynamicUsage;
 use zcash_protocol::ShieldedPool;
-use zl_netutils::lightwallet_protocol::CompactBlock;
+
+use crate::protocol::CompactBlock;
 
 use crate::error::EncodingInvalid;
 use crate::keys::KeyId;

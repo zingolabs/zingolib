@@ -675,7 +675,7 @@ mod network_command_parsing {
     #[test]
     fn mixnet_probe_rendering_carries_outcome_timing_and_failure() {
         use zingolib::mixnet::probe::{MixnetProbe, ProbeLeg, ProbeSuccess};
-        use zl_net_diag::{NetOpFailure, NetOpStage};
+        use zl_netutils::diag::{NetOpFailure, NetOpStage};
 
         let live = MixnetProbe {
             host: zingolib::destination::Host::of_host_str("zec.rocks"),
@@ -1564,7 +1564,7 @@ mod pure_helpers {
     //! Runtime-free checks of the pure rendering vocabulary: every function
     //! here takes already-fetched values and returns its whole result.
 
-    use pepper_sync::error::SyncModeError;
+    use zingolib::SyncModeError;
     use zingolib::lightclient::error::{LightClientError, SendError};
     use zingolib::wallet::keys::WalletAddressRef;
 
@@ -1605,7 +1605,7 @@ mod pure_helpers {
 
         assert_eq!(
             render_error_chain(&wrapped),
-            zl_net_diag::chain_texts(&wrapped).join("\ncaused by: ")
+            zl_netutils::diag::chain_texts(&wrapped).join("\ncaused by: ")
         );
     }
 

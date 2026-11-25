@@ -30,10 +30,6 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::{NetworkType, NetworkUpgrade, Parameters};
 use zip32::AccountId;
 
-use pepper_sync::config::{PerformanceLevel, SyncConfig, TransparentAddressDiscovery};
-use pepper_sync::error::SyncModeError;
-use pepper_sync::keys::transparent;
-use pepper_sync::wallet::{KeyIdInterface, SyncMode};
 use tokio::runtime::Runtime;
 use zcash_address::ZcashAddress;
 use zcash_client_backend::proposal::Proposal;
@@ -65,6 +61,10 @@ use zingolib::wallet::keys;
 use zingolib::wallet::keys::{WalletAddressRef, unified::ReceiverSelection};
 use zingolib::wallet::migration::{
     MigrationParams, MigrationPhase, RecommendedAction, parts::PartState,
+};
+use zingolib::{
+    KeyIdInterface, PerformanceLevel, SyncConfig, SyncMode, SyncModeError,
+    TransparentAddressDiscovery, transparent,
 };
 
 use zingo_common_components::protocol::ActivationHeights;
@@ -145,15 +145,16 @@ const CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE: &str = " ";
 /// zingolib's taxonomy already print their own cause: `#[error(transparent)]`
 /// delegates `Display` to it outright, and a variant that interpolates it
 /// (`#[error("wallet error. {0}")]`) has embedded it. Both leave the cause's
-/// rendering at the tail of what we have, so a link is appended only when the
-/// text so far does not already end with it. The walk continues either way:
+/// rendering inside what we have, at the tail or before other text, so a link
+/// is appended only when the text so far does not already hold it. The walk
+/// continues either way:
 /// a skipped layer's own source still belongs on the line.
 fn chain_text(error: &(dyn std::error::Error + 'static)) -> String {
     let mut text = error.to_string();
     let mut link = error.source();
     while let Some(cause) = link {
         let cause_text = cause.to_string();
-        if !text.ends_with(&cause_text) {
+        if !text.contains(&cause_text) {
             text.push_str(if text.ends_with(['.', '!', '?', ':']) {
                 CAUSE_CHAIN_SEPARATOR_AFTER_SENTENCE
             } else {
@@ -226,6 +227,7 @@ impl ZingolibError {
 /// fails compilation here instead of degrading to prose in the data channel.
 fn ffi_error(e: LightClientError) -> ZingolibError {
     use zingolib::lightclient::error::MigrationError;
+    use zingolib::mixnet::fetch::MixnetFetchError;
     let text = chain_text(&e);
     match e {
         LightClientError::SyncLaunchError
@@ -262,6 +264,15 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
         LightClientError::PriceError(_) => ZingolibError::Read(text),
         LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
         LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
+        LightClientError::MixnetFetch(inner) => match inner {
+            MixnetFetchError::Ineligible(_) | MixnetFetchError::ZeroTimeout => {
+                ZingolibError::InvalidInput(text)
+            }
+            MixnetFetchError::DeadlineExceeded { .. }
+            | MixnetFetchError::Transport(_)
+            | MixnetFetchError::Request(_)
+            | MixnetFetchError::BodyTooLarge { .. } => ZingolibError::Mixnet(text),
+        },
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
@@ -1117,6 +1128,36 @@ mod ffi_error_routing_tests {
     }
 
     #[test]
+    fn a_fetch_the_caller_asked_wrongly_is_invalid_input_and_a_failed_one_is_mixnet() {
+        use zingolib::mixnet::fetch::MixnetFetchError;
+
+        let plain_http: http::Uri = "http://rates.test/latest".parse().expect("static uri");
+        for inner in [
+            MixnetFetchError::Ineligible(plain_http),
+            MixnetFetchError::ZeroTimeout,
+        ] {
+            let mapped = ffi_error(LightClientError::MixnetFetch(inner));
+            assert!(
+                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                "the caller corrects its own argument: {mapped:?}"
+            );
+        }
+
+        for inner in [
+            MixnetFetchError::DeadlineExceeded {
+                timeout: std::time::Duration::from_secs(5),
+            },
+            MixnetFetchError::BodyTooLarge { limit: 8 },
+        ] {
+            let mapped = ffi_error(LightClientError::MixnetFetch(inner));
+            assert!(
+                matches!(&mapped, ZingolibError::Mixnet(_)),
+                "a fetch that ran and failed is a mixnet error: {mapped:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_refused_vault_address_is_invalid_input_not_a_send_failure() {
         let malformed = match ZcashAddress::try_from_encoded("not an address") {
             Err(parse_error) => parse_error,
@@ -1144,6 +1185,10 @@ mod ffi_error_routing_tests {
 #[cfg(test)]
 mod cause_chain_tests {
     use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("the leaf failed")]
+    struct Leaf;
 
     #[test]
     fn a_save_failure_keeps_the_cause_its_wrapper_does_not_print() {
@@ -1215,7 +1260,7 @@ mod cause_chain_tests {
     #[test]
     fn a_wrapper_that_prints_nothing_of_its_cause_gains_the_whole_chain() {
         let mapped = ffi_error(LightClientError::SyncError(
-            pepper_sync::error::SyncError::ChainError(1, 2, 3),
+            zingolib::SyncError::ChainError(1, 2, 3),
         ));
         let text = mapped.to_string();
         // `LightClientError::SyncError` is declared `#[error("Sync error.")]`,
@@ -1247,10 +1292,6 @@ mod cause_chain_tests {
     #[test]
     fn an_interpolating_wrapper_does_not_repeat_its_cause() {
         #[derive(Debug, thiserror::Error)]
-        #[error("the leaf failed")]
-        struct Leaf;
-
-        #[derive(Debug, thiserror::Error)]
         #[error("wallet error. {0}")]
         struct Interpolating(#[from] Leaf);
 
@@ -1262,6 +1303,21 @@ mod cause_chain_tests {
         assert_eq!(
             text, "outer: wallet error. the leaf failed",
             "a variant that interpolates its source has already printed it"
+        );
+    }
+
+    #[test]
+    fn a_wrapper_that_prints_its_cause_before_other_text_does_not_repeat_it() {
+        #[derive(Debug, thiserror::Error)]
+        #[error("{source}; a second reading failed")]
+        struct CauseFirst {
+            source: Leaf,
+        }
+
+        let text = chain_text(&CauseFirst { source: Leaf });
+        assert_eq!(
+            text, "the leaf failed; a second reading failed",
+            "a message that holds its source before other text has already printed it"
         );
     }
 }
@@ -2332,8 +2388,7 @@ fn status_sync() -> Result<String, ZingolibError> {
             );
         }
         RT.block_on(async {
-            let wallet = lightclient.wallet().read().await;
-            match pepper_sync::sync_status(&*wallet).await {
+            match lightclient.sync_status().await {
                 Ok(status) => {
                     Ok(json::JsonValue::from(sync_progress::SyncProgress::from(status)).pretty(2))
                 }
@@ -2952,6 +3007,33 @@ pub fn zec_price() -> Result<String, ZingolibError> {
         })
     })?;
     Ok(object! { "current_price" => usd }.pretty(2))
+}
+
+/// Sends an HTTPS GET request to `url` over the mixnet. Returns a JSON
+/// object with `status`, `body`, `via_socks5` and `rtt_ms`.
+///
+/// `url` must be `https` on port 443. `timeout_ms` is the deadline of the
+/// whole call. The caller must check `status`.
+#[uniffi::export]
+pub fn mixnet_fetch(url: String, timeout_ms: u64) -> Result<String, ZingolibError> {
+    let fetch = with_initialized_lightclient_read(|lightclient| {
+        let url = url
+            .parse::<http::Uri>()
+            .map_err(|error| ZingolibError::InvalidInput(format!("url: {error}")))?;
+        RT.block_on(async move {
+            lightclient
+                .fetch_over_mixnet(url, std::time::Duration::from_millis(timeout_ms))
+                .await
+                .map_err(ffi_error)
+        })
+    })?;
+    Ok(object! {
+        "status" => fetch.status,
+        "body" => fetch.body,
+        "via_socks5" => fetch.via_socks5,
+        "rtt_ms" => u64::try_from(fetch.round_trip.as_millis()).unwrap_or(u64::MAX),
+    }
+    .pretty(2))
 }
 
 #[derive(Debug)]

@@ -24,12 +24,9 @@ const SECTION_OPEN: char = '[';
 const DIRECTORY_SECTION_CLOSE: &str = "/*]";
 const UNRELEASED: &str = "## [Unreleased]";
 const NEXT_RELEASE: &str = "\n## [";
-const PRICE_MANIFEST: &str = "crates/price/Cargo.toml";
 const SOP_LINE_WITH_AN_INTERMEDIATE_NAME: &str = "cargo publish --package zingolib-netutils";
-const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 2] = [
-    ("crates/price/CHANGELOG.md", "feature `zingo-netutils`"),
-    ("crates/pepper-sync/CHANGELOG.md", "renamed from `zingo-memo`"),
-];
+const CONSUMER_VISIBLE_RENAMES: [(&str, &str); 1] =
+    [("crates/pepper-sync/CHANGELOG.md", "`zingo-netutils`")];
 
 fn text(relative: &str) -> Result<String, Vec<String>> {
     read(&repo_root()?.join(relative))
@@ -44,11 +41,6 @@ fn old_names_in(relative: &str, text: &str, mark: &str) -> Vec<String> {
 
 fn old_name_lines(relative: &str, mark: &str) -> Result<Vec<String>, Vec<String>> {
     Ok(old_names_in(relative, &text(relative)?, mark))
-}
-
-fn restates_its_dependency(line: &str) -> bool {
-    line.split_once(" = ")
-        .is_some_and(|(name, value)| value == format!("[\"dep:{name}\"]"))
 }
 
 fn unreleased(relative: &str) -> Result<String, Vec<String>> {
@@ -106,7 +98,9 @@ fn each_unreleased_section_records_the_rename_its_consumers_see() -> Result<(), 
 fn a_line_that_names_an_intermediate_package_name_is_reported() {
     assert_eq!(
         old_names_in(RELEASE_SOP, SOP_LINE_WITH_AN_INTERMEDIATE_NAME, ANY_LINE),
-        [format!("{RELEASE_SOP}: {SOP_LINE_WITH_AN_INTERMEDIATE_NAME}")]
+        [format!(
+            "{RELEASE_SOP}: {SOP_LINE_WITH_AN_INTERMEDIATE_NAME}"
+        )]
     );
 }
 
@@ -119,17 +113,6 @@ fn every_pinned_subject_names_a_retired_name() -> Result<(), Vec<String>> {
             .map(|(changelog, subject)| {
                 format!("{changelog} is pinned by `{subject}`, which names no retired package")
             })
-            .collect(),
-    )
-}
-
-#[test]
-fn no_price_feature_only_restates_its_dependency() -> Result<(), Vec<String>> {
-    verdict(
-        text(PRICE_MANIFEST)?
-            .lines()
-            .filter(|line| restates_its_dependency(line))
-            .map(str::to_string)
             .collect(),
     )
 }

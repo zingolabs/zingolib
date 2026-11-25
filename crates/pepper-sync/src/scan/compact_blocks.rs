@@ -16,8 +16,10 @@ use zcash_protocol::{
 };
 use zcash_transparent::address::Script;
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
 
+use crate::protocol::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
+
+use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
 use crate::{
     client::{self, FetchRequest},
     error::{ContinuityError, ScanError, ServerError},
@@ -177,7 +179,7 @@ where
             );
         }
 
-        let wallet_block = WalletBlock {
+        let wallet_block = WalletBlock::from_parts(WalletBlockParts {
             block_height,
             block_hash,
             prev_hash: block::get_compact_prev_hash(block),
@@ -195,7 +197,7 @@ where
                 ironwood_initial_tree_size,
                 ironwood_final_tree_size,
             },
-        };
+        });
 
         check_tree_size(block, &wallet_block)?;
 
@@ -708,13 +710,15 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
+    use crate::protocol::{self, ChainMetadata, CompactTx};
+    use orchard::note_encryption as orchard_encryption;
+    use sapling_crypto::note_encryption as sapling_encryption;
     use zcash_primitives::transaction::TxId;
-    use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
     use super::*;
 
     fn wallet_block_with_ironwood_size(size: u32) -> WalletBlock {
-        WalletBlock {
+        WalletBlock::from_parts(WalletBlockParts {
             block_height: BlockHeight::from_u32(100),
             block_hash: BlockHash([1; 32]),
             prev_hash: BlockHash([0; 32]),
@@ -728,7 +732,7 @@ mod tests {
                 ironwood_initial_tree_size: size,
                 ironwood_final_tree_size: size,
             },
-        }
+        })
     }
 
     fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
@@ -770,11 +774,65 @@ mod tests {
     /// be counted by the scanner without building a real note.
     fn compact_ironwood_action() -> CompactOrchardAction {
         CompactOrchardAction {
-            nullifier: vec![0; 32],
-            cmx: vec![0; 32],
-            ephemeral_key: vec![0; 32],
-            ciphertext: vec![0; 52],
+            nullifier: vec![0; NULLIFIER_BYTES],
+            cmx: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
         }
+    }
+
+    const NULLIFIER_BYTES: usize = 32;
+    const COMMITMENT_BYTES: usize = 32;
+    const EPHEMERAL_KEY_BYTES: usize = 32;
+    const COMPACT_CIPHERTEXT_BYTES: usize = 52;
+    const NOT_A_FIELD_ELEMENT: [u8; COMMITMENT_BYTES] = [u8::MAX; COMMITMENT_BYTES];
+
+    fn compact_sapling_output() -> CompactSaplingOutput {
+        CompactSaplingOutput {
+            cmu: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
+        }
+    }
+
+    fn sapling_leaves_of(output: CompactSaplingOutput) -> Result<usize, ScanError> {
+        calculate_sapling_leaves_and_retentions::<sapling_encryption::SaplingDomain>(
+            &[output],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
+
+    fn orchard_leaves_of(action: CompactOrchardAction) -> Result<usize, ScanError> {
+        calculate_orchard_leaves_and_retentions::<orchard_encryption::OrchardDomain>(
+            &[action],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
+
+    #[test]
+    fn a_sapling_output_is_invalid_when_its_commitment_is_outside_the_field() {
+        assert!(sapling_leaves_of(compact_sapling_output()).is_ok());
+        assert!(matches!(
+            sapling_leaves_of(CompactSaplingOutput {
+                cmu: NOT_A_FIELD_ELEMENT.to_vec(),
+                ..compact_sapling_output()
+            }),
+            Err(ScanError::InvalidSaplingOutput)
+        ));
+    }
+
+    #[test]
+    fn an_orchard_action_is_invalid_when_its_nullifier_is_not_32_bytes() {
+        let mut short_nullifier = compact_ironwood_action();
+        short_nullifier.nullifier.pop();
+
+        assert!(orchard_leaves_of(compact_ironwood_action()).is_ok());
+        assert!(matches!(
+            orchard_leaves_of(short_nullifier),
+            Err(ScanError::InvalidOrchardAction)
+        ));
     }
 
     fn block_with_served_ironwood_actions(
@@ -1081,7 +1139,7 @@ mod tests {
         let script = Script::from(external_address(ufvk, index).script());
         let mut compact_block = block_with_served_ironwood_actions(0, 10);
         compact_block.height = height;
-        compact_block.vtx[0].vout = vec![zl_netutils::lightwallet_protocol::TxOut {
+        compact_block.vtx[0].vout = vec![protocol::TxOut {
             value: 100_000,
             script_pub_key: script.0.0,
         }];
@@ -1224,7 +1282,7 @@ mod tests {
             compact_block.hash = vec![hash; 32];
             compact_block.prev_hash = vec![hash - 1; 32];
             compact_block.vtx[0].txid = vec![hash + 10; 32];
-            compact_block.vtx[0].vin = vec![zl_netutils::lightwallet_protocol::CompactTxIn {
+            compact_block.vtx[0].vin = vec![protocol::CompactTxIn {
                 prevout_txid: prevout_txid.to_vec(),
                 prevout_index: 0,
             }];

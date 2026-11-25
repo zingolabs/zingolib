@@ -51,7 +51,7 @@ use pepper_sync::{
         OutputInterface, SaplingNote, SaplingShardStore, TransparentCoin, traits::SyncWallet,
     },
 };
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 pub struct ZingoAccount(zip32::AccountId, UnifiedFullViewingKey);
 
@@ -405,7 +405,7 @@ impl WalletRead for LightWallet {
 
 /// The account owning the wallet output `output` names, when the wallet holds it.
 fn output_account<O: OutputInterface>(
-    transaction: &pepper_sync::wallet::WalletTransaction,
+    transaction: &pepper_sync::wallet::TransactionRecord,
     output: &LockedOutputRef,
 ) -> Option<zip32::AccountId> {
     (O::POOL_TYPE == output.pool())
@@ -953,7 +953,7 @@ impl InputSource for LightWallet {
             .expect("infallible")
             .ok_or(WalletError::NoSyncData)?;
 
-        let reserved = self
+        let reserved_for_migration = self
             .migration
             .as_ref()
             .map(migration::MigrationState::reserved_output_ids)
@@ -961,7 +961,12 @@ impl InputSource for LightWallet {
         let unreserved = HashSet::new();
         let candidates = note_selection::Candidates {
             sapling: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
-            orchard: self.note_candidates(anchor_height, account, exclude, &reserved)?,
+            orchard: self.note_candidates(
+                anchor_height,
+                account,
+                exclude,
+                &reserved_for_migration,
+            )?,
             ironwood: self.note_candidates(anchor_height, account, exclude, &unreserved)?,
         };
         let notes = match note_selection::select(target_value, sources, candidates) {
@@ -1123,7 +1128,7 @@ where
                 note.note().clone(),
                 note.key_id().scope,
                 note.position().expect(
-                    "spendable_notes admits only notes that hold a commitment tree position",
+                    "potentially_spendable_notes admits only notes that hold a commitment tree position",
                 ),
                 None,
                 None,

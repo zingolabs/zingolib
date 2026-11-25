@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ConduitDial::fetch_response`, under the `socks5-fetch` feature, GETs a
+  URL through the conduit and returns `socks5_fetch::HttpResponse`: the HTTP
+  status code and the body as text. Every status is a response. A body over
+  the caller's limit is `socks5_fetch::HttpResponseError::BodyTooLarge`, and
+  a request that fails at a typed stage is `Transport`.
 - `NetworkAccess`, the wallet's access to the network as a type: the
   Session Indexer URI (zingo-adrs zingolib/0063) a session attaches to
   as `indexer_uri`, beside `indexer`, the live `GrpcIndexer`, which is
@@ -23,6 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TESTNET_DEFAULT_INDEXER`, `https://testnet.zec.rocks:443`: testnet's
   Default Indexer, a zec.rocks host allowed until a zingolabs testnet host
   exists (zingo-adrs zingolib/0063, amended 2026-11-06).
+- The `diag` module, the network failure taxonomy: `NetOpStage`,
+  `NetOpFailure` and `chain_texts`, moved from the `zl-net-diag` crate
+  (released as `zingo-net-diag` 0.1.0), which no longer exists. It is
+  compiled in every build, and the `diag-serde` feature derives serde's
+  `Serialize` and `Deserialize` on the two types.
+- `Indexer::get_standard_fee` and `Socks5Indexer::get_standard_fee`, the
+  `GetStandardFee` RPC beside `get_lightd_info` on both transport routes.
+  It returns the backend's `StandardFee`: the ZIP 317 marginal fee,
+  zatoshis per logical action, the backend's `getstandardfee` RPC reports,
+  with the fee-estimator version. Backends predating the RPC answer
+  `Unimplemented`. The trait method is new and required, so out-of-tree
+  `Indexer` implementors must add it.
 
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
@@ -33,12 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GrpcIndexer::uri` is removed. The value is connected by construction and
   holds the live client alone; the URI lives in the `NetworkAccess` beside
   it.
+- `GrpcIndexer` now connects to IPv6 literal hosts (`https://[::1]:9067`).
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+- `GrpcIndexer` no longer resumes TLS sessions to prevent server from
+  fingerprinting across a wifi->cellular ip switch
 
 ## [7.0.0] - 2026-10-27
 
@@ -46,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `default_indexer`, the Default Indexer per chain: `default_indexer(chain)`
   answers the zingolabs endpoint a session attaches to when the consumer
   goes online without naming one, `MAINNET_DEFAULT_INDEXER`
-  (`https://mainnet.zainod.zingolabs.dev:443`) for mainnet and nothing for
+  (`https://zec.global:443`) for mainnet and nothing for
   testnet until a zingolabs testnet host exists (zingo-adrs zingolib/0063).
 
 ### Changed

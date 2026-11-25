@@ -16,6 +16,8 @@ pub(crate) use crate::lightclient::indexer_history::fault_domain;
 
 pub mod driver;
 
+pub mod fetch;
+
 mod mode;
 
 pub mod probe;
@@ -103,9 +105,9 @@ pub fn mixnet_timing() -> MixnetTiming {
 /// mixnet probe leg, and the attach readiness gate.
 pub(crate) fn socks5_transmit_stage(
     error: &zl_netutils::Socks5TransmitError,
-) -> zl_net_diag::NetOpStage {
-    use zl_net_diag::NetOpStage;
+) -> zl_netutils::diag::NetOpStage {
     use zl_netutils::Socks5TransmitError;
+    use zl_netutils::diag::NetOpStage;
     match error {
         Socks5TransmitError::ProxyUnreachable { .. } => NetOpStage::LocalProxyConnect,
         Socks5TransmitError::TunnelRefused { .. } => NetOpStage::SocksHandshake,
@@ -125,20 +127,20 @@ pub(crate) fn socks5_transmit_stage(
     }
 }
 
-/// The [`zl_net_diag::NetOpFailure`] record for one SOCKS5 transmit
+/// The [`zl_netutils::diag::NetOpFailure`] record for one SOCKS5 transmit
 /// failure against `target`: stage from [`socks5_transmit_stage`], cause
 /// chain captured layer by layer from the error's `source()` walk.
 pub(crate) fn socks5_transmit_failure(
     error: &zl_netutils::Socks5TransmitError,
     target: impl Into<String>,
-) -> zl_net_diag::NetOpFailure {
-    zl_net_diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
+) -> zl_netutils::diag::NetOpFailure {
+    zl_netutils::diag::NetOpFailure::from_error(socks5_transmit_stage(error), target, error)
 }
 
 #[cfg(all(test, feature = "nym"))]
 mod classifier_tests {
     use super::socks5_transmit_stage;
-    use zl_net_diag::NetOpStage;
+    use zl_netutils::diag::NetOpStage;
     use zl_netutils::{ProxyDialFailure, Socks5TransmitError, TunnelFailure};
 
     /// Every variant classifies by type alone; fabricated values cover the

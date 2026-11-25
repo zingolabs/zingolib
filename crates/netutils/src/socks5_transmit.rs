@@ -32,7 +32,8 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
 use lightwallet_protocol::{
-    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, TxFilter,
+    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, StandardFee,
+    TxFilter,
 };
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
@@ -183,7 +184,7 @@ const TRANSMIT_CHAIN_SEPARATOR: &str = ": ";
 /// Renders `error` with its complete `source()` chain, which the top-level
 /// `Display` of transport errors (tonic's "transport error") otherwise hides.
 fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
-    zl_net_diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
+    crate::diag::chain_texts(error).join(TRANSMIT_CHAIN_SEPARATOR)
 }
 
 /// How a post-tunnel RPC status reads for the failover policy.
@@ -312,6 +313,16 @@ impl Socks5Indexer {
         .await
     }
 
+    /// Fetches the indexer's standard fee report through the proxy, the
+    /// backend `getstandardfee` marginal fee. Backends predating the RPC
+    /// answer `Unimplemented`.
+    pub async fn get_standard_fee(&self) -> Result<StandardFee, Socks5TransmitError> {
+        self.round_trip(Empty {}, |mut client, request| async move {
+            client.get_standard_fee(request).await
+        })
+        .await
+    }
+
     /// Reports whether the indexer knows the transaction identified by
     /// `txid_hash`, reading a transport failure or an error status as
     /// not-yet-delivered.
@@ -348,8 +359,7 @@ impl Socks5Indexer {
         Fut: std::future::Future<Output = Result<tonic::Response<Resp>, tonic::Status>>,
     {
         let client = self.dial().await?;
-        let mut request = tonic::Request::new(message);
-        request.set_timeout(self.timeout);
+        let request = crate::rpc::timed(message, self.timeout);
         // The client-side RPC bound: an elapse is typed as its own variant, so
         // a slow round trip is never misread as the server answering.
         bounded_rpc(self.destination(), self.timeout, rpc(client, request)).await
@@ -533,7 +543,7 @@ mod tests {
 
         assert_eq!(
             error_chain(&error),
-            zl_net_diag::chain_texts(&error).join(": ")
+            crate::diag::chain_texts(&error).join(": ")
         );
     }
 

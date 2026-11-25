@@ -3,7 +3,7 @@
 
 use std::str::FromStr as _;
 
-use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, WalletTransaction};
+use pepper_sync::wallet::{IronwoodNote, OutgoingIronwoodNote, OutputId, TransactionRecord};
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::memo::Memo;
 use zingo_common_components::protocol::ActivationHeights;
@@ -11,7 +11,7 @@ use zingolib::config::ChainType;
 use zingolib::mocks::orchard_note::OrchardCryptoNoteBuilder;
 use zingolib::testutils::synthetic_wallet::SyntheticWalletBuilder;
 use zingolib::wallet::LightWallet;
-use zl_status::confirmation_status::ConfirmationStatus;
+use zl_common::status::ConfirmationStatus;
 
 pub fn regtest_wallet(mnemonic_phrase: &str) -> LightWallet {
     SyntheticWalletBuilder::new(mnemonic_phrase).build()
@@ -43,9 +43,9 @@ pub fn zfz_unified_address() -> zcash_client_backend::address::UnifiedAddress {
     *address
 }
 
-pub fn received(txid_byte: u8, height: u32, memos: &[Memo]) -> WalletTransaction {
+pub fn received(txid_byte: u8, height: u32, memos: &[Memo]) -> TransactionRecord {
     let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
+    TransactionRecord::new_for_test_with_ironwood_notes(
         txid,
         ConfirmationStatus::Confirmed(height.into()),
         memos
@@ -68,7 +68,7 @@ pub fn received(txid_byte: u8, height: u32, memos: &[Memo]) -> WalletTransaction
 
 /// As [`received`], but taking plain strings, as the pre-extraction test
 /// rig did.
-pub fn received_texts(txid_byte: u8, height: u32, memos: &[&str]) -> WalletTransaction {
+pub fn received_texts(txid_byte: u8, height: u32, memos: &[&str]) -> TransactionRecord {
     let memos = memos
         .iter()
         .map(|memo| Memo::from_str(memo).unwrap())
@@ -81,9 +81,9 @@ pub fn sent(
     height: u32,
     recipient: &zcash_client_backend::address::UnifiedAddress,
     memo: &str,
-) -> WalletTransaction {
+) -> TransactionRecord {
     let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
+    TransactionRecord::new_for_test_with_ironwood_notes(
         txid,
         ConfirmationStatus::Confirmed(height.into()),
         vec![],
@@ -100,9 +100,9 @@ pub fn sent(
 
 /// A basic send-to-self: one internally self-received note whose outgoing
 /// view is addressed to `own_receiver`.
-pub fn self_send(txid_byte: u8, height: u32, own_receiver: orchard::Address) -> WalletTransaction {
+pub fn self_send(txid_byte: u8, height: u32, own_receiver: orchard::Address) -> TransactionRecord {
     let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
+    TransactionRecord::new_for_test_with_ironwood_notes(
         txid,
         ConfirmationStatus::Confirmed(height.into()),
         vec![IronwoodNote::new_for_test(
@@ -132,9 +132,9 @@ pub fn zfz_self_send(
     txid_byte: u8,
     height: u32,
     own_receiver: orchard::Address,
-) -> WalletTransaction {
+) -> TransactionRecord {
     let txid = TxId::from_bytes([txid_byte; 32]);
-    WalletTransaction::new_for_test_with_ironwood_notes(
+    TransactionRecord::new_for_test_with_ironwood_notes(
         txid,
         ConfirmationStatus::Confirmed(height.into()),
         vec![],
