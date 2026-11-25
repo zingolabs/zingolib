@@ -15,7 +15,11 @@ use zcash_primitives::{
     block::BlockHash,
     merkle_tree::{self, read_commitment_tree},
 };
-use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
+use zcash_protocol::{
+    PoolType, ShieldedPool,
+    consensus::{self, BlockHeight},
+};
+use zl_common::{chain, wallet::pool_upgrade};
 
 use crate::protocol;
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
@@ -300,65 +304,56 @@ impl Frontiers {
     }
 }
 
-impl TryFrom<protocol::TreeState> for Frontiers {
-    type Error = std::io::Error;
+impl Frontiers {
+    pub(crate) fn of_tree_state(
+        reply: &chain::TreeStateReply,
+        consensus_parameters: &impl consensus::Parameters,
+        block_height: BlockHeight,
+    ) -> Result<Self, ServerError> {
+        // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
+        // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
+        // pool.
+        let unserved_pool = reply.trees().find_map(|(pool, tree)| {
+            (*tree == chain::Tree::Omitted
+                && consensus_parameters.is_nu_active(pool_upgrade(pool), block_height))
+            .then_some(pool)
+        });
+        if let Some(pool) = unserved_pool {
+            return Err(ServerError::TreeStateNotServed {
+                pool: PoolType::Shielded(pool),
+                height: block_height,
+            });
+        }
 
-    fn try_from(mut value: protocol::TreeState) -> Result<Self, Self::Error> {
-        let mut hash_bytes = hex::decode(&value.hash).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Block hash is not valid hex: {e:?}"),
-            )
-        })?;
-        // Block-hash hex strings are byte-reversed on the wire.
-        hash_bytes.reverse();
+        Self::of_served_tree_state(reply).map_err(ServerError::InvalidFrontier)
+    }
+
+    fn of_served_tree_state(reply: &chain::TreeStateReply) -> std::io::Result<Self> {
+        if let Err(not_hex @ chain::InvalidTreeState::InvalidHashHex(_)) = reply.hash {
+            return Err(invalid_data(not_hex));
+        }
 
         Ok(Frontiers::new(
-            value.height.try_into().map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid block height")
-            })?,
-            BlockHash::try_from_slice(&hash_bytes).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid block hash length.",
-                )
-            })?,
-            commitment_tree(&mut value, ShieldedPool::Sapling)?.to_frontier(),
-            commitment_tree(&mut value, ShieldedPool::Orchard)?.to_frontier(),
-            commitment_tree(&mut value, ShieldedPool::Ironwood)?.to_frontier(),
+            reply.height.map_err(invalid_data)?,
+            reply.hash.map_err(invalid_data)?,
+            commitment_tree(&reply.sapling_tree, ShieldedPool::Sapling)?.to_frontier(),
+            commitment_tree(&reply.orchard_tree, ShieldedPool::Orchard)?.to_frontier(),
+            commitment_tree(&reply.ironwood_tree, ShieldedPool::Ironwood)?.to_frontier(),
         ))
     }
 }
 
-pub(crate) fn tree_hex_mut(
-    tree_state: &mut protocol::TreeState,
-    pool: ShieldedPool,
-) -> &mut String {
-    match pool {
-        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
-        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
-        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
-    }
+fn invalid_data(invalid: chain::InvalidTreeState) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, invalid.to_string())
 }
 
 fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
-    tree_state: &mut protocol::TreeState,
+    tree: &chain::Tree,
     pool: ShieldedPool,
 ) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
-    let tree_hex = tree_hex_mut(tree_state, pool).as_str();
-    if tree_hex.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        let tree_bytes = hex::decode(tree_hex).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "Hex decoding of {} tree bytes failed: {e:?}",
-                    PoolType::Shielded(pool)
-                ),
-            )
-        })?;
-        read_commitment_tree(&tree_bytes[..])
+    match tree.bytes(pool).map_err(invalid_data)? {
+        [] => Ok(CommitmentTree::empty()),
+        tree_bytes => read_commitment_tree(tree_bytes),
     }
 }
 
@@ -489,8 +484,10 @@ mod tests {
     use super::*;
     use crate::mocks::{self, orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
     use crate::shardtree_ext::ShardTreeExt;
+    use crate::vocabulary::Zcash;
     use crate::wallet::empty_shard_tree;
     use incrementalmerkletree::{Address, Hashable as _, Level};
+    use zl_netutils::wire::Vocabulary as _;
 
     const ODD_LENGTH_HEX: &str = "0";
     const REPLY_HEIGHT: u32 = 1;
@@ -499,13 +496,7 @@ mod tests {
     fn report_of_a_tree_that_is_not_hex<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
         pool: ShieldedPool,
     ) -> Option<String> {
-        let mut tree_state = mocks::with_tree_hex(
-            mocks::empty_trees(REPLY_HEIGHT.into()),
-            pool,
-            ODD_LENGTH_HEX,
-        );
-
-        commitment_tree::<Leaf, DEPTH>(&mut tree_state, pool)
+        commitment_tree::<Leaf, DEPTH>(&chain::Tree::from_hex(ODD_LENGTH_HEX), pool)
             .err()
             .map(|unread| unread.to_string())
     }
@@ -575,7 +566,7 @@ mod tests {
             },
         );
 
-        let tree_sizes = Frontiers::try_from(tree_state)
+        let tree_sizes = Frontiers::of_served_tree_state(&Zcash::tree_state(tree_state))
             .map(|frontiers| {
                 (
                     frontiers.final_sapling_tree().tree_size(),
