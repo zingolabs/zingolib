@@ -77,7 +77,7 @@ pub const ENGINE_VARIABLE: &str = "CONTAINER_RUNTIME";
 
 pub const PUBLISHED_ANDROID_IMAGE: &str = "ghcr.io/zingolabs/android_builder:019";
 
-pub const IOS_XCODE_VERSION: &str = "26.3";
+pub const IOS_XCODE_VERSION: &str = "27.2";
 
 /// The Android API level that the builder compiles against.
 pub const ANDROID_API_LEVEL: &str = "26";

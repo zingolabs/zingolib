@@ -175,10 +175,6 @@ fingerprint = "92d452d6560102c0"
 reason = "baseline at 639986655: exact group of 2, first member zingo-cli/src/commands.rs:1961"
 
 [[ignore]]
-fingerprint = "9755ff9cb034efa6"
-reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/witness.rs:314"
-
-[[ignore]]
 fingerprint = "9a51c97c519be6ce"
 reason = "baseline at 639986655: exact group of 2, first member tools/workbench/src/bin/sync-bench.rs:308"
 

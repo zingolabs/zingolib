@@ -388,6 +388,8 @@ pub fn warn(message: &str) {
 }
 
 const LOCKFILE: &str = "Cargo.lock";
+const PACKAGE_KEY: &str = "package";
+const NAME_KEY: &str = "name";
 pub const MANIFEST_PATH_FLAG: &str = "--manifest-path";
 const LOCKED_FLAG: &str = "--locked";
 
@@ -890,8 +892,6 @@ mod tests {
     }
 
     const VERIFIER_SHIM: &str = "rustls-platform-verifier";
-    const PACKAGE_KEY: &str = "package";
-    const NAME_KEY: &str = "name";
     const SOURCE_KEY: &str = "source";
 
     #[test]

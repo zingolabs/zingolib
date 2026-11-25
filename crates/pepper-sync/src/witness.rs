@@ -9,11 +9,13 @@ use incrementalmerkletree::{
     frontier::{CommitmentTree, Frontier},
 };
 use orchard::tree::MerkleHashOrchard;
-use sapling_crypto::Node;
 use shardtree::LocatedPrunableTree;
 use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
-use zcash_primitives::{block::BlockHash, merkle_tree::read_commitment_tree};
-use zcash_protocol::consensus::BlockHeight;
+use zcash_primitives::{
+    block::BlockHash,
+    merkle_tree::{self, read_commitment_tree},
+};
+use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 use zl_netutils::lightwallet_protocol::TreeState;
 
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
@@ -304,7 +306,7 @@ impl Frontiers {
 impl TryFrom<TreeState> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(value: TreeState) -> Result<Self, Self::Error> {
+    fn try_from(mut value: TreeState) -> Result<Self, Self::Error> {
         let mut hash_bytes = hex::decode(&value.hash).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -324,72 +326,39 @@ impl TryFrom<TreeState> for Frontiers {
                     "Invalid block hash length.",
                 )
             })?,
-            get_sapling_tree(&value)?.to_frontier(),
-            get_orchard_tree(&value)?.to_frontier(),
-            get_ironwood_tree(&value)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Sapling)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Orchard)?.to_frontier(),
+            commitment_tree(&mut value, ShieldedPool::Ironwood)?.to_frontier(),
         ))
     }
 }
 
-/// Deserializes and returns the Sapling note commitment tree field of the tree state.
-pub(crate) fn get_sapling_tree(
-    tree_state: &TreeState,
-) -> std::io::Result<CommitmentTree<Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>> {
-    if tree_state.sapling_tree.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        let sapling_tree_bytes = hex::decode(&tree_state.sapling_tree).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Hex decoding of Sapling tree bytes failed: {e:?}"),
-            )
-        })?;
-        read_commitment_tree::<Node, _, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>(
-            &sapling_tree_bytes[..],
-        )
+pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &mut String {
+    match pool {
+        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
+        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
+        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
     }
 }
 
-/// Deserializes and returns the Orchard note commitment tree field of the tree state.
-pub(crate) fn get_orchard_tree(
-    tree_state: &TreeState,
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_state.orchard_tree.is_empty() {
+fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
+    tree_state: &mut TreeState,
+    pool: ShieldedPool,
+) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
+    let tree_hex = tree_hex_mut(tree_state, pool).as_str();
+    if tree_hex.is_empty() {
         Ok(CommitmentTree::empty())
     } else {
-        let orchard_tree_bytes = hex::decode(&tree_state.orchard_tree).map_err(|e| {
+        let tree_bytes = hex::decode(tree_hex).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Hex decoding of Orchard tree bytes failed: {e:?}"),
+                format!(
+                    "Hex decoding of {} tree bytes failed: {e:?}",
+                    PoolType::Shielded(pool)
+                ),
             )
         })?;
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            &orchard_tree_bytes[..],
-        )
-    }
-}
-
-/// Deserializes and returns the Ironwood note commitment tree field of the
-/// tree state. Servers omit the field below the ironwood activation height,
-/// so an empty field means the tree is empty. See [`crate::client::get_frontiers`]
-/// for the rejection of an omitted field at or above the activation height.
-pub(crate) fn get_ironwood_tree(
-    tree_state: &TreeState,
-) -> std::io::Result<CommitmentTree<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>>
-{
-    if tree_state.ironwood_tree.is_empty() {
-        Ok(CommitmentTree::empty())
-    } else {
-        let ironwood_tree_bytes = hex::decode(&tree_state.ironwood_tree).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Hex decoding of Ironwood tree bytes failed: {e:?}"),
-            )
-        })?;
-        read_commitment_tree::<MerkleHashOrchard, _, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
-            &ironwood_tree_bytes[..],
-        )
+        read_commitment_tree(&tree_bytes[..])
     }
 }
 
@@ -518,10 +487,127 @@ pub(crate) fn repin_anchor_checkpoints<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::{orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
+    use crate::mocks::{self, orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
     use crate::shardtree_ext::ShardTreeExt;
     use crate::wallet::empty_shard_tree;
     use incrementalmerkletree::{Address, Hashable as _, Level};
+
+    const ODD_LENGTH_HEX: &str = "0";
+    const REPLY_HEIGHT: u32 = 1;
+    const ORCHARD_DEPTH: u8 = orchard::NOTE_COMMITMENT_TREE_DEPTH as u8;
+
+    fn report_of_a_tree_that_is_not_hex<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
+        pool: ShieldedPool,
+    ) -> Option<String> {
+        let mut tree_state = mocks::with_tree_hex(
+            mocks::empty_trees(REPLY_HEIGHT.into()),
+            pool,
+            ODD_LENGTH_HEX,
+        );
+
+        commitment_tree::<Leaf, DEPTH>(&mut tree_state, pool)
+            .err()
+            .map(|unread| unread.to_string())
+    }
+
+    #[test]
+    fn a_tree_that_is_not_hex_names_its_pool() {
+        for (pool_name, report) in [
+            (
+                "Sapling",
+                report_of_a_tree_that_is_not_hex::<
+                    sapling_crypto::Node,
+                    { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                >(ShieldedPool::Sapling),
+            ),
+            (
+                "Orchard",
+                report_of_a_tree_that_is_not_hex::<MerkleHashOrchard, ORCHARD_DEPTH>(
+                    ShieldedPool::Orchard,
+                ),
+            ),
+            (
+                "Ironwood",
+                report_of_a_tree_that_is_not_hex::<MerkleHashOrchard, ORCHARD_DEPTH>(
+                    ShieldedPool::Ironwood,
+                ),
+            ),
+        ] {
+            let named = format!("Hex decoding of {pool_name} tree bytes failed");
+
+            assert!(
+                report
+                    .as_deref()
+                    .is_some_and(|report| report.starts_with(&named)),
+                "the {pool_name} tree was reported as {report:?}"
+            );
+        }
+    }
+
+    const EMPTY_TREE_LEAVES: u64 = 0;
+    const ORCHARD_LEAVES: u64 = 1;
+    const IRONWOOD_LEAVES: u64 = 2;
+
+    fn orchard_tree_hex(leaf_count: u64) -> String {
+        let mut tree = CommitmentTree::<MerkleHashOrchard, ORCHARD_DEPTH>::empty();
+        for _ in 0..leaf_count {
+            tree.append(MerkleHashOrchard::empty_leaf())
+                .expect("a tree of this depth holds every leaf count that these tests use");
+        }
+        let mut tree_bytes = Vec::new();
+        merkle_tree::write_commitment_tree(&tree, &mut tree_bytes)
+            .expect("a write to a Vec does not fail");
+
+        hex::encode(tree_bytes)
+    }
+
+    #[test]
+    fn each_frontier_comes_from_the_tree_of_its_own_pool() {
+        let tree_state = [
+            (ShieldedPool::Orchard, ORCHARD_LEAVES),
+            (ShieldedPool::Ironwood, IRONWOOD_LEAVES),
+        ]
+        .into_iter()
+        .fold(
+            mocks::empty_trees(REPLY_HEIGHT.into()),
+            |tree_state, (pool, leaf_count)| {
+                mocks::with_tree_hex(tree_state, pool, &orchard_tree_hex(leaf_count))
+            },
+        );
+
+        let tree_sizes = Frontiers::try_from(tree_state)
+            .map(|frontiers| {
+                (
+                    frontiers.final_sapling_tree().tree_size(),
+                    frontiers.final_orchard_tree().tree_size(),
+                    frontiers.final_ironwood_tree().tree_size(),
+                )
+            })
+            .map_err(|unread| unread.to_string());
+
+        assert_eq!(
+            tree_sizes,
+            Ok((EMPTY_TREE_LEAVES, ORCHARD_LEAVES, IRONWOOD_LEAVES))
+        );
+    }
+
+    const FIRST_SUBTREE_INDEX: usize = 0;
+
+    #[test]
+    fn a_subtree_root_whose_hash_is_not_32_bytes_is_invalid() {
+        let mut shard_trees = orchard_tree_scanned_past_the_fetched_roots();
+        let mut short_root = orchard_subtree_root(MerkleHashOrchard::empty_leaf());
+        short_root.root_hash.pop();
+
+        assert!(matches!(
+            add_subtree_roots(
+                FIRST_SUBTREE_INDEX,
+                vec![short_root],
+                &mut shard_trees.orchard
+            ),
+            Err(ServerError::InvalidSubtreeRoot)
+        ));
+    }
 
     #[test]
     fn fetched_roots_replace_bare_roots_and_keep_scanned_shards() {
