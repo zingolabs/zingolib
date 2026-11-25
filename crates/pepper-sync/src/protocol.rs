@@ -33,8 +33,22 @@ const ALL_POOL_TYPES: [PoolType; 4] = [
 ];
 const EVERY_POOL_BY_DEFAULT: [PoolType; 0] = [];
 
-const EXCLUSIVE_END: u64 = 1;
-const RANGE_ENDS_AT_GENESIS: &str = "a block range must end above height 0";
+const EXCLUSIVE_END: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockSpan {
+    first: BlockHeight,
+    last: BlockHeight,
+}
+
+impl BlockSpan {
+    pub(crate) fn of(range: &Range<BlockHeight>) -> Option<Self> {
+        (range.start < range.end).then(|| Self {
+            first: range.start,
+            last: range.end - EXCLUSIVE_END,
+        })
+    }
+}
 
 pub(crate) fn pool_types(include_transparent: bool) -> &'static [PoolType] {
     if include_transparent {
@@ -48,23 +62,12 @@ pub(crate) fn block_id_at(height: BlockHeight) -> BlockId {
     request::block_id(u64::from(height))
 }
 
-pub(crate) fn block_range(
-    range: Range<BlockHeight>,
-    pool_types: &[PoolType],
-) -> Result<BlockRange, tonic::Status> {
-    let last = u64::from(range.end)
-        .checked_sub(EXCLUSIVE_END)
-        .ok_or_else(|| tonic::Status::invalid_argument(RANGE_ENDS_AT_GENESIS))?;
-
-    Ok(request::block_range(
-        u64::from(range.start),
-        last,
-        pool_types,
-    ))
+pub(crate) fn block_range(span: BlockSpan, pool_types: &[PoolType]) -> BlockRange {
+    request::block_range(u64::from(span.first), u64::from(span.last), pool_types)
 }
 
-pub(crate) fn nullifier_range(range: Range<BlockHeight>) -> Result<BlockRange, tonic::Status> {
-    block_range(range, &EVERY_POOL_BY_DEFAULT)
+pub(crate) fn nullifier_range(span: BlockSpan) -> BlockRange {
+    block_range(span, &EVERY_POOL_BY_DEFAULT)
 }
 
 pub(crate) fn tx_filter(txid: TxId) -> TxFilter {
@@ -97,12 +100,12 @@ pub(crate) fn address_utxos_arg(
 
 pub(crate) fn address_block_filter(
     address: String,
-    range: Range<BlockHeight>,
-) -> Result<TransparentAddressBlockFilter, tonic::Status> {
-    Ok(TransparentAddressBlockFilter {
+    span: BlockSpan,
+) -> TransparentAddressBlockFilter {
+    TransparentAddressBlockFilter {
         address,
-        range: Some(nullifier_range(range)?),
-    })
+        range: Some(nullifier_range(span)),
+    }
 }
 
 #[cfg(test)]
@@ -112,17 +115,21 @@ mod tests {
     const GENESIS: u32 = 0;
     const FIRST: u32 = 3;
     const END: u32 = 6;
-    const LAST: u64 = 5;
+    const LAST: u32 = END - EXCLUSIVE_END;
+
+    fn span(start: u32, end: u32) -> Option<BlockSpan> {
+        BlockSpan::of(&(start.into()..end.into()))
+    }
 
     #[test]
     fn a_block_range_ends_at_the_block_below_its_exclusive_end() {
-        let range = block_range(FIRST.into()..END.into(), pool_types(false));
+        let range = span(FIRST, END).map(|span| block_range(span, pool_types(false)));
 
         assert_eq!(
-            range.map_err(|refusal| refusal.to_string()),
-            Ok(request::block_range(
+            range,
+            Some(request::block_range(
                 u64::from(FIRST),
-                LAST,
+                u64::from(LAST),
                 &SHIELDED_POOL_TYPES
             ))
         );
@@ -130,21 +137,16 @@ mod tests {
 
     #[test]
     fn an_empty_block_range_builds_no_request() {
-        let range = block_range(FIRST.into()..FIRST.into(), pool_types(false));
-
-        assert!(
-            range.is_err(),
-            "an empty block range built the request {range:?}"
-        );
+        assert_eq!(span(FIRST, FIRST), None);
     }
 
     #[test]
-    fn a_block_range_that_ends_at_genesis_is_refused() {
-        let range = block_range(GENESIS.into()..GENESIS.into(), pool_types(true));
+    fn an_inverted_block_range_builds_no_request() {
+        assert_eq!(span(END, FIRST), None);
+    }
 
-        assert!(matches!(
-            range,
-            Err(refusal) if refusal.code() == tonic::Code::InvalidArgument
-        ));
+    #[test]
+    fn a_block_range_that_ends_at_genesis_builds_no_request() {
+        assert_eq!(span(GENESIS, GENESIS), None);
     }
 }

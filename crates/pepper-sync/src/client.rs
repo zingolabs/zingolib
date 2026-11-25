@@ -29,6 +29,13 @@ pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
+fn block_span_of(block_range: &Range<BlockHeight>) -> Result<protocol::BlockSpan, ServerError> {
+    protocol::BlockSpan::of(block_range).ok_or(ServerError::EmptyBlockRange {
+        start: block_range.start,
+        end: block_range.end,
+    })
+}
+
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
 async fn next_stream_item<T>(
@@ -60,13 +67,13 @@ pub enum FetchRequest {
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
         oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
-        Range<BlockHeight>,
+        protocol::BlockSpan,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
         oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
-        Range<BlockHeight>,
+        protocol::BlockSpan,
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
@@ -87,7 +94,7 @@ pub enum FetchRequest {
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
         oneshot::Sender<Result<protocol::RawTransactions, tonic::Status>>,
-        (String, Range<BlockHeight>),
+        (String, protocol::BlockSpan),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
@@ -186,11 +193,12 @@ pub(crate) async fn get_compact_block_range(
     block_range: Range<BlockHeight>,
     include_transparent: bool,
 ) -> Result<protocol::CompactBlocks, ServerError> {
+    let block_span = block_span_of(&block_range)?;
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
             reply_sender,
-            block_range,
+            block_span,
             include_transparent,
         ))
         .map_err(|_| ServerError::FetcherDropped)?;
@@ -212,9 +220,10 @@ pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
 ) -> Result<protocol::CompactBlocks, ServerError> {
+    let block_span = block_span_of(&block_range)?;
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
-        .send(FetchRequest::NullifierRange(reply_sender, block_range))
+        .send(FetchRequest::NullifierRange(reply_sender, block_span))
         .map_err(|_| ServerError::FetcherDropped)?;
 
     let block_stream = reply_receiver
@@ -406,6 +415,9 @@ pub(crate) async fn get_transparent_address_transactions(
     transparent_address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
+    let Some(block_span) = protocol::BlockSpan::of(&block_range) else {
+        return Ok(Vec::new());
+    };
     let mut raw_transactions: Vec<protocol::RawTransaction> = Vec::new();
     let mut retry_count = 0;
 
@@ -415,7 +427,7 @@ pub(crate) async fn get_transparent_address_transactions(
         fetch_request_sender
             .send(FetchRequest::TransparentAddressTxs(
                 reply_sender,
-                (transparent_address.clone(), block_range.clone()),
+                (transparent_address.clone(), block_span),
             ))
             .map_err(|_| ServerError::FetcherDropped)?;
 
@@ -680,8 +692,13 @@ mod tests {
             get_compact_block_range(fetch_request_sender.clone(), empty_block_range(), false).await;
         let nullifiers = get_nullifier_range(fetch_request_sender, empty_block_range()).await;
 
-        assert!(compact_blocks.is_err());
-        assert!(nullifiers.is_err());
+        for refusal in [compact_blocks, nullifiers] {
+            assert!(matches!(
+                refusal,
+                Err(ServerError::EmptyBlockRange { start, end })
+                    if start == EMPTY_RANGE_HEIGHT.into() && end == EMPTY_RANGE_HEIGHT.into()
+            ));
+        }
         assert_eq!(
             request_count.load(atomic::Ordering::Acquire),
             NO_REQUESTS,

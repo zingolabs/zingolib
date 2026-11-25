@@ -109,23 +109,23 @@ where
                 include_transparent
             );
             let pool_types = protocol::pool_types(include_transparent);
-            let block_stream = match protocol::block_range(block_range, pool_types) {
-                Ok(range) => client.get_block_range(range, FINITE_STREAM_TIMEOUT).await,
-                Err(refusal) => Err(refusal),
-            };
+            let block_stream = client
+                .get_block_range(
+                    protocol::block_range(block_range, pool_types),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
             tracing::debug!("Fetching nullifiers. {:?}", &block_range);
             #[allow(deprecated)]
-            let block_stream = match protocol::nullifier_range(block_range) {
-                Ok(range) => {
-                    client
-                        .get_block_range_nullifiers(range, FINITE_STREAM_TIMEOUT)
-                        .await
-                }
-                Err(refusal) => Err(refusal),
-            };
+            let block_stream = client
+                .get_block_range_nullifiers(
+                    protocol::nullifier_range(block_range),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
@@ -180,15 +180,12 @@ where
                 &address
             );
             #[allow(deprecated)]
-            let raw_transaction_stream = match protocol::address_block_filter(address, block_range)
-            {
-                Ok(filter) => {
-                    client
-                        .get_taddress_txids(filter, FINITE_STREAM_TIMEOUT)
-                        .await
-                }
-                Err(refusal) => Err(refusal),
-            };
+            let raw_transaction_stream = client
+                .get_taddress_txids(
+                    protocol::address_block_filter(address, block_range),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(raw_transaction_stream);
         }
     }

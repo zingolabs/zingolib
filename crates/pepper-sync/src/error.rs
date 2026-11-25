@@ -147,7 +147,7 @@ impl ServerError {
     pub fn recommend_same_server(&self) -> bool {
         match self {
             // Internal channel issue. Retrying may help after restart.
-            ServerError::FetcherDropped => true,
+            ServerError::FetcherDropped | ServerError::EmptyBlockRange { .. } => true,
             // A re-org lowered the chain height or the server is behind the
             // chain tip. The next sync starts from the server's chain height.
             ServerError::ChainHeightBelowScanRange { .. } => true,
@@ -291,7 +291,9 @@ impl ServerError {
                 SyncRecoveryObservables::ServerUnavailable
             }
             // Empty chain. No point retrying anywhere.
-            ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
+            ServerError::GenesisBlockOnly | ServerError::EmptyBlockRange { .. } => {
+                SyncRecoveryObservables::Abort
+            }
         }
     }
 }
@@ -543,6 +545,14 @@ pub enum ServerError {
         /// The height of the last block in the scan range.
         scan_range_end: BlockHeight,
     },
+    #[allow(missing_docs)]
+    #[error(
+        "the wallet asked for the block range {start}..{end}, which holds no block. no request was sent to the server."
+    )]
+    EmptyBlockRange {
+        start: BlockHeight,
+        end: BlockHeight,
+    },
 }
 
 /// Sync mode error.
@@ -681,6 +691,15 @@ mod tests {
 
     /// The codes gRPC names as transient, as a server or the transport
     /// reports them.
+    const EMPTY_RANGE_HEIGHT: u32 = 5;
+
+    fn empty_block_range_error() -> ServerError {
+        ServerError::EmptyBlockRange {
+            start: BlockHeight::from_u32(EMPTY_RANGE_HEIGHT),
+            end: BlockHeight::from_u32(EMPTY_RANGE_HEIGHT),
+        }
+    }
+
     fn network_weather_statuses() -> [tonic::Status; 5] {
         [
             tonic::Status::unavailable("down"),
@@ -711,6 +730,11 @@ mod tests {
             #[test]
             fn fetcher_dropped() {
                 assert!(ServerError::FetcherDropped.recommend_same_server());
+            }
+
+            #[test]
+            fn empty_block_range() {
+                assert!(empty_block_range_error().recommend_same_server());
             }
 
             #[test]
@@ -1074,6 +1098,14 @@ mod tests {
             fn genesis_block_only() {
                 assert_eq!(
                     ServerError::GenesisBlockOnly.recovery_recommendation(),
+                    SyncRecoveryObservables::Abort
+                );
+            }
+
+            #[test]
+            fn empty_block_range() {
+                assert_eq!(
+                    empty_block_range_error().recovery_recommendation(),
                     SyncRecoveryObservables::Abort
                 );
             }
