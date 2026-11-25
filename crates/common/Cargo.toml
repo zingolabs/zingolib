@@ -56,6 +56,7 @@ memuse.workspace = true
 # Serialization
 byteorder.workspace = true
 serde = { workspace = true, features = ["derive"] }
+hex.workspace = true
 
 [dev-dependencies]
 zcash_protocol = { workspace = true, features = ["local-consensus"] }

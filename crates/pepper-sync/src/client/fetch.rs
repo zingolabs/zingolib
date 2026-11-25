@@ -4,6 +4,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use tracing::instrument;
 use zcash_protocol::consensus::BlockHeight;
+use zl_common::chain;
 use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{client::FetchRequest, protocol};
@@ -21,7 +22,7 @@ pub(crate) async fn fetch<C>(
     mut client: C,
 ) where
     C: Clone
-        + Indexer<TreeState = protocol::TreeState>
+        + Indexer<TreeState = chain::TreeStateReply>
         + TransparentIndexer
         + Sync
         + Send
@@ -93,7 +94,7 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
 where
     C: Clone
-        + Indexer<TreeState = protocol::TreeState>
+        + Indexer<TreeState = chain::TreeStateReply>
         + TransparentIndexer
         + Sync
         + Send
@@ -223,10 +224,10 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<protocol::TreeState, protocol::Status>
+) -> Result<chain::TreeStateReply, protocol::Status>
 where
     C: Clone
-        + Indexer<TreeState = protocol::TreeState>
+        + Indexer<TreeState = chain::TreeStateReply>
         + TransparentIndexer
         + Sync
         + Send

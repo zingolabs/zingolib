@@ -113,6 +113,7 @@ pub(crate) mod scan;
 pub use zl_common::shardtree_ext;
 pub mod sync;
 pub(crate) mod utils;
+pub mod vocabulary;
 pub mod wallet;
 pub(crate) mod witness;
 

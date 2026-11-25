@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend, derived from each pending transaction's inputs every time it is
   called.
 - `wallet::serialization::write_string`.
+- `vocabulary::Zcash`, the `zl_netutils::wire::Vocabulary` whose tree state
+  is `zl_common::chain::TreeStateReply`.
 - The `test-features` feature adds
   `WalletBlock::clear_pool_tree_bounds_for_test`,
   `TransactionRecord::clear_pool_notes_for_test` and
@@ -27,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
 - BREAKING: `sync` bounds its client by
-  `Indexer<TreeState = zl_netutils::lightwallet_protocol::TreeState>`. A
-  `GrpcIndexer` with its default vocabulary meets the bound.
+  `Indexer<TreeState = zl_common::chain::TreeStateReply>`. A `GrpcIndexer`
+  meets the bound after `with_vocabulary::<vocabulary::Zcash>()`.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status

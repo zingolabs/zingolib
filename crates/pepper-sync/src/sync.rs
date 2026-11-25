@@ -24,7 +24,7 @@ use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::protocol;
 
-use zl_common::status::ConfirmationStatus;
+use zl_common::{chain, status::ConfirmationStatus};
 
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
@@ -249,7 +249,7 @@ pub async fn sync<C, P, W>(
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     C: Clone
-        + Indexer<TreeState = protocol::TreeState>
+        + Indexer<TreeState = chain::TreeStateReply>
         + TransparentIndexer
         + Sync
         + Send

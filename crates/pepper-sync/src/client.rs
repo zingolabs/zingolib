@@ -12,17 +12,15 @@ use std::{
 use tokio::sync::{mpsc::UnboundedSender, oneshot};
 
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_protocol::{
-    PoolType, ShieldedPool,
-    consensus::{self, BlockHeight},
-};
+use zcash_protocol::consensus::{self, BlockHeight};
 
+use zl_common::chain;
 use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError, stream_error_is_retryable},
     protocol,
-    witness::{self, Frontiers},
+    witness::Frontiers,
 };
 
 pub(crate) mod fetch;
@@ -68,7 +66,7 @@ pub enum FetchRequest {
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<Result<protocol::TreeState, protocol::Status>>,
+        oneshot::Sender<Result<chain::TreeStateReply, protocol::Status>>,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
@@ -300,30 +298,12 @@ pub(crate) async fn get_frontiers(
         .send(FetchRequest::TreeState(reply_sender, block_height))
         .map_err(|_| ServerError::FetcherDropped)?;
 
-    let mut tree_state = reply_receiver
+    let tree_state = reply_receiver
         .await
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
 
-    // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
-    // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
-    // pool.
-    for (pool, network_upgrade) in [
-        (ShieldedPool::Sapling, consensus::NetworkUpgrade::Sapling),
-        (ShieldedPool::Orchard, consensus::NetworkUpgrade::Nu5),
-        (ShieldedPool::Ironwood, consensus::NetworkUpgrade::Nu6_3),
-    ] {
-        if witness::tree_hex_mut(&mut tree_state, pool).is_empty()
-            && consensus_parameters.is_nu_active(network_upgrade, block_height)
-        {
-            return Err(ServerError::TreeStateNotServed {
-                pool: PoolType::Shielded(pool),
-                height: block_height,
-            });
-        }
-    }
-
-    tree_state.try_into().map_err(ServerError::InvalidFrontier)
+    Frontiers::of_tree_state(&tree_state, consensus_parameters, block_height)
 }
 
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
@@ -500,7 +480,7 @@ mod tests {
 
     use tokio::sync::mpsc;
     use zcash_primitives::block;
-    use zcash_protocol::local_consensus::LocalNetwork;
+    use zcash_protocol::{PoolType, ShieldedPool, local_consensus::LocalNetwork};
 
     use super::*;
     use crate::mocks;
