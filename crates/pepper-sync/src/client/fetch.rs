@@ -7,7 +7,7 @@ use zcash_protocol::consensus::BlockHeight;
 use zl_common::chain;
 use zl_netutils::{Indexer, TransparentIndexer};
 
-use crate::{client::FetchRequest, protocol};
+use crate::{client::FetchRequest, protocol, vocabulary};
 
 use zl_netutils::time::{FINITE_STREAM_TIMEOUT, UNARY_RPC_TIMEOUT};
 
@@ -22,7 +22,7 @@ pub(crate) async fn fetch<C>(
     mut client: C,
 ) where
     C: Clone
-        + Indexer<TreeState = chain::TreeStateReply>
+        + Indexer<TreeState = chain::TreeStateReply, Transaction = vocabulary::TransactionReply>
         + TransparentIndexer
         + Sync
         + Send
@@ -94,7 +94,7 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
 where
     C: Clone
-        + Indexer<TreeState = chain::TreeStateReply>
+        + Indexer<TreeState = chain::TreeStateReply, Transaction = vocabulary::TransactionReply>
         + TransparentIndexer
         + Sync
         + Send
@@ -227,7 +227,7 @@ async fn get_tree_state<C>(
 ) -> Result<chain::TreeStateReply, protocol::Status>
 where
     C: Clone
-        + Indexer<TreeState = chain::TreeStateReply>
+        + Indexer<TreeState = chain::TreeStateReply, Transaction = vocabulary::TransactionReply>
         + TransparentIndexer
         + Sync
         + Send

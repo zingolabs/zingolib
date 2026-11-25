@@ -6,6 +6,7 @@ use shardtree::error::ShardTreeError;
 use zcash_primitives::{block::BlockHash, transaction::TxId};
 use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::{PoolType, ShieldedPool};
+use zl_common::chain;
 
 use crate::{protocol, wallet::OutputId};
 
@@ -210,6 +211,8 @@ impl ServerError {
             ServerError::RequestFailed(_)
             | ServerError::InvalidFrontier(_)
             | ServerError::InvalidTransaction(_)
+            | ServerError::InvalidTransactionHeight(_)
+            | ServerError::TransactionNotMined(_)
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
             | ServerError::TreeStateNotServed { .. }
@@ -423,6 +426,10 @@ pub enum ServerError {
     /// Server returned invalid transaction.
     #[error("server returned invalid transaction. {0}")]
     InvalidTransaction(std::io::Error),
+    #[error("server returned a transaction with an invalid height. {0}")]
+    InvalidTransactionHeight(chain::InvalidRawTransaction),
+    #[error("server returned a transaction that is not mined on the main chain. {0:?}")]
+    TransactionNotMined(chain::RawTransactionStatus),
     /// Server returned invalid subtree root.
     // TODO: add more info
     #[error("server returned invalid subtree root.")]
@@ -766,6 +773,26 @@ mod tests {
             #[test]
             fn invalid_transaction() {
                 let e = ServerError::InvalidTransaction(std::io::Error::other("bad"));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn invalid_transaction_height() {
+                let e = ServerError::InvalidTransactionHeight(chain::InvalidRawTransaction(
+                    u64::from(u32::MAX) + 1,
+                ));
+                assert_eq!(
+                    e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn transaction_not_mined() {
+                let e = ServerError::TransactionNotMined(chain::RawTransactionStatus::Mempool);
                 assert_eq!(
                     e.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable

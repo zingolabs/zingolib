@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wallet::serialization::write_string`.
 - `vocabulary::Zcash`, the `zl_netutils::wire::Vocabulary` whose tree state
   is `zl_common::chain::TreeStateReply`.
+- `vocabulary::TransactionReply`, the transaction of `vocabulary::Zcash`: a
+  `zl_common::chain::RawTransaction`, or the
+  `zl_common::chain::InvalidRawTransaction` that holds the bad height.
 - The `test-features` feature adds
   `WalletBlock::clear_pool_tree_bounds_for_test`,
   `TransactionRecord::clear_pool_notes_for_test` and
@@ -69,6 +72,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enables it through `zl-common/serialization`.
 
 ### Fixed
+- A transaction reply whose height is not a block height no longer panics or
+  passes as a block height. An indexer reports a mempool transaction with
+  height 0 and a transaction mined off the main chain with `u64::MAX`. The
+  fetch read 0 as block 0, and it panicked on `u64::MAX` and on any height
+  above `u32::MAX`. BREAKING: `ServerError` has the variants
+  `TransactionNotMined` and `InvalidTransactionHeight` for these replies, and
+  `recovery_recommendation` returns `ServerUnavailable` for both. `sync`
+  requires a client whose `Indexer::Transaction` is
+  `vocabulary::TransactionReply`.
 - A fetch of a block range that holds no block sends no request. The fetcher
   computed the last block as the end height minus one and did not compare it
   with the start, so an empty range such as `5..5` asked the indexer for

@@ -1,7 +1,9 @@
 use zingo_common_components::protocol::ActivationHeights;
 
+mod raw_transaction;
 mod tree_state;
 
+pub use raw_transaction::{InvalidRawTransaction, RawTransaction, RawTransactionStatus};
 pub use tree_state::{InvalidTreeState, Tree, TreeStateReply};
 
 /// The network types a lightclient can connect to.

@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names the field. The tree of each pool is a `Tree`, which is `Omitted`,
   `Served` with its bytes, or `Malformed` with the hex error. The crate
   depends on `hex` for these types.
+- `chain::RawTransaction`, the transaction that an indexer serves. Its
+  `status` is a `chain::RawTransactionStatus`: `Mempool`,
+  `MinedOffMainChain`, or `Mined` with a `BlockHeight`.
+  `RawTransactionStatus::of_height` reads the height field of a reply, and it
+  returns `chain::InvalidRawTransaction` for a height that is neither a
+  sentinel nor a block height.
 - `keys` module: `UnifiedKeyStore`, `UnifiedAddressId`, `ReceiverSelection`,
   `KeyError`, `encode_ufvk` and the `KEY_TYPE_EMPTY`, `KEY_TYPE_VIEW` and
   `KEY_TYPE_SPEND` constants. `UnifiedKeyStore::determine_nth_valid_sapling_diversifier`
