@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the fee-estimator version. Backends predating the RPC answer
   `Unimplemented`. The trait method is new and required, so out-of-tree
   `Indexer` implementors must add it.
-- The `dns` module. `dns::lookup(host, port)` resolves a host name over
+- The `dns` module. `dns::lookup(host)` resolves a host name over
   DNS-over-HTTPS and DNS-over-TLS alone, against Cloudflare and Quad9 dialed
   by IP address, with one answer cache shared by the process. It never asks
   the system resolver and has no plaintext fallback. IP literals, `localhost`

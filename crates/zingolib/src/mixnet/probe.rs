@@ -25,6 +25,7 @@
 //! consumers.
 #![forbid(unsafe_code)]
 
+use std::net;
 use std::time::{Duration, Instant};
 
 use http::Uri;
@@ -234,7 +235,12 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
     // Stage 1: raw TCP proves reachability apart from everything above it.
     let started = Instant::now();
     let tcp = tokio::time::timeout(stage_timeout, async {
-        let addrs = zl_netutils::dns::lookup(&host, probe_port(server)).await?;
+        let port = probe_port(server);
+        let addrs: Vec<net::SocketAddr> = zl_netutils::dns::lookup(&host)
+            .await?
+            .into_iter()
+            .map(|ip| net::SocketAddr::new(ip, port))
+            .collect();
         tokio::net::TcpStream::connect(addrs.as_slice()).await
     })
     .await;

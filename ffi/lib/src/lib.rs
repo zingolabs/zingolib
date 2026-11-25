@@ -1874,15 +1874,15 @@ fn timed_out(error: &impl std::error::Error) -> bool {
     false
 }
 
-async fn resolve(host: &str, port: u16) -> Result<Vec<std::net::IpAddr>, String> {
-    let addresses = tokio::time::timeout(PROBE_CONNECT_TIMEOUT, netutils::dns::lookup(host, port))
+async fn resolve(host: &str) -> Result<Vec<std::net::IpAddr>, String> {
+    let addresses = tokio::time::timeout(PROBE_CONNECT_TIMEOUT, netutils::dns::lookup(host))
         .await
         .map_err(|elapsed| chain_text(&elapsed))?
         .map_err(|cause| chain_text(&cause))?;
     let mut resolved: Vec<std::net::IpAddr> = Vec::new();
     for address in addresses {
-        if !resolved.contains(&address.ip()) {
-            resolved.push(address.ip());
+        if !resolved.contains(&address) {
+            resolved.push(address);
         }
     }
     Ok(resolved)
@@ -1910,7 +1910,7 @@ impl Probe {
                 literal: true,
             },
             Err(_) => {
-                let resolved = match resolve(&host, port).await {
+                let resolved = match resolve(&host).await {
                     Ok(resolved) => resolved,
                     Err(cause) => return Self::Unresolved { host, port, cause },
                 };
