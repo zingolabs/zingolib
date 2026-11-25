@@ -62,6 +62,20 @@
   down. No config file holds the settings, so run cargo-dupes through the
   binary: `cargo run --manifest-path tools/workbench/Cargo.toml --bin
   dupes-gate -- <cargo-dupes arguments>`.
+- **A touched function's cognitive complexity may not grow past 25, clippy's
+  own `cognitive_complexity` default threshold.** Lines of code is a weak,
+  gameable proxy for readability debt: inlining a function or chaining
+  expressions can shrink a diff's line count while making it harder to
+  read. Cognitive complexity targets that directly. A function nobody
+  touched is never measured, so pre-existing debt never blocks an unrelated
+  change, and a function that only improves is never rejected even if it
+  stays above the ceiling. Ruled 2026-11-24. CI enforces it through the
+  workbench binary `complexity-gate`
+  (tools/workbench/src/complexity_gate.rs), which pins
+  `rust-code-analysis-cli` and measures every function a branch touches
+  before (at the merge base) and after (in the working tree). Run it
+  locally with `cargo run --manifest-path tools/workbench/Cargo.toml --bin
+  complexity-gate -- [--base <ref>]`.
 - **A pull request merges into `dev` only when `dev` could be released the
   moment it lands.** Releases are cut from `dev` with no `stable` branch
   (zingo-adrs zingolib/0064), so a candidate can be taken on any day. Work

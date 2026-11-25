@@ -23,6 +23,7 @@ pub mod binding_manifest;
 pub mod binding_publish;
 pub mod cache_families;
 pub mod closed_pr_runs;
+pub mod complexity_gate;
 #[cfg(test)]
 mod crate_move;
 pub mod dupes_gate;

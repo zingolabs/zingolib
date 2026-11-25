@@ -54,6 +54,19 @@ jobs:
         if: steps.cargo-dupes.outputs.cache-hit != 'true'
         run: cargo run --manifest-path tools/workbench/Cargo.toml --bin dupes-gate -- --install
 
+      # complexity-delta.yaml installs rust-code-analysis-cli under this same
+      # cache key, so a pull request compiles it at most once.
+      - name: Restore rust-code-analysis-cli
+        id: rust-code-analysis-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/rust-code-analysis-cli
+          key: rust-code-analysis-cli-${{ hashFiles('tools/workbench/src/complexity_gate.rs') }}-${{ runner.os }}
+
+      - name: Install rust-code-analysis-cli
+        if: steps.rust-code-analysis-cli.outputs.cache-hit != 'true'
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin complexity-gate -- --install
+
       - name: Format
         run: cargo fmt --manifest-path tools/workbench/Cargo.toml --all --check
 

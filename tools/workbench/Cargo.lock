@@ -228,6 +228,8 @@ name = "workbench"
 version = "0.0.0"
 dependencies = [
  "cargo_metadata",
+ "serde",
+ "serde_json",
  "toml_edit",
 ]
 

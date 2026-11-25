@@ -1,0 +1,57 @@
+# AGENTS.md states the rule, and tools/workbench/src/complexity_gate.rs holds
+# the gate: the `complexity-gate` binary pins rust-code-analysis-cli, measures
+# every touched function's cognitive complexity before (at the merge base)
+# and after (in the working tree), and rejects one that grows past the
+# ceiling. Pre-existing debt a branch never touches is never measured, so
+# this never blocks an unrelated change.
+#
+# The gate has its own workflow with no `paths` filter. Branch protection
+# requires the check `Complexity delta`, and GitHub holds a pull request
+# forever on a required check that never reports, which the filter in
+# ci-pr.yaml would cause on a pull request outside its paths. The gate needs
+# the full commit history to resolve a merge base, so this workflow's
+# checkout fetches it; ci-pr.yaml's other jobs do not.
+name: Complexity delta
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [dev, "release/**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  complexity-delta:
+    name: Complexity delta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust and the cargo cache
+        uses: ./.github/actions/rust-setup
+        with:
+          workspaces: tools/workbench
+
+      # The gate's own module and the workbench job below install
+      # rust-code-analysis-cli under the same cache key, so a pull request
+      # compiles it at most once.
+      - name: Restore rust-code-analysis-cli
+        id: rust-code-analysis-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/rust-code-analysis-cli
+          key: rust-code-analysis-cli-${{ hashFiles('tools/workbench/src/complexity_gate.rs') }}-${{ runner.os }}
+
+      - name: Install rust-code-analysis-cli
+        if: steps.rust-code-analysis-cli.outputs.cache-hit != 'true'
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin complexity-gate -- --install
+
+      - name: Run complexity-gate
+        run: cargo run --manifest-path tools/workbench/Cargo.toml --bin complexity-gate
