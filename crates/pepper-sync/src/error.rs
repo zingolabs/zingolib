@@ -213,6 +213,7 @@ impl ServerError {
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
             | ServerError::TreeStateNotServed { .. }
+            | ServerError::TreeStateHeightMismatch { .. }
             | ServerError::UnsupportedProtocolVersion { .. } => {
                 SyncRecoveryObservables::ServerUnavailable
             }
@@ -448,6 +449,13 @@ pub enum ServerError {
         pool: PoolType,
         /// The requested block height.
         height: BlockHeight,
+    },
+    #[error(
+        "server answered the tree state request for height {requested} with the tree state of height {served}."
+    )]
+    TreeStateHeightMismatch {
+        requested: BlockHeight,
+        served: BlockHeight,
     },
     /// Server's lightwallet protocol version is too old to serve the transparent and Ironwood data in compact blocks
     /// required for sync.

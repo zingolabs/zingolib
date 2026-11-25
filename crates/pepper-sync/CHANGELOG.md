@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is read with `zl_common::memo`, whose encoding is the one `zingo-memo`
   0.3.0 wrote. A consumer that names the status through `zingo-status` names
   it through `zl-common`.
+- BREAKING: `ServerError` has the variant `TreeStateHeightMismatch`. A
+  consumer that matches every variant adds an arm.
 
 ### Deprecated
 
@@ -69,6 +71,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enables it through `zl-common/serialization`.
 
 ### Fixed
+- A tree state of a height other than the requested one is refused. The
+  wallet built its frontiers from the height and hash of the reply and did
+  not compare the height with the request, so an indexer that answered with
+  the tree state of another block seeded the shard trees with the wrong
+  frontiers. The refusal is `ServerError::TreeStateHeightMismatch`, which
+  names both heights and recommends another server.
 - A fetch of a block range that holds no block sends no request. The fetcher
   computed the last block as the end height minus one and did not compare it
   with the start, so an empty range such as `5..5` asked the indexer for
