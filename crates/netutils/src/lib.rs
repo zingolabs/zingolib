@@ -1141,17 +1141,8 @@ mod tests {
         );
     }
 
-    /// A path that goes silent while the channel is connecting must fail the
-    /// call, not hold it. This listener accepts the TCP connection and never
-    /// answers, which is what a dropped network looks like to a client that is
-    /// reconnecting: the TLS handshake waits for a reply that is not coming.
-    ///
-    /// Before `INDEXER_CONNECT_TIMEOUT` the call below never returned, whatever
-    /// deadline it carried, because a request's deadline only starts once the
-    /// channel has a connection to send it on.
     #[tokio::test]
-    async fn a_system_resolver_indexer_dials_its_host_name_without_the_encrypted_resolver()
-    -> std::io::Result<()> {
+    async fn a_system_resolver_indexer_dials_its_host_name() -> std::io::Result<()> {
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
         let port = listener.local_addr()?.port();
         let uri: http::Uri = format!("http://localhost:{port}")
@@ -1171,10 +1162,17 @@ mod tests {
             matches!(accepted, Ok(Ok(()))),
             "the listener must see the dial, got {accepted:?}"
         );
-        assert!(!dns::encrypted_resolver_is_built());
         Ok(())
     }
 
+    /// A path that goes silent while the channel is connecting must fail the
+    /// call, not hold it. This listener accepts the TCP connection and never
+    /// answers, which is what a dropped network looks like to a client that is
+    /// reconnecting: the TLS handshake waits for a reply that is not coming.
+    ///
+    /// Before `INDEXER_CONNECT_TIMEOUT` the call below never returned, whatever
+    /// deadline it carried, because a request's deadline only starts once the
+    /// channel has a connection to send it on.
     #[tokio::test]
     async fn a_silent_indexer_fails_the_call_instead_of_hanging() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");

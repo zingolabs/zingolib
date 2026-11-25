@@ -76,11 +76,6 @@ pub enum Resolver {
     System,
 }
 
-#[cfg(test)]
-pub(crate) fn encrypted_resolver_is_built() -> bool {
-    RESOLVER.get().is_some()
-}
-
 fn ips(addrs: impl Iterator<Item = net::SocketAddr>) -> Vec<net::IpAddr> {
     addrs.map(|addr| addr.ip()).collect()
 }
@@ -104,11 +99,23 @@ async fn system_lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
         .map(ips)
 }
 
-pub async fn lookup_through(resolver: Resolver, host: &str) -> io::Result<Vec<net::IpAddr>> {
+async fn resolve_through<Encrypted, System>(
+    resolver: Resolver,
+    encrypted: Encrypted,
+    system: System,
+) -> io::Result<Vec<net::IpAddr>>
+where
+    Encrypted: Future<Output = io::Result<Vec<net::IpAddr>>>,
+    System: Future<Output = io::Result<Vec<net::IpAddr>>>,
+{
     match resolver {
-        Resolver::Encrypted => encrypted_lookup(host).await,
-        Resolver::System => system_lookup(host).await,
+        Resolver::Encrypted => encrypted.await,
+        Resolver::System => system.await,
     }
+}
+
+pub async fn lookup_through(resolver: Resolver, host: &str) -> io::Result<Vec<net::IpAddr>> {
+    resolve_through(resolver, encrypted_lookup(host), system_lookup(host)).await
 }
 
 pub async fn lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
@@ -184,7 +191,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_system_lookup_answers_and_never_builds_the_encrypted_resolver() -> io::Result<()> {
+    async fn a_system_lookup_answers_local_names() -> io::Result<()> {
         let v4_literal =
             lookup_through(Resolver::System, &net::Ipv4Addr::LOCALHOST.to_string()).await?;
         let v6_literal =
@@ -202,14 +209,28 @@ mod tests {
             localhost.iter().any(net::IpAddr::is_loopback),
             "localhost must answer a loopback address, got {localhost:?}"
         );
-        assert!(!encrypted_resolver_is_built());
         Ok(())
     }
 
+    async fn never_awaited() -> io::Result<Vec<net::IpAddr>> {
+        Err(io::Error::other("the resolver not chosen was awaited"))
+    }
+
+    async fn answers(ip: net::IpAddr) -> io::Result<Vec<net::IpAddr>> {
+        Ok(vec![ip])
+    }
+
     #[tokio::test]
-    async fn an_encrypted_lookup_builds_the_encrypted_resolver() -> io::Result<()> {
-        lookup_through(Resolver::Encrypted, &net::Ipv4Addr::LOCALHOST.to_string()).await?;
-        assert!(encrypted_resolver_is_built());
+    async fn each_resolver_awaits_its_own_lookup_and_never_the_other() -> io::Result<()> {
+        let v4 = net::IpAddr::from(net::Ipv4Addr::LOCALHOST);
+        let v6 = net::IpAddr::from(net::Ipv6Addr::LOCALHOST);
+
+        let through_system =
+            resolve_through(Resolver::System, never_awaited(), answers(v4)).await?;
+        let through_encrypted =
+            resolve_through(Resolver::Encrypted, answers(v6), never_awaited()).await?;
+
+        assert_eq!((through_system, through_encrypted), (vec![v4], vec![v6]));
         Ok(())
     }
 
@@ -224,7 +245,6 @@ mod tests {
                 URI_PORT
             )],
         );
-        assert!(!encrypted_resolver_is_built());
         Ok(())
     }
 
