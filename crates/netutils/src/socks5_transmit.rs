@@ -31,10 +31,13 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
+use crate::wire::status_of;
+use crate::{ParseWire, parse_lightd_info};
 use lightwallet_protocol::{
-    BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, StandardFee,
-    TxFilter,
+    BlockId as WireBlockId, ChainSpec, CompactTxStreamerClient, Empty,
+    LightdInfo as WireLightdInfo, RawTransaction, StandardFee as WireStandardFee, TxFilter,
 };
+use zl_primitives::chain::{BlockId, LightdInfo, StandardFee};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data
@@ -298,29 +301,41 @@ impl Socks5Indexer {
     /// Fetches the indexer's chain tip through the proxy, the lightest
     /// liveness probe an indexer answers.
     pub async fn get_latest_block(&self) -> Result<BlockId, Socks5TransmitError> {
-        self.round_trip(ChainSpec {}, |mut client, request| async move {
-            client.get_latest_block(request).await
+        let wire: WireBlockId = self
+            .round_trip(ChainSpec {}, |mut client, request| async move {
+                client.get_latest_block(request).await
+            })
+            .await?;
+        BlockId::parse_wire(wire).map_err(|error| Socks5TransmitError::Rpc {
+            destination: self.destination(),
+            status: status_of(error),
         })
-        .await
     }
 
     /// Fetches the indexer's `GetLightdInfo` through the proxy, the probe
     /// that names the chain a candidate serves.
     pub async fn get_lightd_info(&self) -> Result<LightdInfo, Socks5TransmitError> {
-        self.round_trip(Empty {}, |mut client, request| async move {
-            client.get_lightd_info(request).await
-        })
-        .await
+        let wire: WireLightdInfo = self
+            .round_trip(Empty {}, |mut client, request| async move {
+                client.get_lightd_info(request).await
+            })
+            .await?;
+        Ok(parse_lightd_info(wire))
     }
 
     /// Fetches the indexer's standard fee report through the proxy, the
     /// backend `getstandardfee` marginal fee. Backends predating the RPC
     /// answer `Unimplemented`.
     pub async fn get_standard_fee(&self) -> Result<StandardFee, Socks5TransmitError> {
-        self.round_trip(Empty {}, |mut client, request| async move {
-            client.get_standard_fee(request).await
+        let wire: WireStandardFee = self
+            .round_trip(Empty {}, |mut client, request| async move {
+                client.get_standard_fee(request).await
+            })
+            .await?;
+        Ok(StandardFee {
+            fee_zat: wire.fee_zat,
+            estimator_version: wire.estimator_version,
         })
-        .await
     }
 
     /// Reports whether the indexer knows the transaction identified by

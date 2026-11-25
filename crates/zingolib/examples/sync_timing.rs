@@ -44,7 +44,7 @@ fn main() {
                 .get_latest_block(Duration::from_secs(TIP_QUERY_SECS))
                 .await
                 .expect("the indexer reports its tip");
-            let tip = u32::try_from(block.height).expect("the chain height fits a u32");
+            let tip = u32::from(block.height);
             // An explicit birthday rescans a named window; without one the
             // run takes the guard window below the live tip.
             let birthday: u32 = std::env::args()

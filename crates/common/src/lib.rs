@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
-pub mod chain;
+/// Re-exported from `zl-primitives`: the chain-reply domain vocabulary lives in its own crate,
+/// free of the wallet stack, so `zl-netutils` can name it without depending on `zl-common`.
+/// `zl-common`'s own consumers (`pepper-sync`, `zingolib`) keep using this same path.
+pub use zl_primitives::chain;
 pub mod config;
 #[doc(hidden)]
 pub mod engine;

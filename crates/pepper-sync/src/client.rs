@@ -17,19 +17,16 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use zl_netutils::{
-    Indexer, TransparentIndexer,
-    lightwallet_protocol::{
-        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
-    },
+use futures::Stream;
+use zl_common::chain::{
+    BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
 };
+use zl_netutils::{CompactBlockStream, Indexer, SubtreeRootStream, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError},
     witness::Frontiers,
 };
-
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 
@@ -37,12 +34,18 @@ const MAX_RETRIES: u8 = 3;
 
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
-async fn next_stream_item<T>(
-    stream: &mut tonic::Streaming<T>,
+/// Pulls the next item from any item-at-a-time stream, bounding the wait by
+/// [`STREAM_MSG_TIMEOUT`]. Works over [`tonic::Streaming`] (a gRPC response stream) and over a
+/// mapped [`Stream`] alike, since both yield `Result<T, tonic::Status>` per item.
+pub(crate) async fn next_stream_item<T, S>(
+    stream: &mut S,
     what: &'static str,
-) -> Result<Option<T>, tonic::Status> {
-    match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
-        Ok(res) => res,
+) -> Result<Option<T>, tonic::Status>
+where
+    S: Stream<Item = Result<T, tonic::Status>> + Unpin,
+{
+    match tokio::time::timeout(STREAM_MSG_TIMEOUT, futures::StreamExt::next(stream)).await {
+        Ok(item) => item.transpose(),
         Err(_) => Err(tonic::Status::deadline_exceeded(format!(
             "{what} stream message timeout"
         ))),
@@ -52,7 +55,6 @@ async fn next_stream_item<T>(
 /// Fetch requests are created and sent to the [`crate::client::fetch::fetch`] task when a connection to the server is required.
 ///
 /// Each variant includes a [`tokio::sync::oneshot::Sender`] for returning the fetched data to the requester.
-#[derive(Debug)]
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
     ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
@@ -65,13 +67,13 @@ pub enum FetchRequest {
     ///
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<CompactBlockStream, tonic::Status>>,
         Range<BlockHeight>,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<CompactBlockStream, tonic::Status>>,
         Range<BlockHeight>,
     ),
     /// Gets the tree states for a specified block height.
@@ -82,6 +84,7 @@ pub enum FetchRequest {
     /// Get a full transaction by txid.
     Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
+    /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
         oneshot::Sender<Result<Vec<GetAddressUtxosReply>, tonic::Status>>,
@@ -89,12 +92,12 @@ pub enum FetchRequest {
     ),
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
-        oneshot::Sender<Result<tonic::Streaming<RawTransaction>, tonic::Status>>,
+        oneshot::Sender<Result<zl_netutils::RawTransactionStream, tonic::Status>>,
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
-        oneshot::Sender<Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>,
+        oneshot::Sender<Result<SubtreeRootStream, tonic::Status>>,
         u32,
         i32,
         u32,
@@ -113,9 +116,7 @@ pub(crate) async fn check_lightwallet_protocol_version<C>(client: &mut C) -> Res
 where
     C: Indexer,
 {
-    let version = fetch::get_lightd_info(client)
-        .await?
-        .lightwallet_protocol_version;
+    let version = fetch::get_lightwallet_protocol_version(client).await?;
 
     if parse_protocol_version(&version)
         .is_some_and(|version| version >= MIN_LIGHTWALLET_PROTOCOL_VERSION)
@@ -158,7 +159,7 @@ pub(crate) async fn get_chain_height(
         .map_err(|_| ServerError::FetcherDropped)?
         .map_err(ServerError::RequestFailed)?;
 
-    Ok(BlockHeight::from_u32(chain_tip.height as u32))
+    Ok(chain_tip.height)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -188,7 +189,7 @@ pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
     include_transparent: bool,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<CompactBlockStream, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
@@ -214,7 +215,7 @@ pub(crate) async fn get_compact_block_range(
 pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<CompactBlockStream, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::NullifierRange(reply_sender, block_range))
@@ -371,8 +372,9 @@ pub(crate) async fn get_transaction_and_block_height(
             Err(status) => return Err(ServerError::RequestFailed(status)),
         }
     };
-    let block_height =
-        BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
+    let zl_common::chain::RawTransactionStatus::Mined(block_height) = raw_transaction.status else {
+        return Err(ServerError::UnexpectedUnminedTransaction);
+    };
     let transaction = Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
@@ -462,9 +464,11 @@ pub(crate) async fn get_transparent_address_transactions(
     let transactions = raw_transactions
         .into_iter()
         .map(|raw_transaction| {
-            let block_height = BlockHeight::from_u32(
-                u32::try_from(raw_transaction.height).expect("should be valid u32"),
-            );
+            let zl_common::chain::RawTransactionStatus::Mined(block_height) =
+                raw_transaction.status
+            else {
+                return Err(ServerError::UnexpectedUnminedTransaction);
+            };
 
             let transaction = Transaction::read(
                 &raw_transaction.data[..],
@@ -485,7 +489,7 @@ pub(crate) async fn get_transparent_address_transactions(
 pub(crate) async fn get_mempool_transaction_stream<C>(
     client: &mut C,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
+) -> Result<zl_netutils::RawTransactionStream, MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -512,7 +516,7 @@ where
 mod tests {
     use tokio::sync::mpsc;
     use zcash_protocol::local_consensus::LocalNetwork;
-    use zl_netutils::lightwallet_protocol::TreeState;
+    use zl_common::chain::BlockHash;
 
     use super::*;
 
@@ -535,16 +539,16 @@ mod tests {
     };
 
     /// Serialized empty commitment tree, as served at and above a pool's activation height.
-    const EMPTY_TREE: &str = "000000";
+    const EMPTY_TREE: [u8; 3] = [0, 0, 0];
 
     /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
     /// is left empty.
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
-        let tree = |pool: ShieldedPool| {
+        let tree = |pool: ShieldedPool| -> Vec<u8> {
             if pool == omitted_pool {
-                String::new()
+                Vec::new()
             } else {
-                EMPTY_TREE.to_string()
+                EMPTY_TREE.to_vec()
             }
         };
         let (sapling_tree, orchard_tree, ironwood_tree) = (
@@ -558,12 +562,11 @@ mod tests {
                 match fetch_request {
                     FetchRequest::TreeState(reply_sender, block_height) => {
                         let _ignore_error = reply_sender.send(Ok(TreeState {
-                            height: u64::from(block_height),
-                            hash: "00".repeat(32),
+                            height: block_height,
+                            hash: BlockHash([0u8; 32]),
                             sapling_tree: sapling_tree.clone(),
                             orchard_tree: orchard_tree.clone(),
                             ironwood_tree: ironwood_tree.clone(),
-                            ..Default::default()
                         }));
                     }
                     _ => panic!("unexpected fetch request"),
@@ -685,6 +688,104 @@ mod tests {
             .await,
         );
         assert_eq!(status.code(), tonic::Code::Internal, "{status}");
+    }
+
+    /// Answers a single transaction request with `reply`, then panics, so a caller that asks
+    /// more than once fails.
+    fn spawn_single_transaction_reply(
+        reply: Result<RawTransaction, tonic::Status>,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut reply = Some(reply);
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::Transaction(reply_sender, _) => {
+                        let reply = reply.take().expect("a request beyond the script");
+                        let _ignore_error = reply_sender.send(reply);
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    /// `RawTransaction`'s wire height field used to overload `0` (mempool) and `u64::MAX`
+    /// (mined off the main chain) under a `u32::try_from(height).expect(...)` that panicked on
+    /// either sentinel. `RawTransactionStatus::Mempool`/`MinedOffMainChain` now refuse cleanly
+    /// instead: this caller never expected an unmined transaction and has nothing useful to do
+    /// with one.
+    #[tokio::test]
+    async fn an_unmined_transaction_is_refused_not_panicked() {
+        for status in [
+            zl_common::chain::RawTransactionStatus::Mempool,
+            zl_common::chain::RawTransactionStatus::MinedOffMainChain,
+        ] {
+            let raw_transaction = RawTransaction {
+                data: vec![],
+                status,
+            };
+            let result = get_transaction_and_block_height(
+                spawn_single_transaction_reply(Ok(raw_transaction)),
+                &NETWORK,
+                TxId::from_bytes([0; 32]),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ServerError::UnexpectedUnminedTransaction)),
+                "{status:?}: {result:?}"
+            );
+        }
+    }
+
+    /// Answers a single transparent-address-transactions request with a one-item stream of
+    /// `reply`, then panics, so a caller that asks more than once fails.
+    fn spawn_single_transparent_address_txs_reply(
+        reply: Result<RawTransaction, tonic::Status>,
+    ) -> mpsc::UnboundedSender<FetchRequest> {
+        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut reply = Some(reply);
+            while let Some(fetch_request) = fetch_request_receiver.recv().await {
+                match fetch_request {
+                    FetchRequest::TransparentAddressTxs(reply_sender, _) => {
+                        let reply = reply.take().expect("a request beyond the script");
+                        let stream: zl_netutils::RawTransactionStream =
+                            Box::pin(futures::stream::iter([reply]));
+                        let _ignore_error = reply_sender.send(Ok(stream));
+                    }
+                    _ => panic!("unexpected fetch request"),
+                }
+            }
+        });
+        fetch_request_sender
+    }
+
+    /// The same regression as `an_unmined_transaction_is_refused_not_panicked`, for the other
+    /// call site that matches on `RawTransactionStatus`.
+    #[tokio::test]
+    async fn a_transparent_address_tx_that_is_unmined_is_refused_not_panicked() {
+        for status in [
+            zl_common::chain::RawTransactionStatus::Mempool,
+            zl_common::chain::RawTransactionStatus::MinedOffMainChain,
+        ] {
+            let raw_transaction = RawTransaction {
+                data: vec![],
+                status,
+            };
+            let result = get_transparent_address_transactions(
+                spawn_single_transparent_address_txs_reply(Ok(raw_transaction)),
+                &NETWORK,
+                "t1abc".to_string(),
+                BlockHeight::from_u32(0)..BlockHeight::from_u32(10),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(ServerError::UnexpectedUnminedTransaction)),
+                "{status:?}: {result:?}"
+            );
+        }
     }
 
     /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.

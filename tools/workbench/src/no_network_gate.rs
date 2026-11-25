@@ -36,10 +36,24 @@ const REQWEST: &str = "reqwest";
 const LIGHTWALLET_PROTOCOL: &str = "lightwallet-protocol";
 const FUTURES: &str = "futures";
 
+const ORCHARD: &str = "orchard";
+const SAPLING_CRYPTO: &str = "sapling-crypto";
+const ZCASH_KEYS: &str = "zcash_keys";
+const ZCASH_CLIENT_BACKEND: &str = "zcash_client_backend";
+const ZCASH_PRIMITIVES: &str = "zcash_primitives";
+
 const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
 const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
+const WALLET_STACK_MEMBERS: [&str; 1] = [COMMON];
+const WALLET_STACK_REGISTRY: [&str; 5] = [
+    ORCHARD,
+    SAPLING_CRYPTO,
+    ZCASH_KEYS,
+    ZCASH_CLIENT_BACKEND,
+    ZCASH_PRIMITIVES,
+];
 
-const RULES: [Rule; 3] = [
+const RULES: [Rule; 4] = [
     Rule {
         package: COMMON,
         features: FeatureSet::Default,
@@ -57,6 +71,15 @@ const RULES: [Rule; 3] = [
         features: FeatureSet::Named(LEGACY_FEATURE),
         members: &NETWORK_MEMBERS,
         registry: &FILE_FORMAT_REGISTRY,
+    },
+    // The opposite direction from the rules above: the transport crate must stay free of the
+    // wallet stack, so a reply's domain type (`zl-primitives`, not `zl-common`) can cross its
+    // wire boundary without dragging in `orchard`/`sapling-crypto`/`zcash_keys`.
+    Rule {
+        package: NETUTILS,
+        features: FeatureSet::Default,
+        members: &WALLET_STACK_MEMBERS,
+        registry: &WALLET_STACK_REGISTRY,
     },
 ];
 

@@ -8,7 +8,6 @@
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::BlockHeight;
 use zl_netutils::Indexer as _;
-use zl_netutils::lightwallet_protocol::RawTransaction;
 
 use crate::wallet::migration::transmission::{
     PartTransmissionError, TransmissionClient, TransmissionReceipt, TransmissionRoute,
@@ -35,17 +34,12 @@ impl TransmissionClient for GrpcTransmissionClient {
         raw_tx: Vec<u8>,
         expiry_height: BlockHeight,
     ) -> Result<TransmissionReceipt, PartTransmissionError> {
+        let _ = expiry_height;
         let mut indexer = zl_netutils::GrpcIndexer::new(self.uri.clone())
             .await
             .map_err(|e| PartTransmissionError::Transport(e.to_string()))?;
         let txid_hex = indexer
-            .send_transaction(
-                RawTransaction {
-                    data: raw_tx,
-                    height: u64::from(u32::from(expiry_height)),
-                },
-                MIGRATION_SUBMIT_TIMEOUT,
-            )
+            .send_transaction(raw_tx, MIGRATION_SUBMIT_TIMEOUT)
             .await
             .map_err(|status| PartTransmissionError::Rejected(status.to_string()))?;
         let txid: TxId =

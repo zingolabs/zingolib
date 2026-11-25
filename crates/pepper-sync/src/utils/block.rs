@@ -1,53 +1,39 @@
 use zcash_primitives::block::{BlockHash, BlockHeader};
 use zcash_protocol::{ShieldedPool, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::CompactBlock;
+use zl_common::chain::CompactBlock;
 
 use super::transaction;
 
+/// `zl_common::chain::BlockHash` mirrors `zcash_primitives::block::BlockHash` byte for byte
+/// without depending on it. Everything downstream of the wire boundary (witness trees, wallet
+/// scanning, block headers) still speaks the latter, so this is the one place that bridges the
+/// two.
+pub(crate) fn to_zcash_primitives(hash: zl_common::chain::BlockHash) -> BlockHash {
+    BlockHash(hash.0)
+}
+
 /// Returns the [`BlockHash`] for this block.
-///
-/// # Panics
-///
-/// This function will panic if `compact_block.header` is not set and
-/// `compact_block.hash` is not exactly 32 bytes.
 pub(crate) fn get_compact_hash(compact_block: &CompactBlock) -> BlockHash {
-    if let Some(header) = get_compact_header(compact_block) {
-        header.hash()
-    } else {
-        BlockHash::from_slice(&compact_block.hash)
-    }
+    get_compact_header(compact_block)
+        .map(|header| header.hash())
+        .unwrap_or_else(|| to_zcash_primitives(compact_block.hash))
 }
 
 /// Returns the [`BlockHash`] for this block's parent.
-///
-/// # Panics
-///
-/// This function will panic if `compact_block.header` is not set and
-/// `compact_block.hash` is not exactly 32 bytes.
 pub(crate) fn get_compact_prev_hash(compact_block: &CompactBlock) -> BlockHash {
-    if let Some(header) = get_compact_header(compact_block) {
-        header.prev_block
-    } else {
-        BlockHash::from_slice(&compact_block.prev_hash)
-    }
+    get_compact_header(compact_block)
+        .map(|header| header.prev_block)
+        .unwrap_or_else(|| to_zcash_primitives(compact_block.prev_hash))
 }
 
-/// Returns the [`BlockHeight`] value for this block
-///
-/// # Panics
-///
-/// This function will panic if `compact_block.height` is not representable within a
-/// `u32`.
+/// Returns the [`BlockHeight`] value for this block.
 pub(crate) fn get_compact_height(compact_block: &CompactBlock) -> BlockHeight {
-    compact_block.height.try_into().expect(
-        "no valid chain height exceeds u32::MAX, so this u64 wire value came from a \
-         malicious or broken indexer; sync dies loudly rather than trust it",
-    )
+    compact_block.height
 }
 
 /// Returns the [`BlockHeader`] for this block if present.
 ///
-/// A convenience method that parses `compact_block.height` if present.
+/// A convenience method that parses `compact_block.header` if present.
 pub(crate) fn get_compact_header(compact_block: &CompactBlock) -> Option<BlockHeader> {
     if compact_block.header.is_empty() {
         None
@@ -79,14 +65,11 @@ pub(crate) fn shielded_input_count(compact_block: &CompactBlock, pool: ShieldedP
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::transaction::{ALL_POOLS, compact_tx};
+    use crate::utils::transaction::{ALL_POOLS, compact_tx, empty_compact_block};
 
     #[test]
     fn counts_sum_across_transactions() {
-        let block = CompactBlock {
-            vtx: vec![compact_tx(1, 2, 3, 4), compact_tx(5, 6, 7, 8)],
-            ..Default::default()
-        };
+        let block = empty_compact_block(vec![compact_tx(1, 2, 3, 4), compact_tx(5, 6, 7, 8)]);
         assert_eq!(shielded_output_count(&block, ShieldedPool::Sapling), 8);
         assert_eq!(shielded_output_count(&block, ShieldedPool::Orchard), 10);
         assert_eq!(shielded_output_count(&block, ShieldedPool::Ironwood), 12);
@@ -97,7 +80,7 @@ mod tests {
 
     #[test]
     fn empty_block_counts_zero_for_every_pool() {
-        let block = CompactBlock::default();
+        let block = empty_compact_block(vec![]);
         for pool in ALL_POOLS {
             assert_eq!(shielded_output_count(&block, pool), 0);
             assert_eq!(shielded_input_count(&block, pool), 0);

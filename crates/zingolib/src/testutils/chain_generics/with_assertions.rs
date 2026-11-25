@@ -6,7 +6,6 @@ use zcash_client_backend::proposal::Proposal;
 use zcash_primitives::transaction::TxId;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_protocol::PoolType;
-use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::value::Zatoshis;
 
 use zl_common::status::ConfirmationStatus;
@@ -179,15 +178,13 @@ where
     )
     .await
     .unwrap();
-    let server_height_at_send = BlockHeight::from(
-        timed(
-            "follow_proposal::get_latest_block",
-            indexer.get_latest_block(DEFAULT_REQUEST_TIMEOUT),
-        )
-        .await
-        .unwrap()
-        .height as u32,
-    );
+    let server_height_at_send = timed(
+        "follow_proposal::get_latest_block",
+        indexer.get_latest_block(DEFAULT_REQUEST_TIMEOUT),
+    )
+    .await
+    .unwrap()
+    .height;
     let last_known_chain_height = timed("follow_proposal::read_wallet_height", async {
         sender
             .wallet()

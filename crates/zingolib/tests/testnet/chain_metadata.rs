@@ -1,9 +1,9 @@
 use pepper_sync::test_support::block;
 use zcash_protocol::ShieldedPool;
-use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 use zingolib::config::{ChainType, construct_indexer_uri};
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
-use zl_netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata, CompactBlock};
+use zl_common::chain::{BlockId, BlockRange, ChainMetadata, CompactBlock};
 use zl_netutils::{GrpcIndexer, Indexer};
 
 use super::TESTNET_INDEXER;
@@ -66,14 +66,12 @@ async fn served_outputs_match_chain_metadata_deltas() {
     let mut stream = grpc_client
         .get_block_range(
             BlockRange {
-                start: Some(BlockId {
-                    height: start,
-                    hash: vec![],
-                }),
-                end: Some(BlockId {
-                    height: end,
-                    hash: vec![],
-                }),
+                start: BlockId::from_height(
+                    BlockHeight::try_from(start).expect("the activation window start fits a u32"),
+                ),
+                end: BlockId::from_height(
+                    BlockHeight::try_from(end).expect("the activation window end fits a u32"),
+                ),
                 // Empty means the legacy default: the server must include all
                 // shielded pools. This matches what pepper-sync sends.
                 pool_types: vec![],
@@ -89,9 +87,9 @@ async fn served_outputs_match_chain_metadata_deltas() {
     let mut first_nonzero_ironwood_metadata: Option<u64> = None;
     let mut first_served_ironwood_action: Option<u64> = None;
 
-    while let Some(block) = stream
-        .message()
+    while let Some(block) = futures::StreamExt::next(&mut stream)
         .await
+        .transpose()
         .expect("the block stream delivers every block of the window")
     {
         let metadata = block.chain_metadata.unwrap_or_else(|| {
@@ -104,10 +102,10 @@ async fn served_outputs_match_chain_metadata_deltas() {
         let ironwood_served =
             u64::from(block::shielded_output_count(&block, ShieldedPool::Ironwood));
         if commitment_tree_size(&metadata, ShieldedPool::Ironwood) > 0 {
-            first_nonzero_ironwood_metadata.get_or_insert(block.height);
+            first_nonzero_ironwood_metadata.get_or_insert(u64::from(block.height));
         }
         if ironwood_served > 0 {
-            first_served_ironwood_action.get_or_insert(block.height);
+            first_served_ironwood_action.get_or_insert(u64::from(block.height));
         }
         ironwood_served_total += ironwood_served;
         if let Some(prev) = &prev {

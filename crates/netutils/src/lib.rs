@@ -25,6 +25,7 @@
 //!
 
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
@@ -33,10 +34,14 @@ use tonic::Request;
 use tonic::transport::{Channel, Endpoint};
 use tower::ServiceExt;
 
+use futures::Stream;
 use lightwallet_protocol::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
-    GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
-    TreeState, TxFilter,
+    ChainSpec, CompactTxStreamerClient, Empty, GetMempoolTxRequest,
+    RawTransaction as WireRawTransaction, StandardFee as WireStandardFee,
+};
+use zl_primitives::chain::{
+    BlockId, BlockRange, CompactBlock, CompactTx, GetSubtreeRootsArg, LightdInfo, RawTransaction,
+    StandardFee, SubtreeRoot, TreeState, TxFilter,
 };
 
 #[cfg(feature = "ping-very-insecure")]
@@ -47,8 +52,16 @@ pub mod default_indexer;
 pub mod diag;
 pub mod error;
 pub mod network_access;
+mod wire;
 
 pub use crypto::ensure_default_crypto_provider;
+pub(crate) use wire::{parse_lightd_info, parse_wire_as_status, stream_rpc, unary_rpc};
+// `ToWire`/`ParseWire` are never named directly in this file (every call site goes through
+// `unary_rpc`/`stream_rpc`/`unary_rpc_raw`, which already carry the bounds): re-exported purely
+// for the `globally-public-transparent` and `socks5-transmit` feature-gated modules, so both
+// are unused without either.
+#[allow(unused_imports)]
+pub(crate) use wire::{ParseWire, ToWire};
 
 /// The stdout line prefix the spawnable `nym-proxy` binary uses to announce
 /// its local SOCKS5 address (ADR 0011, consumption model A). Defined here so
@@ -258,7 +271,7 @@ pub trait Indexer {
     /// transient failures and may retry.
     fn send_transaction(
         &mut self,
-        tx: RawTransaction,
+        tx: Vec<u8>,
         timeout: Duration,
     ) -> impl Future<Output = Result<String, tonic::Status>> + Send;
 
@@ -307,7 +320,7 @@ pub trait Indexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactBlockStream, tonic::Status>> + Send;
 
     /// Return a stream of consecutive compact blocks (nullifiers only) for the given range.
     ///
@@ -319,7 +332,7 @@ pub trait Indexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactBlock>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactBlockStream, tonic::Status>> + Send;
 
     /// Return the full serialized transaction matching the given filter.
     ///
@@ -341,7 +354,7 @@ pub trait Indexer {
         &mut self,
         request: GetMempoolTxRequest,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<CompactTx>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<CompactTxStream, tonic::Status>> + Send;
 
     /// Return a stream of raw mempool transactions.
     ///
@@ -352,7 +365,7 @@ pub trait Indexer {
     /// it is opened on.
     fn get_mempool_stream(
         &mut self,
-    ) -> impl Future<Output = Result<tonic::Streaming<RawTransaction>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<RawTransactionStream, tonic::Status>> + Send;
 
     /// Return the note commitment tree state at the chain tip.
     ///
@@ -371,7 +384,7 @@ pub trait Indexer {
         &mut self,
         arg: GetSubtreeRootsArg,
         timeout: Duration,
-    ) -> impl Future<Output = Result<tonic::Streaming<SubtreeRoot>, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<SubtreeRootStream, tonic::Status>> + Send;
 
     /// Simulate server latency for testing.
     ///
@@ -501,43 +514,71 @@ mod send_response_parsing {
     }
 }
 
+/// A server's subtree-root stream, each item already parsed into the validated domain
+/// [`SubtreeRoot`]. Boxed because the stream's item type is produced by mapping a
+/// [`tonic::Streaming`] through an internal parsing closure, an anonymous type that a trait
+/// method's return position, and a channel carrying it onward, both need to name concretely.
+pub type SubtreeRootStream = Pin<Box<dyn Stream<Item = Result<SubtreeRoot, tonic::Status>> + Send>>;
+
+/// A server's compact-block stream, each item already parsed into the validated domain
+/// [`CompactBlock`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type CompactBlockStream =
+    Pin<Box<dyn Stream<Item = Result<CompactBlock, tonic::Status>> + Send>>;
+
+/// A server's compact-transaction (mempool) stream, each item already parsed into the
+/// validated domain [`CompactTx`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type CompactTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, tonic::Status>> + Send>>;
+
+/// A server's raw-transaction (mempool) stream, each item already parsed into the validated
+/// domain [`RawTransaction`]. Boxed for the same reason as [`SubtreeRootStream`].
+pub type RawTransactionStream =
+    Pin<Box<dyn Stream<Item = Result<RawTransaction, tonic::Status>> + Send>>;
+
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_lightd_info(request)
-            .await?
-            .into_inner())
+        Ok(parse_lightd_info(
+            self.clear_net_client
+                .get_lightd_info(request)
+                .await?
+                .into_inner(),
+        ))
     }
 
     async fn get_standard_fee(&mut self, timeout: Duration) -> Result<StandardFee, tonic::Status> {
         let mut request = Request::new(Empty {});
         request.set_timeout(timeout);
-        Ok(self
+        let wire: WireStandardFee = self
             .clear_net_client
             .get_standard_fee(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(StandardFee {
+            fee_zat: wire.fee_zat,
+            estimator_version: wire.estimator_version,
+        })
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
-        let mut request = Request::new(ChainSpec {});
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_latest_block(request)
-            .await?
-            .into_inner())
+        wire::unary_rpc_raw(ChainSpec {}, timeout, |req| {
+            self.clear_net_client.get_latest_block(req)
+        })
+        .await
     }
 
     async fn send_transaction(
         &mut self,
-        tx: RawTransaction,
+        tx: Vec<u8>,
         timeout: Duration,
     ) -> Result<String, tonic::Status> {
-        let mut request = Request::new(tx);
+        // `height` is meaningless for a submission (the server ignores it for this RPC; the
+        // wire type's own `0` sentinel reads as "in the mempool", which is exactly where this
+        // transaction is headed), so only the serialized bytes cross this boundary.
+        let mut request = Request::new(WireRawTransaction {
+            data: tx,
+            height: 0,
+        });
         request.set_timeout(timeout);
         let sendresponse = self
             .clear_net_client
@@ -555,13 +596,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(block_id);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_tree_state(request)
-            .await?
-            .into_inner())
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_tree_state(req)
+        })
+        .await
     }
 
     async fn get_block(
@@ -569,9 +607,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id);
-        request.set_timeout(timeout);
-        Ok(self.clear_net_client.get_block(request).await?.into_inner())
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_block(req)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -580,27 +619,21 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let mut request = Request::new(block_id);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_block_nullifiers(request)
-            .await?
-            .into_inner())
+        unary_rpc(block_id, timeout, |req| {
+            self.clear_net_client.get_block_nullifiers(req)
+        })
+        .await
     }
 
     async fn get_block_range(
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let mut request = Request::new(range);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_block_range(request)
-            .await?
-            .into_inner())
+    ) -> Result<CompactBlockStream, tonic::Status> {
+        stream_rpc(range, timeout, |req| {
+            self.clear_net_client.get_block_range(req)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -608,14 +641,11 @@ impl Indexer for GrpcIndexer {
         &mut self,
         range: BlockRange,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let mut request = Request::new(range);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_block_range_nullifiers(request)
-            .await?
-            .into_inner())
+    ) -> Result<CompactBlockStream, tonic::Status> {
+        stream_rpc(range, timeout, |req| {
+            self.clear_net_client.get_block_range_nullifiers(req)
+        })
+        .await
     }
 
     async fn get_transaction(
@@ -623,64 +653,59 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
         timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
-        let mut request = Request::new(filter);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_transaction(request)
-            .await?
-            .into_inner())
+        unary_rpc(filter, timeout, |req| {
+            self.clear_net_client.get_transaction(req)
+        })
+        .await
     }
 
     async fn get_mempool_tx(
         &mut self,
         request: GetMempoolTxRequest,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
+    ) -> Result<CompactTxStream, tonic::Status> {
         let mut request = Request::new(request);
         request.set_timeout(timeout);
-        Ok(self
+        let wire_stream = self
             .clear_net_client
             .get_mempool_tx(request)
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_wire_as_status)
+        })))
     }
 
-    async fn get_mempool_stream(
-        &mut self,
-    ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        Ok(self
+    async fn get_mempool_stream(&mut self) -> Result<RawTransactionStream, tonic::Status> {
+        let wire_stream = self
             .clear_net_client
             .get_mempool_stream(Request::new(Empty {}))
             .await?
-            .into_inner())
+            .into_inner();
+        Ok(Box::pin(futures::StreamExt::map(wire_stream, |item| {
+            item.and_then(parse_wire_as_status)
+        })))
     }
 
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let mut request = Request::new(Empty {});
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_latest_tree_state(request)
-            .await?
-            .into_inner())
+        wire::unary_rpc_raw(Empty {}, timeout, |req| {
+            self.clear_net_client.get_latest_tree_state(req)
+        })
+        .await
     }
 
     async fn get_subtree_roots(
         &mut self,
         arg: GetSubtreeRootsArg,
         timeout: Duration,
-    ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
-        let mut request = Request::new(arg);
-        request.set_timeout(timeout);
-        Ok(self
-            .clear_net_client
-            .get_subtree_roots(request)
-            .await?
-            .into_inner())
+    ) -> Result<SubtreeRootStream, tonic::Status> {
+        stream_rpc(arg, timeout, |req| {
+            self.clear_net_client.get_subtree_roots(req)
+        })
+        .await
     }
 
     #[cfg(feature = "ping-very-insecure")]
@@ -1253,14 +1278,8 @@ mod tests {
 
         // start > end → proto says descending order
         let range = BlockRange {
-            start: Some(BlockId {
-                height: start_height,
-                hash: vec![],
-            }),
-            end: Some(BlockId {
-                height: end_height,
-                hash: vec![],
-            }),
+            start: BlockId::from_height(start_height),
+            end: BlockId::from_height(end_height),
             pool_types: vec![],
         };
 

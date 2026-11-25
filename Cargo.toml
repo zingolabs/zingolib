@@ -4,6 +4,7 @@ members = [
   "bin/cli",
   "crates/common",
   "crates/file-format",
+  "crates/primitives",
   "crates/zingolib",
   "crates/netutils",
   "crates/netutils/webpki-verifier-shim",
@@ -25,6 +26,7 @@ resolver = "2"
 ### Workspace
 pepper-sync = { version = "0.7.0", path = "crates/pepper-sync" }
 zl-common = { version = "0.1.0", path = "crates/common", default-features = false }
+zl-primitives = { version = "0.1.0", path = "crates/primitives" }
 zl-file-format = { version = "0.1.0", path = "crates/file-format", default-features = false }
 zingolib = { version = "8.0.0", path = "crates/zingolib" }
 

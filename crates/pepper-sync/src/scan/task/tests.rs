@@ -141,11 +141,9 @@ fn spawn_chain_height_fetcher(chain_height: u32) -> mpsc::UnboundedSender<FetchR
         while let Some(fetch_request) = fetch_request_receiver.recv().await {
             match fetch_request {
                 FetchRequest::ChainTip(reply_sender) => {
-                    let _ignore_error =
-                        reply_sender.send(Ok(zl_netutils::lightwallet_protocol::BlockId {
-                            height: u64::from(chain_height),
-                            hash: Vec::new(),
-                        }));
+                    let _ignore_error = reply_sender.send(Ok(
+                        zl_common::chain::BlockId::from_height(BlockHeight::from_u32(chain_height)),
+                    ));
                 }
                 _ => panic!("unexpected fetch request"),
             }

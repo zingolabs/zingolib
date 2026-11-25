@@ -11,19 +11,22 @@ use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use zcash_protocol::{TxId, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use zl_common::chain::{BlockHash, SubtreeRoot};
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {
-        completing_block_height,
-        ..Default::default()
+        root_hash: [0u8; 32],
+        completing_block_hash: BlockHash([0u8; 32]),
+        completing_block_height: BlockHeight::try_from(completing_block_height)
+            .expect("test fixture height fits a BlockHeight"),
     }
 }
 
 pub(crate) fn orchard_subtree_root(root_hash: MerkleHashOrchard) -> SubtreeRoot {
     SubtreeRoot {
-        root_hash: root_hash.to_bytes().to_vec(),
-        ..Default::default()
+        root_hash: root_hash.to_bytes(),
+        completing_block_hash: BlockHash([0u8; 32]),
+        completing_block_height: BlockHeight::from_u32(0),
     }
 }
 

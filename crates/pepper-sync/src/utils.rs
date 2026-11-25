@@ -1,7 +1,7 @@
 use orchard::note_encryption::CompactAction;
 use sapling_crypto::{note::ExtractedNoteCommitment, note_encryption::CompactOutputDescription};
 use zcash_note_encryption::EphemeralKeyBytes;
-use zl_netutils::lightwallet_protocol::{CompactOrchardAction, CompactSaplingOutput};
+use zl_common::chain::{CompactOrchardAction, CompactSaplingOutput};
 
 use crate::error::CompactFormatError;
 
@@ -11,9 +11,10 @@ pub(crate) mod transaction;
 pub(crate) fn get_compact_output_description(
     compact_sapling_output: &CompactSaplingOutput,
 ) -> Result<CompactOutputDescription, CompactFormatError> {
-    let mut repr = [0; 32];
-    repr.copy_from_slice(&compact_sapling_output.cmu[..]);
-    let cmu = Option::from(ExtractedNoteCommitment::from_bytes(&repr))
+    let cmu_bytes: [u8; 32] = compact_sapling_output.cmu[..]
+        .try_into()
+        .map_err(CompactFormatError::InvalidLength)?;
+    let cmu = Option::from(ExtractedNoteCommitment::from_bytes(&cmu_bytes))
         .ok_or(CompactFormatError::InvalidValue)?;
 
     let ephemeral_key = compact_sapling_output.ephemeral_key[..]
@@ -33,16 +34,16 @@ pub(crate) fn get_compact_output_description(
 pub(crate) fn get_compact_action(
     compact_orchard_action: &CompactOrchardAction,
 ) -> Result<CompactAction, CompactFormatError> {
-    let nf_bytes: [u8; 32] = compact_orchard_action.nullifier[..]
+    let nullifier = Option::from(orchard::note::Nullifier::from_bytes(
+        &compact_orchard_action.nullifier,
+    ))
+    .ok_or(CompactFormatError::InvalidValue)?;
+
+    let cmx_bytes: [u8; 32] = compact_orchard_action.cmx[..]
         .try_into()
         .map_err(CompactFormatError::InvalidLength)?;
-    let nullifier = Option::from(orchard::note::Nullifier::from_bytes(&nf_bytes))
-        .ok_or(CompactFormatError::InvalidValue)?;
-
     let cmx = Option::from(orchard::note::ExtractedNoteCommitment::from_bytes(
-        &compact_orchard_action.cmx[..]
-            .try_into()
-            .map_err(CompactFormatError::InvalidLength)?,
+        &cmx_bytes,
     ))
     .ok_or(CompactFormatError::InvalidValue)?;
 

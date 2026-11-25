@@ -20,6 +20,7 @@ test-features = []
 [dependencies]
 # Zingo
 zingo_common_components.workspace = true
+zl-primitives.workspace = true
 
 # Zcash
 incrementalmerkletree.workspace = true
@@ -55,6 +56,7 @@ memuse.workspace = true
 
 # Serialization
 byteorder.workspace = true
+hex.workspace = true
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

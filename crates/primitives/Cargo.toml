@@ -1,0 +1,19 @@
+[package]
+name = "zl-primitives"
+description = "The domain vocabulary a Zcash chain indexer's replies parse into: one type per concept, each owning its own wire-boundary parsing and invariants. Part of zingolib."
+authors = ["<zingo@zingolabs.org>"]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/zingolabs/zingolib"
+homepage = "https://github.com/zingolabs/zingolib"
+license = "MIT"
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[dependencies]
+zingo_common_components.workspace = true
+zcash_protocol.workspace = true
+
+hex.workspace = true
+thiserror.workspace = true

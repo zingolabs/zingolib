@@ -166,7 +166,8 @@ impl ServerError {
             | ServerError::ChainVerificationError
             | ServerError::GenesisBlockOnly
             | ServerError::TreeStateNotServed { .. }
-            | ServerError::UnsupportedProtocolVersion { .. } => false,
+            | ServerError::UnsupportedProtocolVersion { .. }
+            | ServerError::UnexpectedUnminedTransaction => false,
         }
     }
 }
@@ -287,7 +288,8 @@ impl ServerError {
             | ServerError::InvalidSubtreeRoot
             | ServerError::ChainVerificationError
             | ServerError::TreeStateNotServed { .. }
-            | ServerError::UnsupportedProtocolVersion { .. } => {
+            | ServerError::UnsupportedProtocolVersion { .. }
+            | ServerError::UnexpectedUnminedTransaction => {
                 SyncRecoveryObservables::ServerUnavailable
             }
             // Empty chain. No point retrying anywhere.
@@ -543,6 +545,12 @@ pub enum ServerError {
         /// The height of the last block in the scan range.
         scan_range_end: BlockHeight,
     },
+    /// Server returned a transaction as unmined (in the mempool, or mined on a fork that is
+    /// not the main chain) for a request that expects only confirmed, main-chain transactions.
+    #[error(
+        "server returned an unmined transaction where only a confirmed, main-chain transaction was requested."
+    )]
+    UnexpectedUnminedTransaction,
 }
 
 /// Sync mode error.
@@ -812,6 +820,14 @@ mod tests {
             fn genesis_block_only() {
                 assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
             }
+
+            /// A mempool or mined-off-main-chain transaction reaching this point is bad data
+            /// from the server (it promised a mined transaction), not network weather, so
+            /// retrying the same server will not help.
+            #[test]
+            fn unexpected_unmined_transaction() {
+                assert!(!ServerError::UnexpectedUnminedTransaction.recommend_same_server());
+            }
         }
 
         mod sync_error {
@@ -1040,6 +1056,14 @@ mod tests {
                 .into();
                 assert_eq!(
                     e.recovery_recommendation(),
+                    SyncRecoveryObservables::ServerUnavailable
+                );
+            }
+
+            #[test]
+            fn unexpected_unmined_transaction() {
+                assert_eq!(
+                    ServerError::UnexpectedUnminedTransaction.recovery_recommendation(),
                     SyncRecoveryObservables::ServerUnavailable
                 );
             }
