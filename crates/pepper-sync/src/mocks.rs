@@ -88,7 +88,7 @@ fn answer_transaction(
     match fetch_request {
         client::FetchRequest::Transaction(reply_sender, txid) => {
             if let Some(reply) = reply_to(txid) {
-                let _ignore_error = reply_sender.send(reply);
+                let _ignore_error = reply_sender.send(reply.map(vocabulary::Zcash::transaction));
             }
             Ok(())
         }

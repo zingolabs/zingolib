@@ -23,6 +23,7 @@ use zip32::AccountId;
 use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::protocol;
+use crate::vocabulary;
 
 use zl_common::{chain, status::ConfirmationStatus};
 
@@ -249,7 +250,7 @@ pub async fn sync<C, P, W>(
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
     C: Clone
-        + Indexer<TreeState = chain::TreeStateReply>
+        + Indexer<TreeState = chain::TreeStateReply, Transaction = vocabulary::TransactionReply>
         + TransparentIndexer
         + Sync
         + Send

@@ -228,6 +228,7 @@ fn indexer_endpoint(
 ///   persistent session state is assumed between calls.
 pub trait Indexer {
     type TreeState;
+    type Transaction;
 
     /// Return server metadata (chain name, block height, version, etc.).
     ///
@@ -339,7 +340,7 @@ pub trait Indexer {
         &mut self,
         filter: TxFilter,
         timeout: Duration,
-    ) -> impl Future<Output = Result<RawTransaction, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<Self::Transaction, tonic::Status>> + Send;
 
     /// Return a stream of compact transactions currently in the mempool.
     ///
@@ -555,8 +556,25 @@ mod send_response_parsing {
     }
 }
 
+macro_rules! reply_in_vocabulary {
+    ($method:ident, $message:ty, $reply:ident, $translate:ident) => {
+        async fn $method(
+            &mut self,
+            message: $message,
+            timeout: Duration,
+        ) -> Result<V::$reply, tonic::Status> {
+            rpc::call(message, timeout, |request| {
+                self.nakednet_client.$method(request)
+            })
+            .await
+            .map(V::$translate)
+        }
+    };
+}
+
 impl<V: wire::Vocabulary> Indexer for GrpcIndexer<V> {
     type TreeState = V::TreeState;
+    type Transaction = V::Transaction;
 
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         rpc::call(Empty {}, timeout, |request| {
@@ -594,17 +612,7 @@ impl<V: wire::Vocabulary> Indexer for GrpcIndexer<V> {
             .map_err(|rejection| tonic::Status::new(tonic::Code::Unknown, rejection.message))
     }
 
-    async fn get_tree_state(
-        &mut self,
-        block_id: BlockId,
-        timeout: Duration,
-    ) -> Result<V::TreeState, tonic::Status> {
-        rpc::call(block_id, timeout, |request| {
-            self.nakednet_client.get_tree_state(request)
-        })
-        .await
-        .map(V::tree_state)
-    }
+    reply_in_vocabulary!(get_tree_state, BlockId, TreeState, tree_state);
 
     async fn get_block(
         &mut self,
@@ -652,16 +660,7 @@ impl<V: wire::Vocabulary> Indexer for GrpcIndexer<V> {
         .await
     }
 
-    async fn get_transaction(
-        &mut self,
-        filter: TxFilter,
-        timeout: Duration,
-    ) -> Result<RawTransaction, tonic::Status> {
-        rpc::call(filter, timeout, |request| {
-            self.nakednet_client.get_transaction(request)
-        })
-        .await
-    }
+    reply_in_vocabulary!(get_transaction, TxFilter, Transaction, transaction);
 
     async fn get_mempool_tx(
         &mut self,
@@ -765,8 +764,13 @@ mod tests {
 
     impl wire::Vocabulary for UnderivedVocabulary {
         type TreeState = u64;
+        type Transaction = u64;
 
         fn tree_state(reply: lightwallet_protocol::TreeState) -> Self::TreeState {
+            reply.height
+        }
+
+        fn transaction(reply: lightwallet_protocol::RawTransaction) -> Self::Transaction {
             reply.height
         }
     }

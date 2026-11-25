@@ -19,7 +19,7 @@ use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError, stream_error_is_retryable},
-    protocol,
+    protocol, vocabulary,
     witness::Frontiers,
 };
 
@@ -71,7 +71,7 @@ pub enum FetchRequest {
     ),
     /// Get a full transaction by txid.
     Transaction(
-        oneshot::Sender<Result<protocol::RawTransaction, protocol::Status>>,
+        oneshot::Sender<Result<vocabulary::TransactionReply, protocol::Status>>,
         TxId,
     ),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
@@ -326,7 +326,7 @@ pub(crate) async fn get_transaction_and_block_height(
             .await
             .map_err(|_| ServerError::FetcherDropped)?
         {
-            Ok(raw_transaction) => break raw_transaction,
+            Ok(reply) => break reply.map_err(ServerError::InvalidTransactionHeight)?,
             Err(status)
                 if status.message().contains(SNAPSHOT_RETRY_HINT) && retry_count < MAX_RETRIES =>
             {
@@ -335,8 +335,9 @@ pub(crate) async fn get_transaction_and_block_height(
             Err(status) => return Err(ServerError::RequestFailed(status)),
         }
     };
-    let block_height =
-        BlockHeight::from_u32(u32::try_from(raw_transaction.height).expect("should be valid u32"));
+    let chain::RawTransactionStatus::Mined(block_height) = raw_transaction.status else {
+        return Err(ServerError::TransactionNotMined(raw_transaction.status));
+    };
     let transaction = Transaction::read(
         &raw_transaction.data[..],
         consensus::BranchId::for_height(consensus_parameters, block_height),
@@ -744,6 +745,70 @@ mod tests {
             .await,
         );
         assert_eq!(status.code(), protocol::Code::Internal, "{status}");
+    }
+
+    const ABOVE_THE_BLOCK_HEIGHT_RANGE: u64 = u32::MAX as u64 + 1;
+
+    async fn fetch_of_a_transaction_at(
+        height: u64,
+    ) -> Result<(Transaction, BlockHeight), ServerError> {
+        get_transaction_and_block_height(
+            mocks::spawn_transaction_fetcher(move |_txid| {
+                Some(Ok(protocol::RawTransaction {
+                    data: Vec::new(),
+                    height,
+                }))
+            }),
+            &NETWORK,
+            TxId::from_bytes([0; 32]),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_mempool_transaction_is_reported_as_not_mined() {
+        let fetched = fetch_of_a_transaction_at(chain::RawTransactionStatus::MEMPOOL_HEIGHT).await;
+
+        assert!(
+            matches!(
+                fetched,
+                Err(ServerError::TransactionNotMined(
+                    chain::RawTransactionStatus::Mempool
+                ))
+            ),
+            "a mempool transaction gave {fetched:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transaction_mined_off_the_main_chain_is_reported_as_not_mined() {
+        let fetched =
+            fetch_of_a_transaction_at(chain::RawTransactionStatus::OFF_MAIN_CHAIN_HEIGHT).await;
+
+        assert!(
+            matches!(
+                fetched,
+                Err(ServerError::TransactionNotMined(
+                    chain::RawTransactionStatus::MinedOffMainChain
+                ))
+            ),
+            "a transaction mined off the main chain gave {fetched:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transaction_height_above_the_block_height_range_is_reported_as_invalid() {
+        let fetched = fetch_of_a_transaction_at(ABOVE_THE_BLOCK_HEIGHT_RANGE).await;
+
+        assert!(
+            matches!(
+                fetched,
+                Err(ServerError::InvalidTransactionHeight(
+                    chain::InvalidRawTransaction(ABOVE_THE_BLOCK_HEIGHT_RANGE)
+                ))
+            ),
+            "a height above the block height range gave {fetched:?}"
+        );
     }
 
     /// Zaino reports the protocol version with a `v` prefix. Servers that pre-date the field report an empty string.
