@@ -1,5 +1,9 @@
 use zingo_common_components::protocol::ActivationHeights;
 
+mod tree_state;
+
+pub use tree_state::{InvalidTreeState, Tree, TreeStateReply};
+
 /// The network types a lightclient can connect to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChainType {
