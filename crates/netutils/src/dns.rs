@@ -134,6 +134,39 @@ mod tests {
         );
     }
 
+    fn host_of(indexer: &str) -> String {
+        indexer
+            .parse::<http::Uri>()
+            .expect("a Default Indexer constant is a valid URI literal")
+            .host()
+            .expect("a Default Indexer constant names a host")
+            .to_string()
+    }
+
+    fn new_runtime() -> io::Result<tokio::runtime::Runtime> {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+    }
+
+    #[test]
+    #[ignore = "resolves live host names through Cloudflare and Quad9"]
+    fn a_lookup_survives_the_runtime_that_built_the_resolver() -> io::Result<()> {
+        let mainnet = host_of(default_indexer::MAINNET_DEFAULT_INDEXER);
+        let testnet = host_of(default_indexer::TESTNET_DEFAULT_INDEXER);
+
+        let first = new_runtime()?;
+        let before = first.block_on(lookup(&mainnet))?;
+        drop(first);
+        let after = new_runtime()?.block_on(lookup(&testnet))?;
+
+        assert!(
+            !before.is_empty() && !after.is_empty(),
+            "{mainnet} answered {before:?} and {testnet} answered {after:?}"
+        );
+        Ok(())
+    }
+
     #[test]
     fn uri_addrs_carry_the_placeholder_port() {
         let ips = vec![
@@ -150,14 +183,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_answer_is_local_or_encrypted() {
-        let indexer: http::Uri = default_indexer::MAINNET_DEFAULT_INDEXER
-            .parse()
-            .expect("MAINNET_DEFAULT_INDEXER is a valid URI literal");
-        let host = indexer
-            .host()
-            .expect("MAINNET_DEFAULT_INDEXER names a host");
-
+    async fn local_names_answer_without_a_query() {
         let v4_literal = lookup(&net::Ipv4Addr::LOCALHOST.to_string()).await;
         let v6_literal = lookup(&net::Ipv6Addr::LOCALHOST.to_string()).await;
         let localhost = lookup("localhost").await;
@@ -177,13 +203,17 @@ mod tests {
                 .is_ok_and(|ips| ips.contains(&net::Ipv4Addr::LOCALHOST.into())),
             "localhost must answer loopback locally, got {localhost:?}"
         );
+    }
 
-        let public = lookup(host)
-            .await
-            .expect("the mainnet Default Indexer host has a public A/AAAA record");
+    #[tokio::test]
+    #[ignore = "resolves a live host name through Cloudflare and Quad9"]
+    async fn the_mainnet_default_indexer_resolves_over_doh_dot() -> io::Result<()> {
+        let host = host_of(default_indexer::MAINNET_DEFAULT_INDEXER);
+        let public = lookup(&host).await?;
         assert!(
             !public.is_empty(),
             "{host} must resolve over DoH/DoT, got {public:?}"
         );
+        Ok(())
     }
 }

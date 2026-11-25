@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Neither sends a plaintext DNS query, where both asked the operating
   system's resolver before. Requests through the SOCKS5 conduit still
   resolve at the exit. The crate depends on `hickory-resolver`.
+- BREAKING: a host name that only the local network can answer no longer
+  resolves. A LAN name, an mDNS `.local` name, a Tailscale MagicDNS name and
+  a Docker Compose service name all went to the operating system's resolver
+  before; each now goes to Cloudflare and Quad9, which answer that the name
+  is absent. Dial such an indexer by IP address, or give the name an entry
+  in the hosts file.
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `GrpcIndexer::get_clear_net_client` is renamed
