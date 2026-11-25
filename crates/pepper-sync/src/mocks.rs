@@ -12,16 +12,19 @@ use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::{self, SubtreeRoot};
 
-use crate::{client, witness};
+use crate::{
+    client,
+    protocol::{self, SubtreeRoot},
+    witness,
+};
 
 pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
 pub(crate) const OMITTED_TREE_HEX: &str = "";
 
-pub(crate) fn empty_trees(block_height: BlockHeight) -> lightwallet_protocol::TreeState {
-    lightwallet_protocol::TreeState {
+pub(crate) fn empty_trees(block_height: BlockHeight) -> protocol::TreeState {
+    protocol::TreeState {
         height: u64::from(block_height),
         hash: hex::encode([0u8; BLOCK_HASH_BYTES]),
         sapling_tree: EMPTY_TREE_HEX.to_string(),
@@ -32,10 +35,10 @@ pub(crate) fn empty_trees(block_height: BlockHeight) -> lightwallet_protocol::Tr
 }
 
 pub(crate) fn with_tree_hex(
-    mut tree_state: lightwallet_protocol::TreeState,
+    mut tree_state: protocol::TreeState,
     pool: ShieldedPool,
     tree_hex: &str,
-) -> lightwallet_protocol::TreeState {
+) -> protocol::TreeState {
     *witness::tree_hex_mut(&mut tree_state, pool) = tree_hex.to_string();
 
     tree_state
@@ -57,7 +60,7 @@ fn spawn_fetcher(
 }
 
 fn answer_tree_state(
-    tree_state_at: &impl Fn(BlockHeight) -> lightwallet_protocol::TreeState,
+    tree_state_at: &impl Fn(BlockHeight) -> protocol::TreeState,
     fetch_request: client::FetchRequest,
 ) -> Result<(), client::FetchRequest> {
     match fetch_request {
@@ -84,10 +87,10 @@ fn answer_transaction(
     }
 }
 
-pub(crate) type TransactionReply = Result<lightwallet_protocol::RawTransaction, tonic::Status>;
+pub(crate) type TransactionReply = Result<protocol::RawTransaction, tonic::Status>;
 
 pub(crate) fn spawn_tree_state_fetcher(
-    tree_state_at: impl Fn(BlockHeight) -> lightwallet_protocol::TreeState + Send + 'static,
+    tree_state_at: impl Fn(BlockHeight) -> protocol::TreeState + Send + 'static,
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| answer_tree_state(&tree_state_at, fetch_request))
 }
@@ -99,7 +102,7 @@ pub(crate) fn spawn_transaction_fetcher(
 }
 
 pub(crate) fn spawn_tree_state_and_transaction_fetcher(
-    tree_state_at: impl Fn(BlockHeight) -> lightwallet_protocol::TreeState + Send + 'static,
+    tree_state_at: impl Fn(BlockHeight) -> protocol::TreeState + Send + 'static,
     mut reply_to: impl FnMut(TxId) -> Option<TransactionReply> + Send + 'static,
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| {
@@ -113,10 +116,9 @@ pub(crate) fn spawn_chain_tip_fetcher(
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| match fetch_request {
         client::FetchRequest::ChainTip(reply_sender) => {
-            let _ignore_error = reply_sender.send(Ok(lightwallet_protocol::BlockId {
-                height: u64::from(chain_height),
-                hash: Vec::new(),
-            }));
+            let _ignore_error = reply_sender.send(Ok(protocol::block_id_at(
+                BlockHeight::from_u32(chain_height),
+            )));
             Ok(())
         }
         other => Err(other),

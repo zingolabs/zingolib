@@ -31,7 +31,7 @@ use super::{ScanPriority, held_at, overlaps};
 
 pub(crate) use zl_common::engine::VerifyEnd;
 
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
+use crate::protocol::SubtreeRoot;
 
 /// Prioritize scan ranges for scanning.
 pub(super) fn prioritize_scan_ranges<W>(

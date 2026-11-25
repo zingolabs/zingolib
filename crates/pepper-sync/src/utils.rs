@@ -1,9 +1,9 @@
 use orchard::note_encryption::CompactAction;
 use sapling_crypto::{note::ExtractedNoteCommitment, note_encryption::CompactOutputDescription};
 use zcash_note_encryption::EphemeralKeyBytes;
-use zl_netutils::lightwallet_protocol::{CompactOrchardAction, CompactSaplingOutput};
 
 use crate::error::CompactFormatError;
+use crate::protocol::{CompactOrchardAction, CompactSaplingOutput};
 
 pub(crate) mod block;
 pub(crate) mod transaction;

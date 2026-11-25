@@ -17,19 +17,15 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use zl_netutils::{
-    Indexer, TransparentIndexer,
-    lightwallet_protocol::{
-        BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, TreeState,
-    },
-};
+use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError},
+    protocol::{
+        self, BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
+    },
     witness::{self, Frontiers},
 };
-
-use zl_netutils::lightwallet_protocol::SubtreeRoot;
 
 pub(crate) mod fetch;
 
@@ -65,13 +61,13 @@ pub enum FetchRequest {
     ///
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
         Range<BlockHeight>,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
-        oneshot::Sender<Result<tonic::Streaming<CompactBlock>, tonic::Status>>,
+        oneshot::Sender<Result<protocol::CompactBlocks, tonic::Status>>,
         Range<BlockHeight>,
     ),
     /// Gets the tree states for a specified block height.
@@ -89,12 +85,12 @@ pub enum FetchRequest {
     ),
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
-        oneshot::Sender<Result<tonic::Streaming<RawTransaction>, tonic::Status>>,
+        oneshot::Sender<Result<protocol::RawTransactions, tonic::Status>>,
         (String, Range<BlockHeight>),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
-        oneshot::Sender<Result<tonic::Streaming<SubtreeRoot>, tonic::Status>>,
+        oneshot::Sender<Result<protocol::SubtreeRoots, tonic::Status>>,
         u32,
         i32,
         u32,
@@ -188,7 +184,7 @@ pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
     include_transparent: bool,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<protocol::CompactBlocks, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
@@ -214,7 +210,7 @@ pub(crate) async fn get_compact_block_range(
 pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_range: Range<BlockHeight>,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<protocol::CompactBlocks, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::NullifierRange(reply_sender, block_range))
@@ -475,7 +471,7 @@ pub(crate) async fn get_transparent_address_transactions(
 pub(crate) async fn get_mempool_transaction_stream<C>(
     client: &mut C,
     shutdown_mempool: Arc<AtomicBool>,
-) -> Result<tonic::Streaming<RawTransaction>, MempoolError>
+) -> Result<protocol::RawTransactions, MempoolError>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -503,7 +499,6 @@ mod tests {
     use tokio::sync::mpsc;
     use zcash_primitives::block;
     use zcash_protocol::local_consensus::LocalNetwork;
-    use zl_netutils::lightwallet_protocol::TreeState;
 
     use super::*;
     use crate::mocks;

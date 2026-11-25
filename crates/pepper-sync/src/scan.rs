@@ -12,7 +12,8 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::transaction::TxId;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::{CompactBlock, CompactTx};
+
+use crate::protocol::{CompactBlock, CompactTx};
 
 use crate::engine::ScanTargetOps;
 use crate::{

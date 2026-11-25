@@ -1,10 +1,9 @@
 use zcash_protocol::{ShieldedPool, TxId};
-use zl_netutils::lightwallet_protocol::CompactTx;
+
+use crate::protocol::CompactTx;
 
 #[cfg(test)]
-use zl_netutils::lightwallet_protocol::{
-    CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend,
-};
+use crate::protocol::{CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend};
 
 /// Returns the transaction Id
 pub(crate) fn get_compact_txid(compact_tx: &CompactTx) -> TxId {

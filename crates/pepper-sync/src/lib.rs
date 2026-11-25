@@ -109,6 +109,7 @@ pub use zl_common::config;
 pub(crate) use zl_common::engine;
 pub mod error;
 pub mod keys;
+pub(crate) mod protocol;
 pub(crate) mod scan;
 pub use zl_common::shardtree_ext;
 pub mod sync;
