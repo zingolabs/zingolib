@@ -51,9 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DNS-over-HTTPS and DNS-over-TLS alone, against Cloudflare and Quad9 dialed
   by IP address, with one answer cache shared by the process. It never asks
   the system resolver and has no plaintext fallback. IP literals, `localhost`
-  and hosts-file names answer without a query. `dns::hyper_resolver()` is
-  the same lookup as a hyper resolver. `dns::EncryptedResolver`, under the
-  `socks5-fetch` feature, is the same lookup as a reqwest resolver.
+  and hosts-file names answer without a query. `dns::hyper_resolver(resolver)`
+  is the lookup as a hyper resolver. `dns::EncryptedResolver`, under the
+  `socks5-fetch` feature, is the encrypted lookup as a reqwest resolver.
+- `dns::Resolver`, with the variants `Encrypted` and `System`. `Encrypted` is
+  the default. `System` is an opt-in that sends a lookup to the operating
+  system's resolver, as plaintext DNS, so that a host name only the local
+  network can answer resolves. `dns::lookup_through(resolver, host)` looks a
+  name up through either. `GrpcIndexer::new_with_resolver` and
+  `GrpcIndexer::new_lazy_with_resolver` take the resolver for one indexer
+  connection; `GrpcIndexer::new` and `GrpcIndexer::new_lazy` keep `Encrypted`.
 - `request` module: `block_id`, `block_range` and `tx_filter` build the
   three requests that a caller made as struct literals.
 
@@ -71,8 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolves. A LAN name, an mDNS `.local` name, a Tailscale MagicDNS name and
   a Docker Compose service name all went to the operating system's resolver
   before; each now goes to Cloudflare and Quad9, which answer that the name
-  is absent. Dial such an indexer by IP address, or give the name an entry
-  in the hosts file.
+  is absent. Dial such an indexer by IP address, give the name an entry in
+  the hosts file, or build its `GrpcIndexer` with `dns::Resolver::System`.
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `GrpcIndexer::get_clear_net_client` is renamed
