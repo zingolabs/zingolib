@@ -131,7 +131,7 @@ fn block_range() -> Range<BlockHeight> {
 }
 
 fn no_block_error() -> ServerError {
-    ServerError::RequestFailed(tonic::Status::not_found("no block"))
+    ServerError::RequestFailed(protocol::Status::not_found("no block"))
 }
 
 /// The server's chain height is below the last block of the scan range, so it has no block to serve for the top

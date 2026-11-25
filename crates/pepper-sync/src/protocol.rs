@@ -17,9 +17,11 @@ pub(crate) use zl_netutils::lightwallet_protocol::{
     ChainMetadata, CompactSaplingSpend, CompactTxIn, TxOut,
 };
 
-pub(crate) type CompactBlocks = tonic::Streaming<CompactBlock>;
-pub(crate) type RawTransactions = tonic::Streaming<RawTransaction>;
-pub(crate) type SubtreeRoots = tonic::Streaming<SubtreeRoot>;
+pub(crate) use tonic::{Code, Status, Streaming, TimeoutExpired, transport};
+
+pub(crate) type CompactBlocks = Streaming<CompactBlock>;
+pub(crate) type RawTransactions = Streaming<RawTransaction>;
+pub(crate) type SubtreeRoots = Streaming<SubtreeRoot>;
 
 pub(crate) const UNLIMITED_ENTRIES: u32 = 0;
 

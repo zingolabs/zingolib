@@ -194,7 +194,7 @@ where
 #[instrument(skip(client), name = "fetch::get_lightd_info", err, level = "info")]
 pub(super) async fn get_lightd_info<C>(
     client: &mut C,
-) -> Result<protocol::LightdInfo, tonic::Status>
+) -> Result<protocol::LightdInfo, protocol::Status>
 where
     C: Indexer,
 {
@@ -202,7 +202,7 @@ where
 }
 
 #[instrument(skip(client), name = "fetch::get_latest_block", err, level = "info")]
-async fn get_latest_block<C>(client: &mut C) -> Result<protocol::BlockId, tonic::Status>
+async fn get_latest_block<C>(client: &mut C) -> Result<protocol::BlockId, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -213,7 +213,7 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<protocol::TreeState, tonic::Status>
+) -> Result<protocol::TreeState, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -227,7 +227,7 @@ where
 /// This is not called from the fetch request framework and is intended to be called independently.
 pub(crate) async fn get_mempool_stream<C>(
     client: &mut C,
-) -> Result<protocol::RawTransactions, tonic::Status>
+) -> Result<protocol::RawTransactions, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {

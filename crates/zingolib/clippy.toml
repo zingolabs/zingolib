@@ -1,0 +1,21 @@
+# ZIP 318: a part-transmission session must never synchronize. `Cargo.toml`
+# allows these two lints package-wide, and `src/wallet/migration.rs` denies
+# them on each transmission-path module, so the lists below bind only there.
+
+disallowed-methods = [
+    { path = "pepper_sync::sync::sync", reason = "ZIP 318: the transmission path must not run the sync engine" },
+    { path = "pepper_sync::sync::sync_status", reason = "ZIP 318: the transmission path must not query the sync engine" },
+    { path = "pepper_sync::sync::scan_pending_transaction", reason = "ZIP 318: the transmission path must not scan" },
+    { path = "pepper_sync::sync::add_scan_targets", reason = "ZIP 318: the transmission path must not schedule scans" },
+    { path = "zingolib::lightclient::LightClient::sync", reason = "ZIP 318: the transmission path must not start a sync" },
+    { path = "zingolib::lightclient::LightClient::sync_and_await", reason = "ZIP 318: the transmission path must not start a sync" },
+    { path = "zingolib::lightclient::LightClient::pause_sync", reason = "ZIP 318: the transmission path must not steer the sync engine" },
+    { path = "zingolib::lightclient::LightClient::resume_sync", reason = "ZIP 318: the transmission path must not steer the sync engine" },
+]
+
+disallowed-types = [
+    { path = "zl_netutils::Indexer", reason = "ZIP 318: the transmission path must not hold a network client that can fetch chain data" },
+    { path = "zl_netutils::GrpcIndexer", reason = "ZIP 318: the transmission path must not hold a network client that can fetch chain data" },
+    { path = "zl_netutils::Socks5Indexer", reason = "ZIP 318: the transmission path must not hold a network client that can fetch chain data", allow-invalid = true },
+    { path = "zl_netutils::TransparentIndexer", reason = "ZIP 318: the transmission path must not hold a network client that can fetch chain data", allow-invalid = true },
+]
