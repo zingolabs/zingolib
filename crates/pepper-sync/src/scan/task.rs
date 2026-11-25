@@ -792,7 +792,11 @@ async fn open_block_stream(
     transparent_scan_floor: BlockHeight,
 ) -> Result<zl_netutils::CompactBlockStream, ServerError> {
     if fetch_nullifiers_only {
-        client::get_nullifier_range(fetch_request_sender, block_range).await
+        client::request(&fetch_request_sender, |reply_sender| {
+            FetchRequest::NullifierRange(reply_sender, block_range)
+        })
+        .await?
+        .map_err(ServerError::RequestFailed)
     } else {
         let include_transparent = includes_blocks_above_floor(&block_range, transparent_scan_floor);
         client::get_compact_block_range(fetch_request_sender, block_range, include_transparent)
