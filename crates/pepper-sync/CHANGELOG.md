@@ -20,8 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - BREAKING: `ServerError` has the variant `EmptyBlockRange`, so a `match`
   over `ServerError` without a wildcard arm no longer compiles.
-  `recommend_same_server` returns `false` for it, and
-  `recovery_recommendation` returns `SyncRecoveryObservables::Abort`.
+  `recovery_recommendation` returns `SyncRecoveryObservables::Abort` for it.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,
@@ -55,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- BREAKING: `SyncError::recommend_same_server` and
+  `ServerError::recommend_same_server`. Call `recovery_recommendation`
+  instead. It returns `SyncRecoveryObservables::MaybeRecoverableServer`
+  where `recommend_same_server` returned `true`.
 - The `byteorder`, `zcash_encoding` and `jubjub` dependencies, which the
   codecs in `zl-common` use now.
 - The `zingo-memo` and `zingo-status` dependencies. Their code is the `memo`
