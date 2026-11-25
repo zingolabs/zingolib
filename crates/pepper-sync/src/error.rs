@@ -90,24 +90,6 @@ where
     WalletError(E),
 }
 
-impl ServerError {
-    /// Returns `true` if this is a gRPC request that failed to network
-    /// weather: a timeout, a dropped or refused connection, or a server
-    /// too busy to answer.
-    ///
-    /// A failure raised by the transport carries a tonic transport error (or
-    /// its client-side [`tonic::TimeoutExpired`] or I/O error) in the status's
-    /// source chain. Otherwise the status code decides: the codes gRPC names
-    /// as transient are network weather, and every other code is an answer
-    /// from a server that cannot serve the request.
-    fn request_hit_network_weather(&self) -> bool {
-        let ServerError::RequestFailed(status) = self else {
-            return false;
-        };
-        status_is_network_weather(status)
-    }
-}
-
 // Whether a failed gRPC request hit network weather: a tonic transport error, a client-side timeout or an I/O
 // error in the status's source chain, or one of the codes gRPC names as transient. Every other status is an answer
 // from a server that cannot serve the request.
@@ -220,7 +202,7 @@ impl ServerError {
             }
             // Network weather is transient. The same server may answer the
             // next request on a fresh connection.
-            ServerError::RequestFailed(_) if self.request_hit_network_weather() => {
+            ServerError::RequestFailed(status) if status_is_network_weather(status) => {
                 SyncRecoveryObservables::MaybeRecoverableServer
             }
             // The server answered but cannot serve the request, or returned
