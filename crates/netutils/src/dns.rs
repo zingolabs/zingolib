@@ -68,8 +68,8 @@ async fn lookup_with(
     Ok(resolver.lookup_ip(host).await?.iter().collect())
 }
 
-/// - first call: [`shared_resolver`]
-/// - network: [`lookup_with`]
+/// - first call: installs the process crypto provider, builds the shared resolver
+/// - network: DoH/DoT query on cache miss
 pub async fn lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
     let resolver = shared_resolver().map_err(io_error)?;
     lookup_with(resolver, host).await.map_err(io_error)
