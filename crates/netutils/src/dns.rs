@@ -1,11 +1,8 @@
 #![forbid(unsafe_code)]
 
-use std::future::Future;
 use std::io;
 use std::net;
-use std::pin;
 use std::sync;
-use std::task;
 use std::vec;
 
 use hickory_resolver::config;
@@ -85,23 +82,26 @@ fn uri_addrs(ips: Vec<net::IpAddr>) -> vec::IntoIter<net::SocketAddr> {
         .into_iter()
 }
 
+/// - network: [`lookup`]
+async fn lookup_uri_addrs(name: hyper_dns::Name) -> io::Result<vec::IntoIter<net::SocketAddr>> {
+    lookup(name.as_str()).await.map(uri_addrs)
+}
+
+pub fn hyper_resolver() -> impl tower::Service<
+    hyper_dns::Name,
+    Response = vec::IntoIter<net::SocketAddr>,
+    Error = io::Error,
+    Future: Send,
+> + Clone
++ Send
++ Sync
++ 'static {
+    tower::service_fn(lookup_uri_addrs)
+}
+
+#[cfg(feature = "socks5-fetch")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EncryptedResolver;
-
-impl tower::Service<hyper_dns::Name> for EncryptedResolver {
-    type Response = vec::IntoIter<net::SocketAddr>;
-    type Error = io::Error;
-    type Future = pin::Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send>>;
-
-    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> task::Poll<io::Result<()>> {
-        task::Poll::Ready(Ok(()))
-    }
-
-    /// - network: [`lookup`]
-    fn call(&mut self, name: hyper_dns::Name) -> Self::Future {
-        Box::pin(async move { lookup(name.as_str()).await.map(uri_addrs) })
-    }
-}
 
 #[cfg(feature = "socks5-fetch")]
 impl reqwest::dns::Resolve for EncryptedResolver {
