@@ -113,27 +113,27 @@ where
                 .await;
             let _ignore_error = sender.send(block);
         }
-        FetchRequest::CompactBlockRange(sender, block_range, include_transparent) => {
+        FetchRequest::CompactBlockRange(sender, block_span, include_transparent) => {
             tracing::debug!(
                 "Fetching compact blocks. {:?}. include transparent: {}",
-                &block_range,
+                &block_span,
                 include_transparent
             );
             let pool_types = protocol::pool_types(include_transparent);
             let block_stream = client
                 .get_block_range(
-                    protocol::block_range(block_range, pool_types),
+                    protocol::block_range(block_span, pool_types),
                     FINITE_STREAM_TIMEOUT,
                 )
                 .await;
             let _ignore_error = sender.send(block_stream);
         }
-        FetchRequest::NullifierRange(sender, block_range) => {
-            tracing::debug!("Fetching nullifiers. {:?}", &block_range);
+        FetchRequest::NullifierRange(sender, block_span) => {
+            tracing::debug!("Fetching nullifiers. {:?}", &block_span);
             #[allow(deprecated)]
             let block_stream = client
                 .get_block_range_nullifiers(
-                    protocol::nullifier_range(block_range),
+                    protocol::nullifier_range(block_span),
                     FINITE_STREAM_TIMEOUT,
                 )
                 .await;
@@ -184,16 +184,16 @@ where
                 .map(|reply| reply.address_utxos);
             let _ignore_error = sender.send(utxo_metadata);
         }
-        FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
+        FetchRequest::TransparentAddressTxs(sender, (address, block_span)) => {
             tracing::debug!(
                 "Fetching raw transactions in block range {:?} for address {:?}",
-                &block_range,
+                &block_span,
                 &address
             );
             #[allow(deprecated)]
             let raw_transaction_stream = client
                 .get_taddress_txids(
-                    protocol::address_block_filter(address, block_range),
+                    protocol::address_block_filter(address, block_span),
                     FINITE_STREAM_TIMEOUT,
                 )
                 .await;

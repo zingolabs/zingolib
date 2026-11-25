@@ -283,4 +283,17 @@ mod tests {
             sapling_activation_height
         );
     }
+
+    #[test]
+    fn discovery_starts_at_or_below_a_chain_height_that_holds_the_last_known_height() {
+        let chain_height = BlockHeight::from_u32(LAST_KNOWN_CHAIN_HEIGHT);
+
+        for floor in [
+            None,
+            Some(REORG_START_HEIGHT - BLOCKS_MINED_BELOW_REORG_START),
+            Some(chain_height),
+        ] {
+            assert!(start_height(floor) <= chain_height, "{floor:?}");
+        }
+    }
 }

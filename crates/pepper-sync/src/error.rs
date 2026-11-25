@@ -868,9 +868,15 @@ mod tests {
                 assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
             }
 
+            const BIRTHDAY_BELOW_SAPLING: u32 = 100;
+            const SAPLING_ACTIVATION_HEIGHT: u32 = 419_200;
+
             #[test]
             fn birthday_below_sapling() {
-                let e: TestSyncError = SyncError::BirthdayBelowSapling(100, 419200);
+                let e: TestSyncError = SyncError::BirthdayBelowSapling(
+                    BIRTHDAY_BELOW_SAPLING,
+                    SAPLING_ACTIVATION_HEIGHT,
+                );
                 assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
             }
 

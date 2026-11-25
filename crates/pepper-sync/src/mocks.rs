@@ -10,11 +10,8 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
-use std::ops::Range;
-use std::sync::{
-    Arc,
-    atomic::{self, AtomicUsize},
-};
+use std::ops;
+use std::sync::{self, atomic};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
 use zl_netutils::request;
@@ -134,19 +131,20 @@ pub(crate) fn spawn_chain_tip_fetcher(
 
 pub(crate) const NO_REQUESTS: usize = 0;
 pub(crate) const EMPTY_RANGE_HEIGHT: u32 = 5;
+const ONE_REQUEST: usize = 1;
 
-pub(crate) fn empty_block_range() -> Range<BlockHeight> {
+pub(crate) fn empty_block_range() -> ops::Range<BlockHeight> {
     BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)..BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)
 }
 
 pub(crate) fn spawn_request_counter() -> (
     mpsc::UnboundedSender<client::FetchRequest>,
-    Arc<AtomicUsize>,
+    sync::Arc<atomic::AtomicUsize>,
 ) {
-    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count = sync::Arc::new(atomic::AtomicUsize::new(NO_REQUESTS));
     let counted_requests = request_count.clone();
     let fetch_request_sender = spawn_fetcher(move |_unanswered| {
-        counted_requests.fetch_add(1, atomic::Ordering::Release);
+        counted_requests.fetch_add(ONE_REQUEST, atomic::Ordering::Release);
         Ok(())
     });
 
