@@ -17,9 +17,11 @@ pub(crate) use zl_netutils::lightwallet_protocol::{
     ChainMetadata, CompactSaplingSpend, CompactTxIn, TxOut,
 };
 
-pub(crate) type CompactBlocks = tonic::Streaming<CompactBlock>;
-pub(crate) type RawTransactions = tonic::Streaming<RawTransaction>;
-pub(crate) type SubtreeRoots = tonic::Streaming<SubtreeRoot>;
+pub(crate) use tonic::{Code, Status, Streaming, TimeoutExpired, transport};
+
+pub(crate) type CompactBlocks = Streaming<CompactBlock>;
+pub(crate) type RawTransactions = Streaming<RawTransaction>;
+pub(crate) type SubtreeRoots = Streaming<SubtreeRoot>;
 
 pub(crate) const UNLIMITED_ENTRIES: u32 = 0;
 
@@ -51,10 +53,10 @@ pub(crate) fn block_id_at(height: BlockHeight) -> BlockId {
 pub(crate) fn block_range(
     range: Range<BlockHeight>,
     pool_types: &[PoolType],
-) -> Result<BlockRange, tonic::Status> {
+) -> Result<BlockRange, Status> {
     let last = u64::from(range.end)
         .checked_sub(EXCLUSIVE_END)
-        .ok_or_else(|| tonic::Status::invalid_argument(RANGE_ENDS_AT_GENESIS))?;
+        .ok_or_else(|| Status::invalid_argument(RANGE_ENDS_AT_GENESIS))?;
 
     Ok(request::block_range(
         u64::from(range.start),
@@ -63,7 +65,7 @@ pub(crate) fn block_range(
     ))
 }
 
-pub(crate) fn nullifier_range(range: Range<BlockHeight>) -> Result<BlockRange, tonic::Status> {
+pub(crate) fn nullifier_range(range: Range<BlockHeight>) -> Result<BlockRange, Status> {
     block_range(range, &EVERY_POOL_BY_DEFAULT)
 }
 
@@ -98,7 +100,7 @@ pub(crate) fn address_utxos_arg(
 pub(crate) fn address_block_filter(
     address: String,
     range: Range<BlockHeight>,
-) -> Result<TransparentAddressBlockFilter, tonic::Status> {
+) -> Result<TransparentAddressBlockFilter, Status> {
     Ok(TransparentAddressBlockFilter {
         address,
         range: Some(nullifier_range(range)?),
@@ -134,7 +136,7 @@ mod tests {
 
         assert!(matches!(
             range,
-            Err(refusal) if refusal.code() == tonic::Code::InvalidArgument
+            Err(refusal) if refusal.code() == Code::InvalidArgument
         ));
     }
 }
