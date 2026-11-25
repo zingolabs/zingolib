@@ -497,6 +497,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic;
+
     use tokio::sync::mpsc;
     use zcash_primitives::block;
     use zcash_protocol::local_consensus::LocalNetwork;
@@ -659,6 +661,55 @@ mod tests {
             ),
             "an omitted Ironwood tree was reported as {:?}",
             frontiers.map(|_| "valid frontiers")
+        );
+    }
+
+    const EMPTY_RANGE_HEIGHT: u32 = 5;
+    const NO_REQUESTS: usize = 0;
+    const TRANSPARENT_ADDRESS: &str = "t1abc";
+
+    fn empty_block_range() -> Range<BlockHeight> {
+        EMPTY_RANGE_HEIGHT.into()..EMPTY_RANGE_HEIGHT.into()
+    }
+
+    #[tokio::test]
+    async fn an_empty_block_range_is_refused_before_any_fetch_request() {
+        let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
+
+        let compact_blocks =
+            get_compact_block_range(fetch_request_sender.clone(), empty_block_range(), false).await;
+        let nullifiers = get_nullifier_range(fetch_request_sender, empty_block_range()).await;
+
+        assert!(compact_blocks.is_err());
+        assert!(nullifiers.is_err());
+        assert_eq!(
+            request_count.load(atomic::Ordering::Acquire),
+            NO_REQUESTS,
+            "an empty block range reached the fetcher"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_block_range_holds_no_transparent_transaction() {
+        let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
+
+        let transactions = get_transparent_address_transactions(
+            fetch_request_sender,
+            &NETWORK,
+            TRANSPARENT_ADDRESS.to_string(),
+            empty_block_range(),
+        )
+        .await;
+
+        assert!(
+            matches!(transactions.as_deref(), Ok([])),
+            "an empty block range gave {:?}",
+            transactions.map(|transactions| transactions.len())
+        );
+        assert_eq!(
+            request_count.load(atomic::Ordering::Acquire),
+            NO_REQUESTS,
+            "an empty block range reached the fetcher"
         );
     }
 

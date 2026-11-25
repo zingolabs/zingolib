@@ -10,6 +10,10 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::{
+    Arc,
+    atomic::{self, AtomicUsize},
+};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
 use zl_netutils::request;
@@ -118,6 +122,20 @@ pub(crate) fn spawn_chain_tip_fetcher(
         }
         other => Err(other),
     })
+}
+
+pub(crate) fn spawn_request_counter() -> (
+    mpsc::UnboundedSender<client::FetchRequest>,
+    Arc<AtomicUsize>,
+) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let counted_requests = request_count.clone();
+    let fetch_request_sender = spawn_fetcher(move |_unanswered| {
+        counted_requests.fetch_add(1, atomic::Ordering::Release);
+        Ok(())
+    });
+
+    (fetch_request_sender, request_count)
 }
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> protocol::SubtreeRoot {

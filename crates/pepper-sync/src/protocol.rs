@@ -129,6 +129,16 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_block_range_builds_no_request() {
+        let range = block_range(FIRST.into()..FIRST.into(), pool_types(false));
+
+        assert!(
+            range.is_err(),
+            "an empty block range built the request {range:?}"
+        );
+    }
+
+    #[test]
     fn a_block_range_that_ends_at_genesis_is_refused() {
         let range = block_range(GENESIS.into()..GENESIS.into(), pool_types(true));
 
