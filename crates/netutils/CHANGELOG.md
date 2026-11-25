@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The `wire` module. The trait `wire::Vocabulary` names the type a consumer
+  receives for a reply, and one total function maps the generated reply to
+  that type. Its first reply is the tree state. `wire::Generated` is the
+  vocabulary that returns each generated type unchanged. `GrpcIndexer` takes
+  a vocabulary as a type parameter, which defaults to `wire::Generated`.
 - `ConduitDial::fetch_response`, under the `socks5-fetch` feature, GETs a
   URL through the conduit and returns `socks5_fetch::HttpResponse`: the HTTP
   status code and the body as text. Every status is a response. A body over
@@ -44,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three requests that a caller made as struct literals.
 
 ### Changed
+- BREAKING: `Indexer` has the associated type `TreeState`.
+  `get_tree_state` and `get_latest_tree_state` return it in place of
+  `lightwallet_protocol::TreeState`. An out-of-tree `Indexer` implementor
+  must name the type.
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `GrpcIndexer::get_clear_net_client` is renamed

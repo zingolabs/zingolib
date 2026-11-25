@@ -248,7 +248,12 @@ pub async fn sync<C, P, W>(
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = protocol::TreeState>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks

@@ -13,7 +13,7 @@ use lightwallet_protocol::{
     GetAddressUtxosReplyList, RawTransaction, TransparentAddressBlockFilter,
 };
 
-use super::{GrpcIndexer, Indexer, rpc};
+use super::{GrpcIndexer, Indexer, rpc, wire};
 
 /// Extension of [`Indexer`] for transparent address operations.
 ///
@@ -86,7 +86,7 @@ pub trait TransparentIndexer: Indexer {
     ) -> impl Future<Output = Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status>> + Send;
 }
 
-impl TransparentIndexer for GrpcIndexer {
+impl<V: wire::Vocabulary> TransparentIndexer for GrpcIndexer<V> {
     #[allow(deprecated)]
     async fn get_taddress_txids(
         &mut self,
