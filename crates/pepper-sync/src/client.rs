@@ -323,7 +323,18 @@ pub(crate) async fn get_frontiers(
         }
     }
 
-    tree_state.try_into().map_err(ServerError::InvalidFrontier)
+    let frontiers: Frontiers = tree_state
+        .try_into()
+        .map_err(ServerError::InvalidFrontier)?;
+
+    if frontiers.block_height() == block_height {
+        Ok(frontiers)
+    } else {
+        Err(ServerError::TreeStateHeightMismatch {
+            requested: block_height,
+            served: frontiers.block_height(),
+        })
+    }
 }
 
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
@@ -660,6 +671,22 @@ mod tests {
             ),
             "an omitted Ironwood tree was reported as {:?}",
             frontiers.map(|_| "valid frontiers")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tree_state_of_another_height_is_rejected() {
+        let frontiers = frontiers_of(mocks::empty_trees(ORCHARD_ACTIVATION.into())).await;
+
+        assert!(
+            matches!(
+                frontiers,
+                Err(ServerError::TreeStateHeightMismatch { requested, served })
+                    if requested == IRONWOOD_ACTIVATION.into()
+                        && served == ORCHARD_ACTIVATION.into()
+            ),
+            "a tree state of another height was reported as {:?}",
+            frontiers.map(|frontiers| frontiers.block_height())
         );
     }
 
