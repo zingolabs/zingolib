@@ -18,7 +18,7 @@
 #[derive(uniffi::Enum)] IndexerChoice = Offline | Default | Named { uri: String }
 #[derive(uniffi::Record)] IndexerConnection { indexer: IndexerChoice, chain_hint: String, sync: SyncSettings }
 #[derive(uniffi::Record)] SyncSettings { performance_level: String, min_confirmations: u32 }
-#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic(String) | Save(String) | Init(String) | Sync(String) | Rescan(String) | Read(String) | Send(String) | Shield(String) | SendAfterDeshield(String) | InvalidInput(String) | Wallet(String) | Indexer(String) | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale(String) | MigrationCadenceFixed(String) | MigrationSplit(String) | Migration(String) | Mixnet(String) | WalletChainMismatch(String)
+#[derive(uniffi::Error)] #[uniffi(flat_error)] ZingolibError = LightclientNotInitialized | LightclientLockPoisoned | Panic(String) | Save(String) | Init(String) | InitServer(String) | InitKey(String) | InitWalletFile(String) | Sync(String) | Rescan(String) | Read(String) | Send(String) | Shield(String) | SendAfterDeshield(String) | InvalidInput(String) | Wallet(String) | Indexer(String) | Offline | SideChannelPoisoned | MigrationNotInProgress | MigrationAlreadyInProgress | MigrationConsentStale(String) | MigrationCadenceFixed(String) | MigrationSplit(String) | Migration(String) | Mixnet(String) | WalletChainMismatch(String)
 init_logging() -> Result<String, ZingolibError>
 init_new(connection: IndexerConnection, birthday: u32) -> Result<String, ZingolibError>
 init_from_seed(seed: String, birthday: u32, connection: IndexerConnection) -> Result<String, ZingolibError>
