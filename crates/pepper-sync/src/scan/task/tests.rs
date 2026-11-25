@@ -221,25 +221,12 @@ async fn a_stream_that_fails_after_the_last_block_leaves_no_block_to_fetch() {
 
 const LOWERED_CHAIN_HEIGHT: u32 = 3;
 
-fn empty_block_range() -> Range<BlockHeight> {
-    BlockHeight::from_u32(SCAN_RANGE_END)..BlockHeight::from_u32(SCAN_RANGE_END)
-}
-
-fn empty_block_range_refusal() -> ServerError {
-    let block_range = empty_block_range();
-
-    ServerError::EmptyBlockRange {
-        start: block_range.start,
-        end: block_range.end,
-    }
-}
-
 #[tokio::test]
 async fn fetch_failure_under_a_lowered_chain_height_keeps_an_empty_block_range() {
     let error = fetch_failure(
         mocks::spawn_chain_tip_fetcher(LOWERED_CHAIN_HEIGHT),
-        &empty_block_range(),
-        empty_block_range_refusal(),
+        &mocks::empty_block_range(),
+        mocks::empty_block_range_error(),
     )
     .await;
 
@@ -247,8 +234,8 @@ async fn fetch_failure_under_a_lowered_chain_height_keeps_an_empty_block_range()
         matches!(
             error,
             ServerError::EmptyBlockRange { start, end }
-                if start == BlockHeight::from_u32(SCAN_RANGE_END)
-                    && end == BlockHeight::from_u32(SCAN_RANGE_END)
+                if start == BlockHeight::from_u32(mocks::EMPTY_RANGE_HEIGHT)
+                    && end == BlockHeight::from_u32(mocks::EMPTY_RANGE_HEIGHT)
         ),
         "an empty block range was reported as {error:?}"
     );
@@ -260,8 +247,8 @@ async fn fetch_failure_of_an_empty_block_range_sends_no_request() {
 
     fetch_failure(
         fetch_request_sender,
-        &empty_block_range(),
-        empty_block_range_refusal(),
+        &mocks::empty_block_range(),
+        mocks::empty_block_range_error(),
     )
     .await;
 

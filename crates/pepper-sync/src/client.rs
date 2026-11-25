@@ -672,26 +672,27 @@ mod tests {
         );
     }
 
-    const EMPTY_RANGE_HEIGHT: u32 = 5;
     const TRANSPARENT_ADDRESS: &str = "t1abc";
-
-    fn empty_block_range() -> Range<BlockHeight> {
-        EMPTY_RANGE_HEIGHT.into()..EMPTY_RANGE_HEIGHT.into()
-    }
 
     #[tokio::test]
     async fn an_empty_block_range_is_refused_before_any_fetch_request() {
         let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
 
-        let compact_blocks =
-            get_compact_block_range(fetch_request_sender.clone(), empty_block_range(), false).await;
-        let nullifiers = get_nullifier_range(fetch_request_sender, empty_block_range()).await;
+        let compact_blocks = get_compact_block_range(
+            fetch_request_sender.clone(),
+            mocks::empty_block_range(),
+            false,
+        )
+        .await;
+        let nullifiers =
+            get_nullifier_range(fetch_request_sender, mocks::empty_block_range()).await;
 
         for refusal in [compact_blocks, nullifiers] {
             assert!(matches!(
                 refusal,
                 Err(ServerError::EmptyBlockRange { start, end })
-                    if start == EMPTY_RANGE_HEIGHT.into() && end == EMPTY_RANGE_HEIGHT.into()
+                    if start == mocks::EMPTY_RANGE_HEIGHT.into()
+                        && end == mocks::EMPTY_RANGE_HEIGHT.into()
             ));
         }
         assert_eq!(
@@ -709,7 +710,7 @@ mod tests {
             fetch_request_sender,
             &NETWORK,
             TRANSPARENT_ADDRESS.to_string(),
-            empty_block_range(),
+            mocks::empty_block_range(),
         )
         .await;
 

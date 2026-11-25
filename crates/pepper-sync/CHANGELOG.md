@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - BREAKING: `ServerError` has the variant `EmptyBlockRange`, so a `match`
   over `ServerError` without a wildcard arm no longer compiles.
-  `recommend_same_server` returns `true` for it, and
+  `recommend_same_server` returns `false` for it, and
   `recovery_recommendation` returns `SyncRecoveryObservables::Abort`.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a

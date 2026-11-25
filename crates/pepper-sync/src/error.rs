@@ -147,7 +147,7 @@ impl ServerError {
     pub fn recommend_same_server(&self) -> bool {
         match self {
             // Internal channel issue. Retrying may help after restart.
-            ServerError::FetcherDropped | ServerError::EmptyBlockRange { .. } => true,
+            ServerError::FetcherDropped => true,
             // A re-org lowered the chain height or the server is behind the
             // chain tip. The next sync starts from the server's chain height.
             ServerError::ChainHeightBelowScanRange { .. } => true,
@@ -167,6 +167,8 @@ impl ServerError {
             | ServerError::GenesisBlockOnly
             | ServerError::TreeStateNotServed { .. }
             | ServerError::UnsupportedProtocolVersion { .. } => false,
+
+            ServerError::EmptyBlockRange { .. } => false,
         }
     }
 }
@@ -298,9 +300,8 @@ impl ServerError {
                 SyncRecoveryObservables::ServerUnavailable
             }
             // Empty chain. No point retrying anywhere.
-            ServerError::GenesisBlockOnly | ServerError::EmptyBlockRange { .. } => {
-                SyncRecoveryObservables::Abort
-            }
+            ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
+            ServerError::EmptyBlockRange { .. } => SyncRecoveryObservables::Abort,
         }
     }
 }
@@ -582,6 +583,7 @@ pub enum SyncModeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mocks;
 
     /// Use `String` as the wallet error type for testing.
     type TestSyncError = SyncError<String>;
@@ -699,15 +701,6 @@ mod tests {
 
     /// The codes gRPC names as transient, as a server or the transport
     /// reports them.
-    const EMPTY_RANGE_HEIGHT: u32 = 5;
-
-    fn empty_block_range_error() -> ServerError {
-        ServerError::EmptyBlockRange {
-            start: BlockHeight::from_u32(EMPTY_RANGE_HEIGHT),
-            end: BlockHeight::from_u32(EMPTY_RANGE_HEIGHT),
-        }
-    }
-
     fn network_weather_statuses() -> [protocol::Status; 5] {
         [
             protocol::Status::unavailable("down"),
@@ -729,6 +722,44 @@ mod tests {
         ]
     }
 
+    mod source_text {
+        const ERROR_SOURCE: &str = include_str!("error.rs");
+        const TEST_SOURCES: [&str; 4] = [
+            ERROR_SOURCE,
+            include_str!("client.rs"),
+            include_str!("mocks.rs"),
+            include_str!("scan/task/tests.rs"),
+        ];
+        const NETWORK_WEATHER_COMMENT_LAST_LINE: &str = "/// reports them.";
+        const NETWORK_WEATHER_ITEM: &str = "fn network_weather_statuses()";
+        const EMPTY_RANGE_HEIGHT_DEFINITION: &str = concat!("const ", "EMPTY_RANGE_HEIGHT:");
+        const ONE_DEFINITION: usize = 1;
+
+        #[test]
+        fn the_network_weather_comment_sits_on_the_network_weather_statuses() {
+            let documented_item = ERROR_SOURCE
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| *line != NETWORK_WEATHER_COMMENT_LAST_LINE)
+                .nth(1);
+
+            assert!(
+                documented_item.is_some_and(|item| item.starts_with(NETWORK_WEATHER_ITEM)),
+                "the comment documents {documented_item:?}"
+            );
+        }
+
+        #[test]
+        fn the_height_of_an_empty_block_range_has_one_definition() {
+            let definitions: usize = TEST_SOURCES
+                .iter()
+                .map(|source| source.matches(EMPTY_RANGE_HEIGHT_DEFINITION).count())
+                .sum();
+
+            assert_eq!(definitions, ONE_DEFINITION);
+        }
+    }
+
     mod recommend_same_server {
         use super::*;
 
@@ -738,11 +769,6 @@ mod tests {
             #[test]
             fn fetcher_dropped() {
                 assert!(ServerError::FetcherDropped.recommend_same_server());
-            }
-
-            #[test]
-            fn empty_block_range() {
-                assert!(empty_block_range_error().recommend_same_server());
             }
 
             #[test]
@@ -843,6 +869,11 @@ mod tests {
             #[test]
             fn genesis_block_only() {
                 assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
+            }
+
+            #[test]
+            fn empty_block_range() {
+                assert!(!mocks::empty_block_range_error().recommend_same_server());
             }
         }
 
@@ -1113,7 +1144,7 @@ mod tests {
             #[test]
             fn empty_block_range() {
                 assert_eq!(
-                    empty_block_range_error().recovery_recommendation(),
+                    mocks::empty_block_range_error().recovery_recommendation(),
                     SyncRecoveryObservables::Abort
                 );
             }
