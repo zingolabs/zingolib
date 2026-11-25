@@ -25,6 +25,8 @@
 //! consumers.
 #![forbid(unsafe_code)]
 
+use std::io;
+use std::net;
 use std::time::{Duration, Instant};
 
 use http::Uri;
@@ -210,6 +212,33 @@ fn probe_port(server: &Uri) -> u16 {
     })
 }
 
+fn socket_addrs(ips: Vec<net::IpAddr>, port: u16) -> Vec<net::SocketAddr> {
+    ips.into_iter()
+        .map(|ip| net::SocketAddr::new(ip, port))
+        .collect()
+}
+
+/// - spawns one task per address, aborted once one connects
+/// - network: a TCP connect to every address at once
+async fn connect_any(addrs: Vec<net::SocketAddr>) -> io::Result<tokio::net::TcpStream> {
+    let mut dials = tokio::task::JoinSet::new();
+    for addr in addrs {
+        dials.spawn(tokio::net::TcpStream::connect(addr));
+    }
+    let mut last_failure = io::Error::new(
+        io::ErrorKind::AddrNotAvailable,
+        "the lookup answered no address",
+    );
+    while let Some(joined) = dials.join_next().await {
+        match joined {
+            Ok(Ok(stream)) => return Ok(stream),
+            Ok(Err(refused)) => last_failure = refused,
+            Err(aborted) => last_failure = io::Error::other(aborted),
+        }
+    }
+    Err(last_failure)
+}
+
 /// Walks `server` through the staged sync-path probe: TCP connect, the
 /// secure channel, and a `GetLightdInfo` round trip, each stage bounded by
 /// `stage_timeout` and timed, each failure a typed [`NetOpFailure`]. Runs
@@ -233,11 +262,14 @@ pub async fn probe_sync_server(server: &Uri, stage_timeout: Duration) -> SyncSer
 
     // Stage 1: raw TCP proves reachability apart from everything above it.
     let started = Instant::now();
-    let tcp = tokio::time::timeout(
-        stage_timeout,
-        tokio::net::TcpStream::connect((host.as_str(), probe_port(server))),
-    )
-    .await;
+    let port = probe_port(server);
+    let tcp = match tokio::time::timeout(stage_timeout, zl_netutils::dns::lookup(&host)).await {
+        Ok(Ok(ips)) => {
+            tokio::time::timeout(stage_timeout, connect_any(socket_addrs(ips, port))).await
+        }
+        Ok(Err(unresolved)) => Ok(Err(unresolved)),
+        Err(elapsed) => Err(elapsed),
+    };
     let failure = match &tcp {
         Ok(Ok(_)) => None,
         Ok(Err(io)) => Some(NetOpFailure::from_error(
@@ -324,6 +356,44 @@ mod tests {
 
     fn uri(text: &str) -> Uri {
         text.parse().expect("static uri")
+    }
+
+    #[tokio::test]
+    async fn connect_any_reaches_the_live_address_past_a_dead_one() -> io::Result<()> {
+        let closed = {
+            let listener = tokio::net::TcpListener::bind((net::Ipv4Addr::LOCALHOST, 0)).await?;
+            listener.local_addr()?
+        };
+        let listener = tokio::net::TcpListener::bind((net::Ipv4Addr::LOCALHOST, 0)).await?;
+        let open = listener.local_addr()?;
+
+        let stream = connect_any(vec![closed, open]).await?;
+
+        assert_eq!(stream.peer_addr()?, open);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn connect_any_fails_typed_when_no_address_answers() -> io::Result<()> {
+        let closed = {
+            let listener = tokio::net::TcpListener::bind((net::Ipv4Addr::LOCALHOST, 0)).await?;
+            listener.local_addr()?
+        };
+
+        let no_address = connect_any(Vec::new()).await;
+        let refused = connect_any(vec![closed]).await;
+
+        assert_eq!(
+            (
+                no_address.map(drop).map_err(|failure| failure.kind()),
+                refused.map(drop).map_err(|failure| failure.kind()),
+            ),
+            (
+                Err(io::ErrorKind::AddrNotAvailable),
+                Err(io::ErrorKind::ConnectionRefused),
+            ),
+        );
+        Ok(())
     }
 
     /// A closed port fails at the first stage as a typed remote-connect
