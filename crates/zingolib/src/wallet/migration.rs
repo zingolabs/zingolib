@@ -48,12 +48,17 @@ use std::collections::HashSet;
 // their items are tightened individually instead.
 pub(crate) mod immediate;
 pub(crate) mod params;
+#[deny(clippy::disallowed_methods, clippy::disallowed_types)]
 pub mod parts;
 pub(crate) mod quantize;
+#[deny(clippy::disallowed_methods, clippy::disallowed_types)]
 pub(crate) mod reconcile;
+#[deny(clippy::disallowed_methods, clippy::disallowed_types)]
 pub(crate) mod schedule;
 pub mod split;
+#[deny(clippy::disallowed_methods, clippy::disallowed_types)]
 pub(crate) mod store;
+#[deny(clippy::disallowed_methods, clippy::disallowed_types)]
 pub(crate) mod transmission;
 
 pub use immediate::{ImmediateMigrationPlan, ImmediateMigrationTx};
@@ -193,52 +198,5 @@ impl crate::wallet::LightWallet {
         let result = f(self, &mut state);
         self.migration = Some(state);
         Some(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    /// Structural decoupling lint (ZIP 318: a part-transmission session must
-    /// never synchronize). The migration modules that run on the transmission
-    /// path must have no dependency edge to the sync engine or the network
-    /// client. The only permitted pepper-sync surface is wallet data types.
-    const FORBIDDEN: [&str; 6] = [
-        "pepper_sync::sync",
-        "sync_and_await",
-        "pause_sync",
-        "resume_sync",
-        "GrpcIndexer",
-        "netutils",
-    ];
-    const FUNNEL_IMPORT: &str = "use crate::netutils::Indexer;";
-    const CRATE_IMPORT: &str = "use zl_netutils::Indexer;";
-
-    fn forbidden_reference(source: &str) -> Option<&'static str> {
-        FORBIDDEN.into_iter().find(|needle| source.contains(needle))
-    }
-
-    #[test]
-    fn a_network_client_import_is_forbidden_through_the_crate_and_the_funnel() {
-        assert!(forbidden_reference(CRATE_IMPORT).is_some());
-        assert!(forbidden_reference(FUNNEL_IMPORT).is_some());
-    }
-
-    #[test]
-    fn transmission_path_has_no_sync_dependency() {
-        for module in ["parts", "transmission", "schedule", "store", "reconcile"] {
-            let path = format!(
-                "{}/src/wallet/migration/{module}.rs",
-                env!("CARGO_MANIFEST_DIR")
-            );
-            let Ok(source) = std::fs::read_to_string(&path) else {
-                continue; // modules land tranche by tranche
-            };
-            assert_eq!(
-                forbidden_reference(&source),
-                None,
-                "{path}: the migration transmission path must remain decoupled from the sync \
-                 engine"
-            );
-        }
     }
 }

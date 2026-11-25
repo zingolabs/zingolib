@@ -122,3 +122,10 @@ serde_json.workspace = true
 
 [badges]
 maintenance = { status = "actively-developed" }
+
+# `clippy.toml` lists the items the ZIP 318 transmission path must not
+# reach. These two lints are allowed package-wide, and
+# `src/wallet/migration.rs` denies them on each transmission-path module.
+[lints.clippy]
+disallowed_methods = "allow"
+disallowed_types = "allow"
