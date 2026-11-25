@@ -1,7 +1,8 @@
 use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
 use zcash_transparent::keys::NonHardenedChildIndex;
+use zl_netutils::lightwallet_protocol;
 
-use crate::keys::transparent::TransparentScope;
+use crate::{keys::transparent::TransparentScope, mocks};
 
 use super::*;
 
@@ -136,23 +137,15 @@ fn no_block_error() -> ServerError {
 
 /// Answers chain height requests with `chain_height`.
 fn spawn_chain_height_fetcher(chain_height: u32) -> mpsc::UnboundedSender<FetchRequest> {
-    let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-    tokio::spawn(async move {
-        while let Some(fetch_request) = fetch_request_receiver.recv().await {
-            match fetch_request {
-                FetchRequest::ChainTip(reply_sender) => {
-                    let _ignore_error =
-                        reply_sender.send(Ok(zl_netutils::lightwallet_protocol::BlockId {
-                            height: u64::from(chain_height),
-                            hash: Vec::new(),
-                        }));
-                }
-                _ => panic!("unexpected fetch request"),
-            }
+    mocks::spawn_fetcher(move |fetch_request| match fetch_request {
+        FetchRequest::ChainTip(reply_sender) => {
+            let _ignore_error = reply_sender.send(Ok(lightwallet_protocol::BlockId {
+                height: u64::from(chain_height),
+                hash: Vec::new(),
+            }));
         }
-    });
-
-    fetch_request_sender
+        _ => panic!("unexpected fetch request"),
+    })
 }
 
 /// The server's chain height is below the last block of the scan range, so it has no block to serve for the top

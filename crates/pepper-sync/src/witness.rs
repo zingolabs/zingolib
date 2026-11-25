@@ -13,7 +13,7 @@ use shardtree::LocatedPrunableTree;
 use zcash_client_backend::data_api::anchor_retention::{AnchorRetention, AnchorRetentionInterval};
 use zcash_primitives::{
     block::BlockHash,
-    merkle_tree::{HashSer, read_commitment_tree},
+    merkle_tree::{self, read_commitment_tree},
 };
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 use zl_netutils::lightwallet_protocol::TreeState;
@@ -326,17 +326,26 @@ impl TryFrom<TreeState> for Frontiers {
                     "Invalid block hash length.",
                 )
             })?,
-            commitment_tree(ShieldedPool::Sapling, &value.sapling_tree)?.to_frontier(),
-            commitment_tree(ShieldedPool::Orchard, &value.orchard_tree)?.to_frontier(),
-            commitment_tree(ShieldedPool::Ironwood, &value.ironwood_tree)?.to_frontier(),
+            commitment_tree(&value, ShieldedPool::Sapling)?.to_frontier(),
+            commitment_tree(&value, ShieldedPool::Orchard)?.to_frontier(),
+            commitment_tree(&value, ShieldedPool::Ironwood)?.to_frontier(),
         ))
     }
 }
 
-fn commitment_tree<Leaf: HashSer, const DEPTH: u8>(
+pub(crate) fn tree_hex(tree_state: &TreeState, pool: ShieldedPool) -> &str {
+    match pool {
+        ShieldedPool::Sapling => &tree_state.sapling_tree,
+        ShieldedPool::Orchard => &tree_state.orchard_tree,
+        ShieldedPool::Ironwood => &tree_state.ironwood_tree,
+    }
+}
+
+fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
+    tree_state: &TreeState,
     pool: ShieldedPool,
-    tree_hex: &str,
 ) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
+    let tree_hex = tree_hex(tree_state, pool);
     if tree_hex.is_empty() {
         Ok(CommitmentTree::empty())
     } else {
@@ -478,37 +487,57 @@ pub(crate) fn repin_anchor_checkpoints<S>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::{orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
+    use crate::mocks::{self, orchard_subtree_root, orchard_tree_scanned_past_the_fetched_roots};
     use crate::shardtree_ext::ShardTreeExt;
     use crate::wallet::empty_shard_tree;
     use incrementalmerkletree::{Address, Hashable as _, Level};
 
     const ODD_LENGTH_HEX: &str = "0";
+    const REPLY_HEIGHT: u32 = 1;
+    const ORCHARD_DEPTH: u8 = orchard::NOTE_COMMITMENT_TREE_DEPTH as u8;
+
+    fn report_of_a_tree_that_is_not_hex<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
+        pool: ShieldedPool,
+    ) -> Option<String> {
+        let tree_state = mocks::with_tree_hex(
+            mocks::empty_trees(REPLY_HEIGHT.into()),
+            pool,
+            ODD_LENGTH_HEX,
+        );
+
+        commitment_tree::<Leaf, DEPTH>(&tree_state, pool)
+            .err()
+            .map(|unread| unread.to_string())
+    }
 
     #[test]
     fn a_tree_that_is_not_hex_names_its_pool() {
-        for (pool, report) in [
+        for (pool_name, report) in [
             (
-                ShieldedPool::Sapling,
-                "Hex decoding of Sapling tree bytes failed: OddLength",
+                "Sapling",
+                report_of_a_tree_that_is_not_hex::<
+                    sapling_crypto::Node,
+                    { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH },
+                >(ShieldedPool::Sapling),
             ),
             (
-                ShieldedPool::Orchard,
-                "Hex decoding of Orchard tree bytes failed: OddLength",
+                "Orchard",
+                report_of_a_tree_that_is_not_hex::<MerkleHashOrchard, ORCHARD_DEPTH>(
+                    ShieldedPool::Orchard,
+                ),
             ),
             (
-                ShieldedPool::Ironwood,
-                "Hex decoding of Ironwood tree bytes failed: OddLength",
+                "Ironwood",
+                report_of_a_tree_that_is_not_hex::<MerkleHashOrchard, ORCHARD_DEPTH>(
+                    ShieldedPool::Ironwood,
+                ),
             ),
         ] {
-            let tree = commitment_tree::<
-                MerkleHashOrchard,
-                { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 },
-            >(pool, ODD_LENGTH_HEX);
-
             assert_eq!(
-                tree.map(|_| ()).map_err(|unread| unread.to_string()),
-                Err(report.to_string())
+                report,
+                Some(format!(
+                    "Hex decoding of {pool_name} tree bytes failed: OddLength"
+                ))
             );
         }
     }

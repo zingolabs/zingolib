@@ -715,21 +715,16 @@ mod tests {
     use zcash_protocol::consensus::MAIN_NETWORK;
 
     use super::*;
+    use crate::mocks;
 
     // A fetcher that answers every transaction request with `status`.
     fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::Transaction(reply_sender, _) => {
-                        let _ignore_error = reply_sender.send(Err(status.clone()));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
+        mocks::spawn_fetcher(move |fetch_request| match fetch_request {
+            FetchRequest::Transaction(reply_sender, _) => {
+                let _ignore_error = reply_sender.send(Err(status.clone()));
             }
-        });
-        fetch_request_sender
+            _ => panic!("unexpected fetch request"),
+        })
     }
 
     async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {

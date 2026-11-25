@@ -26,7 +26,7 @@ use zl_netutils::{
 
 use crate::{
     error::{MempoolError, ServerError},
-    witness::Frontiers,
+    witness::{self, Frontiers},
 };
 
 use zl_netutils::lightwallet_protocol::SubtreeRoot;
@@ -314,24 +314,14 @@ pub(crate) async fn get_frontiers(
     // servers omit a pool's tree state below the pool's activation height. at and above the activation height, an
     // empty tree is served as a serialized empty tree, so an omitted tree state means the server does not serve the
     // pool.
-    for (pool, tree, network_upgrade) in [
-        (
-            ShieldedPool::Sapling,
-            &tree_state.sapling_tree,
-            consensus::NetworkUpgrade::Sapling,
-        ),
-        (
-            ShieldedPool::Orchard,
-            &tree_state.orchard_tree,
-            consensus::NetworkUpgrade::Nu5,
-        ),
-        (
-            ShieldedPool::Ironwood,
-            &tree_state.ironwood_tree,
-            consensus::NetworkUpgrade::Nu6_3,
-        ),
+    for (pool, network_upgrade) in [
+        (ShieldedPool::Sapling, consensus::NetworkUpgrade::Sapling),
+        (ShieldedPool::Orchard, consensus::NetworkUpgrade::Nu5),
+        (ShieldedPool::Ironwood, consensus::NetworkUpgrade::Nu6_3),
     ] {
-        if tree.is_empty() && consensus_parameters.is_nu_active(network_upgrade, block_height) {
+        if witness::tree_hex(&tree_state, pool).is_empty()
+            && consensus_parameters.is_nu_active(network_upgrade, block_height)
+        {
             return Err(ServerError::TreeStateNotServed {
                 pool: PoolType::Shielded(pool),
                 height: block_height,
@@ -511,7 +501,7 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
-    use zcash_primitives::block::BlockHash;
+    use zcash_primitives::block;
     use zcash_protocol::local_consensus::LocalNetwork;
     use zl_netutils::lightwallet_protocol::TreeState;
 
@@ -536,22 +526,15 @@ mod tests {
         nu7: Some(BlockHeight::from_u32(IRONWOOD_ACTIVATION)),
     };
 
-    fn omitting(mut tree_state: TreeState, pool: ShieldedPool) -> TreeState {
-        let tree = match pool {
-            ShieldedPool::Sapling => &mut tree_state.sapling_tree,
-            ShieldedPool::Orchard => &mut tree_state.orchard_tree,
-            ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
-        };
-        *tree = mocks::OMITTED_TREE_HEX.to_string();
-
-        tree_state
-    }
-
     /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
     /// is left empty.
     fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
         mocks::spawn_tree_state_fetcher(move |block_height| {
-            omitting(mocks::empty_trees(block_height), omitted_pool)
+            mocks::with_tree_hex(
+                mocks::empty_trees(block_height),
+                omitted_pool,
+                mocks::OMITTED_TREE_HEX,
+            )
         })
     }
 
@@ -596,15 +579,14 @@ mod tests {
         .await
     }
 
-    const BLOCK_HASH_BYTES: usize = 32;
     const MARKED_BYTE: u8 = 0x01;
 
     #[tokio::test]
     async fn a_well_formed_tree_state_keeps_its_height_and_reverses_its_block_hash() {
-        let mut wire_hash = [0; BLOCK_HASH_BYTES];
+        let mut wire_hash = [0; mocks::BLOCK_HASH_BYTES];
         wire_hash[0] = MARKED_BYTE;
-        let mut reversed_hash = [0; BLOCK_HASH_BYTES];
-        reversed_hash[BLOCK_HASH_BYTES - 1] = MARKED_BYTE;
+        let mut reversed_hash = [0; mocks::BLOCK_HASH_BYTES];
+        reversed_hash[mocks::BLOCK_HASH_BYTES - 1] = MARKED_BYTE;
 
         let frontiers = frontiers_of(TreeState {
             hash: hex::encode(wire_hash),
@@ -616,7 +598,7 @@ mod tests {
             frontiers
                 .map(|frontiers| (frontiers.block_height(), frontiers.block_hash()))
                 .map_err(|unread| unread.to_string()),
-            Ok((IRONWOOD_ACTIVATION.into(), BlockHash(reversed_hash)))
+            Ok((IRONWOOD_ACTIVATION.into(), block::BlockHash(reversed_hash)))
         );
     }
 
@@ -686,20 +668,16 @@ mod tests {
     fn spawn_transaction_fetcher(
         replies: Vec<tonic::Status>,
     ) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            let mut replies = replies.into_iter();
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::Transaction(reply_sender, _) => {
-                        let status = replies.next().expect("a request beyond the script");
-                        let _ignore_error = reply_sender.send(Err(status));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
+        let mut replies = replies.into_iter();
+        mocks::spawn_fetcher(move |fetch_request| match fetch_request {
+            FetchRequest::Transaction(reply_sender, _) => {
+                let status = replies
+                    .next()
+                    .expect("the test scripts one reply for each request it makes");
+                let _ignore_error = reply_sender.send(Err(status));
             }
-        });
-        fetch_request_sender
+            _ => panic!("unexpected fetch request"),
+        })
     }
 
     fn snapshot_race() -> tonic::Status {

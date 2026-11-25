@@ -11,20 +11,19 @@ use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::mpsc;
-use zcash_protocol::{TxId, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::{SubtreeRoot, TreeState};
+use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
+use zl_netutils::lightwallet_protocol::{self, SubtreeRoot};
 
-use crate::client::FetchRequest;
+use crate::client;
 
+pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
 pub(crate) const OMITTED_TREE_HEX: &str = "";
-pub(crate) const ZERO_HASH_HEX: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
 
-pub(crate) fn empty_trees(block_height: BlockHeight) -> TreeState {
-    TreeState {
+pub(crate) fn empty_trees(block_height: BlockHeight) -> lightwallet_protocol::TreeState {
+    lightwallet_protocol::TreeState {
         height: u64::from(block_height),
-        hash: ZERO_HASH_HEX.to_string(),
+        hash: hex::encode([0u8; BLOCK_HASH_BYTES]),
         sapling_tree: EMPTY_TREE_HEX.to_string(),
         orchard_tree: EMPTY_TREE_HEX.to_string(),
         ironwood_tree: EMPTY_TREE_HEX.to_string(),
@@ -32,22 +31,43 @@ pub(crate) fn empty_trees(block_height: BlockHeight) -> TreeState {
     }
 }
 
-pub(crate) fn spawn_tree_state_fetcher(
-    tree_state_at: impl Fn(BlockHeight) -> TreeState + Send + 'static,
-) -> mpsc::UnboundedSender<FetchRequest> {
+pub(crate) fn with_tree_hex(
+    mut tree_state: lightwallet_protocol::TreeState,
+    pool: ShieldedPool,
+    tree_hex: &str,
+) -> lightwallet_protocol::TreeState {
+    let tree = match pool {
+        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
+        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
+        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
+    };
+    *tree = tree_hex.to_string();
+
+    tree_state
+}
+
+pub(crate) fn spawn_fetcher(
+    mut answer: impl FnMut(client::FetchRequest) + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
     let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         while let Some(fetch_request) = fetch_request_receiver.recv().await {
-            match fetch_request {
-                FetchRequest::TreeState(reply_sender, block_height) => {
-                    let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
-                }
-                _ => panic!("unexpected fetch request"),
-            }
+            answer(fetch_request);
         }
     });
 
     fetch_request_sender
+}
+
+pub(crate) fn spawn_tree_state_fetcher(
+    tree_state_at: impl Fn(BlockHeight) -> lightwallet_protocol::TreeState + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| match fetch_request {
+        client::FetchRequest::TreeState(reply_sender, block_height) => {
+            let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+        }
+        _ => panic!("unexpected fetch request"),
+    })
 }
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {

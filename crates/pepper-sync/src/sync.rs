@@ -4110,7 +4110,7 @@ mod test {
             client::FetchRequest,
             error::SyncError,
             keys::transparent::{TransparentAddressId, TransparentScope},
-            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            mocks::{self, MockWallet, MockWalletBuilder, MockWalletError},
             sync::spend,
             wallet::{
                 OutputId, OutputInterface as _, ScanTarget, TransactionRecord, TransparentCoin,
@@ -4189,22 +4189,15 @@ mod test {
         fn spawn_fetcher(transaction: &TransactionRecord) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
-            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    match fetch_request {
-                        FetchRequest::Transaction(reply_sender, _txid) => {
-                            let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                data: data.clone(),
-                                height: u64::from(SPEND_HEIGHT),
-                            }));
-                        }
-                        _ => panic!("unexpected fetch request"),
-                    }
+            mocks::spawn_fetcher(move |fetch_request| match fetch_request {
+                FetchRequest::Transaction(reply_sender, _txid) => {
+                    let _ignore_error = reply_sender.send(Ok(RawTransaction {
+                        data: data.clone(),
+                        height: u64::from(SPEND_HEIGHT),
+                    }));
                 }
-            });
-
-            fetch_request_sender
+                _ => panic!("unexpected fetch request"),
+            })
         }
 
         fn get_coin_spending_txid(wallet: &MockWallet) -> Option<TxId> {
@@ -4922,12 +4915,10 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
         use zl_netutils::lightwallet_protocol::TreeState;
 
-        use crate::mocks;
-
         use crate::{
             client::FetchRequest,
             error::SyncError,
-            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            mocks::{self, MockWallet, MockWalletBuilder, MockWalletError},
             shardtree_ext::ShardTreeExt,
             sync::{SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE, ScanPriority, ScanRange},
             wallet::{ShardTrees, traits::SyncShardTrees},
@@ -5190,8 +5181,6 @@ mod test {
         use zl_common::status::ConfirmationStatus;
         use zl_netutils::lightwallet_protocol::RawTransaction;
 
-        use crate::mocks;
-
         use super::spend_reset_lifecycle::{
             FUNDING_HEIGHT, FUNDING_TXID, NOTE_NULLIFIER, SPEND_HEIGHT, funding_transaction,
             spending_key,
@@ -5200,7 +5189,7 @@ mod test {
             client::FetchRequest,
             config::PerformanceLevel,
             error::SyncError,
-            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            mocks::{self, MockWallet, MockWalletBuilder, MockWalletError},
             scan::{
                 ScanResults,
                 task::{ScanLoad, TaskId},
@@ -5241,29 +5230,21 @@ mod test {
                 spending_transaction.transaction().write(&mut data).unwrap();
                 data
             });
-            let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                    match fetch_request {
-                        FetchRequest::TreeState(reply_sender, block_height) => {
-                            let _ignore_error =
-                                reply_sender.send(Ok(mocks::empty_trees(block_height)));
-                        }
-                        FetchRequest::Transaction(reply_sender, _txid) => {
-                            // the request fails when the reply sender is dropped.
-                            if let Some(data) = &spending_transaction_data {
-                                let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                                    data: data.clone(),
-                                    height: u64::from(SPEND_HEIGHT),
-                                }));
-                            }
-                        }
-                        _ => panic!("unexpected fetch request"),
+            mocks::spawn_fetcher(move |fetch_request| match fetch_request {
+                FetchRequest::TreeState(reply_sender, block_height) => {
+                    let _ignore_error = reply_sender.send(Ok(mocks::empty_trees(block_height)));
+                }
+                FetchRequest::Transaction(reply_sender, _txid) => {
+                    // the request fails when the reply sender is dropped.
+                    if let Some(data) = &spending_transaction_data {
+                        let _ignore_error = reply_sender.send(Ok(RawTransaction {
+                            data: data.clone(),
+                            height: u64::from(SPEND_HEIGHT),
+                        }));
                     }
                 }
-            });
-
-            fetch_request_sender
+                _ => panic!("unexpected fetch request"),
+            })
         }
 
         /// The block at `SPEND_HEIGHT`, which holds the first orchard note commitment of the chain.
@@ -5743,17 +5724,13 @@ mod test {
         use crate::engine::{WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
-        use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
 
-        use crate::mocks;
-
         use crate::{
-            client::FetchRequest,
             config::PerformanceLevel,
             error::{ContinuityError, ScanError, SyncError},
-            mocks::{MockWallet, MockWalletBuilder, MockWalletError},
+            mocks::{self, MockWallet, MockWalletBuilder, MockWalletError},
             scan::task::{ScanLoad, TaskId},
             sync::{ProcessedScanResults, ScanPriority, ScanRange, process_scan_results},
             wallet::{SyncState, TreeBounds, WalletBlock, traits::SyncWallet as _},
@@ -5794,11 +5771,6 @@ mod test {
             )
         }
 
-        /// Answers tree state requests with empty note commitment trees.
-        fn spawn_fetcher() -> mpsc::UnboundedSender<FetchRequest> {
-            mocks::spawn_tree_state_fetcher(mocks::empty_trees)
-        }
-
         fn wallet(scan_ranges: Vec<ScanRange>, blocks: Vec<u32>) -> MockWallet {
             MockWalletBuilder::new()
                 .birthday(BlockHeight::from_u32(BIRTHDAY))
@@ -5820,7 +5792,7 @@ mod test {
             process_scan_results(
                 &NETWORK,
                 wallet,
-                spawn_fetcher(),
+                mocks::spawn_tree_state_fetcher(mocks::empty_trees),
                 &HashMap::new(),
                 ScanLoad {
                     task_id,

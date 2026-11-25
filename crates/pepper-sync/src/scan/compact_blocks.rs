@@ -709,8 +709,8 @@ fn set_checkpoint_retentions<L>(
 
 #[cfg(test)]
 mod tests {
-    use orchard::note_encryption::OrchardDomain;
-    use sapling_crypto::note_encryption::SaplingDomain;
+    use orchard::note_encryption as orchard_encryption;
+    use sapling_crypto::note_encryption as sapling_encryption;
     use zcash_primitives::transaction::TxId;
     use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactTx};
 
@@ -780,30 +780,55 @@ mod tests {
         }
     }
 
-    const NOT_A_FIELD_ELEMENT: [u8; 32] = [u8::MAX; 32];
+    const COMMITMENT_BYTES: usize = 32;
+    const EPHEMERAL_KEY_BYTES: usize = 32;
+    const COMPACT_CIPHERTEXT_BYTES: usize = 52;
+    const NOT_A_FIELD_ELEMENT: [u8; COMMITMENT_BYTES] = [u8::MAX; COMMITMENT_BYTES];
+
+    fn compact_sapling_output() -> CompactSaplingOutput {
+        CompactSaplingOutput {
+            cmu: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
+        }
+    }
+
+    fn sapling_leaves_of(output: CompactSaplingOutput) -> Result<usize, ScanError> {
+        calculate_sapling_leaves_and_retentions::<sapling_encryption::SaplingDomain>(
+            &[output],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
+
+    fn orchard_leaves_of(action: CompactOrchardAction) -> Result<usize, ScanError> {
+        calculate_orchard_leaves_and_retentions::<orchard_encryption::OrchardDomain>(
+            &[action],
+            &HashMap::new(),
+        )
+        .map(|leaves| leaves.len())
+    }
 
     #[test]
-    fn a_sapling_output_whose_commitment_is_outside_the_field_is_invalid() {
-        let placeholder = compact_ironwood_action();
-        let output = CompactSaplingOutput {
-            cmu: NOT_A_FIELD_ELEMENT.to_vec(),
-            ephemeral_key: placeholder.ephemeral_key,
-            ciphertext: placeholder.ciphertext,
-        };
-
+    fn a_sapling_output_is_invalid_when_its_commitment_is_outside_the_field() {
+        assert!(sapling_leaves_of(compact_sapling_output()).is_ok());
         assert!(matches!(
-            calculate_sapling_leaves_and_retentions::<SaplingDomain>(&[output], &HashMap::new()),
+            sapling_leaves_of(CompactSaplingOutput {
+                cmu: NOT_A_FIELD_ELEMENT.to_vec(),
+                ..compact_sapling_output()
+            }),
             Err(ScanError::InvalidSaplingOutput)
         ));
     }
 
     #[test]
-    fn an_orchard_action_whose_nullifier_is_not_32_bytes_is_invalid() {
-        let mut action = compact_ironwood_action();
-        action.nullifier.pop();
+    fn an_orchard_action_is_invalid_when_its_nullifier_is_not_32_bytes() {
+        let mut short_nullifier = compact_ironwood_action();
+        short_nullifier.nullifier.pop();
 
+        assert!(orchard_leaves_of(compact_ironwood_action()).is_ok());
         assert!(matches!(
-            calculate_orchard_leaves_and_retentions::<OrchardDomain>(&[action], &HashMap::new()),
+            orchard_leaves_of(short_nullifier),
             Err(ScanError::InvalidOrchardAction)
         ));
     }
