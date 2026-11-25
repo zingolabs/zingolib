@@ -359,8 +359,7 @@ impl Socks5Indexer {
         Fut: std::future::Future<Output = Result<tonic::Response<Resp>, tonic::Status>>,
     {
         let client = self.dial().await?;
-        let mut request = tonic::Request::new(message);
-        request.set_timeout(self.timeout);
+        let request = crate::rpc::timed(message, self.timeout);
         // The client-side RPC bound: an elapse is typed as its own variant, so
         // a slow round trip is never misread as the server answering.
         bounded_rpc(self.destination(), self.timeout, rpc(client, request)).await
