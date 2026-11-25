@@ -164,7 +164,7 @@ where
 #[instrument(skip(client), name = "fetch::get_lightd_info", err, level = "info")]
 pub(super) async fn get_lightd_info<C>(
     client: &mut C,
-) -> Result<protocol::LightdInfo, tonic::Status>
+) -> Result<protocol::LightdInfo, protocol::Status>
 where
     C: Indexer,
 {
@@ -172,7 +172,7 @@ where
 }
 
 #[instrument(skip(client), name = "fetch::get_latest_block", err, level = "info")]
-async fn get_latest_block<C>(client: &mut C) -> Result<protocol::BlockId, tonic::Status>
+async fn get_latest_block<C>(client: &mut C) -> Result<protocol::BlockId, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -185,7 +185,7 @@ async fn get_block_range<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
     include_transparent: bool,
-) -> Result<protocol::CompactBlocks, tonic::Status>
+) -> Result<protocol::CompactBlocks, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -206,7 +206,7 @@ where
 async fn get_block_range_nullifiers<C>(
     client: &mut C,
     block_range: Range<BlockHeight>,
-) -> Result<protocol::CompactBlocks, tonic::Status>
+) -> Result<protocol::CompactBlocks, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -223,7 +223,7 @@ async fn get_subtree_roots<C>(
     start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<protocol::SubtreeRoots, tonic::Status>
+) -> Result<protocol::SubtreeRoots, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -239,7 +239,7 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<protocol::TreeState, tonic::Status>
+) -> Result<protocol::TreeState, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -253,7 +253,7 @@ async fn get_address_utxos<C>(
     addresses: Vec<String>,
     start_height: BlockHeight,
     max_entries: u32,
-) -> Result<Vec<protocol::GetAddressUtxosReply>, tonic::Status>
+) -> Result<Vec<protocol::GetAddressUtxosReply>, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -271,7 +271,7 @@ async fn get_taddress_txs<C>(
     client: &mut C,
     address: String,
     block_range: Range<BlockHeight>,
-) -> Result<protocol::RawTransactions, tonic::Status>
+) -> Result<protocol::RawTransactions, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
@@ -288,7 +288,7 @@ where
 /// This is not called from the fetch request framework and is intended to be called independently.
 pub(crate) async fn get_mempool_stream<C>(
     client: &mut C,
-) -> Result<protocol::RawTransactions, tonic::Status>
+) -> Result<protocol::RawTransactions, protocol::Status>
 where
     C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
 {
