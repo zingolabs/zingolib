@@ -45,6 +45,15 @@
   a side channel around the lightclient lock, or a string-shaped status that
   an event will replace, and shape new state so an event can carry it. Ruled
   2026-10-02.
+- **Write each thing once.** Do these four steps on every change, in test
+  code as in shipped code.
+  1. Before you add a function, a constant, a fixture or a block, search for
+     one that does the job, and call it.
+  2. When your diff holds the same shape twice, extract it before you write
+     the next line.
+  3. Vary a copy with a parameter, never with a paste.
+  4. Before you report done, read your own diff for repeats and run
+     `dupes-gate`.
 - **Code duplication is FORBIDDEN.** The convention is maximally DRY code
   with pure functions first: extract the shared logic into one pure function
   and call it from every site, and keep effects at the edges. Never add
