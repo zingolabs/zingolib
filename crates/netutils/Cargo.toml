@@ -57,7 +57,6 @@ reqwest = { workspace = true, optional = true, default-features = false, feature
 # nothing new enters the lockfile.
 hyper-util = { version = "0.1.20", features = ["client-legacy", "tokio"] }
 hyper-rustls = { workspace = true, features = ["http2"] }
-# Every lookup outside the mixnet resolves over DoH/DoT (see `dns`).
 hickory-resolver.workspace = true
 tower = "0.5"
 tokio = { workspace = true, optional = true, features = [

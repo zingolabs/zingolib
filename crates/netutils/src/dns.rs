@@ -1,33 +1,27 @@
-//! - DoH/DoT only (Cloudflare + Quad9 by IP, no system resolver, no plaintext fallback)
-//! - IP literals, `localhost` & hosts file answered locally
-
 #![forbid(unsafe_code)]
 
 use std::future::Future;
 use std::io;
-use std::net::{IpAddr, SocketAddr};
-use std::pin::Pin;
-use std::sync::OnceLock;
-use std::task::{Context, Poll};
+use std::net;
+use std::pin;
+use std::sync;
+use std::task;
+use std::vec;
 
-use hickory_resolver::TokioResolver;
-use hickory_resolver::config::{CLOUDFLARE, QUAD9, ResolverConfig, ServerGroup};
-use hickory_resolver::net::NetError;
-use hickory_resolver::net::runtime::TokioRuntimeProvider;
-use hyper_util::client::legacy::connect::dns::Name;
+use hickory_resolver::config;
+use hickory_resolver::net as resolver_net;
+use hickory_resolver::net::runtime;
+use hyper_util::client::legacy::connect::dns as hyper_dns;
 
-use crate::{client_tls_config, mozilla_roots};
+const UPSTREAMS: [config::ServerGroup<'static>; 2] = [config::CLOUDFLARE, config::QUAD9];
 
-const UPSTREAMS: [ServerGroup<'static>; 2] = [CLOUDFLARE, QUAD9];
-
-// placeholder port (hyper & reqwest overwrite w/ URI port)
 const URI_PORT: u16 = 0;
 
-// process-wide (shared answer cache & DoH/DoT connections)
-static RESOLVER: OnceLock<Result<TokioResolver, NetError>> = OnceLock::new();
+static RESOLVER: sync::OnceLock<Result<hickory_resolver::TokioResolver, resolver_net::NetError>> =
+    sync::OnceLock::new();
 
-fn resolver_config() -> ResolverConfig {
-    ResolverConfig::from_name_servers(
+fn resolver_config() -> config::ResolverConfig {
+    config::ResolverConfig::from_name_servers(
         UPSTREAMS
             .iter()
             .flat_map(|group| group.https().chain(group.tls()))
@@ -37,64 +31,74 @@ fn resolver_config() -> ResolverConfig {
 
 /// - reads the system hosts file
 fn build_resolver(
-    config: ResolverConfig,
+    config: config::ResolverConfig,
     tls: rustls::ClientConfig,
-) -> Result<TokioResolver, NetError> {
-    TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
-        .with_tls_config(tls)
-        .build()
+) -> Result<hickory_resolver::TokioResolver, resolver_net::NetError> {
+    hickory_resolver::TokioResolver::builder_with_config(
+        config,
+        runtime::TokioRuntimeProvider::default(),
+    )
+    .with_tls_config(tls)
+    .build()
 }
 
 /// - first call: installs the process crypto provider, builds the shared resolver
-fn shared_resolver() -> Result<&'static TokioResolver, NetError> {
+fn shared_resolver() -> Result<&'static hickory_resolver::TokioResolver, resolver_net::NetError> {
     RESOLVER
-        .get_or_init(|| build_resolver(resolver_config(), client_tls_config(mozilla_roots())))
+        .get_or_init(|| {
+            build_resolver(
+                resolver_config(),
+                crate::client_tls_config(crate::mozilla_roots()),
+            )
+        })
         .as_ref()
-        .map_err(NetError::clone)
+        .map_err(resolver_net::NetError::clone)
 }
 
-fn io_error(error: NetError) -> io::Error {
+fn io_error(error: resolver_net::NetError) -> io::Error {
     let kind = match error {
-        NetError::Timeout => io::ErrorKind::TimedOut,
+        resolver_net::NetError::Timeout => io::ErrorKind::TimedOut,
         _ => io::ErrorKind::Other,
     };
     io::Error::new(kind, error)
 }
 
 /// - network: DoH/DoT query on cache miss
-async fn lookup_with(resolver: &TokioResolver, host: &str) -> Result<Vec<IpAddr>, NetError> {
+async fn lookup_with(
+    resolver: &hickory_resolver::TokioResolver,
+    host: &str,
+) -> Result<Vec<net::IpAddr>, resolver_net::NetError> {
     Ok(resolver.lookup_ip(host).await?.iter().collect())
 }
 
 /// - first call: [`shared_resolver`]
 /// - network: [`lookup_with`]
-pub async fn lookup(host: &str) -> io::Result<Vec<IpAddr>> {
+pub async fn lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
     let resolver = shared_resolver().map_err(io_error)?;
     lookup_with(resolver, host).await.map_err(io_error)
 }
 
-fn uri_addrs(ips: Vec<IpAddr>) -> std::vec::IntoIter<SocketAddr> {
+fn uri_addrs(ips: Vec<net::IpAddr>) -> vec::IntoIter<net::SocketAddr> {
     ips.into_iter()
-        .map(|ip| SocketAddr::new(ip, URI_PORT))
+        .map(|ip| net::SocketAddr::new(ip, URI_PORT))
         .collect::<Vec<_>>()
         .into_iter()
 }
 
-// [`lookup`] as hyper's & reqwest's resolver (in place of their `getaddrinfo` default)
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EncryptedResolver;
 
-impl tower::Service<Name> for EncryptedResolver {
-    type Response = std::vec::IntoIter<SocketAddr>;
+impl tower::Service<hyper_dns::Name> for EncryptedResolver {
+    type Response = vec::IntoIter<net::SocketAddr>;
     type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send>>;
+    type Future = pin::Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send>>;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> task::Poll<io::Result<()>> {
+        task::Poll::Ready(Ok(()))
     }
 
     /// - network: [`lookup`]
-    fn call(&mut self, name: Name) -> Self::Future {
+    fn call(&mut self, name: hyper_dns::Name) -> Self::Future {
         Box::pin(async move { lookup(name.as_str()).await.map(uri_addrs) })
     }
 }
@@ -112,10 +116,8 @@ impl reqwest::dns::Resolve for EncryptedResolver {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
-
     use super::*;
-    use crate::default_indexer::MAINNET_DEFAULT_INDEXER;
+    use crate::default_indexer;
 
     #[test]
     fn every_upstream_is_encrypted() {
@@ -134,27 +136,30 @@ mod tests {
 
     #[test]
     fn uri_addrs_carry_the_placeholder_port() {
-        let ips = vec![Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
+        let ips = vec![
+            net::Ipv4Addr::LOCALHOST.into(),
+            net::Ipv6Addr::LOCALHOST.into(),
+        ];
         assert_eq!(
             uri_addrs(ips).collect::<Vec<_>>(),
             vec![
-                SocketAddr::new(Ipv4Addr::LOCALHOST.into(), URI_PORT),
-                SocketAddr::new(Ipv6Addr::LOCALHOST.into(), URI_PORT),
+                net::SocketAddr::new(net::Ipv4Addr::LOCALHOST.into(), URI_PORT),
+                net::SocketAddr::new(net::Ipv6Addr::LOCALHOST.into(), URI_PORT),
             ],
         );
     }
 
     #[tokio::test]
     async fn every_answer_is_local_or_encrypted() {
-        let indexer: http::Uri = MAINNET_DEFAULT_INDEXER
+        let indexer: http::Uri = default_indexer::MAINNET_DEFAULT_INDEXER
             .parse()
             .expect("MAINNET_DEFAULT_INDEXER is a valid URI literal");
         let host = indexer
             .host()
             .expect("MAINNET_DEFAULT_INDEXER names a host");
 
-        let v4_literal = lookup(&Ipv4Addr::LOCALHOST.to_string()).await;
-        let v6_literal = lookup(&Ipv6Addr::LOCALHOST.to_string()).await;
+        let v4_literal = lookup(&net::Ipv4Addr::LOCALHOST.to_string()).await;
+        let v6_literal = lookup(&net::Ipv6Addr::LOCALHOST.to_string()).await;
         let localhost = lookup("localhost").await;
         assert_eq!(
             (
@@ -162,14 +167,14 @@ mod tests {
                 v6_literal.expect("an IPv6 literal answers without a query"),
             ),
             (
-                vec![IpAddr::from(Ipv4Addr::LOCALHOST)],
-                vec![IpAddr::from(Ipv6Addr::LOCALHOST)],
+                vec![net::IpAddr::from(net::Ipv4Addr::LOCALHOST)],
+                vec![net::IpAddr::from(net::Ipv6Addr::LOCALHOST)],
             ),
         );
         assert!(
             localhost
                 .as_ref()
-                .is_ok_and(|ips| ips.contains(&Ipv4Addr::LOCALHOST.into())),
+                .is_ok_and(|ips| ips.contains(&net::Ipv4Addr::LOCALHOST.into())),
             "localhost must answer loopback locally, got {localhost:?}"
         );
 

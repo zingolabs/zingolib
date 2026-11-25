@@ -27,7 +27,6 @@ pub use zl_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypt
 
 pub use zl_netutils::time;
 
-// consumer lookups must ride the same DoH/DoT resolver as the indexer dial
 pub use zl_netutils::dns;
 
 // Status joins on the same terms, and for the same reason: an RPC rejection

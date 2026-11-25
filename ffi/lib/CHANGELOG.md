@@ -177,13 +177,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on zcash_client_backend, the runtime features on tokio), and its release
   profile is the root workspace's `[profile.mobile]`, which the builder ships.
 - Testnet has a Default Indexer, `https://testnet.zec.rocks:443`.
-- Indexer connections and the untunneled price fetch resolve host names over
-  DNS-over-HTTPS and DNS-over-TLS, where they asked the operating system's
-  resolver, so no lookup goes out as plaintext DNS.
   `default_indexer` answers it for a testnet hint, where it answered nothing,
   and `IndexerChoice::Default` on testnet attaches to it, where the four
   `init_*` calls failed `Init` and `change_server` failed `InvalidInput`.
   Regtest is the one chain left without a Default Indexer.
+- Indexer connections and the untunneled price fetch resolve host names over
+  DNS-over-HTTPS and DNS-over-TLS, where they asked the operating system's
+  resolver, so no lookup goes out as plaintext DNS.
 
 ### Removed
 - BREAKING: `set_broadcast_candidates`. Migration parts go to the Session
