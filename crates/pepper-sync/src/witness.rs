@@ -16,14 +16,11 @@ use zcash_primitives::{
     merkle_tree::{self, read_commitment_tree},
 };
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
-use zl_netutils::lightwallet_protocol::TreeState;
 
+use crate::protocol::{SubtreeRoot, TreeState};
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
-use {
-    crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption,
-    zl_netutils::lightwallet_protocol::SubtreeRoot,
-};
+use {crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption};
 
 pub(crate) use zl_common::engine::SHARD_HEIGHT;
 

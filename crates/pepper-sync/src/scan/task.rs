@@ -15,7 +15,6 @@ use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{self, BlockHeight};
 use zip32::AccountId;
-use zl_netutils::lightwallet_protocol::CompactBlock;
 
 use crate::engine::{SyncStateOps, TransactionRecordOps};
 use crate::{
@@ -23,6 +22,7 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
+    protocol::{self, CompactBlock},
     sync::{self, ScanPriority, ScanRange},
     utils::block,
     wallet::{
@@ -805,7 +805,7 @@ async fn open_block_stream(
     block_range: Range<BlockHeight>,
     fetch_nullifiers_only: bool,
     transparent_scan_floor: BlockHeight,
-) -> Result<tonic::Streaming<CompactBlock>, ServerError> {
+) -> Result<protocol::CompactBlocks, ServerError> {
     if fetch_nullifiers_only {
         client::get_nullifier_range(fetch_request_sender, block_range).await
     } else {
