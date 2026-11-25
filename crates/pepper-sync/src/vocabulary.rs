@@ -1,9 +1,24 @@
 #![forbid(unsafe_code)]
 
 use zl_common::chain;
-use zl_netutils::wire;
+use zl_netutils::{Indexer, TransparentIndexer, wire};
 
 use crate::protocol;
+
+pub trait SyncIndexer:
+    Clone + Indexer<TreeState = chain::TreeStateReply> + TransparentIndexer + Sync + Send + 'static
+{
+}
+
+impl<C> SyncIndexer for C where
+    C: Clone
+        + Indexer<TreeState = chain::TreeStateReply>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static
+{
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Zcash;

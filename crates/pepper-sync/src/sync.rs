@@ -22,9 +22,9 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 use zl_netutils::{Indexer, TransparentIndexer};
 
-use crate::protocol;
+use crate::{protocol, vocabulary};
 
-use zl_common::{chain, status::ConfirmationStatus};
+use zl_common::status::ConfirmationStatus;
 
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
@@ -248,12 +248,7 @@ pub async fn sync<C, P, W>(
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
-    C: Clone
-        + Indexer<TreeState = chain::TreeStateReply>
-        + TransparentIndexer
-        + Sync
-        + Send
-        + 'static,
+    C: vocabulary::SyncIndexer,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks
