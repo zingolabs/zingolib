@@ -187,6 +187,7 @@ fn require_h2(stream: IndexerStream) -> Result<IndexerStream, IndexerDialError> 
 fn indexer_endpoint(
     uri: http::Uri,
     roots: rustls::RootCertStore,
+    resolver: dns::Resolver,
 ) -> Result<
     (
         Endpoint,
@@ -207,7 +208,7 @@ fn indexer_endpoint(
         .with_tls_config(client_tls_config(roots))
         .https_or_http() // plaintext only for `http://` URIs, never a fallback
         .enable_http2()
-        .wrap_connector(indexer_connector(dns::hyper_resolver()));
+        .wrap_connector(indexer_connector(dns::hyper_resolver(resolver)));
     let dial = tower::service_fn(move |_tonic_dial: http::Uri| {
         let dialed = https.clone().oneshot(uri.clone());
         async move { dialed.await.and_then(require_h2) }
@@ -397,7 +398,14 @@ pub struct GrpcIndexer {
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
-        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        Self::new_with_resolver(uri, dns::Resolver::Encrypted).await
+    }
+
+    pub async fn new_with_resolver(
+        uri: http::Uri,
+        resolver: dns::Resolver,
+    ) -> Result<Self, GetClientError> {
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots(), resolver)?;
         let channel = endpoint.connect_with_connector(dial).await?;
         Ok(Self {
             nakednet_client: CompactTxStreamerClient::new(channel),
@@ -408,7 +416,14 @@ impl GrpcIndexer {
     /// instead of eagerly. Useful when the indexer may not be reachable at
     /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
-        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        Self::new_lazy_with_resolver(uri, dns::Resolver::Encrypted)
+    }
+
+    pub fn new_lazy_with_resolver(
+        uri: http::Uri,
+        resolver: dns::Resolver,
+    ) -> Result<Self, GetClientError> {
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots(), resolver)?;
         let channel = endpoint.connect_with_connector_lazy(dial);
         Ok(Self {
             nakednet_client: CompactTxStreamerClient::new(channel),
@@ -978,7 +993,7 @@ mod tests {
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
         let roots = with_localhost_cert(mozilla_roots());
-        let (endpoint, dial) = indexer_endpoint(uri, roots)
+        let (endpoint, dial) = indexer_endpoint(uri, roots, dns::Resolver::Encrypted)
             .expect("an https URI with a host and a port has a valid scheme and authority");
         let connect_res = endpoint.connect_with_connector(dial).await;
 
@@ -1090,7 +1105,7 @@ mod tests {
         let (listener, acceptor, uri) = localhost_h2_listener().await;
 
         let roots = with_localhost_cert(mozilla_roots());
-        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots)
+        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots, dns::Resolver::Encrypted)
             .expect("an https URI with a host and a port has a valid scheme and authority");
 
         let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
@@ -1113,7 +1128,9 @@ mod tests {
             .with_tls_config(resuming_config)
             .https_or_http()
             .enable_http2()
-            .wrap_connector(indexer_connector(dns::hyper_resolver()));
+            .wrap_connector(indexer_connector(dns::hyper_resolver(
+                dns::Resolver::Encrypted,
+            )));
 
         let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
 
@@ -1132,6 +1149,32 @@ mod tests {
     /// Before `INDEXER_CONNECT_TIMEOUT` the call below never returned, whatever
     /// deadline it carried, because a request's deadline only starts once the
     /// channel has a connection to send it on.
+    #[tokio::test]
+    async fn a_system_resolver_indexer_dials_its_host_name_without_the_encrypted_resolver()
+    -> std::io::Result<()> {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+        let port = listener.local_addr()?.port();
+        let uri: http::Uri = format!("http://localhost:{port}")
+            .parse()
+            .expect("a localhost authority with a bound port is a valid URI");
+        let mut indexer = GrpcIndexer::new_lazy_with_resolver(uri, dns::Resolver::System)
+            .expect("an http URI with an authority passes the endpoint checks");
+
+        let (accepted, _refused_call) = tokio::join!(
+            timeout(LOCAL_TLS_TEST_BOUND, async {
+                listener.accept().await.map(drop)
+            }),
+            indexer.get_latest_block(LOCAL_TLS_TEST_BOUND),
+        );
+
+        assert!(
+            matches!(accepted, Ok(Ok(()))),
+            "the listener must see the dial, got {accepted:?}"
+        );
+        assert!(!dns::encrypted_resolver_is_built());
+        Ok(())
+    }
+
     #[tokio::test]
     async fn a_silent_indexer_fails_the_call_instead_of_hanging() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
