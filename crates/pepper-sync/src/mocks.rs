@@ -12,6 +12,7 @@ use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
+use zl_netutils::request;
 
 use crate::{
     client,
@@ -116,9 +117,7 @@ pub(crate) fn spawn_chain_tip_fetcher(
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| match fetch_request {
         client::FetchRequest::ChainTip(reply_sender) => {
-            let _ignore_error = reply_sender.send(Ok(protocol::block_id_at(
-                BlockHeight::from_u32(chain_height),
-            )));
+            let _ignore_error = reply_sender.send(Ok(request::block_id(u64::from(chain_height))));
             Ok(())
         }
         other => Err(other),
