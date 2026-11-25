@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the crate depends on `zl-netutils`, renamed from
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
+- BREAKING: `sync` bounds its client by
+  `Indexer<TreeState = zl_netutils::lightwallet_protocol::TreeState>`. A
+  `GrpcIndexer` with its default vocabulary meets the bound.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status

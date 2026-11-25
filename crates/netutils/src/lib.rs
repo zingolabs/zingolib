@@ -24,7 +24,9 @@
 //! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the server-side `--ping-very-insecure` CLI flag. Testing only. |
 //!
 
+use std::fmt;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
@@ -36,7 +38,7 @@ use tower::ServiceExt;
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
-    TreeState, TxFilter,
+    TxFilter,
 };
 
 #[cfg(feature = "ping-very-insecure")]
@@ -73,6 +75,7 @@ mod rpc;
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
+pub mod wire;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use network_access::NetworkAccess;
@@ -223,6 +226,8 @@ fn indexer_endpoint(
 /// - Each method opens a fresh connection (or reuses a pooled one) — no
 ///   persistent session state is assumed between calls.
 pub trait Indexer {
+    type TreeState;
+
     /// Return server metadata (chain name, block height, version, etc.).
     ///
     /// The returned [`LightdInfo`] includes the chain name, current block height,
@@ -274,7 +279,7 @@ pub trait Indexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<Self::TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -364,7 +369,7 @@ pub trait Indexer {
     fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<Self::TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -390,18 +395,49 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
-#[derive(Debug, Clone)]
-pub struct GrpcIndexer {
+pub struct GrpcIndexer<V = wire::Generated> {
     nakednet_client: CompactTxStreamerClient<Channel>,
+    vocabulary: PhantomData<fn() -> V>,
+}
+
+impl<V> Clone for GrpcIndexer<V> {
+    fn clone(&self) -> Self {
+        Self {
+            nakednet_client: self.nakednet_client.clone(),
+            vocabulary: PhantomData,
+        }
+    }
+}
+
+impl<V> fmt::Debug for GrpcIndexer<V> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GrpcIndexer")
+            .field("nakednet_client", &self.nakednet_client)
+            .field("vocabulary", &self.vocabulary)
+            .finish()
+    }
+}
+
+impl<V> GrpcIndexer<V> {
+    #[must_use]
+    pub fn with_vocabulary<W>(self) -> GrpcIndexer<W> {
+        GrpcIndexer {
+            nakednet_client: self.nakednet_client,
+            vocabulary: PhantomData,
+        }
+    }
+
+    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.nakednet_client.clone()
+    }
 }
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
         let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
         let channel = endpoint.connect_with_connector(dial).await?;
-        Ok(Self {
-            nakednet_client: CompactTxStreamerClient::new(channel),
-        })
+        Ok(Self::over(channel))
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
@@ -410,14 +446,14 @@ impl GrpcIndexer {
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
         let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
         let channel = endpoint.connect_with_connector_lazy(dial);
-        Ok(Self {
-            nakednet_client: CompactTxStreamerClient::new(channel),
-        })
+        Ok(Self::over(channel))
     }
 
-    /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.nakednet_client.clone()
+    fn over(channel: Channel) -> Self {
+        Self {
+            nakednet_client: CompactTxStreamerClient::new(channel),
+            vocabulary: PhantomData,
+        }
     }
 }
 
@@ -504,7 +540,9 @@ mod send_response_parsing {
     }
 }
 
-impl Indexer for GrpcIndexer {
+impl<V: wire::Vocabulary> Indexer for GrpcIndexer<V> {
+    type TreeState = V::TreeState;
+
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         rpc::call(Empty {}, timeout, |request| {
             self.nakednet_client.get_lightd_info(request)
@@ -545,11 +583,12 @@ impl Indexer for GrpcIndexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<V::TreeState, tonic::Status> {
         rpc::call(block_id, timeout, |request| {
             self.nakednet_client.get_tree_state(request)
         })
         .await
+        .map(V::tree_state)
     }
 
     async fn get_block(
@@ -630,11 +669,12 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<V::TreeState, tonic::Status> {
         rpc::call(Empty {}, timeout, |request| {
             self.nakednet_client.get_latest_tree_state(request)
         })
         .await
+        .map(V::tree_state)
     }
 
     async fn get_subtree_roots(
@@ -704,6 +744,34 @@ mod tests {
                 .expect("the embedded localhost.pem holds an X.509 certificate");
             roots
         })
+    }
+
+    struct UnderivedVocabulary;
+
+    impl wire::Vocabulary for UnderivedVocabulary {
+        type TreeState = u64;
+
+        fn tree_state(reply: lightwallet_protocol::TreeState) -> Self::TreeState {
+            reply.height
+        }
+    }
+
+    fn require_clone_and_debug<T: Clone + fmt::Debug>() {}
+
+    #[test]
+    fn an_indexer_is_clone_and_debug_for_a_vocabulary_that_is_neither() {
+        require_clone_and_debug::<GrpcIndexer<UnderivedVocabulary>>();
+    }
+
+    #[tokio::test]
+    async fn an_indexer_yields_its_nakednet_client_under_any_vocabulary()
+    -> Result<(), GetClientError> {
+        let indexer = GrpcIndexer::new_lazy(http::Uri::from_static("https://127.0.0.1:1"))?
+            .with_vocabulary::<UnderivedVocabulary>();
+
+        let _client: CompactTxStreamerClient<Channel> = indexer.get_nakednet_client().await;
+
+        Ok(())
     }
 
     #[test]

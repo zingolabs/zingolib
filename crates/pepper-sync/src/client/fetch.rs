@@ -20,7 +20,12 @@ pub(crate) async fn fetch<C>(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
     mut client: C,
 ) where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = protocol::TreeState>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
@@ -87,7 +92,12 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 //
 async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = protocol::TreeState>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
@@ -215,7 +225,12 @@ async fn get_tree_state<C>(
     block_height: BlockHeight,
 ) -> Result<protocol::TreeState, protocol::Status>
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = protocol::TreeState>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     client
         .get_tree_state(protocol::block_id_at(block_height), UNARY_RPC_TIMEOUT)
