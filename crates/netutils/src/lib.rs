@@ -413,14 +413,13 @@ impl<V> fmt::Debug for GrpcIndexer<V> {
         formatter
             .debug_struct("GrpcIndexer")
             .field("nakednet_client", &self.nakednet_client)
-            .field("vocabulary", &self.vocabulary)
             .finish()
     }
 }
 
 impl<V> GrpcIndexer<V> {
     #[must_use]
-    pub fn with_vocabulary<W>(self) -> GrpcIndexer<W> {
+    pub fn with_vocabulary<W: wire::Vocabulary>(self) -> GrpcIndexer<W> {
         GrpcIndexer {
             nakednet_client: self.nakednet_client,
             vocabulary: PhantomData,
