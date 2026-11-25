@@ -31,6 +31,7 @@ use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
 use crate::SendRejection;
 use crate::crypto::ensure_default_crypto_provider;
+use crate::rpc;
 use lightwallet_protocol::{
     BlockId, ChainSpec, CompactTxStreamerClient, Empty, LightdInfo, RawTransaction, StandardFee,
     TxFilter,
@@ -230,9 +231,9 @@ async fn bounded_rpc<T>(
     after: Duration,
     rpc: impl std::future::Future<Output = Result<tonic::Response<T>, tonic::Status>>,
 ) -> Result<T, Socks5TransmitError> {
-    match tokio::time::timeout(after, rpc).await {
+    match tokio::time::timeout(after, rpc::reply(rpc)).await {
         Err(_elapsed) => Err(Socks5TransmitError::TimedOut { destination, after }),
-        Ok(Ok(response)) => Ok(response.into_inner()),
+        Ok(Ok(reply)) => Ok(reply),
         Ok(Err(status)) => Err(Socks5TransmitError::Rpc {
             destination,
             status,
@@ -359,7 +360,7 @@ impl Socks5Indexer {
         Fut: std::future::Future<Output = Result<tonic::Response<Resp>, tonic::Status>>,
     {
         let client = self.dial().await?;
-        let request = crate::rpc::timed(message, self.timeout);
+        let request = rpc::timed(message, self.timeout);
         // The client-side RPC bound: an elapse is typed as its own variant, so
         // a slow round trip is never misread as the server answering.
         bounded_rpc(self.destination(), self.timeout, rpc(client, request)).await

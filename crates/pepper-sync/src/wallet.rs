@@ -12,7 +12,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight},
 };
 
-use crate::protocol::CompactBlock;
+use crate::protocol;
 
 #[cfg(any(test, feature = "test-features"))]
 use crate::engine::SyncStateOps;
@@ -110,7 +110,7 @@ impl SyncMode {
 pub(crate) async fn wallet_block_from_compact_block(
     consensus_parameters: &impl consensus::Parameters,
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    block: &CompactBlock,
+    block: &protocol::CompactBlock,
 ) -> Result<WalletBlock, ServerError> {
     let tree_bounds =
         calculate_block_tree_bounds(consensus_parameters, fetch_request_sender, block).await?;

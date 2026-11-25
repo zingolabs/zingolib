@@ -22,7 +22,7 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError, stream_error_is_retryable},
     keys::transparent::TransparentAddressId,
-    protocol::{self, CompactBlock},
+    protocol,
     sync::{self, ScanPriority, ScanRange},
     utils::block,
     wallet::{
@@ -513,7 +513,7 @@ where
                 };
 
                 loop {
-                    let msg_res: Result<Option<CompactBlock>, protocol::Status> =
+                    let msg_res: Result<Option<protocol::CompactBlock>, protocol::Status> =
                         client::next_stream_item(&mut block_stream, "stream message timeout").await;
 
                     let maybe_block = match msg_res {
@@ -540,12 +540,14 @@ where
                                 }
                             };
 
-                            let first_msg_res: Result<Option<CompactBlock>, protocol::Status> =
-                                client::next_stream_item(
-                                    &mut block_stream,
-                                    "stream message timeout after retry",
-                                )
-                                .await;
+                            let first_msg_res: Result<
+                                Option<protocol::CompactBlock>,
+                                protocol::Status,
+                            > = client::next_stream_item(
+                                &mut block_stream,
+                                "stream message timeout after retry",
+                            )
+                            .await;
 
                             match first_msg_res {
                                 Ok(b) => b,
@@ -1025,7 +1027,7 @@ impl LoadOrder {
 #[derive(Debug, Clone)]
 pub(crate) struct ScanTask {
     pub(crate) task_id: TaskId,
-    pub(crate) compact_blocks: Vec<CompactBlock>,
+    pub(crate) compact_blocks: Vec<protocol::CompactBlock>,
     pub(crate) scan_range: ScanRange,
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,

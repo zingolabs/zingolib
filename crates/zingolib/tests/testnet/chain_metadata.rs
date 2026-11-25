@@ -3,8 +3,8 @@ use zcash_protocol::ShieldedPool;
 use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
 use zingolib::config::{ChainType, construct_indexer_uri};
 use zingolib::lightclient::DEFAULT_REQUEST_TIMEOUT;
-use zl_netutils::lightwallet_protocol::{BlockId, BlockRange, ChainMetadata, CompactBlock};
-use zl_netutils::{GrpcIndexer, Indexer};
+use zl_netutils::lightwallet_protocol::{ChainMetadata, CompactBlock};
+use zl_netutils::{GrpcIndexer, Indexer, request};
 
 use super::TESTNET_INDEXER;
 
@@ -65,19 +65,9 @@ async fn served_outputs_match_chain_metadata_deltas() {
         .expect("the testnet indexer accepts a connection");
     let mut stream = grpc_client
         .get_block_range(
-            BlockRange {
-                start: Some(BlockId {
-                    height: start,
-                    hash: vec![],
-                }),
-                end: Some(BlockId {
-                    height: end,
-                    hash: vec![],
-                }),
-                // Empty means the legacy default: the server must include all
-                // shielded pools. This matches what pepper-sync sends.
-                pool_types: vec![],
-            },
+            // Empty means the legacy default: the server must include all
+            // shielded pools. This matches what pepper-sync sends.
+            request::block_range(start, end, &[]),
             DEFAULT_REQUEST_TIMEOUT,
         )
         .await

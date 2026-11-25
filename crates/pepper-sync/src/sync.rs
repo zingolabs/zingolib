@@ -22,7 +22,7 @@ use zcash_protocol::{PoolType, ShieldedPool};
 use zip32::AccountId;
 use zl_netutils::{Indexer, TransparentIndexer};
 
-use crate::protocol::{RawTransaction, SubtreeRoot};
+use crate::protocol;
 
 use zl_common::status::ConfirmationStatus;
 
@@ -186,7 +186,7 @@ pub(crate) fn held_at(
 }
 
 enum MempoolMessage {
-    Transaction(RawTransaction),
+    Transaction(protocol::RawTransaction),
     NewBlockMined,
 }
 
@@ -1953,7 +1953,7 @@ async fn process_mempool_transaction<W>(
     consensus_parameters: &impl consensus::Parameters,
     ufvks: &HashMap<AccountId, UnifiedFullViewingKey>,
     wallet: &mut W,
-    raw_transaction: RawTransaction,
+    raw_transaction: protocol::RawTransaction,
 ) -> Result<(), SyncError<W::Error>>
 where
     W: SyncWallet + SyncBlocks + SyncTransactions + SyncNullifiers + SyncOutPoints + SyncShardTrees,
@@ -2420,9 +2420,9 @@ struct SubtreeRootFetchStart {
 #[derive(Debug)]
 struct FetchedSubtreeRoots {
     fetch_start: SubtreeRootFetchStart,
-    sapling: Vec<SubtreeRoot>,
-    orchard: Vec<SubtreeRoot>,
-    ironwood: Vec<SubtreeRoot>,
+    sapling: Vec<protocol::SubtreeRoot>,
+    orchard: Vec<protocol::SubtreeRoot>,
+    ironwood: Vec<protocol::SubtreeRoot>,
 }
 
 fn subtree_root_fetch_start<W>(wallet: &W) -> Result<SubtreeRootFetchStart, SyncError<W::Error>>
@@ -3163,7 +3163,7 @@ mod test {
     mod unscanned_shard_tree_state {
         use std::convert::Infallible;
 
-        use crate::protocol::SubtreeRoot;
+        use crate::protocol;
         use incrementalmerkletree::{Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
         use shardtree::error::ShardTreeError;
@@ -3293,7 +3293,7 @@ mod test {
             let mut shard_trees = scanned_shard_trees();
             witness::add_subtree_roots(
                 SUBTREE_ABOVE_HIGHEST_SCANNED,
-                vec![SubtreeRoot {
+                vec![protocol::SubtreeRoot {
                     root_hash: note_commitment(SCANNED_CHAIN).to_bytes().to_vec(),
                     ..Default::default()
                 }],
@@ -4100,7 +4100,7 @@ mod test {
         use crate::engine::{ScanTargetOps, TransparentCoinOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
-        use crate::protocol::RawTransaction;
+        use crate::protocol;
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::{consensus::BlockHeight, value::Zatoshis};
@@ -4191,7 +4191,7 @@ mod test {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
             mocks::spawn_transaction_fetcher(move |_txid| {
-                Some(Ok(RawTransaction {
+                Some(Ok(protocol::RawTransaction {
                     data: data.clone(),
                     height: u64::from(SPEND_HEIGHT),
                 }))
@@ -4904,7 +4904,7 @@ mod test {
         use std::sync::Arc;
         use std::sync::atomic::{self, AtomicUsize};
 
-        use crate::protocol::TreeState;
+        use crate::protocol;
         use incrementalmerkletree::frontier::CommitmentTree;
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
@@ -4992,7 +4992,7 @@ mod test {
             let counted_requests = request_count.clone();
             let fetch_request_sender = mocks::spawn_tree_state_fetcher(move |block_height| {
                 counted_requests.fetch_add(1, atomic::Ordering::Release);
-                TreeState {
+                protocol::TreeState {
                     orchard_tree: orchard_tree.clone(),
                     ..mocks::empty_trees(block_height)
                 }
@@ -5170,7 +5170,7 @@ mod test {
         use crate::engine::{ScanTargetOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-        use crate::protocol::RawTransaction;
+        use crate::protocol;
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
         use shardtree::store::ShardStore as _;
@@ -5230,7 +5230,7 @@ mod test {
             });
             let reply_when_a_spend_exists = move |_txid: TxId| {
                 spending_transaction_data.as_ref().map(|data| {
-                    Ok(RawTransaction {
+                    Ok(protocol::RawTransaction {
                         data: data.clone(),
                         height: u64::from(SPEND_HEIGHT),
                     })
@@ -5967,6 +5967,7 @@ mod test {
         use zcash_protocol::consensus::BlockHeight;
 
         use crate::mocks::orchard_tree_scanned_past_the_fetched_roots;
+        use crate::protocol;
         use crate::sync::subtree_root_fetch_index;
         use crate::wallet::ShardTrees;
         use crate::witness;
@@ -5998,7 +5999,7 @@ mod test {
         #[test]
         fn resumes_from_the_tree_when_a_rollback_dropped_its_bare_roots() {
             let mut shard_trees = ShardTrees::new();
-            let bare_root = crate::protocol::SubtreeRoot {
+            let bare_root = protocol::SubtreeRoot {
                 root_hash: <MerkleHashOrchard as incrementalmerkletree::Hashable>::empty_root(
                     incrementalmerkletree::Level::from(witness::SHARD_HEIGHT),
                 )
@@ -6026,7 +6027,7 @@ mod test {
         use crate::engine::{ScanTargetOps, SyncStateOps, WalletBlockOps, WalletBlockParts};
         use std::collections::{BTreeMap, HashMap};
 
-        use crate::protocol::TreeState;
+        use crate::protocol;
         use incrementalmerkletree::{Hashable as _, Marking, Position, Retention};
         use orchard::tree::MerkleHashOrchard;
         use tokio::sync::mpsc;
@@ -6081,7 +6082,7 @@ mod test {
                     } else {
                         mocks::OMITTED_TREE_HEX
                     };
-                TreeState {
+                protocol::TreeState {
                     ironwood_tree: ironwood_tree.to_string(),
                     ..mocks::empty_trees(block_height)
                 }

@@ -12,7 +12,8 @@ use zcash_primitives::transaction::{TxId, fees::zip317};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zl_common::status::ConfirmationStatus;
 use zl_netutils::Indexer as _;
-use zl_netutils::lightwallet_protocol::{RawTransaction, TxFilter};
+use zl_netutils::lightwallet_protocol::RawTransaction;
+use zl_netutils::request;
 
 use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
@@ -199,14 +200,7 @@ impl TransmitTarget for NakednetTarget {
         let hash = txid.as_ref().to_vec();
         async move {
             client
-                .get_transaction(
-                    TxFilter {
-                        block: None,
-                        index: 0,
-                        hash,
-                    },
-                    DEFAULT_REQUEST_TIMEOUT,
-                )
+                .get_transaction(request::tx_filter(hash), DEFAULT_REQUEST_TIMEOUT)
                 .await
                 .is_ok()
         }

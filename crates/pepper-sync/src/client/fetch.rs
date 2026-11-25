@@ -1,7 +1,5 @@
 //! Queue and prioritise fetch requests to fetch data from the server
 
-use std::ops::Range;
-
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use tracing::instrument;
@@ -110,12 +108,24 @@ where
                 &block_range,
                 include_transparent
             );
-            let block_stream = get_block_range(client, block_range, include_transparent).await;
+            let pool_types = protocol::pool_types(include_transparent);
+            let block_stream = match protocol::block_range(block_range, pool_types) {
+                Ok(range) => client.get_block_range(range, FINITE_STREAM_TIMEOUT).await,
+                Err(refusal) => Err(refusal),
+            };
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
             tracing::debug!("Fetching nullifiers. {:?}", &block_range);
-            let block_stream = get_block_range_nullifiers(client, block_range).await;
+            #[allow(deprecated)]
+            let block_stream = match protocol::nullifier_range(block_range) {
+                Ok(range) => {
+                    client
+                        .get_block_range_nullifiers(range, FINITE_STREAM_TIMEOUT)
+                        .await
+                }
+                Err(refusal) => Err(refusal),
+            };
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
@@ -124,8 +134,12 @@ where
                 start_index,
                 shielded_protocol
             );
-            let subtree_roots =
-                get_subtree_roots(client, start_index, shielded_protocol, max_entries).await;
+            let subtree_roots = client
+                .get_subtree_roots(
+                    protocol::subtree_roots_arg(start_index, shielded_protocol, max_entries),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(subtree_roots);
         }
         FetchRequest::TreeState(sender, block_height) => {
@@ -146,7 +160,17 @@ where
                 &start_height,
                 &addresses
             );
-            let utxo_metadata = get_address_utxos(client, addresses, start_height, 0).await;
+            let utxo_metadata = client
+                .get_address_utxos(
+                    protocol::address_utxos_arg(
+                        addresses,
+                        start_height,
+                        protocol::UNLIMITED_ENTRIES,
+                    ),
+                    UNARY_RPC_TIMEOUT,
+                )
+                .await
+                .map(|reply| reply.address_utxos);
             let _ignore_error = sender.send(utxo_metadata);
         }
         FetchRequest::TransparentAddressTxs(sender, (address, block_range)) => {
@@ -155,7 +179,16 @@ where
                 &block_range,
                 &address
             );
-            let raw_transaction_stream = get_taddress_txs(client, address, block_range).await;
+            #[allow(deprecated)]
+            let raw_transaction_stream = match protocol::address_block_filter(address, block_range)
+            {
+                Ok(filter) => {
+                    client
+                        .get_taddress_txids(filter, FINITE_STREAM_TIMEOUT)
+                        .await
+                }
+                Err(refusal) => Err(refusal),
+            };
             let _ignore_error = sender.send(raw_transaction_stream);
         }
     }
@@ -179,62 +212,6 @@ where
     client.get_latest_block(UNARY_RPC_TIMEOUT).await
 }
 
-/// Fetches compact blocks with shielded data only, or with transparent and shielded data if `include_transparent` is
-/// true.
-async fn get_block_range<C>(
-    client: &mut C,
-    block_range: Range<BlockHeight>,
-    include_transparent: bool,
-) -> Result<protocol::CompactBlocks, protocol::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    let pool_types: &[protocol::PoolType] = if include_transparent {
-        &protocol::ALL_POOL_TYPES
-    } else {
-        &protocol::SHIELDED_POOL_TYPES
-    };
-    client
-        .get_block_range(
-            protocol::block_range(block_range, pool_types),
-            FINITE_STREAM_TIMEOUT,
-        )
-        .await
-}
-
-#[allow(deprecated)]
-async fn get_block_range_nullifiers<C>(
-    client: &mut C,
-    block_range: Range<BlockHeight>,
-) -> Result<protocol::CompactBlocks, protocol::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    client
-        .get_block_range_nullifiers(
-            protocol::block_range(block_range, &[]),
-            FINITE_STREAM_TIMEOUT,
-        )
-        .await
-}
-
-async fn get_subtree_roots<C>(
-    client: &mut C,
-    start_index: u32,
-    shielded_protocol: i32,
-    max_entries: u32,
-) -> Result<protocol::SubtreeRoots, protocol::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    client
-        .get_subtree_roots(
-            protocol::subtree_roots_arg(start_index, shielded_protocol, max_entries),
-            FINITE_STREAM_TIMEOUT,
-        )
-        .await
-}
-
 #[instrument(skip(client), name = "fetch::get_tree_state", err, level = "info")]
 async fn get_tree_state<C>(
     client: &mut C,
@@ -245,41 +222,6 @@ where
 {
     client
         .get_tree_state(protocol::block_id_at(block_height), UNARY_RPC_TIMEOUT)
-        .await
-}
-
-async fn get_address_utxos<C>(
-    client: &mut C,
-    addresses: Vec<String>,
-    start_height: BlockHeight,
-    max_entries: u32,
-) -> Result<Vec<protocol::GetAddressUtxosReply>, protocol::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    Ok(client
-        .get_address_utxos(
-            protocol::address_utxos_arg(addresses, start_height, max_entries),
-            UNARY_RPC_TIMEOUT,
-        )
-        .await?
-        .address_utxos)
-}
-
-#[allow(deprecated)]
-async fn get_taddress_txs<C>(
-    client: &mut C,
-    address: String,
-    block_range: Range<BlockHeight>,
-) -> Result<protocol::RawTransactions, protocol::Status>
-where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
-{
-    client
-        .get_taddress_txids(
-            protocol::address_block_filter(address, block_range),
-            FINITE_STREAM_TIMEOUT,
-        )
         .await
 }
 

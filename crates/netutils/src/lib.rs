@@ -67,9 +67,10 @@ pub const NYM_STATUS_LINE_PREFIX: &str = "NYM_STATUS=";
 /// before the address line so the ready snapshot carries it.
 pub const NYM_EXIT_LINE_PREFIX: &str = "NYM_EXIT=";
 
+pub mod request;
+mod rpc;
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
-mod rpc;
 pub mod time;
 pub use error::*;
 pub use lightwallet_protocol;
@@ -390,7 +391,7 @@ pub trait Indexer {
 
 #[derive(Debug, Clone)]
 pub struct GrpcIndexer {
-    clear_net_client: CompactTxStreamerClient<Channel>,
+    nakednet_client: CompactTxStreamerClient<Channel>,
 }
 
 impl GrpcIndexer {
@@ -398,7 +399,7 @@ impl GrpcIndexer {
         let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
         let channel = endpoint.connect_with_connector(dial).await?;
         Ok(Self {
-            clear_net_client: CompactTxStreamerClient::new(channel),
+            nakednet_client: CompactTxStreamerClient::new(channel),
         })
     }
 
@@ -409,13 +410,13 @@ impl GrpcIndexer {
         let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
         let channel = endpoint.connect_with_connector_lazy(dial);
         Ok(Self {
-            clear_net_client: CompactTxStreamerClient::new(channel),
+            nakednet_client: CompactTxStreamerClient::new(channel),
         })
     }
 
     /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_clear_net_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.clear_net_client.clone()
+    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.nakednet_client.clone()
     }
 }
 
@@ -504,18 +505,24 @@ mod send_response_parsing {
 
 impl Indexer for GrpcIndexer {
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
-        let request = rpc::timed(Empty {}, timeout);
-        rpc::reply(self.clear_net_client.get_lightd_info(request)).await
+        rpc::call(Empty {}, timeout, |request| {
+            self.nakednet_client.get_lightd_info(request)
+        })
+        .await
     }
 
     async fn get_standard_fee(&mut self, timeout: Duration) -> Result<StandardFee, tonic::Status> {
-        let request = rpc::timed(Empty {}, timeout);
-        rpc::reply(self.clear_net_client.get_standard_fee(request)).await
+        rpc::call(Empty {}, timeout, |request| {
+            self.nakednet_client.get_standard_fee(request)
+        })
+        .await
     }
 
     async fn get_latest_block(&mut self, timeout: Duration) -> Result<BlockId, tonic::Status> {
-        let request = rpc::timed(ChainSpec {}, timeout);
-        rpc::reply(self.clear_net_client.get_latest_block(request)).await
+        rpc::call(ChainSpec {}, timeout, |request| {
+            self.nakednet_client.get_latest_block(request)
+        })
+        .await
     }
 
     async fn send_transaction(
@@ -523,8 +530,10 @@ impl Indexer for GrpcIndexer {
         tx: RawTransaction,
         timeout: Duration,
     ) -> Result<String, tonic::Status> {
-        let request = rpc::timed(tx, timeout);
-        let sendresponse = rpc::reply(self.clear_net_client.send_transaction(request)).await?;
+        let sendresponse = rpc::call(tx, timeout, |request| {
+            self.nakednet_client.send_transaction(request)
+        })
+        .await?;
         // The nakednet path keeps its historical error text: the bare server
         // message, without the code prefix `SendRejection` renders.
         parse_send_response(sendresponse.error_code, sendresponse.error_message)
@@ -536,8 +545,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let request = rpc::timed(block_id, timeout);
-        rpc::reply(self.clear_net_client.get_tree_state(request)).await
+        rpc::call(block_id, timeout, |request| {
+            self.nakednet_client.get_tree_state(request)
+        })
+        .await
     }
 
     async fn get_block(
@@ -545,8 +556,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let request = rpc::timed(block_id, timeout);
-        rpc::reply(self.clear_net_client.get_block(request)).await
+        rpc::call(block_id, timeout, |request| {
+            self.nakednet_client.get_block(request)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -555,8 +568,10 @@ impl Indexer for GrpcIndexer {
         block_id: BlockId,
         timeout: Duration,
     ) -> Result<CompactBlock, tonic::Status> {
-        let request = rpc::timed(block_id, timeout);
-        rpc::reply(self.clear_net_client.get_block_nullifiers(request)).await
+        rpc::call(block_id, timeout, |request| {
+            self.nakednet_client.get_block_nullifiers(request)
+        })
+        .await
     }
 
     async fn get_block_range(
@@ -564,8 +579,10 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let request = rpc::timed(range, timeout);
-        rpc::reply(self.clear_net_client.get_block_range(request)).await
+        rpc::call(range, timeout, |request| {
+            self.nakednet_client.get_block_range(request)
+        })
+        .await
     }
 
     #[allow(deprecated)]
@@ -574,8 +591,10 @@ impl Indexer for GrpcIndexer {
         range: BlockRange,
         timeout: Duration,
     ) -> Result<tonic::Streaming<CompactBlock>, tonic::Status> {
-        let request = rpc::timed(range, timeout);
-        rpc::reply(self.clear_net_client.get_block_range_nullifiers(request)).await
+        rpc::call(range, timeout, |request| {
+            self.nakednet_client.get_block_range_nullifiers(request)
+        })
+        .await
     }
 
     async fn get_transaction(
@@ -583,8 +602,10 @@ impl Indexer for GrpcIndexer {
         filter: TxFilter,
         timeout: Duration,
     ) -> Result<RawTransaction, tonic::Status> {
-        let request = rpc::timed(filter, timeout);
-        rpc::reply(self.clear_net_client.get_transaction(request)).await
+        rpc::call(filter, timeout, |request| {
+            self.nakednet_client.get_transaction(request)
+        })
+        .await
     }
 
     async fn get_mempool_tx(
@@ -592,23 +613,27 @@ impl Indexer for GrpcIndexer {
         request: GetMempoolTxRequest,
         timeout: Duration,
     ) -> Result<tonic::Streaming<CompactTx>, tonic::Status> {
-        let request = rpc::timed(request, timeout);
-        rpc::reply(self.clear_net_client.get_mempool_tx(request)).await
+        rpc::call(request, timeout, |request| {
+            self.nakednet_client.get_mempool_tx(request)
+        })
+        .await
     }
 
     async fn get_mempool_stream(
         &mut self,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
         let request = Request::new(Empty {});
-        rpc::reply(self.clear_net_client.get_mempool_stream(request)).await
+        rpc::reply(self.nakednet_client.get_mempool_stream(request)).await
     }
 
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
     ) -> Result<TreeState, tonic::Status> {
-        let request = rpc::timed(Empty {}, timeout);
-        rpc::reply(self.clear_net_client.get_latest_tree_state(request)).await
+        rpc::call(Empty {}, timeout, |request| {
+            self.nakednet_client.get_latest_tree_state(request)
+        })
+        .await
     }
 
     async fn get_subtree_roots(
@@ -616,8 +641,10 @@ impl Indexer for GrpcIndexer {
         arg: GetSubtreeRootsArg,
         timeout: Duration,
     ) -> Result<tonic::Streaming<SubtreeRoot>, tonic::Status> {
-        let request = rpc::timed(arg, timeout);
-        rpc::reply(self.clear_net_client.get_subtree_roots(request)).await
+        rpc::call(arg, timeout, |request| {
+            self.nakednet_client.get_subtree_roots(request)
+        })
+        .await
     }
 
     #[cfg(feature = "ping-very-insecure")]
@@ -626,8 +653,10 @@ impl Indexer for GrpcIndexer {
         duration: ProtoDuration,
         timeout: Duration,
     ) -> Result<PingResponse, tonic::Status> {
-        let request = rpc::timed(duration, timeout);
-        rpc::reply(self.clear_net_client.ping(request)).await
+        rpc::call(duration, timeout, |request| {
+            self.nakednet_client.ping(request)
+        })
+        .await
     }
 }
 

@@ -17,7 +17,7 @@ use zcash_primitives::{
 };
 use zcash_protocol::{PoolType, ShieldedPool, consensus::BlockHeight};
 
-use crate::protocol::{SubtreeRoot, TreeState};
+use crate::protocol;
 use crate::sync::SHARDTREE_CHECKPOINT_ROLLING_WINDOW_SIZE;
 
 use {crate::error::ServerError, shardtree::store::ShardStore, subtle::CtOption};
@@ -142,7 +142,7 @@ where
 
 pub(crate) fn add_subtree_roots<S, const DEPTH: u8, const SHARD_HEIGHT: u8>(
     subtree_root_start_index: usize,
-    subtree_roots: Vec<SubtreeRoot>,
+    subtree_roots: Vec<protocol::SubtreeRoot>,
     shard_tree: &mut shardtree::ShardTree<S, DEPTH, SHARD_HEIGHT>,
 ) -> Result<(), ServerError>
 where
@@ -300,10 +300,10 @@ impl Frontiers {
     }
 }
 
-impl TryFrom<TreeState> for Frontiers {
+impl TryFrom<protocol::TreeState> for Frontiers {
     type Error = std::io::Error;
 
-    fn try_from(mut value: TreeState) -> Result<Self, Self::Error> {
+    fn try_from(mut value: protocol::TreeState) -> Result<Self, Self::Error> {
         let mut hash_bytes = hex::decode(&value.hash).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -330,7 +330,10 @@ impl TryFrom<TreeState> for Frontiers {
     }
 }
 
-pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &mut String {
+pub(crate) fn tree_hex_mut(
+    tree_state: &mut protocol::TreeState,
+    pool: ShieldedPool,
+) -> &mut String {
     match pool {
         ShieldedPool::Sapling => &mut tree_state.sapling_tree,
         ShieldedPool::Orchard => &mut tree_state.orchard_tree,
@@ -339,7 +342,7 @@ pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &m
 }
 
 fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
-    tree_state: &mut TreeState,
+    tree_state: &mut protocol::TreeState,
     pool: ShieldedPool,
 ) -> std::io::Result<CommitmentTree<Leaf, DEPTH>> {
     let tree_hex = tree_hex_mut(tree_state, pool).as_str();

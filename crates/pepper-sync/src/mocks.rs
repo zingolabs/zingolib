@@ -12,12 +12,9 @@ use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
+use zl_netutils::request;
 
-use crate::{
-    client,
-    protocol::{self, SubtreeRoot},
-    witness,
-};
+use crate::{client, protocol, witness};
 
 pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
@@ -116,24 +113,22 @@ pub(crate) fn spawn_chain_tip_fetcher(
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| match fetch_request {
         client::FetchRequest::ChainTip(reply_sender) => {
-            let _ignore_error = reply_sender.send(Ok(protocol::block_id_at(
-                BlockHeight::from_u32(chain_height),
-            )));
+            let _ignore_error = reply_sender.send(Ok(request::block_id(u64::from(chain_height))));
             Ok(())
         }
         other => Err(other),
     })
 }
 
-pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
-    SubtreeRoot {
+pub(crate) fn subtree_root(completing_block_height: u64) -> protocol::SubtreeRoot {
+    protocol::SubtreeRoot {
         completing_block_height,
         ..Default::default()
     }
 }
 
-pub(crate) fn orchard_subtree_root(root_hash: MerkleHashOrchard) -> SubtreeRoot {
-    SubtreeRoot {
+pub(crate) fn orchard_subtree_root(root_hash: MerkleHashOrchard) -> protocol::SubtreeRoot {
+    protocol::SubtreeRoot {
         root_hash: root_hash.to_bytes().to_vec(),
         ..Default::default()
     }
