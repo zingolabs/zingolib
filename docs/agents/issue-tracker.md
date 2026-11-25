@@ -28,6 +28,30 @@ worktree still reaches the right tracker.
 A pull request that fixes an issue says so in its body (`Fixes #<number>`) so
 the merge closes it.
 
+## Follow-ups
+
+A follow-up is an issue for work that a pull request found and left out
+(`AGENTS.md`, "Pull request scope"). Its body holds four things:
+
+- the file and the item, by path and name,
+- the defect or the rule it breaks, in one or two sentences,
+- the condition that closes the issue,
+- a link to the pull request that found it.
+
+A follow-up describes `dev`. It names the item as `dev` holds it, so the
+issue is true for a reader who never saw the pull request. A defect that
+exists only on the branch of an open pull request is never a follow-up, and
+neither is a finding that blocks a merge. That finding is a review comment
+on the pull request.
+
+It carries the labels `follow-up` and `needs-triage` beside its component
+label. Before you file one, search the open issues for the same file and
+item (`gh issue list --label follow-up --search <item>`) and comment on a
+match in place of a second issue. File a follow-up only after your developer
+grants it.
+
+`gh issue list --label follow-up --state open` lists everything deferred.
+
 ## When a skill says "publish to the issue tracker"
 
 Create a GitHub issue on `zingolabs/zingolib` with `gh issue create`.
