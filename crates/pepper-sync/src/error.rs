@@ -90,87 +90,6 @@ where
     WalletError(E),
 }
 
-impl<E: std::fmt::Debug + std::fmt::Display> SyncError<E> {
-    /// Returns `true` if this error is likely transient and retrying sync
-    /// (possibly against a different server) may succeed.
-    ///
-    /// Server errors from failed gRPC requests and mempool stream failures
-    /// are recommend_same_server. Configuration errors, wallet corruption, and data
-    /// integrity failures are not.
-    pub fn recommend_same_server(&self) -> bool {
-        match self {
-            // Network/server issues. Retrying may help, especially with a different server.
-            SyncError::ServerError(e) => e.recommend_same_server(),
-            SyncError::MempoolError(_) => true,
-            // Not the server's doing, but the wallet has already reopened
-            // the pool it could not account for, so the next sync against
-            // this same server makes progress.
-            SyncError::PoolHistoryReopened { .. } => true,
-
-            // Local or configuration errors. Retrying won't help.
-            SyncError::ScanError(_)
-            | SyncError::SyncModeError(_)
-            | SyncError::ChainError(..)
-            | SyncError::BirthdayBelowSapling(..)
-            | SyncError::ShardTreeError(_)
-            | SyncError::TruncationError(..)
-            | SyncError::TransparentAddressDerivationError(_)
-            | SyncError::WalletError(_)
-            | SyncError::SyncStatusError(_) => false,
-        }
-    }
-}
-
-impl ServerError {
-    /// Returns `true` if this is a gRPC request that failed to network
-    /// weather: a timeout, a dropped or refused connection, or a server
-    /// too busy to answer.
-    ///
-    /// A failure raised by the transport carries a tonic transport error (or
-    /// its client-side [`tonic::TimeoutExpired`] or I/O error) in the status's
-    /// source chain. Otherwise the status code decides: the codes gRPC names
-    /// as transient are network weather, and every other code is an answer
-    /// from a server that cannot serve the request.
-    fn request_hit_network_weather(&self) -> bool {
-        let ServerError::RequestFailed(status) = self else {
-            return false;
-        };
-        status_is_network_weather(status)
-    }
-
-    /// Returns `true` if this server error is likely transient.
-    ///
-    /// gRPC requests that failed to network weather (timeouts, connection
-    /// drops) are recommend_same_server. Other request failures and invalid
-    /// data from the server suggest a bad server that should be avoided
-    /// rather than retried.
-    pub fn recommend_same_server(&self) -> bool {
-        match self {
-            // Internal channel issue. Retrying may help after restart.
-            ServerError::FetcherDropped => true,
-            // A re-org lowered the chain height or the server is behind the
-            // chain tip. The next sync starts from the server's chain height.
-            ServerError::ChainHeightBelowScanRange { .. } => true,
-
-            // Network weather is transient. The next request may be served
-            // by a fresh connection to the same server.
-            ServerError::RequestFailed(_) if self.request_hit_network_weather() => true,
-            // The server answered but cannot serve the request. Switch to a
-            // different server rather than retrying the same one.
-            ServerError::RequestFailed(_) => false,
-
-            // Bad data from server. Retrying the same server won't help.
-            ServerError::InvalidFrontier(_)
-            | ServerError::InvalidTransaction(_)
-            | ServerError::InvalidSubtreeRoot
-            | ServerError::ChainVerificationError
-            | ServerError::GenesisBlockOnly
-            | ServerError::TreeStateNotServed { .. }
-            | ServerError::UnsupportedProtocolVersion { .. } => false,
-        }
-    }
-}
-
 // Whether a failed gRPC request hit network weather: a tonic transport error, a client-side timeout or an I/O
 // error in the status's source chain, or one of the codes gRPC names as transient. Every other status is an answer
 // from a server that cannot serve the request.
@@ -283,7 +202,7 @@ impl ServerError {
             }
             // Network weather is transient. The same server may answer the
             // next request on a fresh connection.
-            ServerError::RequestFailed(_) if self.request_hit_network_weather() => {
+            ServerError::RequestFailed(status) if status_is_network_weather(status) => {
                 SyncRecoveryObservables::MaybeRecoverableServer
             }
             // The server answered but cannot serve the request, or returned
@@ -710,155 +629,6 @@ mod tests {
         ]
     }
 
-    mod recommend_same_server {
-        use super::*;
-
-        mod server_error {
-            use super::*;
-
-            #[test]
-            fn fetcher_dropped() {
-                assert!(ServerError::FetcherDropped.recommend_same_server());
-            }
-
-            #[test]
-            fn chain_height_below_scan_range() {
-                assert!(
-                    ServerError::ChainHeightBelowScanRange {
-                        chain_height: BlockHeight::from_u32(99),
-                        scan_range_end: BlockHeight::from_u32(100),
-                    }
-                    .recommend_same_server()
-                );
-            }
-
-            #[test]
-            fn request_network_weather() {
-                for status in network_weather_statuses() {
-                    let code = status.code();
-                    let e = ServerError::RequestFailed(status);
-                    assert!(e.recommend_same_server(), "{code:?}");
-                }
-            }
-
-            #[test]
-            fn request_client_timeout() {
-                assert!(client_timeout().recommend_same_server());
-            }
-
-            #[test]
-            fn request_connection_reset() {
-                assert!(connection_reset().recommend_same_server());
-            }
-        }
-
-        mod sync_error {
-            use super::*;
-
-            #[test]
-            fn mempool_error() {
-                let e: TestSyncError = MempoolError::ShutdownWithoutStream.into();
-                assert!(e.recommend_same_server());
-            }
-
-            /// The wallet has already reopened the pool, so the very next
-            /// sync against this same server performs the rescan. Reporting
-            /// this as a reason to change server would send wallets hunting
-            /// for a server that was never at fault.
-            #[test]
-            fn pool_history_reopened() {
-                let e: TestSyncError = SyncError::PoolHistoryReopened {
-                    pool: PoolType::IRONWOOD,
-                    rescan_from: BlockHeight::from_u32(100),
-                    disagreed_at: BlockHeight::from_u32(150),
-                    block_metadata_size: 999,
-                    calculated_size: 7,
-                };
-                assert!(e.recommend_same_server());
-            }
-        }
-    }
-
-    mod recommend_change_server {
-        use super::*;
-
-        mod server_error {
-            use super::*;
-
-            #[test]
-            fn request_refused_by_server() {
-                for status in server_refusal_statuses() {
-                    let code = status.code();
-                    let e = ServerError::RequestFailed(status);
-                    assert!(!e.recommend_same_server(), "{code:?}");
-                }
-            }
-
-            #[test]
-            fn invalid_frontier() {
-                let e = ServerError::InvalidFrontier(std::io::Error::other("bad frontier"));
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn invalid_transaction() {
-                let e = ServerError::InvalidTransaction(std::io::Error::other("bad tx"));
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn invalid_subtree_root() {
-                assert!(!ServerError::InvalidSubtreeRoot.recommend_same_server());
-            }
-
-            #[test]
-            fn chain_verification_error() {
-                assert!(!ServerError::ChainVerificationError.recommend_same_server());
-            }
-
-            #[test]
-            fn genesis_block_only() {
-                assert!(!ServerError::GenesisBlockOnly.recommend_same_server());
-            }
-        }
-
-        mod sync_error {
-            use super::*;
-
-            #[test]
-            fn server_request_refused() {
-                let e: TestSyncError =
-                    ServerError::RequestFailed(protocol::Status::unimplemented("no such method"))
-                        .into();
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn sync_mode_error() {
-                let e: TestSyncError = SyncModeError::SyncAlreadyRunning.into();
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn chain_error() {
-                let e: TestSyncError = SyncError::ChainError(100, 50, 50);
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn birthday_below_sapling() {
-                let e: TestSyncError = SyncError::BirthdayBelowSapling(100, 419200);
-                assert!(!e.recommend_same_server());
-            }
-
-            #[test]
-            fn wallet_error() {
-                let e: TestSyncError = SyncError::WalletError("db locked".to_string());
-                assert!(!e.recommend_same_server());
-            }
-        }
-    }
-
     mod recovery_recommendation {
         use super::*;
 
@@ -1095,6 +865,12 @@ mod tests {
             #[test]
             fn chain_error() {
                 let e: TestSyncError = SyncError::ChainError(100, 50, 50);
+                assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
+            }
+
+            #[test]
+            fn birthday_below_sapling() {
+                let e: TestSyncError = SyncError::BirthdayBelowSapling(100, 419200);
                 assert_eq!(e.recovery_recommendation(), SyncRecoveryObservables::Abort);
             }
 

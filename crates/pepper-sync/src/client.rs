@@ -58,13 +58,13 @@ pub enum FetchRequest {
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
         oneshot::Sender<Result<protocol::CompactBlocks, protocol::Status>>,
-        Range<BlockHeight>,
+        protocol::BlockSpan,
         bool,
     ),
     /// Gets the specified range of nullifiers from the server (end exclusive).
     NullifierRange(
         oneshot::Sender<Result<protocol::CompactBlocks, protocol::Status>>,
-        Range<BlockHeight>,
+        protocol::BlockSpan,
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
@@ -85,7 +85,7 @@ pub enum FetchRequest {
     /// Get a list of transactions for a given transparent address and block range.
     TransparentAddressTxs(
         oneshot::Sender<Result<protocol::RawTransactions, protocol::Status>>,
-        (String, Range<BlockHeight>),
+        (String, protocol::BlockSpan),
     ),
     /// Get a stream of shards.
     SubtreeRoots(
@@ -181,14 +181,14 @@ pub(crate) async fn get_compact_block(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
+    block_span: protocol::BlockSpan,
     include_transparent: bool,
 ) -> Result<protocol::CompactBlocks, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
             reply_sender,
-            block_range,
+            block_span,
             include_transparent,
         ))
         .map_err(|_| ServerError::FetcherDropped)?;
@@ -208,11 +208,11 @@ pub(crate) async fn get_compact_block_range(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
+    block_span: protocol::BlockSpan,
 ) -> Result<protocol::CompactBlocks, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
-        .send(FetchRequest::NullifierRange(reply_sender, block_range))
+        .send(FetchRequest::NullifierRange(reply_sender, block_span))
         .map_err(|_| ServerError::FetcherDropped)?;
 
     let block_stream = reply_receiver
@@ -403,6 +403,9 @@ pub(crate) async fn get_transparent_address_transactions(
     transparent_address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
+    let Some(block_span) = protocol::BlockSpan::of(&block_range) else {
+        return Ok(Vec::new());
+    };
     let mut raw_transactions: Vec<protocol::RawTransaction> = Vec::new();
     let mut retry_count = 0;
 
@@ -412,7 +415,7 @@ pub(crate) async fn get_transparent_address_transactions(
         fetch_request_sender
             .send(FetchRequest::TransparentAddressTxs(
                 reply_sender,
-                (transparent_address.clone(), block_range.clone()),
+                (transparent_address.clone(), block_span),
             ))
             .map_err(|_| ServerError::FetcherDropped)?;
 
@@ -493,6 +496,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic;
+
     use tokio::sync::mpsc;
     use zcash_primitives::block;
     use zcash_protocol::local_consensus::LocalNetwork;
@@ -655,6 +660,32 @@ mod tests {
             ),
             "an omitted Ironwood tree was reported as {:?}",
             frontiers.map(|_| "valid frontiers")
+        );
+    }
+
+    const TRANSPARENT_ADDRESS: &str = "t1abc";
+
+    #[tokio::test]
+    async fn an_empty_block_range_holds_no_transparent_transaction() {
+        let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
+
+        let transactions = get_transparent_address_transactions(
+            fetch_request_sender,
+            &NETWORK,
+            TRANSPARENT_ADDRESS.to_string(),
+            mocks::empty_block_range(),
+        )
+        .await;
+
+        assert!(
+            matches!(transactions.as_deref(), Ok([])),
+            "an empty block range gave {:?}",
+            transactions.map(|transactions| transactions.len())
+        );
+        assert_eq!(
+            request_count.load(atomic::Ordering::Acquire),
+            mocks::NO_REQUESTS,
+            "an empty block range reached the fetcher"
         );
     }
 
