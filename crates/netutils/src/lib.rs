@@ -427,6 +427,10 @@ impl<V> GrpcIndexer<V> {
             vocabulary: PhantomData,
         }
     }
+
+    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.nakednet_client.clone()
+    }
 }
 
 impl GrpcIndexer {
@@ -450,11 +454,6 @@ impl GrpcIndexer {
             nakednet_client: CompactTxStreamerClient::new(channel),
             vocabulary: PhantomData,
         }
-    }
-
-    /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.nakednet_client.clone()
     }
 }
 
@@ -762,6 +761,17 @@ mod tests {
     #[test]
     fn an_indexer_is_clone_and_debug_for_a_vocabulary_that_is_neither() {
         require_clone_and_debug::<GrpcIndexer<UnderivedVocabulary>>();
+    }
+
+    #[tokio::test]
+    async fn an_indexer_yields_its_nakednet_client_under_any_vocabulary()
+    -> Result<(), GetClientError> {
+        let indexer = GrpcIndexer::new_lazy(http::Uri::from_static("https://127.0.0.1:1"))?
+            .with_vocabulary::<UnderivedVocabulary>();
+
+        let _client: CompactTxStreamerClient<Channel> = indexer.get_nakednet_client().await;
+
+        Ok(())
     }
 
     #[test]
