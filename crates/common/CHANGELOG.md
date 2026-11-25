@@ -91,3 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- `SyncState::read` keeps no scan range that holds no block. A wallet file
+  with a range such as `5..5` gave the sync engine a range with nothing to
+  scan, and `SyncState::highest_scanned_height` read the block below such a
+  range as scanned.
