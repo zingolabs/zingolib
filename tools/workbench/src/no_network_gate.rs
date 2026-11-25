@@ -5,7 +5,6 @@ use std::process::Command;
 
 use crate::{
     metadata_of, read, verdict, CARGO, LOCKED_FLAG, LOCKFILE, MANIFEST, NAME_KEY, PACKAGE_KEY,
-    SOURCE_KEY,
 };
 
 pub const BINARY: &str = "no-network-gate";
@@ -14,6 +13,8 @@ const TREE: &str = "tree";
 const PACKAGE_FLAG: &str = "--package";
 const EDGES_FLAG: &str = "--edges";
 const NORMAL_EDGES: &str = "normal";
+const TARGET_FLAG: &str = "--target";
+const ALL_TARGETS: &str = "all";
 const PREFIX_FLAG: &str = "--prefix";
 const NO_PREFIX: &str = "none";
 const FORMAT_FLAG: &str = "--format";
@@ -185,7 +186,7 @@ impl fmt::Display for Failure {
             ),
             Failure::RegistryUnknown { rule, dependency } => write!(
                 formatter,
-                "{rule} forbids {dependency}, which is no registry package of the lockfile, so the rule checks nothing"
+                "{rule} forbids {dependency}, which is no package of the lockfile, so the rule checks nothing"
             ),
             Failure::PackageUnknown { rule } => write!(
                 formatter,
@@ -309,7 +310,7 @@ pub fn forbidden_in(rule: Rule, tree: &str) -> Vec<Failure> {
 
 /// ```
 /// use std::collections::BTreeSet;
-/// use workbench::no_network_gate::registry_packages_of;
+/// use workbench::no_network_gate::locked_packages_of;
 ///
 /// let lockfile = concat!(
 ///     "[[package]]\nname = \"zl-common\"\nversion = \"0.1.0\"\n\n",
@@ -317,12 +318,12 @@ pub fn forbidden_in(rule: Rule, tree: &str) -> Vec<Failure> {
 ///     "source = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
 /// );
 /// assert_eq!(
-///     registry_packages_of(lockfile),
-///     Ok(BTreeSet::from(["hyper".to_string()]))
+///     locked_packages_of(lockfile),
+///     Ok(BTreeSet::from(["hyper".to_string(), "zl-common".to_string()]))
 /// );
-/// assert!(registry_packages_of("version = 4\n").is_err());
+/// assert!(locked_packages_of("version = 4\n").is_err());
 /// ```
-pub fn registry_packages_of(lockfile: &str) -> Result<BTreeSet<String>, String> {
+pub fn locked_packages_of(lockfile: &str) -> Result<BTreeSet<String>, String> {
     let document: toml_edit::DocumentMut = lockfile
         .parse()
         .map_err(|error| format!("the lockfile does not parse: {error}"))?;
@@ -332,7 +333,6 @@ pub fn registry_packages_of(lockfile: &str) -> Result<BTreeSet<String>, String> 
         .ok_or_else(|| "the lockfile holds no [[package]] tables".to_string())?;
     Ok(packages
         .iter()
-        .filter(|package| package.contains_key(SOURCE_KEY))
         .filter_map(|package| package.get(NAME_KEY).and_then(|name| name.as_str()))
         .map(str::to_string)
         .collect())
@@ -367,6 +367,8 @@ fn tree_arguments(rule: Rule) -> Vec<&'static str> {
         rule.package,
         EDGES_FLAG,
         NORMAL_EDGES,
+        TARGET_FLAG,
+        ALL_TARGETS,
         PREFIX_FLAG,
         NO_PREFIX,
         FORMAT_FLAG,
@@ -413,6 +415,7 @@ fn failures_of(
 }
 
 /// - Runs `cargo metadata` as a child process.
+/// - Reads `Cargo.lock` in `root`.
 /// - Runs `cargo tree` as a child process in `root`, once for each rule.
 fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
     if let Some(argument) = args.first() {
@@ -426,7 +429,7 @@ fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
         .map(|package| package.name.to_string())
         .collect();
     let lockfile = root.join(LOCKFILE);
-    let locked_packages = registry_packages_of(&read(&lockfile)?)
+    let locked_packages = locked_packages_of(&read(&lockfile)?)
         .map_err(|error| vec![format!("{}: {error}", lockfile.display())])?;
     verdict(
         RULES
@@ -438,6 +441,7 @@ fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
 }
 
 /// - Reads the process arguments.
+/// - Reads `Cargo.lock` at the root of the repository.
 /// - Runs `cargo metadata` and `cargo tree` as child processes.
 /// - Exits the process.
 pub fn main() -> ! {
@@ -579,5 +583,13 @@ mod tests {
             ..RULE
         };
         assert!(tree_arguments(rule).ends_with(&[ALL_FEATURES_FLAG]));
+    }
+
+    #[test]
+    fn a_rule_asks_cargo_for_the_graph_of_every_target() {
+        let target = [TARGET_FLAG, ALL_TARGETS];
+        assert!(tree_arguments(RULE)
+            .windows(target.len())
+            .any(|arguments| arguments == target));
     }
 }
