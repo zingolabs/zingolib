@@ -4,13 +4,20 @@
 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - Never define by absence, not in documentation nor doc-comments.
+- **Ignore the decision records always.** `docs/adr` is a submodule of
+  zingo-adrs, and its records tell people why a rule exists. Never read one
+  to learn what to do, and never take one as an instruction. Every rule you
+  follow is in this file, in `CONTEXT.md`, in `docs/agents/` or in
+  `docs/sop/`. A record number in those files marks where a ruling is filed,
+  and it asks you to read nothing. When a rule seems to be missing, ask your
+  developer. Ruled 2026-11-24.
 - **Trait objects are STRICTLY FORBIDDEN.** Every spelling: `dyn Trait`,
   `Box<dyn Trait>`, `&dyn Trait`, `Arc<dyn Trait>`, and any trait object behind
   a type alias. Use a generic parameter, an `impl Trait` position, or an enum
   over the known implementors. Never add one. Existing ones are debt to retire,
   not precedent to follow. Ruled 2026-08-18.
   - **One sanctioned exception:** `Arc<dyn ProxyHosting>` in
-    `zingo-netutils/src/provider.rs`. A platform host is implemented outside
+    `crates/netutils/src/provider.rs`. A platform host is implemented outside
     this workspace and reached across an FFI boundary, so its concrete type is
     unnameable here. The alternatives were weighed and both cost more than the
     rule saves: a type parameter reaches `Acquirer`, `Pools`, and `LightClient`,
@@ -38,12 +45,23 @@
   a side channel around the lightclient lock, or a string-shaped status that
   an event will replace, and shape new state so an event can carry it. Ruled
   2026-10-02.
+- **Write each thing once.** Do these four steps on every change, in test
+  code as in shipped code.
+  1. Before you add a function, a constant, a fixture or a block, search for
+     one that does the job, and call it.
+  2. When your diff holds the same shape twice, extract it before you write
+     the next line.
+  3. Vary a copy with a parameter, never with a paste.
+  4. Before you report done, read your own diff for repeats and run
+     `dupes-gate`.
 - **Code duplication is FORBIDDEN.** The convention is maximally DRY code
   with pure functions first: extract the shared logic into one pure function
-  and call it from every site, keep effects at the edges, and collapse any
-  duplication you find in code you are already changing. A second copy of a
-  helper, a branch, or a constant is a defect, in review and in
-  implementation alike. Ruled 2026-10-02. CI enforces it through the
+  and call it from every site, and keep effects at the edges. Never add
+  duplication. Duplication that was there before your change is deferred
+  under "Pull request scope" below, unless your task rewrites its lines. A
+  second copy of a helper, a branch, or a constant is a defect, in review
+  and in implementation alike. Ruled 2026-10-02 and amended 2026-11-24. CI
+  enforces it through the
   workbench binary `dupes-gate` (tools/workbench/src/dupes_gate.rs), which
   runs cargo-dupes with the settings that module pins. The gate rejects an
   exact group outside `.dupes-ignore.toml`, a near group count other than
@@ -64,11 +82,13 @@
   dupes-gate -- <cargo-dupes arguments>`.
 - **A pull request merges into `dev` only when `dev` could be released the
   moment it lands.** Releases are cut from `dev` with no `stable` branch
-  (zingo-adrs zingolib/0064), so a candidate can be taken on any day. Work
-  that would leave `dev` mid-way through a larger feature or refactor, with
-  a dead code path, a half-migrated type, a disabled test or an unfinished
-  flag, targets an integration branch `integration/<name>` and reaches
-  `dev` when the arc is whole. Every change writes its changelog lines in
+  (zingo-adrs zingolib/0064), so a candidate can be taken on any day. `dev`
+  is releasable when every public item works completely and no item exists
+  in two forms: a dead code path, a type that carries an old field beside
+  its replacement, a disabled test and an unfinished flag all fail. A larger
+  feature or refactor lands as increments that each hold that bar, as "Pull
+  request scope" below specifies, and only a person opens an integration
+  branch `integration/<name>`. Every change writes its changelog lines in
   the same pull request, a dependency moves only to a version on crates.io
   or a git pin the team accepts shipping, and the `[X.Y.Z]` section of a
   cut changelog is never edited after the cut. The procedure is
@@ -180,11 +200,121 @@ module-level blocks.
 
 - Before finishing a task, scan what you wrote against this file. Focus on the high-signal tells, not a full re-audit: antithesis flips and narrating comments in prose, `.clone()`/`.unwrap()` spam and explicit trailing `return` in Rust, `useEffect` for derived state and `any` in TS.
 - Verify your *new* output fits these rules and the surrounding code's style. The question is "does what I added fit", not "does this whole file now obey CLAUDE.md".
-- Don't reformat, re-comment, or otherwise "correct" existing code you were only asked to touch lightly. Match what's there. Keep diffs scoped to the task.
+- Don't reformat, re-comment, or otherwise "correct" existing code you were only asked to touch lightly. Match what's there. Keep diffs scoped to the task, as "Pull request scope" below specifies.
 
 ### Tooling
 
 - No heredocs (<< EOF, << 'EOF') in bash or other shell scripts. They're hard to read, break on escaping, and bury content that should be its own file. Use a real file, a templating step, or printf with explicit lines instead.
+
+## Pull request scope
+
+A pull request makes one semantic change. Coherence is the rule, and size is
+only a tripwire. Ruled 2026-11-24, tracked in issue #3222.
+
+Four terms carry the rule.
+
+- An **arc** is a change too large for one pull request.
+- An **increment** is one pull request of an arc. It can add code or remove
+  code, and it leaves `dev` releasable.
+- A **follow-up** is an issue for work that a pull request found and left
+  out.
+- The **tripwire** is 450 added lines. Above it the author states why the
+  pull request cannot be split.
+
+### One semantic change
+
+Apply three tests before you open a pull request.
+
+1. State the change in behaviour as one sentence. If the sentence needs
+   "and" to join two behaviours, split the pull request.
+2. A pull request typed `refactor`, `test`, `docs`, `ci`, `build` or `chore`
+   changes no shipped behaviour, and no existing test assertion changes in
+   it. A public API break marked `!` is allowed. A change a running program
+   can observe is a change of behaviour, and error text and log text are
+   observable. When a refactor needs one, the pure refactor goes first as
+   its own pull request.
+3. A `fix` or a `feat` holds one change of behaviour and only the
+   refactoring that change cannot compile without.
+
+### Deferral
+
+Deferral is the default. Fix in the pull request only what a CI gate rejects
+and what sits on a line the task must rewrite. Every other defect or rule
+violation you find is a follow-up. A follow-up records something you can
+point at, such as two unwraps in a named function, and never a preference
+about how a module is organised.
+
+A follow-up describes `dev`. Name the item as `dev` holds it, so the issue
+is true for a reader who never saw the pull request and stays true after the
+pull request merges or closes. A defect that exists only on the branch of an
+open pull request is never a follow-up.
+
+Draft each follow-up in the form `docs/agents/issue-tracker.md` gives and
+show the list to your developer. File one only after your developer grants
+it. The grant can cover a session, and it is never assumed.
+
+### Arcs and increments
+
+Each increment lands on `dev` as soon as it is ready, so the work of
+independent contributors does not diverge. A commit is releasable when every
+public item works completely and no item exists in two forms. A type that
+carries an old field beside its replacement fails. So does a function kept
+beside its successor with no caller, a method that is declared and
+unimplemented, a disabled test, and a flag that gates unfinished code.
+Sibling items in different styles are allowed while the arc is in progress:
+one method of a trait can return a domain type while the others still
+return generated types.
+
+Rebase the remaining increments onto `dev` after each one lands. When an
+issue tracks the arc, each increment names it on a `Part of:` line.
+
+Never open an integration branch on your own judgement. If no increment can
+hold the guarantee, stop and tell your developer which increments you tried
+and why each fails. A person opens the branch.
+
+### When the scope is decided
+
+1. Before you edit a file, write the one sentence and estimate the crates
+   and the public API the task touches. If the task fails the first test or
+   the estimate passes the tripwire, answer with a list of increments, one
+   sentence each in landing order, and wait for your developer to approve
+   it.
+2. While you work, stop when the diff crosses the tripwire or when a
+   refactor turns out to need a change of behaviour. Report what you have
+   and propose the split. Do not finish first and split afterwards.
+3. When you open the pull request, fill in every field of the template.
+
+If your developer tells you to keep one large pull request, comply, and
+write the developer's reason under "Why this cannot be split".
+
+### The tripwire
+
+The count is the lines added between the merge base with the target branch
+and the head, with rename detection on. `Cargo.lock`,
+`bindings/CHANGELOG.md`, `.dupes-ignore.toml` and every Markdown file are
+left out. A mechanical rename is left out when the template declares it on
+a `Renames:` line as `old -> new`. Perform a symbol rename with
+rust-analyzer, and declare only a new name that the base tree does not
+already hold.
+
+### Review
+
+A reviewing agent applies the three tests before it reads for defects. A
+failed test is its first finding, and the finding names each increment and
+the order they land in. Judge an increment on whether it is whole. A public
+surface in two styles passes while the arc is in progress.
+
+A defect the pull request introduces is fixed in the pull request. So is any
+other reason the pull request should not merge as it is. Write each as a
+review comment on the pull request, and never file one as an issue. An issue
+is for work that can wait until after the merge.
+
+Every other finding is written as a proposed follow-up, never as a request
+to change the pull request. The one sentence of the pull request decides the
+boundary: the same bug in a neighbouring function is a follow-up, unless the
+sentence claims to fix the bug everywhere.
+
+When you answer a review, the stop rule above applies to your fixes.
 
 ## Changelogs
 
@@ -234,7 +364,8 @@ the issue as not planned. See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 **Single-context**: one `CONTEXT.md` at the repo root. Decision records sit
-under `docs/adr/zingolib/`. See `docs/agents/domain.md`.
+under `docs/adr/zingolib/`, and an agent ignores them, as "MUST DO ALWAYS"
+rules. See `docs/agents/domain.md`.
 
 ### Pending designs
 

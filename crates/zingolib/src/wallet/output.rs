@@ -1,0 +1,932 @@
+//! All things needed to create, manaage, and use notes
+
+use std::collections::{HashMap, HashSet};
+
+use pepper_sync::sync::ScanRange;
+use pepper_sync::wallet::KeyIdInterface;
+use zcash_primitives::transaction::TxId;
+use zcash_protocol::PoolType;
+use zcash_protocol::ShieldedPool;
+use zcash_protocol::consensus::BlockHeight;
+
+use super::LightWallet;
+use super::error::WalletError;
+use super::note_selection;
+use super::spend_evidence;
+use pepper_sync::wallet::NoteInterface;
+use pepper_sync::wallet::OutputId;
+use pepper_sync::wallet::OutputInterface;
+use pepper_sync::wallet::TransactionRecord;
+use pepper_sync::wallet::TransparentCoin;
+use query::OutputQuery;
+use query::OutputSpendStatusQuery;
+use zl_common::status::ConfirmationStatus;
+
+pub mod query;
+
+/// Output reference.
+///
+/// Identifier with pool type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputRef {
+    output_id: OutputId,
+    pool_type: PoolType,
+}
+
+impl OutputRef {
+    /// Creates new `OutputRef` from parts.
+    #[must_use]
+    pub fn new(output_id: OutputId, pool_type: PoolType) -> Self {
+        OutputRef {
+            output_id,
+            pool_type,
+        }
+    }
+
+    /// Output identifier.
+    #[must_use]
+    pub fn output_id(&self) -> OutputId {
+        self.output_id
+    }
+
+    /// Output identifier.
+    #[must_use]
+    pub fn txid(&self) -> TxId {
+        self.output_id.txid()
+    }
+
+    /// Output identifier.
+    #[must_use]
+    pub fn output_index(&self) -> u32 {
+        self.output_id.output_index()
+    }
+
+    /// Pool type.
+    #[must_use]
+    pub fn pool_type(&self) -> PoolType {
+        self.pool_type
+    }
+}
+
+fn output_ids_of_pool(output_refs: &[OutputRef], pool_type: PoolType) -> HashSet<OutputId> {
+    output_refs
+        .iter()
+        .filter(|output_ref| output_ref.pool_type() == pool_type)
+        .map(OutputRef::output_id)
+        .collect()
+}
+
+impl std::fmt::Display for OutputRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{
+                output id: {}
+                pool type: {}
+            }}",
+            self.output_id, self.pool_type
+        )
+    }
+}
+
+/// Spend status of an output
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SpendStatus {
+    /// Output is not spent.
+    Unspent,
+    /// Output is pending spent.
+    /// The transaction consuming this output has been calculated.
+    CalculatedSpent(TxId),
+    /// Output is pending spent.
+    /// The transaction consuming this output has been transmitted.
+    TransmittedSpent(TxId),
+    /// Output is pending spent.
+    /// The transaction consuming this output has been detected in the mempool.
+    MempoolSpent(TxId),
+    /// Output is spent.
+    /// The transaction consuming this output is confirmed.
+    Spent(TxId),
+}
+
+impl SpendStatus {
+    #[must_use]
+    pub fn is_unspent(&self) -> bool {
+        matches!(self, Self::Unspent)
+    }
+
+    #[must_use]
+    pub fn is_pending_spent(&self) -> bool {
+        matches!(self, Self::CalculatedSpent(_))
+            || matches!(self, Self::TransmittedSpent(_))
+            || matches!(self, Self::MempoolSpent(_))
+    }
+    #[must_use]
+    pub fn is_confirmed_spent(&self) -> bool {
+        matches!(self, Self::Spent(_))
+    }
+}
+
+impl std::fmt::Display for SpendStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpendStatus::Unspent => write!(f, "unspent"),
+            SpendStatus::CalculatedSpent(txid) => write!(f, "calculated spent in {txid}"),
+            SpendStatus::TransmittedSpent(txid) => write!(f, "transmitted spent in {txid}"),
+            SpendStatus::MempoolSpent(txid) => write!(f, "mempool spent in {txid}"),
+            SpendStatus::Spent(txid) => write!(f, "confirmed spent in {txid}"),
+        }
+    }
+}
+
+impl LightWallet {
+    /// Returns the transaction the given `output` belongs to.
+    pub fn output_transaction(&self, output: &impl OutputInterface) -> &TransactionRecord {
+        self.wallet_transactions
+            .get(&output.output_id().txid())
+            .expect("transaction should exist in the wallet")
+    }
+
+    /// Returns [`self::SpendStatus`] for the given `output`.
+    pub fn output_spend_status(
+        &self,
+        output: &impl OutputInterface,
+        pending_spends: &HashMap<OutputId, TxId>,
+    ) -> SpendStatus {
+        if let Some(txid) = output.spending_transaction() {
+            match self
+                .wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(txid),
+                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(txid),
+                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(txid),
+                ConfirmationStatus::Confirmed(_) => SpendStatus::Spent(txid),
+                ConfirmationStatus::Failed(_) => SpendStatus::Unspent,
+            }
+        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
+            match self
+                .wallet_transactions
+                .get(txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Calculated(_) => SpendStatus::CalculatedSpent(*txid),
+                ConfirmationStatus::Transmitted(_) => SpendStatus::TransmittedSpent(*txid),
+                ConfirmationStatus::Mempool(_) => SpendStatus::MempoolSpent(*txid),
+                _ => SpendStatus::Unspent,
+            }
+        } else {
+            SpendStatus::Unspent
+        }
+    }
+
+    /// Gets all outputs of a given type in the wallet.
+    #[must_use]
+    pub fn wallet_outputs<Op: OutputInterface>(&self) -> Vec<&Op> {
+        self.wallet_transactions
+            .values()
+            .flat_map(|transaction| Op::transaction_outputs(transaction))
+            .collect()
+    }
+
+    /// Sum the values of all outputs in the wallet which match the given `query`.
+    #[must_use]
+    pub fn sum_queried_output_values(&self, query: OutputQuery) -> u64 {
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        self.wallet_transactions
+            .values()
+            .fold(0, |acc, transaction| {
+                acc + self.sum_queried_transaction_output_values(
+                    transaction,
+                    query,
+                    &pending_spends,
+                )
+            })
+    }
+
+    /// Sum the values of all outputs in the `transaction` which match the given `query`.
+    #[must_use]
+    pub fn sum_queried_transaction_output_values(
+        &self,
+        transaction: &TransactionRecord,
+        query: OutputQuery,
+        pending_spends: &HashMap<OutputId, TxId>,
+    ) -> u64 {
+        let mut sum = 0;
+        if query.transparent() {
+            for output in transaction.transparent_coins() {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.sapling() {
+            for output in transaction.sapling_notes() {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.orchard() {
+            for output in transaction.orchard_notes() {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
+                    sum += output.value();
+                }
+            }
+        }
+        if query.ironwood() {
+            for output in transaction.ironwood_notes() {
+                if self.query_output_spend_status(query.spend_status, output, pending_spends) {
+                    sum += output.value();
+                }
+            }
+        }
+        sum
+    }
+
+    /// Returns `true` if `output` spend status matches the `query`. Otherwise, returns `false`.
+    fn query_output_spend_status(
+        &self,
+        query: OutputSpendStatusQuery,
+        output: &impl OutputInterface,
+        pending_spends: &HashMap<OutputId, TxId>,
+    ) -> bool {
+        if let Some(txid) = output.spending_transaction() {
+            match self
+                .wallet_transactions
+                .get(&txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Confirmed(_) => query.spent,
+                _confirmation_pending if query.pending_spent => true,
+                _ => false,
+            }
+        } else if let Some(txid) = pending_spends.get(&output.output_id()) {
+            match self
+                .wallet_transactions
+                .get(txid)
+                .expect("transaction should exist in the wallet")
+                .status()
+            {
+                ConfirmationStatus::Confirmed(_) => query.spent,
+                _confirmation_pending if query.pending_spent => true,
+                _ => false,
+            }
+        } else {
+            query.unspent
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn spendable_notes<N: NoteInterface>(
+        &self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+    ) -> Result<Vec<&N>, WalletError> {
+        Ok(self
+            .judged_notes::<N>(anchor_height, account)?
+            .into_iter()
+            .filter(|judged_note| judged_note.verdict == Verdict::Certain)
+            .map(|judged_note| judged_note.note)
+            .collect())
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn potentially_spendable_notes<N: NoteInterface>(
+        &self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+    ) -> Result<Vec<&N>, WalletError> {
+        Ok(self
+            .judged_notes::<N>(anchor_height, account)?
+            .into_iter()
+            .filter_map(|judged_note| judged_note.verdict.certainty().map(|_| judged_note.note))
+            .collect())
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn judged_notes<'a, N: NoteInterface>(
+        &'a self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+    ) -> Result<Vec<Judged<'a, N>>, WalletError> {
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(false) else {
+            return Err(WalletError::NoSyncData);
+        };
+        for shielded_protocol in [
+            ShieldedPool::Ironwood,
+            ShieldedPool::Orchard,
+            ShieldedPool::Sapling,
+        ] {
+            if !self.checkpoint_is_retained(shielded_protocol, anchor_height) {
+                return Err(WalletError::CheckpointNotFound {
+                    shielded_protocol,
+                    height: anchor_height,
+                });
+            }
+        }
+        let pending_spends = pepper_sync::pending_spends(&self.wallet_transactions);
+        let judgement = Judgement {
+            account,
+            pending_spends: &pending_spends,
+            spend_evidence_floor,
+            scan_ranges: self.sync_state.scan_ranges(),
+        };
+        let judgement = &judgement;
+        Ok(self
+            .wallet_transactions
+            .values()
+            .flat_map(|transaction| {
+                let confirmation = self.confirmation::<N>(transaction, anchor_height);
+                N::transaction_outputs(transaction)
+                    .iter()
+                    .map(move |note| Judged {
+                        note,
+                        verdict: judgement.judge(note, confirmation),
+                    })
+            })
+            .collect())
+    }
+
+    pub(crate) fn confirmation<N: NoteInterface>(
+        &self,
+        transaction: &TransactionRecord,
+        anchor_height: BlockHeight,
+    ) -> Confirmation {
+        let status = transaction.status();
+        if !status.is_confirmed_before_or_at(&anchor_height) {
+            return Confirmation::Unanchored;
+        }
+        let height = status.get_height();
+        Confirmation::Anchored {
+            height,
+            witnessable: self.can_build_witness::<N>(height, anchor_height),
+        }
+    }
+
+    /// Returns all spendable transparent coins for a given `account` confirmed at or below `target_height`.
+    ///
+    /// Any coins from a coinbase transaction will not be returned without
+    /// [`COINBASE_MATURITY_BLOCKS`](zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS)
+    /// additional confirmations.
+    pub(crate) fn spendable_transparent_coins(
+        &self,
+        target_height: BlockHeight,
+        allow_zero_conf_shielding: bool,
+        include_potentially_spent_coins: bool,
+    ) -> Vec<&TransparentCoin> {
+        // TODO: add support for zero conf shielding
+        assert!(
+            !allow_zero_conf_shielding,
+            "zero conf shielding not currently supported!"
+        );
+
+        let Some(spend_evidence_floor) = self.spend_evidence_floor(true) else {
+            return Vec::new();
+        };
+        let pending_spends = &pepper_sync::pending_spends(&self.wallet_transactions);
+
+        self.wallet_transactions
+            .values()
+            .flat_map(|transaction| {
+                let additional_confirmations = transaction
+                    .transaction()
+                    .transparent_bundle()
+                    .map_or(0, |bundle| {
+                        if bundle.is_coinbase() {
+                            zcash_protocol::consensus::COINBASE_MATURITY_BLOCKS
+                        } else {
+                            0
+                        }
+                    });
+
+                if transaction
+                    .status()
+                    .is_confirmed_before_or_at(&(target_height - additional_confirmations))
+                {
+                    TransparentCoin::transaction_outputs(transaction)
+                        .iter()
+                        .filter(move |&coin| {
+                            coin.spending_transaction().is_none()
+                                && !pending_spends.contains_key(&coin.output_id())
+                                && if include_potentially_spent_coins {
+                                    // checks all ranges with `FoundNote` priority or higher above the coin height are
+                                    // scanned as all relevant transactions containing transparent spends are known and
+                                    // targetted before scanning begins.
+                                    transaction.status().get_height() >= spend_evidence_floor
+                                } else {
+                                    true
+                                }
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            })
+            .collect()
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn note_candidates<N: NoteInterface + Clone>(
+        &self,
+        anchor_height: BlockHeight,
+        account: zip32::AccountId,
+        exclude: &[OutputRef],
+        reserved_for_migration: &HashSet<OutputId>,
+    ) -> Result<Vec<note_selection::Candidate<N>>, WalletError> {
+        let forbidden_ids = output_ids_of_pool(exclude, N::POOL_TYPE);
+        Ok(self
+            .judged_notes::<N>(anchor_height, account)?
+            .into_iter()
+            .filter(|judged_note| !is_in(judged_note.note, &forbidden_ids))
+            .filter_map(|judged_note| {
+                judged_note
+                    .verdict
+                    .certainty()
+                    .map(|certain| note_selection::Candidate {
+                        certain,
+                        reserved_for_migration: is_in(judged_note.note, reserved_for_migration),
+                        note: judged_note.note.clone(),
+                    })
+            })
+            .collect())
+    }
+}
+
+fn is_in<N: OutputInterface>(note: &N, output_ids: &HashSet<OutputId>) -> bool {
+    output_ids.contains(&note.output_id())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Confirmation {
+    Unanchored,
+    Anchored {
+        height: BlockHeight,
+        witnessable: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    Certain,
+    Uncertain,
+    Unanchored,
+    ForeignAccount,
+    Spent,
+    NoNullifier,
+    NoPosition,
+    NoWitness,
+}
+
+impl Verdict {
+    pub(crate) fn certainty(self) -> Option<bool> {
+        match self {
+            Verdict::Certain => Some(true),
+            Verdict::Uncertain => Some(false),
+            Verdict::Unanchored
+            | Verdict::ForeignAccount
+            | Verdict::Spent
+            | Verdict::NoNullifier
+            | Verdict::NoPosition
+            | Verdict::NoWitness => None,
+        }
+    }
+}
+
+pub(crate) struct Judged<'a, N> {
+    pub(crate) note: &'a N,
+    pub(crate) verdict: Verdict,
+}
+
+pub(crate) struct Judgement<'a> {
+    pub(crate) account: zip32::AccountId,
+    pub(crate) pending_spends: &'a HashMap<OutputId, TxId>,
+    pub(crate) spend_evidence_floor: BlockHeight,
+    pub(crate) scan_ranges: &'a [ScanRange],
+}
+
+impl Judgement<'_> {
+    pub(crate) fn judge<N: NoteInterface>(&self, note: &N, confirmation: Confirmation) -> Verdict {
+        let Confirmation::Anchored {
+            height,
+            witnessable,
+        } = confirmation
+        else {
+            return Verdict::Unanchored;
+        };
+        if note.key_id().account_id() != self.account {
+            return Verdict::ForeignAccount;
+        }
+        if note.spending_transaction().is_some()
+            || self.pending_spends.contains_key(&note.output_id())
+        {
+            return Verdict::Spent;
+        }
+        if note.nullifier().is_none() {
+            return Verdict::NoNullifier;
+        }
+        if note.position().is_none() {
+            return Verdict::NoPosition;
+        }
+        if !witnessable {
+            return Verdict::NoWitness;
+        }
+        if spend_evidence::note_spends_confirmed(
+            height,
+            self.spend_evidence_floor,
+            note.refetch_nullifier_ranges(),
+            self.scan_ranges,
+        ) {
+            Verdict::Certain
+        } else {
+            Verdict::Uncertain
+        }
+    }
+}
+
+// FIXME: zingo2, update for new output types
+/*
+#[cfg(test)]
+pub mod mocks {
+    //! Mock version of the struct for testing
+    use zcash_client_backend::{wallet::NoteId, ShieldedPool};
+    use zcash_primitives::transaction::TxId;
+
+    use crate::{mocks::default_txid, testutils::build_method};
+
+    /// to build a mock NoteRecordIdentifier
+    pub struct NoteIdBuilder {
+        txid: Option<TxId>,
+        shpool: Option<ShieldedPool>,
+        index: Option<u16>,
+    }
+    impl NoteIdBuilder {
+        /// blank builder
+        pub fn new() -> Self {
+            Self {
+                txid: None,
+                shpool: None,
+                index: None,
+            }
+        }
+        // Methods to set each field
+        build_method!(txid, TxId);
+        build_method!(shpool, ShieldedPool);
+        build_method!(index, u16);
+
+        /// selects a random probablistically unique txid
+        pub fn randomize_txid(&mut self) -> &mut Self {
+            self.txid(crate::mocks::random_txid())
+        }
+
+        /// builds a mock NoteRecordIdentifier after all pieces are supplied
+        pub fn build(self) -> NoteId {
+            NoteId::new(
+                self.txid.unwrap(),
+                self.shpool.unwrap(),
+                self.index.unwrap(),
+            )
+        }
+    }
+
+    impl Default for NoteIdBuilder {
+        fn default() -> Self {
+            let mut builder = Self::new();
+            builder
+                .txid(default_txid())
+                .shpool(zcash_client_backend::ShieldedPool::Orchard)
+                .index(0);
+            builder
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use zcash_client_backend::PoolType;
+
+    use crate::{
+        mocks::default_txid,
+        wallet::output::{
+            query::OutputQuery, sapling::mocks::SaplingNoteBuilder,
+            transparent::mocks::TransparentOutputBuilder, OldOutputInterface as _,
+        },
+    };
+
+    use super::query::{OutputPoolQuery, OutputSpendStatusQuery};
+
+    use zl_common::status::ConfirmationStatus::Confirmed;
+    use zl_common::status::ConfirmationStatus::Mempool;
+
+    #[test]
+    fn note_queries() {
+        let confirmed_spend = Some((default_txid(), Confirmed(112358.into())));
+        let pending_spend = Some((default_txid(), Mempool(112357.into())));
+
+        let transparent_unspent_note = TransparentOutputBuilder::default().build();
+        let transparent_pending_spent_note = TransparentOutputBuilder::default()
+            .spending_tx_status(pending_spend)
+            .clone()
+            .build();
+        let transparent_spent_note = TransparentOutputBuilder::default()
+            .spending_tx_status(confirmed_spend)
+            .clone()
+            .build();
+        let sapling_unspent_note = SaplingNoteBuilder::default().build();
+        let sapling_pending_spent_note = SaplingNoteBuilder::default()
+            .spending_tx_status(pending_spend)
+            .clone()
+            .build();
+        let sapling_spent_note = SaplingNoteBuilder::default()
+            .spending_tx_status(confirmed_spend)
+            .clone()
+            .build();
+
+        let unspent_query = OutputSpendStatusQuery::only_unspent();
+        let pending_or_spent_query = OutputSpendStatusQuery::spentish();
+        let spent_query = OutputSpendStatusQuery::only_spent();
+
+        let transparent_query = OutputPoolQuery::one_pool(PoolType::Transparent);
+        let shielded_query = OutputPoolQuery::shielded();
+        let any_pool_query = OutputPoolQuery::any();
+
+        let unspent_transparent_query = OutputQuery {
+            spend_status: unspent_query,
+            pools: transparent_query,
+        };
+        let unspent_any_pool_query = OutputQuery {
+            spend_status: unspent_query,
+            pools: any_pool_query,
+        };
+        let pending_or_spent_transparent_query = OutputQuery {
+            spend_status: pending_or_spent_query,
+            pools: transparent_query,
+        };
+        let pending_or_spent_shielded_query = OutputQuery {
+            spend_status: pending_or_spent_query,
+            pools: shielded_query,
+        };
+        let spent_shielded_query = OutputQuery {
+            spend_status: spent_query,
+            pools: shielded_query,
+        };
+        let spent_any_pool_query = OutputQuery {
+            spend_status: spent_query,
+            pools: any_pool_query,
+        };
+
+        assert!(transparent_unspent_note.query(unspent_transparent_query));
+        assert!(transparent_unspent_note.query(unspent_any_pool_query));
+        assert!(!transparent_unspent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_unspent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_unspent_note.query(spent_shielded_query));
+        assert!(!transparent_unspent_note.query(spent_any_pool_query));
+
+        assert!(!transparent_pending_spent_note.query(unspent_transparent_query));
+        assert!(!transparent_pending_spent_note.query(unspent_any_pool_query));
+        assert!(transparent_pending_spent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_pending_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_pending_spent_note.query(spent_shielded_query));
+        assert!(!transparent_pending_spent_note.query(spent_any_pool_query));
+
+        assert!(!transparent_spent_note.query(unspent_transparent_query));
+        assert!(!transparent_spent_note.query(unspent_any_pool_query));
+        assert!(transparent_spent_note.query(pending_or_spent_transparent_query));
+        assert!(!transparent_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!transparent_spent_note.query(spent_shielded_query));
+        assert!(transparent_spent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_unspent_note.query(unspent_transparent_query));
+        assert!(sapling_unspent_note.query(unspent_any_pool_query));
+        assert!(!sapling_unspent_note.query(pending_or_spent_transparent_query));
+        assert!(!sapling_unspent_note.query(pending_or_spent_shielded_query));
+        assert!(!sapling_unspent_note.query(spent_shielded_query));
+        assert!(!sapling_unspent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_pending_spent_note.query(unspent_transparent_query));
+        assert!(!sapling_pending_spent_note.query(unspent_any_pool_query));
+        assert!(!sapling_pending_spent_note.query(pending_or_spent_transparent_query));
+        assert!(sapling_pending_spent_note.query(pending_or_spent_shielded_query));
+        assert!(!sapling_pending_spent_note.query(spent_shielded_query));
+        assert!(!sapling_pending_spent_note.query(spent_any_pool_query));
+
+        assert!(!sapling_spent_note.query(unspent_transparent_query));
+        assert!(!sapling_spent_note.query(unspent_any_pool_query));
+        assert!(!sapling_spent_note.query(pending_or_spent_transparent_query));
+        assert!(sapling_spent_note.query(pending_or_spent_shielded_query));
+        assert!(sapling_spent_note.query(spent_shielded_query));
+        assert!(sapling_spent_note.query(spent_any_pool_query));
+    }
+}
+*/
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeSet, HashSet};
+
+    use pepper_sync::wallet::OrchardNote;
+
+    use super::*;
+    use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
+
+    const ANCHOR: BlockHeight = BlockHeight::from_u32(20);
+    const ACCOUNT: zip32::AccountId = zip32::AccountId::ZERO;
+
+    fn funded_wallet() -> LightWallet {
+        SyntheticWalletBuilder::new(zingo_test_vectors::seeds::HOSPITAL_MUSEUM_SEED)
+            .tip(20)
+            .orchard_note(100_000)
+            .orchard_note(5_000)
+            .build()
+    }
+
+    fn ids<'a>(notes: impl IntoIterator<Item = &'a OrchardNote>) -> BTreeSet<OutputId> {
+        notes.into_iter().map(OutputInterface::output_id).collect()
+    }
+
+    fn candidates(wallet: &LightWallet) -> Vec<note_selection::Candidate<OrchardNote>> {
+        wallet
+            .note_candidates(ANCHOR, ACCOUNT, &[], &HashSet::new())
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn certainly_spendable(wallet: &LightWallet) -> Vec<&OrchardNote> {
+        wallet
+            .spendable_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn plausibly_spendable(wallet: &LightWallet) -> Vec<&OrchardNote> {
+        wallet
+            .potentially_spendable_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced")
+    }
+
+    fn mark_spent(wallet: &mut LightWallet, spent: OutputId) {
+        synthetic_wallet::mark_orchard_notes_spent(wallet, spent.txid(), |note| {
+            note.output_id() == spent
+        });
+    }
+
+    #[test]
+    fn note_candidates_agree_with_spendable_notes() {
+        let wallet = funded_wallet();
+        let candidates = candidates(&wallet);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            ids(candidates.iter().map(|candidate| &candidate.note)),
+            ids(plausibly_spendable(&wallet))
+        );
+        assert_eq!(
+            ids(candidates
+                .iter()
+                .filter(|candidate| candidate.certain)
+                .map(|candidate| &candidate.note)),
+            ids(certainly_spendable(&wallet))
+        );
+    }
+
+    #[test]
+    fn a_spent_note_leaves_the_candidates() {
+        let mut wallet = funded_wallet();
+        let spent = certainly_spendable(&wallet)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .map(OutputInterface::output_id)
+            .expect("the funded wallet holds a 100_000 orchard note");
+        mark_spent(&mut wallet, spent);
+        assert_eq!(
+            ids(plausibly_spendable(&wallet)),
+            ids(certainly_spendable(&wallet))
+        );
+        assert!(!ids(plausibly_spendable(&wallet)).contains(&spent));
+        assert!(
+            candidates(&wallet)
+                .iter()
+                .all(|candidate| candidate.note.output_id() != spent)
+        );
+    }
+
+    fn get_the_100000_zat_spendable_orch_note(wallet: &LightWallet) -> &OrchardNote {
+        certainly_spendable(wallet)
+            .into_iter()
+            .find(|note| note.value() == 100_000)
+            .expect("the funded wallet holds a 100_000 orchard note")
+    }
+
+    fn judgement<'a>(
+        wallet: &'a LightWallet,
+        pending_spends: &'a HashMap<OutputId, TxId>,
+    ) -> Judgement<'a> {
+        Judgement {
+            account: ACCOUNT,
+            pending_spends,
+            spend_evidence_floor: wallet
+                .spend_evidence_floor(false)
+                .expect("the synthetic wallet is synced"),
+            scan_ranges: wallet.sync_state.scan_ranges(),
+        }
+    }
+
+    #[test]
+    fn output_ids_of_pool_keeps_the_ids_of_that_pool_alone() {
+        const FIRST_TXID_BYTE: u8 = 1;
+        const SECOND_TXID_BYTE: u8 = 2;
+        const OUTPUT_INDEX: u32 = 0;
+        let id_with = |byte: u8| OutputId::new(TxId::from_bytes([byte; 32]), OUTPUT_INDEX);
+        let orchard_id = id_with(FIRST_TXID_BYTE);
+        let sapling_id = id_with(SECOND_TXID_BYTE);
+        let output_refs = [
+            OutputRef::new(orchard_id, PoolType::ORCHARD),
+            OutputRef::new(sapling_id, PoolType::SAPLING),
+        ];
+
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::ORCHARD),
+            HashSet::from([orchard_id])
+        );
+        assert_eq!(
+            output_ids_of_pool(&output_refs, PoolType::SAPLING),
+            HashSet::from([sapling_id])
+        );
+        assert!(output_ids_of_pool(&output_refs, PoolType::Transparent).is_empty());
+    }
+
+    const ANCHORED: Confirmation = Confirmation::Anchored {
+        height: ANCHOR,
+        witnessable: true,
+    };
+
+    #[test]
+    fn every_note_is_judged_and_the_funded_wallet_is_certain() {
+        let wallet = funded_wallet();
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        assert_eq!(judged.len(), 2);
+        assert!(
+            judged
+                .iter()
+                .all(|judged| judged.verdict == Verdict::Certain)
+        );
+    }
+
+    #[test]
+    fn judge_names_the_first_failing_fact() {
+        let wallet = funded_wallet();
+        let note = get_the_100000_zat_spendable_orch_note(&wallet);
+        let unspent = HashMap::new();
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(note, ANCHORED),
+            Verdict::Certain
+        );
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(note, Confirmation::Unanchored),
+            Verdict::Unanchored
+        );
+        assert_eq!(
+            judgement(&wallet, &unspent).judge(
+                note,
+                Confirmation::Anchored {
+                    height: ANCHOR,
+                    witnessable: false,
+                }
+            ),
+            Verdict::NoWitness
+        );
+        let pending_spend = HashMap::from([(note.output_id(), note.output_id().txid())]);
+        assert_eq!(
+            judgement(&wallet, &pending_spend).judge(note, ANCHORED),
+            Verdict::Spent
+        );
+        let foreign = Judgement {
+            account: zip32::AccountId::try_from(1).expect("1 is a valid account id"),
+            ..judgement(&wallet, &unspent)
+        };
+        assert_eq!(foreign.judge(note, ANCHORED), Verdict::ForeignAccount);
+        let unscanned = Judgement {
+            spend_evidence_floor: ANCHOR + 1,
+            scan_ranges: &[],
+            ..judgement(&wallet, &unspent)
+        };
+        assert_eq!(unscanned.judge(note, ANCHORED), Verdict::Uncertain);
+    }
+
+    #[test]
+    fn a_spent_note_is_judged_spent() {
+        let mut wallet = funded_wallet();
+        let spent = get_the_100000_zat_spendable_orch_note(&wallet).output_id();
+        mark_spent(&mut wallet, spent);
+        let judged = wallet
+            .judged_notes::<OrchardNote>(ANCHOR, ACCOUNT)
+            .expect("the synthetic wallet is synced");
+        let verdict = judged
+            .iter()
+            .find(|judged| judged.note.output_id() == spent)
+            .map(|judged| judged.verdict);
+        assert_eq!(verdict, Some(Verdict::Spent));
+    }
+}

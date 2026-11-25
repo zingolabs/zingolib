@@ -147,7 +147,7 @@ jobs:
       # resolves (ADR 0024): the environment names the binary, and nothing
       # is copied onto PATH.
       - name: Build the proxy
-        run: cargo build --release --package zingo-netutils --features nym --bin nym-proxy
+        run: cargo build --release --package zl-netutils --features nym --bin nym-proxy
 
       - name: Run the cells and the probe
         continue-on-error: true
@@ -155,8 +155,8 @@ jobs:
           ZINGO_NYM_PROXY: ${{ github.workspace }}/target/release/nym-proxy
         run: |
           cargo nextest run --verbose --profile ci --retries 0 \
-            --package libtonode-tests --package zingolib \
-            --features libtonode-tests/testnet,zingolib/nym \
+            --package zingolib \
+            --features zingolib/testnet \
             --run-ignored all \
             -E 'binary(testnet) | test(live_staged_probe_smoke)' \
             2>&1 | tee testnet-cells.log

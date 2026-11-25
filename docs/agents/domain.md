@@ -3,17 +3,17 @@
 How the engineering skills should consume this repo's domain documentation when
 exploring the codebase. **Layout: single-context.**
 
-## Before exploring, read these
+## Before exploring, read this
 
 - **`CONTEXT.md`** at the repo root.
-- **`docs/adr/zingolib/`**: read ADRs that touch the area you're about to work in.
 
-`docs/adr/` is a submodule of zingo-adrs. The
-[zingo-adrs README](https://github.com/zingolabs/zingo-adrs#pointing-a-code-repository-at-zingo-adrs) explains how to initialise it and how its
-scopes map onto `docs/adr/`.
+`docs/adr/` is a submodule of zingo-adrs. Ignore its records always
+(`AGENTS.md`, "MUST DO ALWAYS"). The records tell people why a rule exists,
+and every rule an agent follows is in `AGENTS.md`, `CONTEXT.md`,
+`docs/agents/` or `docs/sop/`.
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence;
-don't suggest creating them upfront. The `/domain-modeling` skill (reached via
+If `CONTEXT.md` doesn't exist, **proceed silently**. Don't flag its absence;
+don't suggest creating it upfront. The `/domain-modeling` skill (reached via
 `/grill-with-docs` and `/improve-codebase-architecture`) creates glossary terms
 lazily when they actually get resolved.
 
@@ -53,10 +53,3 @@ synonyms the glossary explicitly avoids.
 If the concept you need isn't in the glossary yet, that's a signal. Either you're
 inventing language the project doesn't use (reconsider) or there's a real gap
 (note it for `/domain-modeling`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than
-silently overriding:
-
-> _Contradicts ADR-0007 (some decision), but worth reopening because…_

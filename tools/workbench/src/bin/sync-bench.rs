@@ -37,7 +37,7 @@ const MILLIS_SUFFIX: &str = "ms";
 /// markers this reads.
 const LOG_FILTER: &str = "info";
 
-/// The zingo-cli feature a nakednet arm needs to go online at all, since a
+/// The zingolib-cli feature a nakednet arm needs to go online at all, since a
 /// build without the mixnet otherwise refuses every online consent act.
 const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
 
@@ -48,7 +48,7 @@ const NAKEDNET_ONLINE_FEATURE: &str = "nakednet-test-mode";
 /// session cannot slow the scan by routing it. What it can do is compete
 /// for cores, and these are the two competitors: the wallet doing the scan
 /// and the proxy doing Sphinx crypto and cover traffic.
-const WALLET_PROCESS: &str = "zingo-cli";
+const WALLET_PROCESS: &str = "zingolib-cli";
 
 /// The proxy child, absent entirely from a nakednet arm.
 const PROXY_PROCESS: &str = "nym-proxy";

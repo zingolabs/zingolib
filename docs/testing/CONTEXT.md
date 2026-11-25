@@ -34,7 +34,7 @@ _Avoid_: mock indexer (that names the serving half alone), fake chain
 A chain-bound test behind the non-default `testnet` feature. It is
 compiled on every pull request and run against the testnet indexer the
 suite names: the public `testnet.zec.rocks` node until the zingolabs
-zainod testnet node exists (interim, ruled 2026-10-22), and that node
+zingod testnet node exists (interim, ruled 2026-10-22), and that node
 alone once it does: a tagged zaino release, serving TLS, with NU6.3
 active (ruled 2026-10-15).
 _Avoid_: testnet test, networked test, staged test
@@ -51,7 +51,7 @@ test, sharpening but never narrowing any of them.
 _Avoid_: offline twin, port, replacement test
 
 **Binary e2e test**:
-A test that exercises the shipped zingo-cli binary through its public CLI
+A test that exercises the shipped zingolib-cli binary through its public CLI
 surface against a public network's Indexer. Contrast tests that drive the
 wallet in-process through `LightClient`.
 _Avoid_: CLI live test, harness test
