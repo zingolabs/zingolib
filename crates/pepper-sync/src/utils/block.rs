@@ -4,18 +4,26 @@ use zl_common::chain::CompactBlock;
 
 use super::transaction;
 
+/// `zl_common::chain::BlockHash` mirrors `zcash_primitives::block::BlockHash` byte for byte
+/// without depending on it. Everything downstream of the wire boundary (witness trees, wallet
+/// scanning, block headers) still speaks the latter, so this is the one place that bridges the
+/// two.
+pub(crate) fn to_zcash_primitives(hash: zl_common::chain::BlockHash) -> BlockHash {
+    BlockHash(hash.0)
+}
+
 /// Returns the [`BlockHash`] for this block.
 pub(crate) fn get_compact_hash(compact_block: &CompactBlock) -> BlockHash {
     get_compact_header(compact_block)
         .map(|header| header.hash())
-        .unwrap_or(compact_block.hash)
+        .unwrap_or_else(|| to_zcash_primitives(compact_block.hash))
 }
 
 /// Returns the [`BlockHash`] for this block's parent.
 pub(crate) fn get_compact_prev_hash(compact_block: &CompactBlock) -> BlockHash {
     get_compact_header(compact_block)
         .map(|header| header.prev_block)
-        .unwrap_or(compact_block.prev_hash)
+        .unwrap_or_else(|| to_zcash_primitives(compact_block.prev_hash))
 }
 
 /// Returns the [`BlockHeight`] value for this block.

@@ -710,7 +710,7 @@ fn set_checkpoint_retentions<L>(
 #[cfg(test)]
 mod tests {
     use zcash_primitives::transaction::TxId;
-    use zl_common::chain::{ChainMetadata, CompactTx};
+    use zl_common::chain::{BlockHash as CompactBlockHash, ChainMetadata, CompactTx};
 
     use super::*;
 
@@ -735,8 +735,8 @@ mod tests {
     fn compact_block_with_ironwood_size(size: u32) -> CompactBlock {
         CompactBlock {
             height: BlockHeight::from_u32(100),
-            hash: BlockHash([1; 32]),
-            prev_hash: BlockHash([0; 32]),
+            hash: CompactBlockHash([1; 32]),
+            prev_hash: CompactBlockHash([0; 32]),
             time: 0,
             header: vec![],
             vtx: vec![],
@@ -784,8 +784,8 @@ mod tests {
     ) -> CompactBlock {
         CompactBlock {
             height: BlockHeight::from_u32(100),
-            hash: BlockHash([1; 32]),
-            prev_hash: BlockHash([0; 32]),
+            hash: CompactBlockHash([1; 32]),
+            prev_hash: CompactBlockHash([0; 32]),
             time: 0,
             header: vec![],
             vtx: vec![CompactTx {
@@ -853,7 +853,7 @@ mod tests {
         let first = block_with_served_ironwood_actions(5, 105);
         let mut second = block_with_served_ironwood_actions(5, 110);
         second.height = BlockHeight::from_u32(101);
-        second.hash = BlockHash([2; 32]);
+        second.hash = CompactBlockHash([2; 32]);
         second.prev_hash = first.hash;
         second.vtx[0].txid = TxId::from_bytes([4; 32]);
 
@@ -1222,8 +1222,8 @@ mod tests {
         fn block_spending_outpoint(height: u64, hash: u8, prevout_txid: [u8; 32]) -> CompactBlock {
             let mut compact_block = block_with_served_ironwood_actions(0, 10);
             compact_block.height = BlockHeight::from_u32(height as u32);
-            compact_block.hash = BlockHash([hash; 32]);
-            compact_block.prev_hash = BlockHash([hash - 1; 32]);
+            compact_block.hash = CompactBlockHash([hash; 32]);
+            compact_block.prev_hash = CompactBlockHash([hash - 1; 32]);
             compact_block.vtx[0].txid = TxId::from_bytes([hash + 10; 32]);
             compact_block.vtx[0].vin = vec![zl_common::chain::CompactTxIn {
                 prevout_txid: TxId::from_bytes(prevout_txid),

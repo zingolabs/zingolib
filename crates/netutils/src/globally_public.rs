@@ -14,7 +14,9 @@ use lightwallet_protocol::{
     TransparentAddressBlockFilter as WireTransparentAddressBlockFilter,
 };
 use tonic::Request;
-use zl_common::chain::{GetAddressUtxosArg, GetAddressUtxosReply, TransparentAddressBlockFilter};
+use zl_primitives::chain::{
+    GetAddressUtxosArg, GetAddressUtxosReply, TransparentAddressBlockFilter,
+};
 
 use super::{
     GrpcIndexer, Indexer, ParseWire, RawTransactionStream, ToWire, parse_wire_as_status, stream_rpc,
@@ -51,7 +53,7 @@ pub type GetAddressUtxosReplyStream = std::pin::Pin<
 
 impl ParseWire for GetAddressUtxosReply {
     type Wire = WireGetAddressUtxosReply;
-    type Error = zl_common::chain::InvalidGetAddressUtxosReply;
+    type Error = zl_primitives::chain::InvalidGetAddressUtxosReply;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire_parts(

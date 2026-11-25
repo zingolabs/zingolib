@@ -1,4 +1,4 @@
-use zcash_primitives::block::BlockHash;
+use crate::chain::block_hash::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 // This type is built by the caller as well as received from a server (see `from_height` vs.
@@ -40,7 +40,7 @@ impl BlockId {
 #[cfg(test)]
 mod tests {
     use super::BlockId;
-    use zcash_primitives::block::BlockHash;
+    use crate::chain::block_hash::BlockHash;
     use zcash_protocol::consensus::BlockHeight;
 
     /// A height one past `u32::MAX`, the smallest value `BlockHeight::try_from` rejects.

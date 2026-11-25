@@ -440,7 +440,9 @@ where
                     .await
                     .get_wallet_block(chain_height)
                     .map_err(SyncError::WalletError)?;
-                if chain_height_wallet_block.block_hash() != chain_height_server_block.hash {
+                if chain_height_wallet_block.block_hash()
+                    != crate::utils::block::to_zcash_primitives(chain_height_server_block.hash)
+                {
                     tracing::info!("Re-org detected.");
                     reorg_occured = true;
                     let mut wallet_guard = wallet.write().await;
@@ -3165,8 +3167,8 @@ mod test {
         use orchard::tree::MerkleHashOrchard;
         use shardtree::error::ShardTreeError;
         use shardtree::store::{Checkpoint, ShardStore as _};
-        use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_common::chain::BlockHash;
         use zl_common::chain::SubtreeRoot;
 
         use crate::mocks::{MockWallet, MockWalletBuilder};
@@ -4919,9 +4921,9 @@ mod test {
         use orchard::tree::MerkleHashOrchard;
         use shardtree::store::{self, ShardStore as _};
         use tokio::sync::mpsc;
-        use zcash_primitives::block::BlockHash;
         use zcash_primitives::merkle_tree::write_commitment_tree;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_common::chain::BlockHash;
         use zl_common::chain::TreeState;
 
         use crate::{
@@ -5198,6 +5200,7 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::{block::BlockHash, transaction::TxId};
         use zcash_protocol::consensus::BlockHeight;
+        use zl_common::chain::BlockHash as TreeStateHash;
         use zl_common::chain::{RawTransaction, RawTransactionStatus, TreeState};
         use zl_common::status::ConfirmationStatus;
 
@@ -5258,7 +5261,7 @@ mod test {
                         FetchRequest::TreeState(reply_sender, block_height) => {
                             let _ignore_error = reply_sender.send(Ok(TreeState {
                                 height: block_height,
-                                hash: BlockHash([0u8; 32]),
+                                hash: TreeStateHash([0u8; 32]),
                                 sapling_tree: EMPTY_TREE.to_vec(),
                                 orchard_tree: EMPTY_TREE.to_vec(),
                                 ironwood_tree: EMPTY_TREE.to_vec(),
@@ -5761,6 +5764,7 @@ mod test {
         use tokio::sync::mpsc;
         use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_common::chain::BlockHash as TreeStateHash;
         use zl_common::chain::TreeState;
 
         use crate::{
@@ -5818,7 +5822,7 @@ mod test {
                         FetchRequest::TreeState(reply_sender, block_height) => {
                             let _ignore_error = reply_sender.send(Ok(TreeState {
                                 height: block_height,
-                                hash: BlockHash([0u8; 32]),
+                                hash: TreeStateHash([0u8; 32]),
                                 sapling_tree: EMPTY_TREE.to_vec(),
                                 orchard_tree: EMPTY_TREE.to_vec(),
                                 ironwood_tree: EMPTY_TREE.to_vec(),
@@ -6030,8 +6034,8 @@ mod test {
         use std::ops::Range;
 
         use orchard::tree::MerkleHashOrchard;
-        use zcash_primitives::block::BlockHash;
         use zcash_protocol::consensus::BlockHeight;
+        use zl_common::chain::BlockHash;
 
         use crate::mocks::orchard_tree_scanned_past_the_fetched_roots;
         use crate::sync::subtree_root_fetch_index;
@@ -6101,6 +6105,7 @@ mod test {
         use zcash_protocol::consensus::{self, BlockHeight, Parameters as _};
         use zcash_protocol::local_consensus::LocalNetwork;
         use zcash_protocol::{PoolType, ShieldedPool};
+        use zl_common::chain::BlockHash as TreeStateHash;
         use zl_common::chain::TreeState;
         use zl_common::status::ConfirmationStatus;
 
@@ -6156,7 +6161,7 @@ mod test {
                             };
                             let _ignore_error = reply_sender.send(Ok(TreeState {
                                 height: block_height,
-                                hash: BlockHash([0u8; 32]),
+                                hash: TreeStateHash([0u8; 32]),
                                 sapling_tree: EMPTY_TREE.to_vec(),
                                 orchard_tree: EMPTY_TREE.to_vec(),
                                 ironwood_tree,

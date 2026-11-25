@@ -1,5 +1,5 @@
 //! The wire boundary: every conversion between a `lightwallet_protocol` proto message and its
-//! owned `zl_common::chain` domain counterpart, so no other module in this crate (or any
+//! owned `zl_primitives::chain` domain counterpart, so no other module in this crate (or any
 //! consumer crate) needs to name a proto type directly.
 
 use std::future::Future;
@@ -13,7 +13,7 @@ use lightwallet_protocol::{
     LightdInfo as WireLightdInfo, RawTransaction as WireRawTransaction,
     SubtreeRoot as WireSubtreeRoot, TreeState as WireTreeState, TxFilter as WireTxFilter,
 };
-use zl_common::chain::{
+use zl_primitives::chain::{
     BlockId, BlockRange, CompactBlock, CompactTx, GetSubtreeRootsArg, LightdInfo, RawTransaction,
     SubtreeRoot, TreeState, TxFilter,
 };
@@ -21,11 +21,11 @@ use zl_common::chain::{
 /// A domain type that can be parsed from its wire representation, failing exactly when the
 /// wire value's shape violates this type's own invariants.
 ///
-/// Lives here, not in `zl_common`, because the orphan rule blocks implementing any trait on a
-/// `zl_common::chain` type for a `lightwallet_protocol` wire type from a third crate: at least
-/// one of the trait or the type being converted from has to be local. `zl_common` itself can't
-/// define this trait with a `lightwallet_protocol`-typed `Wire`, since it is forbidden from
-/// depending on proto crates at all.
+/// Lives here, not in `zl_primitives`, because the orphan rule blocks implementing any trait on
+/// a `zl_primitives::chain` type for a `lightwallet_protocol` wire type from a third crate: at
+/// least one of the trait or the type being converted from has to be local. `zl_primitives`
+/// itself can't define this trait with a `lightwallet_protocol`-typed `Wire`, since it is
+/// forbidden from depending on proto crates at all.
 pub(crate) trait ParseWire: Sized {
     /// The wire-format type carrying this value over the gRPC boundary.
     type Wire;
@@ -117,25 +117,25 @@ where
 
 impl ParseWire for RawTransaction {
     type Wire = WireRawTransaction;
-    type Error = zl_common::chain::InvalidRawTransaction;
+    type Error = zl_primitives::chain::InvalidRawTransaction;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire_parts(wire.data, wire.height)
     }
 }
 
-impl ParseWire for zl_common::chain::CompactSaplingSpend {
+impl ParseWire for zl_primitives::chain::CompactSaplingSpend {
     type Wire = lightwallet_protocol::CompactSaplingSpend;
-    type Error = zl_common::chain::InvalidCompactBlock;
+    type Error = zl_primitives::chain::InvalidCompactBlock;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire(wire.nf)
     }
 }
 
-impl ParseWire for zl_common::chain::CompactOrchardAction {
+impl ParseWire for zl_primitives::chain::CompactOrchardAction {
     type Wire = lightwallet_protocol::CompactOrchardAction;
-    type Error = zl_common::chain::InvalidCompactBlock;
+    type Error = zl_primitives::chain::InvalidCompactBlock;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire(
@@ -147,9 +147,9 @@ impl ParseWire for zl_common::chain::CompactOrchardAction {
     }
 }
 
-impl ParseWire for zl_common::chain::CompactTxIn {
+impl ParseWire for zl_primitives::chain::CompactTxIn {
     type Wire = lightwallet_protocol::CompactTxIn;
-    type Error = zl_common::chain::InvalidCompactBlock;
+    type Error = zl_primitives::chain::InvalidCompactBlock;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire(wire.prevout_txid, wire.prevout_index)
@@ -158,7 +158,7 @@ impl ParseWire for zl_common::chain::CompactTxIn {
 
 impl ParseWire for CompactTx {
     type Wire = WireCompactTx;
-    type Error = zl_common::chain::InvalidCompactBlock;
+    type Error = zl_primitives::chain::InvalidCompactBlock;
 
     /// Parses every nested Sapling, Orchard, Ironwood, and transparent component first. The
     /// Sapling output and transparent-output copies are plain field projections (nothing in
@@ -168,12 +168,12 @@ impl ParseWire for CompactTx {
         let spends = wire
             .spends
             .into_iter()
-            .map(zl_common::chain::CompactSaplingSpend::parse_wire)
+            .map(zl_primitives::chain::CompactSaplingSpend::parse_wire)
             .collect::<Result<Vec<_>, _>>()?;
         let outputs = wire
             .outputs
             .into_iter()
-            .map(|out| zl_common::chain::CompactSaplingOutput {
+            .map(|out| zl_primitives::chain::CompactSaplingOutput {
                 cmu: out.cmu,
                 ephemeral_key: out.ephemeral_key,
                 ciphertext: out.ciphertext,
@@ -182,22 +182,22 @@ impl ParseWire for CompactTx {
         let actions = wire
             .actions
             .into_iter()
-            .map(zl_common::chain::CompactOrchardAction::parse_wire)
+            .map(zl_primitives::chain::CompactOrchardAction::parse_wire)
             .collect::<Result<Vec<_>, _>>()?;
         let ironwood_actions = wire
             .ironwood_actions
             .into_iter()
-            .map(zl_common::chain::CompactOrchardAction::parse_wire)
+            .map(zl_primitives::chain::CompactOrchardAction::parse_wire)
             .collect::<Result<Vec<_>, _>>()?;
         let vin = wire
             .vin
             .into_iter()
-            .map(zl_common::chain::CompactTxIn::parse_wire)
+            .map(zl_primitives::chain::CompactTxIn::parse_wire)
             .collect::<Result<Vec<_>, _>>()?;
         let vout = wire
             .vout
             .into_iter()
-            .map(|out| zl_common::chain::TxOut {
+            .map(|out| zl_primitives::chain::TxOut {
                 value: out.value,
                 script_pub_key: out.script_pub_key,
             })
@@ -218,7 +218,7 @@ impl ParseWire for CompactTx {
 
 impl ParseWire for CompactBlock {
     type Wire = WireCompactBlock;
-    type Error = zl_common::chain::InvalidCompactBlock;
+    type Error = zl_primitives::chain::InvalidCompactBlock;
 
     /// Parses every transaction first.
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
@@ -227,13 +227,13 @@ impl ParseWire for CompactBlock {
             .into_iter()
             .map(CompactTx::parse_wire)
             .collect::<Result<Vec<_>, _>>()?;
-        let chain_metadata = wire
-            .chain_metadata
-            .map(|metadata| zl_common::chain::ChainMetadata {
-                sapling_commitment_tree_size: metadata.sapling_commitment_tree_size,
-                orchard_commitment_tree_size: metadata.orchard_commitment_tree_size,
-                ironwood_commitment_tree_size: metadata.ironwood_commitment_tree_size,
-            });
+        let chain_metadata =
+            wire.chain_metadata
+                .map(|metadata| zl_primitives::chain::ChainMetadata {
+                    sapling_commitment_tree_size: metadata.sapling_commitment_tree_size,
+                    orchard_commitment_tree_size: metadata.orchard_commitment_tree_size,
+                    ironwood_commitment_tree_size: metadata.ironwood_commitment_tree_size,
+                });
         Self::from_wire_parts(
             wire.height,
             wire.hash,
@@ -249,7 +249,7 @@ impl ParseWire for CompactBlock {
 /// Converts a wire [`LightdInfo`](WireLightdInfo) into the domain [`LightdInfo`]. Every field is
 /// already a plain owned value, so this is a lossless, infallible projection onto the subset
 /// callers use — it skips [`ParseWire`] for the same reason [`CompactSaplingOutput`'s
-/// (`zl_common::chain::CompactSaplingOutput`) copy inside [`CompactTx::parse_wire`] does.
+/// (`zl_primitives::chain::CompactSaplingOutput`) copy inside [`CompactTx::parse_wire`] does.
 pub(crate) fn parse_lightd_info(wire: WireLightdInfo) -> LightdInfo {
     LightdInfo {
         version: wire.version,
@@ -266,7 +266,7 @@ pub(crate) fn parse_lightd_info(wire: WireLightdInfo) -> LightdInfo {
 
 impl ParseWire for BlockId {
     type Wire = WireBlockId;
-    type Error = zl_common::chain::InvalidBlockId;
+    type Error = zl_primitives::chain::InvalidBlockId;
 
     /// The one direction this bidirectional type needs validation: [`Indexer::get_latest_block`]
     /// receives one from the server.
@@ -296,7 +296,7 @@ impl ToWire for BlockRange {
             pool_types: self
                 .pool_types
                 .into_iter()
-                .map(zl_common::chain::pool_type_wire_value)
+                .map(zl_primitives::chain::pool_type_wire_value)
                 .collect(),
         }
     }
@@ -331,7 +331,7 @@ impl ToWire for GetSubtreeRootsArg {
 
 impl ParseWire for SubtreeRoot {
     type Wire = WireSubtreeRoot;
-    type Error = zl_common::chain::InvalidSubtreeRoot;
+    type Error = zl_primitives::chain::InvalidSubtreeRoot;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire_parts(
@@ -344,7 +344,7 @@ impl ParseWire for SubtreeRoot {
 
 impl ParseWire for TreeState {
     type Wire = WireTreeState;
-    type Error = zl_common::chain::InvalidTreeState;
+    type Error = zl_primitives::chain::InvalidTreeState;
 
     fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
         Self::from_wire_parts(
@@ -358,7 +358,7 @@ impl ParseWire for TreeState {
 }
 
 /// An invariant that only emerges once primitives are bundled into a [`CompactTx`] or
-/// [`CompactBlock`]: nothing in [`zl_common::chain`] itself enforces it (each primitive only
+/// [`CompactBlock`]: nothing in [`zl_primitives::chain`] itself enforces it (each primitive only
 /// validates its own fields), it falls out of how their [`ParseWire`] impls compose their
 /// nested `?`-propagating parses.
 #[cfg(test)]

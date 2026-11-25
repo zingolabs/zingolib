@@ -1,4 +1,4 @@
-use zcash_primitives::block::BlockHash;
+use crate::chain::block_hash::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 /// A note commitment tree state as served by an indexer for a block: each shielded pool's
@@ -86,7 +86,7 @@ impl TreeState {
 #[cfg(test)]
 mod tests {
     use super::{InvalidTreeState, TreeState};
-    use zcash_primitives::block::BlockHash;
+    use crate::chain::block_hash::BlockHash;
     use zcash_protocol::consensus::BlockHeight;
 
     /// A height one past `u32::MAX`, the smallest value `BlockHeight::try_from` rejects.

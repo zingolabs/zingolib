@@ -1,7 +1,9 @@
 //! The domain vocabulary for talking to a Zcash chain indexer: one type per concept, each
 //! owning its own wire-boundary parsing and invariants. Grouped here as a single public path
-//! (`zl_common::chain::X`) regardless of which file actually defines `X`.
+//! (`zl_common::chain::X`, re-exported from `zl_primitives::chain::X`) regardless of which file
+//! actually defines `X`.
 
+pub mod block_hash;
 pub mod block_id;
 pub mod block_range;
 pub mod chain_type;
@@ -17,6 +19,7 @@ pub mod transparent_address_block_filter;
 pub mod tree_state;
 pub mod tx_filter;
 
+pub use block_hash::BlockHash;
 pub use block_id::{BlockId, InvalidBlockId};
 pub use block_range::{BlockRange, pool_type_wire_value};
 pub use chain_type::{ChainType, InvalidChainType};

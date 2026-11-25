@@ -515,8 +515,8 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::sync::mpsc;
-    use zcash_primitives::block::BlockHash;
     use zcash_protocol::local_consensus::LocalNetwork;
+    use zl_common::chain::BlockHash;
 
     use super::*;
 

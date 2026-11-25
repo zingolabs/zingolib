@@ -1,4 +1,4 @@
-use zcash_primitives::block::BlockHash;
+use crate::chain::block_hash::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 pub mod chain_metadata;
@@ -111,7 +111,7 @@ impl CompactBlock {
 #[cfg(test)]
 mod tests {
     use super::CompactBlock;
-    use zcash_primitives::block::BlockHash;
+    use crate::chain::block_hash::BlockHash;
 
     /// A height one past `u32::MAX`, the smallest value `BlockHeight::try_from` rejects.
     const TOO_TALL: u64 = u32::MAX as u64 + 1;

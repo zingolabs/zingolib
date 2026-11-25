@@ -1,4 +1,4 @@
-use zcash_primitives::block::BlockHash;
+use crate::chain::block_hash::BlockHash;
 use zcash_protocol::consensus::BlockHeight;
 
 /// A completed shard's Merkle root, as served by an indexer: the raw 32-byte root and the

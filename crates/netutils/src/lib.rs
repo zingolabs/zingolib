@@ -39,7 +39,7 @@ use lightwallet_protocol::{
     ChainSpec, CompactTxStreamerClient, Empty, GetMempoolTxRequest,
     RawTransaction as WireRawTransaction, StandardFee as WireStandardFee,
 };
-use zl_common::chain::{
+use zl_primitives::chain::{
     BlockId, BlockRange, CompactBlock, CompactTx, GetSubtreeRootsArg, LightdInfo, RawTransaction,
     StandardFee, SubtreeRoot, TreeState, TxFilter,
 };

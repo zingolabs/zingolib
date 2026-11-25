@@ -29,16 +29,24 @@ flowchart TD
     zingolib --> ps
     ps["crates/pepper-sync<br/>pepper-sync"] --> net["crates/netutils<br/>zl-netutils"]
     ps --> common
+    net --> primitives
     subgraph nonet["no network code"]
         ff["crates/file-format<br/>zl-file-format"] --> common["crates/common<br/>zl-common"]
+        common --> primitives["crates/primitives<br/>zl-primitives"]
     end
 ```
 
-An arrow means "depends on". The diagram shows the five library crates and the
+An arrow means "depends on". The diagram shows the six library crates and the
 two crates that consume them in this workspace. It leaves out a direct
 dependency that a path of arrows already implies: `zingolib`, for example, also
 depends directly on `zl-common` and `zl-netutils`. It also leaves out the helper
 crates, such as `zingolib-nym-proxy-ffi`.
+
+`zl-primitives` holds the domain vocabulary a chain indexer's replies parse
+into. It sits below both `zl-common` and `zl-netutils` so that the transport
+crate can name a reply's validated type without inheriting the wallet stack
+(`orchard`, `sapling-crypto`, `zcash_keys`, ...) that `zl-common` carries for
+its own, larger job.
 
 # Security Vulnerability Disclosure
 

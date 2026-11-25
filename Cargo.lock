@@ -11240,6 +11240,7 @@ dependencies = [
  "zcash_transparent",
  "zingo_common_components",
  "zip32",
+ "zl-primitives",
 ]
 
 [[package]]
@@ -11313,7 +11314,17 @@ dependencies = [
  "tower",
  "webpki-roots 1.0.9",
  "x509-parser",
- "zl-common",
+ "zl-primitives",
+]
+
+[[package]]
+name = "zl-primitives"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "thiserror 2.0.19",
+ "zcash_protocol",
+ "zingo_common_components",
 ]
 
 [[package]]

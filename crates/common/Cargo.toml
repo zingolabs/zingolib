@@ -20,6 +20,7 @@ test-features = []
 [dependencies]
 # Zingo
 zingo_common_components.workspace = true
+zl-primitives.workspace = true
 
 # Zcash
 incrementalmerkletree.workspace = true

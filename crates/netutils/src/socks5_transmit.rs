@@ -37,7 +37,7 @@ use lightwallet_protocol::{
     BlockId as WireBlockId, ChainSpec, CompactTxStreamerClient, Empty,
     LightdInfo as WireLightdInfo, RawTransaction, StandardFee as WireStandardFee, TxFilter,
 };
-use zl_common::chain::{BlockId, LightdInfo, StandardFee};
+use zl_primitives::chain::{BlockId, LightdInfo, StandardFee};
 
 /// Why a SOCKS5-tunneled operation did not complete, typed by the connection
 /// phase that failed and carrying that phase's complete underlying data

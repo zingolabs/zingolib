@@ -81,8 +81,8 @@ pub(crate) fn compact_tx(
 pub(crate) fn empty_compact_block(vtx: Vec<CompactTx>) -> zl_common::chain::CompactBlock {
     zl_common::chain::CompactBlock {
         height: zcash_protocol::consensus::BlockHeight::from_u32(0),
-        hash: zcash_primitives::block::BlockHash([0; 32]),
-        prev_hash: zcash_primitives::block::BlockHash([0; 32]),
+        hash: zl_common::chain::BlockHash([0; 32]),
+        prev_hash: zl_common::chain::BlockHash([0; 32]),
         time: 0,
         header: vec![],
         vtx,

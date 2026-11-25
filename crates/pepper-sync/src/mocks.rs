@@ -10,9 +10,8 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
-use zcash_primitives::block::BlockHash;
 use zcash_protocol::{TxId, consensus::BlockHeight};
-use zl_common::chain::SubtreeRoot;
+use zl_common::chain::{BlockHash, SubtreeRoot};
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> SubtreeRoot {
     SubtreeRoot {

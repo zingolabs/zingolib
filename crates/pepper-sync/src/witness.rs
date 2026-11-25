@@ -302,7 +302,7 @@ impl TryFrom<TreeState> for Frontiers {
     fn try_from(value: TreeState) -> Result<Self, Self::Error> {
         Ok(Frontiers::new(
             value.height,
-            value.hash,
+            crate::utils::block::to_zcash_primitives(value.hash),
             get_tree::<Node, { sapling_crypto::NOTE_COMMITMENT_TREE_DEPTH }>(&value.sapling_tree)?
                 .to_frontier(),
             get_tree::<MerkleHashOrchard, { orchard::NOTE_COMMITMENT_TREE_DEPTH as u8 }>(
