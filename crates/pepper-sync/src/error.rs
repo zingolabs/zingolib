@@ -195,6 +195,13 @@ pub(crate) fn status_is_network_weather(status: &protocol::Status) -> bool {
     )
 }
 
+const UNEXPECTED_STREAM_EOF: &str = "Unexpected EOF decoding stream.";
+
+pub(crate) fn stream_error_is_retryable(status: &protocol::Status) -> bool {
+    status.code() == protocol::Code::DeadlineExceeded
+        || status.message().contains(UNEXPECTED_STREAM_EOF)
+}
+
 /// Recommended action when sync fails.
 ///
 /// Returned by [`SyncError::recovery_recommendation`] to give callers (zingolib-cli,

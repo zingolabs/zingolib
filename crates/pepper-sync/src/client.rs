@@ -20,7 +20,7 @@ use zcash_protocol::{
 use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{
-    error::{MempoolError, ServerError},
+    error::{MempoolError, ServerError, stream_error_is_retryable},
     protocol::{
         self, BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
     },
@@ -33,15 +33,13 @@ const MAX_RETRIES: u8 = 3;
 
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
-async fn next_stream_item<T>(
+pub(crate) async fn next_stream_item<T>(
     stream: &mut protocol::Streaming<T>,
-    what: &'static str,
+    timeout_message: &'static str,
 ) -> Result<Option<T>, protocol::Status> {
     match tokio::time::timeout(STREAM_MSG_TIMEOUT, stream.message()).await {
         Ok(res) => res,
-        Err(_) => Err(protocol::Status::deadline_exceeded(format!(
-            "{what} stream message timeout"
-        ))),
+        Err(_) => Err(protocol::Status::deadline_exceeded(timeout_message)),
     }
 }
 
@@ -258,21 +256,20 @@ pub(crate) async fn get_subtree_roots(
             .map_err(|_| ServerError::FetcherDropped)?
             .map_err(ServerError::RequestFailed)?;
 
-        while let Some(subtree_root) =
-            match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
-                Ok(s) => s,
-                Err(e)
-                    if (e.code() == protocol::Code::DeadlineExceeded
-                        || e.message().contains("Unexpected EOF decoding stream."))
-                        && retry_count < MAX_RETRIES =>
-                {
-                    tokio::time::sleep(Duration::from_secs(3)).await;
-                    retry_count += 1;
-                    continue 'retry;
-                }
-                Err(e) => return Err(e.into()),
-            }
+        while let Some(subtree_root) = match next_stream_item(
+            &mut subtree_root_stream,
+            "SubtreeRoots stream message timeout",
+        )
+        .await
         {
+            Ok(s) => s,
+            Err(e) if stream_error_is_retryable(&e) && retry_count < MAX_RETRIES => {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                retry_count += 1;
+                continue 'retry;
+            }
+            Err(e) => return Err(e.into()),
+        } {
             subtree_roots.push(subtree_root);
             start_index += 1;
         }
@@ -426,22 +423,21 @@ pub(crate) async fn get_transparent_address_transactions(
             .map_err(|_| ServerError::FetcherDropped)?
             .map_err(ServerError::RequestFailed)?;
 
-        while let Some(raw_tx) =
-            match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
-                Ok(s) => s,
-                Err(e)
-                    if (e.code() == protocol::Code::DeadlineExceeded
-                        || e.message().contains("Unexpected EOF decoding stream."))
-                        && retry_count < MAX_RETRIES =>
-                {
-                    tokio::time::sleep(Duration::from_secs(3)).await;
-                    retry_count += 1;
-                    raw_transactions.clear();
-                    continue 'retry;
-                }
-                Err(e) => return Err(e.into()),
-            }
+        while let Some(raw_tx) = match next_stream_item(
+            &mut raw_transaction_stream,
+            "TransparentAddressTxs stream message timeout",
+        )
+        .await
         {
+            Ok(s) => s,
+            Err(e) if stream_error_is_retryable(&e) && retry_count < MAX_RETRIES => {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                retry_count += 1;
+                raw_transactions.clear();
+                continue 'retry;
+            }
+            Err(e) => return Err(e.into()),
+        } {
             raw_transactions.push(raw_tx);
         }
 

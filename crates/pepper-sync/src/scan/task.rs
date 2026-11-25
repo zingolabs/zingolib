@@ -20,7 +20,7 @@ use crate::engine::{SyncStateOps, TransactionRecordOps};
 use crate::{
     client::{self, FetchRequest},
     config::PerformanceLevel,
-    error::{ScanError, ServerError, SyncError},
+    error::{ScanError, ServerError, SyncError, stream_error_is_retryable},
     keys::transparent::TransparentAddressId,
     protocol::{self, CompactBlock},
     sync::{self, ScanPriority, ScanRange},
@@ -36,7 +36,7 @@ use super::{ScanResults, scan};
 const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
-use zl_netutils::time::{SCANNER_SHUTDOWN_TIMEOUT, STREAM_MSG_TIMEOUT};
+use zl_netutils::time::SCANNER_SHUTDOWN_TIMEOUT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanTaskRunnerActivity {
@@ -514,20 +514,11 @@ where
 
                 loop {
                     let msg_res: Result<Option<CompactBlock>, protocol::Status> =
-                        match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
-                        {
-                            Ok(res) => res,
-                            Err(_) => Err(protocol::Status::deadline_exceeded(
-                                "stream message timeout",
-                            )),
-                        };
+                        client::next_stream_item(&mut block_stream, "stream message timeout").await;
 
                     let maybe_block = match msg_res {
                         Ok(b) => b,
-                        Err(e)
-                            if e.code() == protocol::Code::DeadlineExceeded
-                                || e.message().contains("Unexpected EOF decoding stream.") =>
-                        {
+                        Err(e) if stream_error_is_retryable(&e) => {
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
                             block_stream = match open_block_stream(
@@ -550,17 +541,11 @@ where
                             };
 
                             let first_msg_res: Result<Option<CompactBlock>, protocol::Status> =
-                                match tokio::time::timeout(
-                                    STREAM_MSG_TIMEOUT,
-                                    block_stream.message(),
+                                client::next_stream_item(
+                                    &mut block_stream,
+                                    "stream message timeout after retry",
                                 )
-                                .await
-                                {
-                                    Ok(res) => res,
-                                    Err(_) => Err(protocol::Status::deadline_exceeded(
-                                        "stream message timeout after retry",
-                                    )),
-                                };
+                                .await;
 
                             match first_msg_res {
                                 Ok(b) => b,
