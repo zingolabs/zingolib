@@ -673,7 +673,6 @@ mod tests {
     }
 
     const EMPTY_RANGE_HEIGHT: u32 = 5;
-    const NO_REQUESTS: usize = 0;
     const TRANSPARENT_ADDRESS: &str = "t1abc";
 
     fn empty_block_range() -> Range<BlockHeight> {
@@ -697,7 +696,7 @@ mod tests {
         }
         assert_eq!(
             request_count.load(atomic::Ordering::Acquire),
-            NO_REQUESTS,
+            mocks::NO_REQUESTS,
             "an empty block range reached the fetcher"
         );
     }
@@ -721,7 +720,7 @@ mod tests {
         );
         assert_eq!(
             request_count.load(atomic::Ordering::Acquire),
-            NO_REQUESTS,
+            mocks::NO_REQUESTS,
             "an empty block range reached the fetcher"
         );
     }

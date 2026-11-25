@@ -124,6 +124,8 @@ pub(crate) fn spawn_chain_tip_fetcher(
     })
 }
 
+pub(crate) const NO_REQUESTS: usize = 0;
+
 pub(crate) fn spawn_request_counter() -> (
     mpsc::UnboundedSender<client::FetchRequest>,
     Arc<AtomicUsize>,

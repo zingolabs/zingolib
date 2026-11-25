@@ -519,11 +519,17 @@ where
                     let maybe_block = match msg_res {
                         Ok(b) => b,
                         Err(e) if stream_error_is_retryable(&e) => {
+                            let Some(unfetched_blocks) =
+                                unfetched_blocks(scan_task.scan_range.block_range(), retry_height)
+                            else {
+                                break;
+                            };
+
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
                             block_stream = match open_block_stream(
                                 fetch_request_sender.clone(),
-                                retry_height..scan_task.scan_range.block_range().end,
+                                unfetched_blocks,
                                 fetch_nullifiers_only,
                                 scan_task.transparent_scan_floor,
                             )
@@ -766,6 +772,10 @@ async fn fetch_failure(
     block_range: &Range<BlockHeight>,
     error: ServerError,
 ) -> ServerError {
+    if matches!(error, ServerError::EmptyBlockRange { .. }) {
+        return error;
+    }
+
     let scan_range_end = block_range.end - 1;
     match client::get_chain_height(fetch_request_sender).await {
         Ok(chain_height) if chain_height < scan_range_end => {
@@ -776,6 +786,15 @@ async fn fetch_failure(
         }
         _ => error,
     }
+}
+
+fn unfetched_blocks(
+    block_range: &Range<BlockHeight>,
+    retry_height: BlockHeight,
+) -> Option<Range<BlockHeight>> {
+    let unfetched_blocks = retry_height..block_range.end;
+
+    (!unfetched_blocks.is_empty()).then_some(unfetched_blocks)
 }
 
 /// Returns true when a load budget reached at `block_height` may split the scan task of `scan_range`, which holds above its first block.
