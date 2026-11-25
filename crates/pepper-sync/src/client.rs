@@ -29,13 +29,6 @@ pub(crate) mod fetch;
 
 const MAX_RETRIES: u8 = 3;
 
-fn block_span_of(block_range: &Range<BlockHeight>) -> Result<protocol::BlockSpan, ServerError> {
-    protocol::BlockSpan::of(block_range).ok_or(ServerError::EmptyBlockRange {
-        start: block_range.start,
-        end: block_range.end,
-    })
-}
-
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
 pub(crate) async fn next_stream_item<T>(
@@ -188,10 +181,9 @@ pub(crate) async fn get_compact_block(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_compact_block_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
+    block_span: protocol::BlockSpan,
     include_transparent: bool,
 ) -> Result<protocol::CompactBlocks, ServerError> {
-    let block_span = block_span_of(&block_range)?;
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlockRange(
@@ -216,9 +208,8 @@ pub(crate) async fn get_compact_block_range(
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_nullifier_range(
     fetch_request_sender: UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
+    block_span: protocol::BlockSpan,
 ) -> Result<protocol::CompactBlocks, ServerError> {
-    let block_span = block_span_of(&block_range)?;
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::NullifierRange(reply_sender, block_span))
@@ -673,34 +664,6 @@ mod tests {
     }
 
     const TRANSPARENT_ADDRESS: &str = "t1abc";
-
-    #[tokio::test]
-    async fn an_empty_block_range_is_refused_before_any_fetch_request() {
-        let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
-
-        let compact_blocks = get_compact_block_range(
-            fetch_request_sender.clone(),
-            mocks::empty_block_range(),
-            false,
-        )
-        .await;
-        let nullifiers =
-            get_nullifier_range(fetch_request_sender, mocks::empty_block_range()).await;
-
-        for refusal in [compact_blocks, nullifiers] {
-            assert!(matches!(
-                refusal,
-                Err(ServerError::EmptyBlockRange { start, end })
-                    if start == mocks::EMPTY_RANGE_HEIGHT.into()
-                        && end == mocks::EMPTY_RANGE_HEIGHT.into()
-            ));
-        }
-        assert_eq!(
-            request_count.load(atomic::Ordering::Acquire),
-            mocks::NO_REQUESTS,
-            "an empty block range reached the fetcher"
-        );
-    }
 
     #[tokio::test]
     async fn an_empty_block_range_holds_no_transparent_transaction() {

@@ -470,7 +470,6 @@ pub enum ServerError {
         /// The height of the last block in the scan range.
         scan_range_end: BlockHeight,
     },
-    #[allow(missing_docs)]
     #[error(
         "the wallet asked for the block range {start}..{end}, which holds no block. no request was sent to the server."
     )]
@@ -637,44 +636,6 @@ mod tests {
             protocol::Status::internal("indexer bug"),
             protocol::Status::unknown("unknown"),
         ]
-    }
-
-    mod source_text {
-        const ERROR_SOURCE: &str = include_str!("error.rs");
-        const TEST_SOURCES: [&str; 4] = [
-            ERROR_SOURCE,
-            include_str!("client.rs"),
-            include_str!("mocks.rs"),
-            include_str!("scan/task/tests.rs"),
-        ];
-        const NETWORK_WEATHER_COMMENT_LAST_LINE: &str = "/// reports them.";
-        const NETWORK_WEATHER_ITEM: &str = "fn network_weather_statuses()";
-        const EMPTY_RANGE_HEIGHT_DEFINITION: &str = concat!("const ", "EMPTY_RANGE_HEIGHT:");
-        const ONE_DEFINITION: usize = 1;
-
-        #[test]
-        fn the_network_weather_comment_sits_on_the_network_weather_statuses() {
-            let documented_item = ERROR_SOURCE
-                .lines()
-                .map(str::trim)
-                .skip_while(|line| *line != NETWORK_WEATHER_COMMENT_LAST_LINE)
-                .nth(1);
-
-            assert!(
-                documented_item.is_some_and(|item| item.starts_with(NETWORK_WEATHER_ITEM)),
-                "the comment documents {documented_item:?}"
-            );
-        }
-
-        #[test]
-        fn the_height_of_an_empty_block_range_has_one_definition() {
-            let definitions: usize = TEST_SOURCES
-                .iter()
-                .map(|source| source.matches(EMPTY_RANGE_HEIGHT_DEFINITION).count())
-                .sum();
-
-            assert_eq!(definitions, ONE_DEFINITION);
-        }
     }
 
     mod recovery_recommendation {

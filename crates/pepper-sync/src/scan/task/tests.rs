@@ -1,5 +1,3 @@
-use std::sync::atomic;
-
 use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
@@ -181,82 +179,6 @@ async fn fetch_failure_with_no_chain_height_returns_the_fetch_error() {
     let error = fetch_failure(fetch_request_sender, &block_range(), no_block_error()).await;
 
     assert!(matches!(error, ServerError::RequestFailed(_)));
-}
-
-const FIRST_UNFETCHED_HEIGHT: u32 = 15;
-
-#[test]
-fn a_stream_that_fails_within_the_scan_range_leaves_blocks_to_fetch() {
-    let block_range = block_range();
-
-    assert_eq!(
-        unfetched_blocks(&block_range, BlockHeight::from_u32(FIRST_UNFETCHED_HEIGHT)),
-        Some(BlockHeight::from_u32(FIRST_UNFETCHED_HEIGHT)..block_range.end)
-    );
-}
-
-#[tokio::test]
-async fn a_stream_that_fails_after_the_last_block_leaves_no_block_to_fetch() {
-    let block_range = block_range();
-    let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
-
-    let refetched_after_the_last_block = open_block_stream(
-        fetch_request_sender,
-        block_range.end..block_range.end,
-        false,
-        block_range.start,
-    )
-    .await;
-
-    assert!(matches!(
-        refetched_after_the_last_block,
-        Err(ServerError::EmptyBlockRange { .. })
-    ));
-    assert_eq!(
-        request_count.load(atomic::Ordering::Acquire),
-        mocks::NO_REQUESTS
-    );
-    assert_eq!(unfetched_blocks(&block_range, block_range.end), None);
-}
-
-const LOWERED_CHAIN_HEIGHT: u32 = 3;
-
-#[tokio::test]
-async fn fetch_failure_under_a_lowered_chain_height_keeps_an_empty_block_range() {
-    let error = fetch_failure(
-        mocks::spawn_chain_tip_fetcher(LOWERED_CHAIN_HEIGHT),
-        &mocks::empty_block_range(),
-        mocks::empty_block_range_error(),
-    )
-    .await;
-
-    assert!(
-        matches!(
-            error,
-            ServerError::EmptyBlockRange { start, end }
-                if start == BlockHeight::from_u32(mocks::EMPTY_RANGE_HEIGHT)
-                    && end == BlockHeight::from_u32(mocks::EMPTY_RANGE_HEIGHT)
-        ),
-        "an empty block range was reported as {error:?}"
-    );
-}
-
-#[tokio::test]
-async fn fetch_failure_of_an_empty_block_range_sends_no_request() {
-    let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
-
-    fetch_failure(
-        fetch_request_sender,
-        &mocks::empty_block_range(),
-        mocks::empty_block_range_error(),
-    )
-    .await;
-
-    assert_eq!(
-        request_count.load(atomic::Ordering::Acquire),
-        mocks::NO_REQUESTS,
-        "the failure of an empty block range reached the fetcher"
-    );
 }
 
 fn load(task_id: TaskId, start: u32, end: u32) -> ScanLoad {

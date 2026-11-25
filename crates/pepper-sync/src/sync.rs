@@ -79,7 +79,6 @@ pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub sync_start_height: BlockHeight,
@@ -162,7 +161,6 @@ impl SyncStatus {
 
 /// Returned when [`crate::sync::sync`] successfully completes.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncResult {
     pub sync_start_height: BlockHeight,
     pub sync_end_height: BlockHeight,
