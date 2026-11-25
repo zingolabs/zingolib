@@ -781,9 +781,8 @@ mod tests {
     const ORIGIN: &str = "cccccccccccccccccccccccccccccccccccccccc";
     const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     const ROOT: &str = "/host/zingolib";
-    const EXPECTED_AUDITED: [&str; 5] = [
+    const EXPECTED_AUDITED: [&str; 4] = [
         "zingolib-ffi (ffi/lib)",
-        "pepper-sync (crates/pepper-sync)",
         "zingolib (crates/zingolib)",
         "zingolib-nym-proxy-ffi (crates/netutils/nym-proxy-ffi)",
         "zl-netutils (crates/netutils)",
@@ -933,7 +932,8 @@ mod tests {
     }
 
     #[test]
-    fn the_checked_out_commit_audits_the_five_crates_the_plan_names() -> Result<(), Vec<String>> {
+    fn the_checked_out_commit_audits_the_four_crates_the_bindings_depend_on(
+    ) -> Result<(), Vec<String>> {
         let root = crate::repo_root()?;
         assert_eq!(rendered(&audited_at(&root)?), EXPECTED_AUDITED);
         Ok(())
