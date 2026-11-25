@@ -51,7 +51,7 @@ pub enum FetchRequest {
         oneshot::Sender<Result<protocol::CompactBlock, protocol::Status>>,
         BlockHeight,
     ),
-    /// Gets the specified range of compact blocks from the server (end exclusive).
+    /// Gets the specified range of compact blocks from the server.
     ///
     /// Compact blocks include transparent data if the `bool` is true, otherwise only shielded data.
     CompactBlockRange(
@@ -59,7 +59,7 @@ pub enum FetchRequest {
         protocol::BlockSpan,
         bool,
     ),
-    /// Gets the specified range of nullifiers from the server (end exclusive).
+    /// Gets the specified range of nullifiers from the server.
     NullifierRange(
         oneshot::Sender<Result<protocol::CompactBlocks, protocol::Status>>,
         protocol::BlockSpan,
@@ -174,7 +174,7 @@ pub(crate) async fn get_compact_block(
     Ok(block)
 }
 
-/// Gets the specified range of compact blocks from the server (end exclusive).
+/// Gets the specified range of compact blocks from the server.
 ///
 /// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
 pub(crate) async fn get_compact_block_range(
@@ -199,7 +199,7 @@ pub(crate) async fn get_compact_block_range(
     Ok(block_stream)
 }
 
-/// Gets the specified range of nullifiers from the server (end exclusive).
+/// Gets the specified range of nullifiers from the server.
 ///
 /// Nullifiers are stored in compact blocks where the actions contain only nullifiers.
 ///

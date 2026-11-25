@@ -227,7 +227,7 @@ fn indexer_endpoint(
 /// - Each method opens a fresh connection (or reuses a pooled one) — no
 ///   persistent session state is assumed between calls.
 pub trait Indexer {
-    type TreeState;
+    type TreeState: Send + 'static;
 
     /// Return server metadata (chain name, block height, version, etc.).
     ///
@@ -415,14 +415,13 @@ impl<V> fmt::Debug for GrpcIndexer<V> {
         formatter
             .debug_struct("GrpcIndexer")
             .field("nakednet_client", &self.nakednet_client)
-            .field("vocabulary", &self.vocabulary)
             .finish()
     }
 }
 
 impl<V> GrpcIndexer<V> {
     #[must_use]
-    pub fn with_vocabulary<W>(self) -> GrpcIndexer<W> {
+    pub fn with_vocabulary<W: wire::Vocabulary>(self) -> GrpcIndexer<W> {
         GrpcIndexer {
             nakednet_client: self.nakednet_client,
             vocabulary: PhantomData,
@@ -776,6 +775,22 @@ mod tests {
     #[test]
     fn an_indexer_is_clone_and_debug_for_a_vocabulary_that_is_neither() {
         require_clone_and_debug::<GrpcIndexer<UnderivedVocabulary>>();
+    }
+
+    fn require_send_and_static<T: Send + 'static>() {}
+
+    fn require_a_tree_state_that_crosses_tasks<C: Indexer>() {
+        require_send_and_static::<C::TreeState>();
+    }
+
+    fn require_a_vocabulary_tree_state_that_crosses_tasks<V: wire::Vocabulary>() {
+        require_send_and_static::<V::TreeState>();
+    }
+
+    #[test]
+    fn the_tree_state_of_any_indexer_crosses_tasks() {
+        require_a_tree_state_that_crosses_tasks::<GrpcIndexer<UnderivedVocabulary>>();
+        require_a_vocabulary_tree_state_that_crosses_tasks::<UnderivedVocabulary>();
     }
 
     #[tokio::test]

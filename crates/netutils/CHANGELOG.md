@@ -68,7 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `Indexer` has the associated type `TreeState`.
   `get_tree_state` and `get_latest_tree_state` return it in place of
   `lightwallet_protocol::TreeState`. An out-of-tree `Indexer` implementor
-  must name the type.
+  must name the type, which must be `Send + 'static`, as must the
+  `TreeState` of a `wire::Vocabulary`. Code generic over `Indexer` that
+  uses the reply as `lightwallet_protocol::TreeState` must bound its
+  parameter by `Indexer<TreeState = lightwallet_protocol::TreeState>`.
 - Every host name netutils dials directly resolves through `dns`: the
   `GrpcIndexer` connection and the untunneled `socks5_fetch` request.
   Neither sends a plaintext DNS query, where both asked the operating

@@ -3,7 +3,7 @@
 use crate::lightwallet_protocol;
 
 pub trait Vocabulary {
-    type TreeState;
+    type TreeState: Send + 'static;
 
     fn tree_state(reply: lightwallet_protocol::TreeState) -> Self::TreeState;
 }
