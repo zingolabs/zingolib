@@ -79,8 +79,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there is no retry loop, the next connect fetches again.
   Where 8.0.0 priced by `FeeRule::standard()`, a backend reporting above
   5,000 now raises the marginal fee to its report, at most to 20,000.
+- `netutils::dns`, the `zl-netutils` resolver that answers over
+  DNS-over-HTTPS and DNS-over-TLS alone, so a consumer's own lookups take the
+  same path as the wallet's.
 
 ### Changed
+- Indexer connections, the untunneled price fetch and the sync-server
+  probe resolve host names over DNS-over-HTTPS and DNS-over-TLS through
+  `netutils::dns`, where they asked the operating system's resolver. No
+  lookup the wallet makes goes out as plaintext DNS.
 - **Breaking:** the pepper-sync type `WalletTransaction` is renamed to
   `TransactionRecord`, and every zingolib signature that named it names
   `TransactionRecord` now, the `LightWallet::wallet_transactions` field
