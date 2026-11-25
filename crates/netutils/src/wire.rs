@@ -342,19 +342,56 @@ impl ParseWire for SubtreeRoot {
     }
 }
 
-impl ParseWire for TreeState {
-    type Wire = WireTreeState;
-    type Error = zl_primitives::chain::InvalidTreeState;
+/// Why a tree-state request failed: the transport itself rejected the request, or the server's
+/// reply failed to parse. `Invalid` carries which of the sapling, orchard and ironwood trees the
+/// server's reply left empty, in that order, since that survives independently of whether the
+/// rest of the reply (the hash, say) was well formed — a caller who knows the chain's own
+/// activation heights can then still tell an acceptable omission from a malformed reply, rather
+/// than seeing both collapse into one generic failure.
+#[derive(Debug, thiserror::Error)]
+pub enum GetTreeStateError {
+    /// The request itself failed; there is no reply to inspect.
+    #[error(transparent)]
+    Request(#[from] tonic::Status),
+    /// The reply parsed into neither a valid [`TreeState`] nor an omission `error` can rule out.
+    #[error("invalid tree state: {error}")]
+    Invalid {
+        /// The field that failed to parse.
+        error: zl_primitives::chain::InvalidTreeState,
+        /// Whether the sapling, orchard and ironwood trees, in that order, were empty on the
+        /// wire — true regardless of which field `error` names.
+        omitted: [bool; 3],
+    },
+}
 
-    fn parse_wire(wire: Self::Wire) -> Result<Self, Self::Error> {
-        Self::from_wire_parts(
-            wire.height,
-            &wire.hash,
-            &wire.sapling_tree,
-            &wire.orchard_tree,
-            &wire.ironwood_tree,
-        )
-    }
+/// Runs the `TreeState` RPC whose reply's omitted trees must survive a parse failure; see
+/// [`GetTreeStateError`]. Bespoke rather than built on [`unary_rpc_raw`], which collapses any
+/// [`ParseWire`] failure into one generic [`tonic::Status`].
+pub(crate) async fn tree_state_rpc_raw<Req, F, Fut>(
+    wire_request: Req,
+    timeout: Duration,
+    call: F,
+) -> Result<TreeState, GetTreeStateError>
+where
+    F: FnOnce(tonic::Request<Req>) -> Fut,
+    Fut: Future<Output = Result<tonic::Response<WireTreeState>, tonic::Status>>,
+{
+    let mut request = tonic::Request::new(wire_request);
+    request.set_timeout(timeout);
+    let wire = call(request).await?.into_inner();
+    let omitted = [
+        wire.sapling_tree.is_empty(),
+        wire.orchard_tree.is_empty(),
+        wire.ironwood_tree.is_empty(),
+    ];
+    TreeState::from_wire_parts(
+        wire.height,
+        &wire.hash,
+        &wire.sapling_tree,
+        &wire.orchard_tree,
+        &wire.ironwood_tree,
+    )
+    .map_err(|error| GetTreeStateError::Invalid { error, omitted })
 }
 
 /// An invariant that only emerges once primitives are bundled into a [`CompactTx`] or

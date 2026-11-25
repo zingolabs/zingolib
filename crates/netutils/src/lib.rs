@@ -55,6 +55,7 @@ pub mod network_access;
 mod wire;
 
 pub use crypto::ensure_default_crypto_provider;
+pub use wire::GetTreeStateError;
 pub(crate) use wire::{parse_lightd_info, parse_wire_as_status, stream_rpc, unary_rpc};
 // `ToWire`/`ParseWire` are never named directly in this file (every call site goes through
 // `unary_rpc`/`stream_rpc`/`unary_rpc_raw`, which already carry the bounds): re-exported purely
@@ -284,7 +285,7 @@ pub trait Indexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<TreeState, GetTreeStateError>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -374,7 +375,7 @@ pub trait Indexer {
     fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<TreeState, GetTreeStateError>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -595,8 +596,8 @@ impl Indexer for GrpcIndexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
-        unary_rpc(block_id, timeout, |req| {
+    ) -> Result<TreeState, GetTreeStateError> {
+        wire::tree_state_rpc_raw(block_id.to_wire(), timeout, |req| {
             self.clear_net_client.get_tree_state(req)
         })
         .await
@@ -690,8 +691,8 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
-        wire::unary_rpc_raw(Empty {}, timeout, |req| {
+    ) -> Result<TreeState, GetTreeStateError> {
+        wire::tree_state_rpc_raw(Empty {}, timeout, |req| {
             self.clear_net_client.get_latest_tree_state(req)
         })
         .await
