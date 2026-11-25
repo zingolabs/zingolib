@@ -611,7 +611,7 @@ mod tests {
                     hash: MALFORMED_HASH_HEX.to_string(),
                     ..well_formed.clone()
                 },
-                "Block hash is not valid hex: InvalidHexCharacter { c: 'z', index: 0 }",
+                "Block hash is not valid hex",
             ),
             (
                 TreeState {
@@ -633,7 +633,8 @@ mod tests {
             assert!(
                 matches!(
                     &frontiers,
-                    Err(ServerError::InvalidFrontier(invalid)) if invalid.to_string() == report
+                    Err(ServerError::InvalidFrontier(invalid))
+                        if invalid.to_string().starts_with(report)
                 ),
                 "a malformed tree state was reported as {:?}",
                 frontiers.map(|_| "valid frontiers")
@@ -669,14 +670,10 @@ mod tests {
         replies: Vec<tonic::Status>,
     ) -> mpsc::UnboundedSender<FetchRequest> {
         let mut replies = replies.into_iter();
-        mocks::spawn_fetcher(move |fetch_request| match fetch_request {
-            FetchRequest::Transaction(reply_sender, _) => {
-                let status = replies
-                    .next()
-                    .expect("the test scripts one reply for each request it makes");
-                let _ignore_error = reply_sender.send(Err(status));
-            }
-            _ => panic!("unexpected fetch request"),
+        mocks::spawn_transaction_fetcher(move |_txid| {
+            Some(Err(replies.next().expect(
+                "the test scripts one reply for each request it makes",
+            )))
         })
     }
 

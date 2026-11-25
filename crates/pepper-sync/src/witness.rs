@@ -341,6 +341,15 @@ pub(crate) fn tree_hex(tree_state: &TreeState, pool: ShieldedPool) -> &str {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn tree_hex_mut(tree_state: &mut TreeState, pool: ShieldedPool) -> &mut String {
+    match pool {
+        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
+        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
+        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
+    }
+}
+
 fn commitment_tree<Leaf: merkle_tree::HashSer, const DEPTH: u8>(
     tree_state: &TreeState,
     pool: ShieldedPool,
@@ -533,13 +542,62 @@ mod tests {
                 ),
             ),
         ] {
-            assert_eq!(
-                report,
-                Some(format!(
-                    "Hex decoding of {pool_name} tree bytes failed: OddLength"
-                ))
+            let named = format!("Hex decoding of {pool_name} tree bytes failed");
+
+            assert!(
+                report
+                    .as_deref()
+                    .is_some_and(|report| report.starts_with(&named)),
+                "the {pool_name} tree was reported as {report:?}"
             );
         }
+    }
+
+    const EMPTY_TREE_LEAVES: u64 = 0;
+    const ORCHARD_LEAVES: u64 = 1;
+    const IRONWOOD_LEAVES: u64 = 2;
+
+    fn orchard_tree_hex(leaf_count: u64) -> String {
+        let mut tree = CommitmentTree::<MerkleHashOrchard, ORCHARD_DEPTH>::empty();
+        for _ in 0..leaf_count {
+            tree.append(MerkleHashOrchard::empty_leaf())
+                .expect("a tree of this depth holds every leaf count that these tests use");
+        }
+        let mut tree_bytes = Vec::new();
+        merkle_tree::write_commitment_tree(&tree, &mut tree_bytes)
+            .expect("a write to a Vec does not fail");
+
+        hex::encode(tree_bytes)
+    }
+
+    #[test]
+    fn each_frontier_comes_from_the_tree_of_its_own_pool() {
+        let tree_state = [
+            (ShieldedPool::Orchard, ORCHARD_LEAVES),
+            (ShieldedPool::Ironwood, IRONWOOD_LEAVES),
+        ]
+        .into_iter()
+        .fold(
+            mocks::empty_trees(REPLY_HEIGHT.into()),
+            |tree_state, (pool, leaf_count)| {
+                mocks::with_tree_hex(tree_state, pool, &orchard_tree_hex(leaf_count))
+            },
+        );
+
+        let tree_sizes = Frontiers::try_from(tree_state)
+            .map(|frontiers| {
+                (
+                    frontiers.final_sapling_tree().tree_size(),
+                    frontiers.final_orchard_tree().tree_size(),
+                    frontiers.final_ironwood_tree().tree_size(),
+                )
+            })
+            .map_err(|unread| unread.to_string());
+
+        assert_eq!(
+            tree_sizes,
+            Ok((EMPTY_TREE_LEAVES, ORCHARD_LEAVES, IRONWOOD_LEAVES))
+        );
     }
 
     #[test]

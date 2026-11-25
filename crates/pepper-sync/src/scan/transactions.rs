@@ -719,12 +719,7 @@ mod tests {
 
     // A fetcher that answers every transaction request with `status`.
     fn fetcher_answering(status: tonic::Status) -> mpsc::UnboundedSender<FetchRequest> {
-        mocks::spawn_fetcher(move |fetch_request| match fetch_request {
-            FetchRequest::Transaction(reply_sender, _) => {
-                let _ignore_error = reply_sender.send(Err(status.clone()));
-            }
-            _ => panic!("unexpected fetch request"),
-        })
+        mocks::spawn_transaction_fetcher(move |_txid| Some(Err(status.clone())))
     }
 
     async fn scan(scan_target: ScanTarget) -> Result<ScannedTransactions, ScanError> {

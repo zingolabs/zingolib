@@ -4189,14 +4189,11 @@ mod test {
         fn spawn_fetcher(transaction: &TransactionRecord) -> mpsc::UnboundedSender<FetchRequest> {
             let mut data = Vec::new();
             transaction.transaction().write(&mut data).unwrap();
-            mocks::spawn_fetcher(move |fetch_request| match fetch_request {
-                FetchRequest::Transaction(reply_sender, _txid) => {
-                    let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                        data: data.clone(),
-                        height: u64::from(SPEND_HEIGHT),
-                    }));
-                }
-                _ => panic!("unexpected fetch request"),
+            mocks::spawn_transaction_fetcher(move |_txid| {
+                Some(Ok(RawTransaction {
+                    data: data.clone(),
+                    height: u64::from(SPEND_HEIGHT),
+                }))
             })
         }
 
@@ -5230,20 +5227,14 @@ mod test {
                 spending_transaction.transaction().write(&mut data).unwrap();
                 data
             });
-            mocks::spawn_fetcher(move |fetch_request| match fetch_request {
-                FetchRequest::TreeState(reply_sender, block_height) => {
-                    let _ignore_error = reply_sender.send(Ok(mocks::empty_trees(block_height)));
-                }
-                FetchRequest::Transaction(reply_sender, _txid) => {
-                    // the request fails when the reply sender is dropped.
-                    if let Some(data) = &spending_transaction_data {
-                        let _ignore_error = reply_sender.send(Ok(RawTransaction {
-                            data: data.clone(),
-                            height: u64::from(SPEND_HEIGHT),
-                        }));
-                    }
-                }
-                _ => panic!("unexpected fetch request"),
+            // a transaction request with no reply fails, because its reply sender is dropped.
+            mocks::spawn_tree_state_and_transaction_fetcher(mocks::empty_trees, move |_txid| {
+                spending_transaction_data.as_ref().map(|data| {
+                    Ok(RawTransaction {
+                        data: data.clone(),
+                        height: u64::from(SPEND_HEIGHT),
+                    })
+                })
             })
         }
 

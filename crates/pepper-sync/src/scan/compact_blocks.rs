@@ -773,13 +773,14 @@ mod tests {
     /// be counted by the scanner without building a real note.
     fn compact_ironwood_action() -> CompactOrchardAction {
         CompactOrchardAction {
-            nullifier: vec![0; 32],
-            cmx: vec![0; 32],
-            ephemeral_key: vec![0; 32],
-            ciphertext: vec![0; 52],
+            nullifier: vec![0; NULLIFIER_BYTES],
+            cmx: vec![0; COMMITMENT_BYTES],
+            ephemeral_key: vec![0; EPHEMERAL_KEY_BYTES],
+            ciphertext: vec![0; COMPACT_CIPHERTEXT_BYTES],
         }
     }
 
+    const NULLIFIER_BYTES: usize = 32;
     const COMMITMENT_BYTES: usize = 32;
     const EPHEMERAL_KEY_BYTES: usize = 32;
     const COMPACT_CIPHERTEXT_BYTES: usize = 52;

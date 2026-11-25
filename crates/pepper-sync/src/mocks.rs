@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
 use zl_netutils::lightwallet_protocol::{self, SubtreeRoot};
 
-use crate::client;
+use crate::{client, witness};
 
 pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
@@ -36,37 +36,90 @@ pub(crate) fn with_tree_hex(
     pool: ShieldedPool,
     tree_hex: &str,
 ) -> lightwallet_protocol::TreeState {
-    let tree = match pool {
-        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
-        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
-        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
-    };
-    *tree = tree_hex.to_string();
+    *witness::tree_hex_mut(&mut tree_state, pool) = tree_hex.to_string();
 
     tree_state
 }
 
-pub(crate) fn spawn_fetcher(
-    mut answer: impl FnMut(client::FetchRequest) + Send + 'static,
+fn spawn_fetcher(
+    mut answer: impl FnMut(client::FetchRequest) -> Result<(), client::FetchRequest> + Send + 'static,
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
     let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         while let Some(fetch_request) = fetch_request_receiver.recv().await {
-            answer(fetch_request);
+            if answer(fetch_request).is_err() {
+                panic!("unexpected fetch request");
+            }
         }
     });
 
     fetch_request_sender
 }
 
+fn answer_tree_state(
+    tree_state_at: &impl Fn(BlockHeight) -> lightwallet_protocol::TreeState,
+    fetch_request: client::FetchRequest,
+) -> Result<(), client::FetchRequest> {
+    match fetch_request {
+        client::FetchRequest::TreeState(reply_sender, block_height) => {
+            let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+            Ok(())
+        }
+        other => Err(other),
+    }
+}
+
+fn answer_transaction(
+    reply_to: &mut impl FnMut(TxId) -> Option<TransactionReply>,
+    fetch_request: client::FetchRequest,
+) -> Result<(), client::FetchRequest> {
+    match fetch_request {
+        client::FetchRequest::Transaction(reply_sender, txid) => {
+            if let Some(reply) = reply_to(txid) {
+                let _ignore_error = reply_sender.send(reply);
+            }
+            Ok(())
+        }
+        other => Err(other),
+    }
+}
+
+pub(crate) type TransactionReply = Result<lightwallet_protocol::RawTransaction, tonic::Status>;
+
 pub(crate) fn spawn_tree_state_fetcher(
     tree_state_at: impl Fn(BlockHeight) -> lightwallet_protocol::TreeState + Send + 'static,
 ) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| answer_tree_state(&tree_state_at, fetch_request))
+}
+
+pub(crate) fn spawn_transaction_fetcher(
+    mut reply_to: impl FnMut(TxId) -> Option<TransactionReply> + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| answer_transaction(&mut reply_to, fetch_request))
+}
+
+pub(crate) fn spawn_tree_state_and_transaction_fetcher(
+    tree_state_at: impl Fn(BlockHeight) -> lightwallet_protocol::TreeState + Send + 'static,
+    mut reply_to: impl FnMut(TxId) -> Option<TransactionReply> + Send + 'static,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
+    spawn_fetcher(move |fetch_request| {
+        answer_tree_state(&tree_state_at, fetch_request)
+            .or_else(|fetch_request| answer_transaction(&mut reply_to, fetch_request))
+    })
+}
+
+pub(crate) fn spawn_chain_tip_fetcher(
+    chain_height: u32,
+) -> mpsc::UnboundedSender<client::FetchRequest> {
     spawn_fetcher(move |fetch_request| match fetch_request {
-        client::FetchRequest::TreeState(reply_sender, block_height) => {
-            let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+        client::FetchRequest::ChainTip(reply_sender) => {
+            let _ignore_error = reply_sender.send(Ok(lightwallet_protocol::BlockId {
+                height: u64::from(chain_height),
+                hash: Vec::new(),
+            }));
+            Ok(())
         }
-        _ => panic!("unexpected fetch request"),
+        other => Err(other),
     })
 }
 
