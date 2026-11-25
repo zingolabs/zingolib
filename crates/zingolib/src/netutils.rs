@@ -27,6 +27,8 @@ pub use zl_netutils::{GetClientError, GrpcIndexer, Indexer, ensure_default_crypt
 
 pub use zl_netutils::time;
 
+pub use zl_netutils::dns;
+
 // Status joins on the same terms, and for the same reason: an RPC rejection
 // is the indexer's own verdict, so a consumer carries that verdict rather
 // than a rendering of it. A consumer holding a typed rejection cannot reach

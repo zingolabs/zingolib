@@ -161,6 +161,11 @@ hyper-rustls = { version = "0.27", default-features = false, features = [
   "logging",
 ] }
 hyper-util = "0.1.20"
+hickory-resolver = { version = "0.26.3", default-features = false, features = [
+  "tokio",
+  "https-aws-lc-rs",
+  "tls-aws-lc-rs",
+] }
 hyper = "1"
 rustls-pemfile = "2"
 reqwest = { version = "0.12.15", default-features = false }

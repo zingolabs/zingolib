@@ -45,6 +45,7 @@ use lightwallet_protocol::{Duration as ProtoDuration, PingResponse};
 pub mod crypto;
 pub mod default_indexer;
 pub mod diag;
+pub mod dns;
 pub mod error;
 pub mod network_access;
 
@@ -139,8 +140,8 @@ pub mod test_tls {
 /// no bound at all. Through `connect_with_connector` it wraps the whole
 /// connector, TLS included. This one is configured the way tonic's own would be
 /// for these endpoints.
-fn indexer_connector() -> HttpConnector {
-    let mut http = HttpConnector::new();
+fn indexer_connector<R>(resolver: R) -> HttpConnector<R> {
+    let mut http = HttpConnector::new_with_resolver(resolver);
     http.enforce_http(false);
     http.set_nodelay(true);
     http
@@ -206,7 +207,7 @@ fn indexer_endpoint(
         .with_tls_config(client_tls_config(roots))
         .https_or_http() // plaintext only for `http://` URIs, never a fallback
         .enable_http2()
-        .wrap_connector(indexer_connector());
+        .wrap_connector(indexer_connector(dns::hyper_resolver()));
     let dial = tower::service_fn(move |_tonic_dial: http::Uri| {
         let dialed = https.clone().oneshot(uri.clone());
         async move { dialed.await.and_then(require_h2) }
@@ -1112,7 +1113,7 @@ mod tests {
             .with_tls_config(resuming_config)
             .https_or_http()
             .enable_http2()
-            .wrap_connector(indexer_connector());
+            .wrap_connector(indexer_connector(dns::hyper_resolver()));
 
         let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
 
