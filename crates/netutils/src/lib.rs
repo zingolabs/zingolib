@@ -24,6 +24,7 @@
 //! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the server-side `--ping-very-insecure` CLI flag. Testing only. |
 //!
 
+use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -393,10 +394,28 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
-#[derive(Debug, Clone)]
 pub struct GrpcIndexer<V = wire::Generated> {
     nakednet_client: CompactTxStreamerClient<Channel>,
     vocabulary: PhantomData<fn() -> V>,
+}
+
+impl<V> Clone for GrpcIndexer<V> {
+    fn clone(&self) -> Self {
+        Self {
+            nakednet_client: self.nakednet_client.clone(),
+            vocabulary: PhantomData,
+        }
+    }
+}
+
+impl<V> fmt::Debug for GrpcIndexer<V> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GrpcIndexer")
+            .field("nakednet_client", &self.nakednet_client)
+            .field("vocabulary", &self.vocabulary)
+            .finish()
+    }
 }
 
 impl<V> GrpcIndexer<V> {
@@ -725,6 +744,23 @@ mod tests {
                 .expect("the embedded localhost.pem holds an X.509 certificate");
             roots
         })
+    }
+
+    struct UnderivedVocabulary;
+
+    impl wire::Vocabulary for UnderivedVocabulary {
+        type TreeState = u64;
+
+        fn tree_state(reply: lightwallet_protocol::TreeState) -> Self::TreeState {
+            reply.height
+        }
+    }
+
+    fn require_clone_and_debug<T: Clone + fmt::Debug>() {}
+
+    #[test]
+    fn an_indexer_is_clone_and_debug_for_a_vocabulary_that_is_neither() {
+        require_clone_and_debug::<GrpcIndexer<UnderivedVocabulary>>();
     }
 
     #[test]
