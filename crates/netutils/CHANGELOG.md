@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that type. Its first reply is the tree state. `wire::Generated` is the
   vocabulary that returns each generated type unchanged. `GrpcIndexer` takes
   a vocabulary as a type parameter, which defaults to `wire::Generated`.
+  `GrpcIndexer::with_vocabulary` returns the same connection with another
+  vocabulary.
 - `ConduitDial::fetch_response`, under the `socks5-fetch` feature, GETs a
   URL through the conduit and returns `socks5_fetch::HttpResponse`: the HTTP
   status code and the body as text. Every status is a response. A body over

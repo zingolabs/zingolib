@@ -399,6 +399,16 @@ pub struct GrpcIndexer<V = wire::Generated> {
     vocabulary: PhantomData<fn() -> V>,
 }
 
+impl<V> GrpcIndexer<V> {
+    #[must_use]
+    pub fn with_vocabulary<W>(self) -> GrpcIndexer<W> {
+        GrpcIndexer {
+            nakednet_client: self.nakednet_client,
+            vocabulary: PhantomData,
+        }
+    }
+}
+
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
         let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
