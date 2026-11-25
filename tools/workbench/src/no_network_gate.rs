@@ -3,7 +3,10 @@ use std::fmt;
 use std::path::Path;
 use std::process::Command;
 
-use crate::{metadata_of, verdict, CARGO, LOCKED_FLAG, MANIFEST};
+use crate::{
+    metadata_of, read, verdict, CARGO, LOCKED_FLAG, LOCKFILE, MANIFEST, NAME_KEY, PACKAGE_KEY,
+    SOURCE_KEY,
+};
 
 pub const BINARY: &str = "no-network-gate";
 
@@ -42,22 +45,33 @@ const ZCASH_PROTOCOL: &str = "zcash_protocol";
 const ZCASH_KEYS: &str = "zcash_keys";
 const ORCHARD: &str = "orchard";
 const SAPLING_CRYPTO: &str = "sapling-crypto";
+const ZCASH_ADDRESS: &str = "zcash_address";
+const ZCASH_ENCODING: &str = "zcash_encoding";
+const ZIP32: &str = "zip32";
+const INCREMENTALMERKLETREE: &str = "incrementalmerkletree";
+const SHARDTREE: &str = "shardtree";
 
 const NETWORK_MEMBERS: [&str; 3] = [ZINGOLIB, PEPPER_SYNC, NETUTILS];
+const WALLET_MEMBERS: [&str; 4] = [COMMON, FILE_FORMAT, ZINGOLIB, PEPPER_SYNC];
 const FILE_FORMAT_REGISTRY: [&str; 5] = [REQWEST, TONIC, TOKIO, HYPER, LIGHTWALLET_PROTOCOL];
-const WALLET_STACK_REGISTRY: [&str; 5] = [
+const WALLET_STACK_REGISTRY: [&str; 10] = [
     ZCASH_PRIMITIVES,
     ZCASH_PROTOCOL,
     ZCASH_KEYS,
     ORCHARD,
     SAPLING_CRYPTO,
+    ZCASH_ADDRESS,
+    ZCASH_ENCODING,
+    ZIP32,
+    INCREMENTALMERKLETREE,
+    SHARDTREE,
 ];
 
 const RULES: [Rule; 4] = [
     Rule {
         package: NETUTILS,
         features: FeatureSet::All,
-        members: &[COMMON],
+        members: &WALLET_MEMBERS,
         registry: &WALLET_STACK_REGISTRY,
     },
     Rule {
@@ -171,7 +185,7 @@ impl fmt::Display for Failure {
             ),
             Failure::RegistryUnknown { rule, dependency } => write!(
                 formatter,
-                "{rule} forbids {dependency}, which is no package of the lockfile, so the rule checks nothing"
+                "{rule} forbids {dependency}, which is no registry package of the lockfile, so the rule checks nothing"
             ),
             Failure::PackageUnknown { rule } => write!(
                 formatter,
@@ -293,6 +307,37 @@ pub fn forbidden_in(rule: Rule, tree: &str) -> Vec<Failure> {
         .collect()
 }
 
+/// ```
+/// use std::collections::BTreeSet;
+/// use workbench::no_network_gate::registry_packages_of;
+///
+/// let lockfile = concat!(
+///     "[[package]]\nname = \"zl-common\"\nversion = \"0.1.0\"\n\n",
+///     "[[package]]\nname = \"hyper\"\nversion = \"1.11.0\"\n",
+///     "source = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+/// );
+/// assert_eq!(
+///     registry_packages_of(lockfile),
+///     Ok(BTreeSet::from(["hyper".to_string()]))
+/// );
+/// assert!(registry_packages_of("version = 4\n").is_err());
+/// ```
+pub fn registry_packages_of(lockfile: &str) -> Result<BTreeSet<String>, String> {
+    let document: toml_edit::DocumentMut = lockfile
+        .parse()
+        .map_err(|error| format!("the lockfile does not parse: {error}"))?;
+    let packages = document
+        .get(PACKAGE_KEY)
+        .and_then(|item| item.as_array_of_tables())
+        .ok_or_else(|| "the lockfile holds no [[package]] tables".to_string())?;
+    Ok(packages
+        .iter()
+        .filter(|package| package.contains_key(SOURCE_KEY))
+        .filter_map(|package| package.get(NAME_KEY).and_then(|name| name.as_str()))
+        .map(str::to_string)
+        .collect())
+}
+
 fn unknown<'names>(
     names: &'names [&'static str],
     known: &'names BTreeSet<String>,
@@ -375,17 +420,14 @@ fn dispatch(root: &Path, args: &[String]) -> Result<(), Vec<String>> {
             "{BINARY} takes no argument, got {argument:?}"
         )]);
     }
-    let metadata = metadata_of(&root.join(MANIFEST), true)?;
-    let workspace_members: BTreeSet<String> = metadata
-        .workspace_packages()
+    let workspace_members: BTreeSet<String> = metadata_of(&root.join(MANIFEST), false)?
+        .packages
         .into_iter()
         .map(|package| package.name.to_string())
         .collect();
-    let locked_packages: BTreeSet<String> = metadata
-        .packages
-        .iter()
-        .map(|package| package.name.to_string())
-        .collect();
+    let lockfile = root.join(LOCKFILE);
+    let locked_packages = registry_packages_of(&read(&lockfile)?)
+        .map_err(|error| vec![format!("{}: {error}", lockfile.display())])?;
     verdict(
         RULES
             .iter()
