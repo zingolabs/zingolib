@@ -40,10 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the fee-estimator version. Backends predating the RPC answer
   `Unimplemented`. The trait method is new and required, so out-of-tree
   `Indexer` implementors must add it.
+- `request` module: `block_id`, `block_range` and `tx_filter` build the
+  three requests that a caller made as struct literals.
 
 ### Changed
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
+- BREAKING: `GrpcIndexer::get_clear_net_client` is renamed
+  `GrpcIndexer::get_nakednet_client`.
 - BREAKING: `default_indexer` returns `http::Uri` in place of
   `Option<http::Uri>`, since every `IndexerChain` now has a Default Indexer.
 - BREAKING: `GrpcIndexer` no longer carries the URI it was dialed from, so

@@ -93,8 +93,10 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let request = rpc::timed(filter, timeout);
-        rpc::reply(self.clear_net_client.get_taddress_txids(request)).await
+        rpc::call(filter, timeout, |request| {
+            self.nakednet_client.get_taddress_txids(request)
+        })
+        .await
     }
 
     async fn get_taddress_transactions(
@@ -102,8 +104,10 @@ impl TransparentIndexer for GrpcIndexer {
         filter: TransparentAddressBlockFilter,
         timeout: Duration,
     ) -> Result<tonic::Streaming<RawTransaction>, tonic::Status> {
-        let request = rpc::timed(filter, timeout);
-        rpc::reply(self.clear_net_client.get_taddress_transactions(request)).await
+        rpc::call(filter, timeout, |request| {
+            self.nakednet_client.get_taddress_transactions(request)
+        })
+        .await
     }
 
     async fn get_taddress_balance(
@@ -111,8 +115,10 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: AddressList,
         timeout: Duration,
     ) -> Result<Balance, tonic::Status> {
-        let request = rpc::timed(addresses, timeout);
-        rpc::reply(self.clear_net_client.get_taddress_balance(request)).await
+        rpc::call(addresses, timeout, |request| {
+            self.nakednet_client.get_taddress_balance(request)
+        })
+        .await
     }
 
     async fn get_taddress_balance_stream(
@@ -120,7 +126,7 @@ impl TransparentIndexer for GrpcIndexer {
         addresses: Vec<Address>,
     ) -> Result<Balance, tonic::Status> {
         let stream = tokio_stream::iter(addresses);
-        rpc::reply(self.clear_net_client.get_taddress_balance_stream(stream)).await
+        rpc::reply(self.nakednet_client.get_taddress_balance_stream(stream)).await
     }
 
     async fn get_address_utxos(
@@ -128,8 +134,10 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<GetAddressUtxosReplyList, tonic::Status> {
-        let request = rpc::timed(arg, timeout);
-        rpc::reply(self.clear_net_client.get_address_utxos(request)).await
+        rpc::call(arg, timeout, |request| {
+            self.nakednet_client.get_address_utxos(request)
+        })
+        .await
     }
 
     async fn get_address_utxos_stream(
@@ -137,7 +145,9 @@ impl TransparentIndexer for GrpcIndexer {
         arg: GetAddressUtxosArg,
         timeout: Duration,
     ) -> Result<tonic::Streaming<GetAddressUtxosReply>, tonic::Status> {
-        let request = rpc::timed(arg, timeout);
-        rpc::reply(self.clear_net_client.get_address_utxos_stream(request)).await
+        rpc::call(arg, timeout, |request| {
+            self.nakednet_client.get_address_utxos_stream(request)
+        })
+        .await
     }
 }

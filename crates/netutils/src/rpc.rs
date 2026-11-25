@@ -14,3 +14,14 @@ pub(crate) async fn reply<Reply>(
 ) -> Result<Reply, tonic::Status> {
     Ok(response.await?.into_inner())
 }
+
+pub(crate) async fn call<Message, Reply, Response>(
+    message: Message,
+    timeout: Duration,
+    method: impl FnOnce(tonic::Request<Message>) -> Response,
+) -> Result<Reply, tonic::Status>
+where
+    Response: Future<Output = Result<tonic::Response<Reply>, tonic::Status>>,
+{
+    reply(method(timed(message, timeout))).await
+}
