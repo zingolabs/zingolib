@@ -218,7 +218,6 @@ impl ServerError {
             }
             // Empty chain. No point retrying anywhere.
             ServerError::GenesisBlockOnly => SyncRecoveryObservables::Abort,
-            ServerError::EmptyBlockRange { .. } => SyncRecoveryObservables::Abort,
         }
     }
 }
@@ -470,13 +469,6 @@ pub enum ServerError {
         /// The height of the last block in the scan range.
         scan_range_end: BlockHeight,
     },
-    #[error(
-        "the wallet asked for the block range {start}..{end}, which holds no block. no request was sent to the server."
-    )]
-    EmptyBlockRange {
-        start: BlockHeight,
-        end: BlockHeight,
-    },
 }
 
 /// Sync mode error.
@@ -499,7 +491,6 @@ pub enum SyncModeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks;
 
     /// Use `String` as the wallet error type for testing.
     type TestSyncError = SyncError<String>;
@@ -861,14 +852,6 @@ mod tests {
             fn genesis_block_only() {
                 assert_eq!(
                     ServerError::GenesisBlockOnly.recovery_recommendation(),
-                    SyncRecoveryObservables::Abort
-                );
-            }
-
-            #[test]
-            fn empty_block_range() {
-                assert_eq!(
-                    mocks::empty_block_range_error().recovery_recommendation(),
                     SyncRecoveryObservables::Abort
                 );
             }

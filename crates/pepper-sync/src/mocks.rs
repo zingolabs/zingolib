@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
 use zl_netutils::request;
 
-use crate::{client, error, protocol, witness};
+use crate::{client, protocol, witness};
 
 pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
@@ -130,15 +130,6 @@ pub(crate) const EMPTY_RANGE_HEIGHT: u32 = 5;
 
 pub(crate) fn empty_block_range() -> Range<BlockHeight> {
     BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)..BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)
-}
-
-pub(crate) fn empty_block_range_error() -> error::ServerError {
-    let block_range = empty_block_range();
-
-    error::ServerError::EmptyBlockRange {
-        start: block_range.start,
-        end: block_range.end,
-    }
 }
 
 pub(crate) fn spawn_request_counter() -> (

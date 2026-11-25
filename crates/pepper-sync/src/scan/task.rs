@@ -495,10 +495,7 @@ where
 
                 let block_range = scan_task.scan_range.block_range();
                 let Some(block_span) = protocol::BlockSpan::of(block_range) else {
-                    return Err(ServerError::EmptyBlockRange {
-                        start: block_range.start,
-                        end: block_range.end,
-                    });
+                    continue;
                 };
 
                 let mut block_stream = match open_block_stream(

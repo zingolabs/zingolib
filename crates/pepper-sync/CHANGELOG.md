@@ -18,9 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
-- BREAKING: `ServerError` has the variant `EmptyBlockRange`, so a `match`
-  over `ServerError` without a wildcard arm no longer compiles.
-  `recovery_recommendation` returns `SyncRecoveryObservables::Abort` for it.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,
@@ -71,9 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   computed the last block as the end height minus one and did not compare it
   with the start, so an empty range such as `5..5` asked the indexer for
   blocks 5 down to 4, and a range that ends at height 0 panicked in a debug
-  build. A fetch of compact blocks or of nullifiers now fails with
-  `ServerError::EmptyBlockRange`, and a fetch of the transactions of a
-  transparent address returns none.
+  build. A scan range that holds no block now gives no scan task: the sync
+  state marks it `Scanned`. A fetch of the transactions of a transparent
+  address returns none for such a range.
 - A Sync Session with `shutdown_on_completion` set no longer runs forever
   after its last scan range is scanned. The scanner set the loader's
   loading flag after it sent the scan task, so a loader that finished the
