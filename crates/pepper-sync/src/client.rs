@@ -34,6 +34,25 @@ const MAX_RETRIES: u8 = 3;
 
 use zl_netutils::time::STREAM_MSG_TIMEOUT;
 
+/// Sends one [`FetchRequest`], built by `build` around a fresh reply channel, and awaits its
+/// one reply. The outer `Result` is [`ServerError::FetcherDropped`], the one failure every
+/// fetch request shares; the inner `Result` is the request's own, left to the caller to
+/// interpret, since different requests turn it into a [`ServerError`] differently (a plain
+/// [`ServerError::RequestFailed`], a retry decision, or — [`get_frontiers`]'s case — a decision
+/// over several [`ServerError`] variants).
+pub(crate) async fn request<T, E>(
+    fetch_request_sender: &UnboundedSender<FetchRequest>,
+    build: impl FnOnce(oneshot::Sender<Result<T, E>>) -> FetchRequest,
+) -> Result<Result<T, E>, ServerError> {
+    let (reply_sender, reply_receiver) = oneshot::channel();
+    fetch_request_sender
+        .send(build(reply_sender))
+        .map_err(|_| ServerError::FetcherDropped)?;
+    reply_receiver
+        .await
+        .map_err(|_| ServerError::FetcherDropped)
+}
+
 /// Pulls the next item from any item-at-a-time stream, bounding the wait by
 /// [`STREAM_MSG_TIMEOUT`]. Works over [`tonic::Streaming`] (a gRPC response stream) and over a
 /// mapped [`Stream`] alike, since both yield `Result<T, tonic::Status>` per item.
@@ -149,14 +168,8 @@ fn parse_protocol_version(version: &str) -> Option<(u64, u64, u64)> {
 pub(crate) async fn get_chain_height(
     fetch_request_sender: UnboundedSender<FetchRequest>,
 ) -> Result<BlockHeight, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::ChainTip(reply_sender))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    let chain_tip = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
+    let chain_tip = request(&fetch_request_sender, FetchRequest::ChainTip)
+        .await?
         .map_err(ServerError::RequestFailed)?;
 
     Ok(chain_tip.height)
@@ -169,17 +182,11 @@ pub(crate) async fn get_compact_block(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
 ) -> Result<CompactBlock, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::CompactBlock(reply_sender, block_height))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    let block = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)?;
-
-    Ok(block)
+    request(&fetch_request_sender, |reply_sender| {
+        FetchRequest::CompactBlock(reply_sender, block_height)
+    })
+    .await?
+    .map_err(ServerError::RequestFailed)
 }
 
 /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -190,43 +197,11 @@ pub(crate) async fn get_compact_block_range(
     block_range: Range<BlockHeight>,
     include_transparent: bool,
 ) -> Result<CompactBlockStream, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::CompactBlockRange(
-            reply_sender,
-            block_range,
-            include_transparent,
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    let block_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)?;
-
-    Ok(block_stream)
-}
-
-/// Gets the specified range of nullifiers from the server (end exclusive).
-///
-/// Nullifiers are stored in compact blocks where the actions contain only nullifiers.
-///
-/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub(crate) async fn get_nullifier_range(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
-) -> Result<CompactBlockStream, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::NullifierRange(reply_sender, block_range))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    let block_stream = reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)?;
-
-    Ok(block_stream)
+    request(&fetch_request_sender, |reply_sender| {
+        FetchRequest::CompactBlockRange(reply_sender, block_range, include_transparent)
+    })
+    .await?
+    .map_err(ServerError::RequestFailed)
 }
 
 /// Gets the stream of shards (subtree roots)
@@ -244,21 +219,12 @@ pub(crate) async fn get_subtree_roots(
 
     'retry: loop {
         let roots_before_pass = subtree_roots.len();
-        let (reply_sender, reply_receiver) = oneshot::channel();
 
-        fetch_request_sender
-            .send(FetchRequest::SubtreeRoots(
-                reply_sender,
-                start_index,
-                shielded_protocol,
-                max_entries,
-            ))
-            .map_err(|_| ServerError::FetcherDropped)?;
-
-        let mut subtree_root_stream = reply_receiver
-            .await
-            .map_err(|_| ServerError::FetcherDropped)?
-            .map_err(ServerError::RequestFailed)?;
+        let mut subtree_root_stream = request(&fetch_request_sender, |reply_sender| {
+            FetchRequest::SubtreeRoots(reply_sender, start_index, shielded_protocol, max_entries)
+        })
+        .await?
+        .map_err(ServerError::RequestFailed)?;
 
         while let Some(subtree_root) =
             match next_stream_item(&mut subtree_root_stream, "SubtreeRoots").await {
@@ -332,23 +298,15 @@ fn omitted_tree_error(
     None
 }
 
-/// Gets the frontiers for a specified block height.
-///
-/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
-pub(crate) async fn get_frontiers(
-    fetch_request_sender: UnboundedSender<FetchRequest>,
+/// Turns the fetcher's tree-state reply into [`Frontiers`] or the [`ServerError`] it reports.
+/// Checks for an acceptable omission before reporting either a transport failure or an
+/// otherwise-invalid reply, so neither masks an omission the caller can rule out on its own.
+fn frontiers_from_tree_state_reply(
     consensus_parameters: &impl consensus::Parameters,
     block_height: BlockHeight,
+    reply: Result<TreeState, zl_netutils::GetTreeStateError>,
 ) -> Result<Frontiers, ServerError> {
-    let (reply_sender, reply_receiver) = oneshot::channel();
-    fetch_request_sender
-        .send(FetchRequest::TreeState(reply_sender, block_height))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    let tree_state = match reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-    {
+    let tree_state = match reply {
         Ok(tree_state) => tree_state,
         Err(zl_netutils::GetTreeStateError::Request(status)) => {
             return Err(ServerError::RequestFailed(status));
@@ -381,6 +339,22 @@ pub(crate) async fn get_frontiers(
     tree_state.try_into().map_err(ServerError::InvalidFrontier)
 }
 
+/// Gets the frontiers for a specified block height.
+///
+/// Requires [`crate::client::fetch::fetch`] to be running concurrently, connected via the `fetch_request` channel.
+pub(crate) async fn get_frontiers(
+    fetch_request_sender: UnboundedSender<FetchRequest>,
+    consensus_parameters: &impl consensus::Parameters,
+    block_height: BlockHeight,
+) -> Result<Frontiers, ServerError> {
+    let reply = request(&fetch_request_sender, |reply_sender| {
+        FetchRequest::TreeState(reply_sender, block_height)
+    })
+    .await?;
+
+    frontiers_from_tree_state_reply(consensus_parameters, block_height, reply)
+}
+
 const SNAPSHOT_RETRY_HINT: &str = "retry with a fresh snapshot";
 
 /// - Sends a transaction request to the fetcher, and sends it again after each
@@ -392,14 +366,10 @@ pub(crate) async fn get_transaction_and_block_height(
 ) -> Result<(Transaction, BlockHeight), ServerError> {
     let mut retry_count = 0;
     let raw_transaction = loop {
-        let (reply_sender, reply_receiver) = oneshot::channel();
-        fetch_request_sender
-            .send(FetchRequest::Transaction(reply_sender, txid))
-            .map_err(|_| ServerError::FetcherDropped)?;
-
-        match reply_receiver
-            .await
-            .map_err(|_| ServerError::FetcherDropped)?
+        match request(&fetch_request_sender, |reply_sender| {
+            FetchRequest::Transaction(reply_sender, txid)
+        })
+        .await?
         {
             Ok(raw_transaction) => break raw_transaction,
             Err(status)
@@ -435,19 +405,11 @@ pub(crate) async fn get_utxo_metadata(
         return Ok(Vec::new());
     }
 
-    let (reply_sender, reply_receiver) = oneshot::channel();
-
-    fetch_request_sender
-        .send(FetchRequest::UtxoMetadata(
-            reply_sender,
-            (transparent_addresses, start_height),
-        ))
-        .map_err(|_| ServerError::FetcherDropped)?;
-
-    reply_receiver
-        .await
-        .map_err(|_| ServerError::FetcherDropped)?
-        .map_err(ServerError::RequestFailed)
+    request(&fetch_request_sender, |reply_sender| {
+        FetchRequest::UtxoMetadata(reply_sender, (transparent_addresses, start_height))
+    })
+    .await?
+    .map_err(ServerError::RequestFailed)
 }
 
 /// Gets transactions relevant to a given `transparent address` in the specified `block_range`.
@@ -463,19 +425,14 @@ pub(crate) async fn get_transparent_address_transactions(
     let mut retry_count = 0;
 
     'retry: loop {
-        let (reply_sender, reply_receiver) = oneshot::channel();
-
-        fetch_request_sender
-            .send(FetchRequest::TransparentAddressTxs(
+        let mut raw_transaction_stream = request(&fetch_request_sender, |reply_sender| {
+            FetchRequest::TransparentAddressTxs(
                 reply_sender,
                 (transparent_address.clone(), block_range.clone()),
-            ))
-            .map_err(|_| ServerError::FetcherDropped)?;
-
-        let mut raw_transaction_stream = reply_receiver
-            .await
-            .map_err(|_| ServerError::FetcherDropped)?
-            .map_err(ServerError::RequestFailed)?;
+            )
+        })
+        .await?
+        .map_err(ServerError::RequestFailed)?;
 
         while let Some(raw_tx) =
             match next_stream_item(&mut raw_transaction_stream, "TransparentAddressTxs").await {
@@ -579,9 +536,12 @@ mod tests {
     /// Serialized empty commitment tree, as served at and above a pool's activation height.
     const EMPTY_TREE: [u8; 3] = [0, 0, 0];
 
-    /// Answers tree state requests with an empty tree for every pool except `omitted_pool`, whose tree state field
-    /// is left empty.
-    fn spawn_fetcher(omitted_pool: ShieldedPool) -> mpsc::UnboundedSender<FetchRequest> {
+    /// A tree state with an empty tree for every pool except `omitted_pool`, whose tree is left
+    /// empty, at the given height.
+    fn tree_state_reply(
+        omitted_pool: ShieldedPool,
+        block_height: BlockHeight,
+    ) -> Result<TreeState, zl_netutils::GetTreeStateError> {
         let tree = |pool: ShieldedPool| -> Vec<u8> {
             if pool == omitted_pool {
                 Vec::new()
@@ -589,53 +549,39 @@ mod tests {
                 EMPTY_TREE.to_vec()
             }
         };
-        let (sapling_tree, orchard_tree, ironwood_tree) = (
-            tree(ShieldedPool::Sapling),
-            tree(ShieldedPool::Orchard),
-            tree(ShieldedPool::Ironwood),
-        );
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::TreeState(reply_sender, block_height) => {
-                        let _ignore_error = reply_sender.send(Ok(TreeState {
-                            height: block_height,
-                            hash: BlockHash([0u8; 32]),
-                            sapling_tree: sapling_tree.clone(),
-                            orchard_tree: orchard_tree.clone(),
-                            ironwood_tree: ironwood_tree.clone(),
-                        }));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-
-        fetch_request_sender
+        Ok(TreeState {
+            height: block_height,
+            hash: BlockHash([0u8; 32]),
+            sapling_tree: tree(ShieldedPool::Sapling),
+            orchard_tree: tree(ShieldedPool::Orchard),
+            ironwood_tree: tree(ShieldedPool::Ironwood),
+        })
     }
 
     /// Servers omit a pool's tree state below the pool's activation height and serve an empty tree as `000000` at
     /// the activation height, so an omitted tree state at or above the activation height means the server does not
     /// serve the pool.
-    #[tokio::test]
-    async fn omitted_tree_state_is_rejected_at_or_above_activation() {
+    #[test]
+    fn omitted_tree_state_is_rejected_at_or_above_activation() {
         for (pool, activation_height) in [
             (ShieldedPool::Sapling, SAPLING_ACTIVATION),
             (ShieldedPool::Orchard, ORCHARD_ACTIVATION),
             (ShieldedPool::Ironwood, IRONWOOD_ACTIVATION),
         ] {
-            get_frontiers(
-                spawn_fetcher(pool),
+            frontiers_from_tree_state_reply(
                 &NETWORK,
                 (activation_height - 1).into(),
+                tree_state_reply(pool, (activation_height - 1).into()),
             )
-            .await
             .unwrap();
 
             for height in [activation_height, activation_height + 1] {
                 assert!(matches!(
-                    get_frontiers(spawn_fetcher(pool), &NETWORK, height.into()).await,
+                    frontiers_from_tree_state_reply(
+                        &NETWORK,
+                        height.into(),
+                        tree_state_reply(pool, height.into()),
+                    ),
                     Err(ServerError::TreeStateNotServed { pool: PoolType::Shielded(p), height: h })
                         if p == pool && h == height.into()
                 ));
@@ -647,47 +593,30 @@ mod tests {
     const EMPTY_TREE_HEX: &str = "000000";
     const OMITTED_TREE_HEX: &str = "";
 
-    /// Answers each tree state request with a reply whose hash is `MALFORMED_HASH_HEX` and whose
-    /// Ironwood tree is `ironwood_tree_hex`, as [`GetTreeStateError::Invalid`] reports it.
-    fn spawn_fetcher_of_a_malformed_tree_state(
+    /// A tree-state reply whose hash is `MALFORMED_HASH_HEX` and whose Ironwood tree is
+    /// `ironwood_tree_hex`, as [`GetTreeStateError::Invalid`] reports it.
+    fn malformed_tree_state_reply(
         ironwood_tree_hex: &'static str,
-    ) -> mpsc::UnboundedSender<FetchRequest> {
-        let (fetch_request_sender, mut fetch_request_receiver) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Some(fetch_request) = fetch_request_receiver.recv().await {
-                match fetch_request {
-                    FetchRequest::TreeState(reply_sender, _) => {
-                        let error = zl_common::chain::TreeState::from_wire_parts(
-                            0,
-                            MALFORMED_HASH_HEX,
-                            EMPTY_TREE_HEX,
-                            EMPTY_TREE_HEX,
-                            ironwood_tree_hex,
-                        )
-                        .expect_err("the malformed hash fails to parse");
-                        let omitted = [false, false, ironwood_tree_hex.is_empty()];
-                        let _ignore_error =
-                            reply_sender.send(Err(zl_netutils::GetTreeStateError::Invalid {
-                                error,
-                                omitted,
-                            }));
-                    }
-                    _ => panic!("unexpected fetch request"),
-                }
-            }
-        });
-
-        fetch_request_sender
+    ) -> Result<TreeState, zl_netutils::GetTreeStateError> {
+        let error = zl_common::chain::TreeState::from_wire_parts(
+            0,
+            MALFORMED_HASH_HEX,
+            EMPTY_TREE_HEX,
+            EMPTY_TREE_HEX,
+            ironwood_tree_hex,
+        )
+        .expect_err("the malformed hash fails to parse");
+        let omitted = [false, false, ironwood_tree_hex.is_empty()];
+        Err(zl_netutils::GetTreeStateError::Invalid { error, omitted })
     }
 
-    #[tokio::test]
-    async fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
-        let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(EMPTY_TREE_HEX),
+    #[test]
+    fn a_malformed_tree_state_is_reported_as_an_invalid_frontier() {
+        let frontiers = frontiers_from_tree_state_reply(
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
-        )
-        .await;
+            malformed_tree_state_reply(EMPTY_TREE_HEX),
+        );
 
         assert!(
             matches!(frontiers, Err(ServerError::InvalidFrontier(_))),
@@ -696,14 +625,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
-        let frontiers = get_frontiers(
-            spawn_fetcher_of_a_malformed_tree_state(OMITTED_TREE_HEX),
+    #[test]
+    fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
+        let frontiers = frontiers_from_tree_state_reply(
             &NETWORK,
             IRONWOOD_ACTIVATION.into(),
-        )
-        .await;
+            malformed_tree_state_reply(OMITTED_TREE_HEX),
+        );
 
         assert!(
             matches!(
