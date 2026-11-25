@@ -22,7 +22,7 @@ use crate::{
     config::PerformanceLevel,
     error::{ScanError, ServerError, SyncError},
     keys::transparent::TransparentAddressId,
-    protocol::{self, CompactBlock},
+    protocol,
     sync::{self, ScanPriority, ScanRange},
     utils::block,
     wallet::{
@@ -513,7 +513,7 @@ where
                 };
 
                 loop {
-                    let msg_res: Result<Option<CompactBlock>, tonic::Status> =
+                    let msg_res: Result<Option<protocol::CompactBlock>, tonic::Status> =
                         match tokio::time::timeout(STREAM_MSG_TIMEOUT, block_stream.message()).await
                         {
                             Ok(res) => res,
@@ -549,18 +549,20 @@ where
                                 }
                             };
 
-                            let first_msg_res: Result<Option<CompactBlock>, tonic::Status> =
-                                match tokio::time::timeout(
-                                    STREAM_MSG_TIMEOUT,
-                                    block_stream.message(),
-                                )
-                                .await
-                                {
-                                    Ok(res) => res,
-                                    Err(_) => Err(tonic::Status::deadline_exceeded(
-                                        "stream message timeout after retry",
-                                    )),
-                                };
+                            let first_msg_res: Result<
+                                Option<protocol::CompactBlock>,
+                                tonic::Status,
+                            > = match tokio::time::timeout(
+                                STREAM_MSG_TIMEOUT,
+                                block_stream.message(),
+                            )
+                            .await
+                            {
+                                Ok(res) => res,
+                                Err(_) => Err(tonic::Status::deadline_exceeded(
+                                    "stream message timeout after retry",
+                                )),
+                            };
 
                             match first_msg_res {
                                 Ok(b) => b,
@@ -1040,7 +1042,7 @@ impl LoadOrder {
 #[derive(Debug, Clone)]
 pub(crate) struct ScanTask {
     pub(crate) task_id: TaskId,
-    pub(crate) compact_blocks: Vec<CompactBlock>,
+    pub(crate) compact_blocks: Vec<protocol::CompactBlock>,
     pub(crate) scan_range: ScanRange,
     pub(crate) start_seam_block: Option<WalletBlock>,
     pub(crate) end_seam_block: Option<WalletBlock>,

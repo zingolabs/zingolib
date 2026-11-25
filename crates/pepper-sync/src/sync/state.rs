@@ -31,7 +31,7 @@ use super::{ScanPriority, held_at, overlaps};
 
 pub(crate) use zl_common::engine::VerifyEnd;
 
-use crate::protocol::SubtreeRoot;
+use crate::protocol;
 
 /// Prioritize scan ranges for scanning.
 pub(super) fn prioritize_scan_ranges<W>(
@@ -540,7 +540,7 @@ pub(super) fn add_shard_ranges(
     shielded_protocol: ShieldedPool,
     sync_state: &mut SyncState,
     start_index: u32,
-    subtree_roots: &[SubtreeRoot],
+    subtree_roots: &[protocol::SubtreeRoot],
 ) {
     let subtree_completing_heights = subtree_roots
         .iter()

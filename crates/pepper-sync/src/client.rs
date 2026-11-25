@@ -21,9 +21,7 @@ use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{
     error::{MempoolError, ServerError},
-    protocol::{
-        self, BlockId, CompactBlock, GetAddressUtxosReply, RawTransaction, SubtreeRoot, TreeState,
-    },
+    protocol,
     witness::{self, Frontiers},
 };
 
@@ -51,10 +49,10 @@ async fn next_stream_item<T>(
 #[derive(Debug)]
 pub enum FetchRequest {
     /// Gets the height of the blockchain from the server.
-    ChainTip(oneshot::Sender<Result<BlockId, tonic::Status>>),
+    ChainTip(oneshot::Sender<Result<protocol::BlockId, tonic::Status>>),
     /// Gets  a compact block of the given block height.
     CompactBlock(
-        oneshot::Sender<Result<CompactBlock, tonic::Status>>,
+        oneshot::Sender<Result<protocol::CompactBlock, tonic::Status>>,
         BlockHeight,
     ),
     /// Gets the specified range of compact blocks from the server (end exclusive).
@@ -72,15 +70,18 @@ pub enum FetchRequest {
     ),
     /// Gets the tree states for a specified block height.
     TreeState(
-        oneshot::Sender<Result<TreeState, tonic::Status>>,
+        oneshot::Sender<Result<protocol::TreeState, tonic::Status>>,
         BlockHeight,
     ),
     /// Get a full transaction by txid.
-    Transaction(oneshot::Sender<Result<RawTransaction, tonic::Status>>, TxId),
+    Transaction(
+        oneshot::Sender<Result<protocol::RawTransaction, tonic::Status>>,
+        TxId,
+    ),
     /// Get a list of unspent transparent output metadata for a given list of transparent addresses and start height.
     #[allow(dead_code)]
     UtxoMetadata(
-        oneshot::Sender<Result<Vec<GetAddressUtxosReply>, tonic::Status>>,
+        oneshot::Sender<Result<Vec<protocol::GetAddressUtxosReply>, tonic::Status>>,
         (Vec<String>, BlockHeight),
     ),
     /// Get a list of transactions for a given transparent address and block range.
@@ -163,7 +164,7 @@ pub(crate) async fn get_chain_height(
 pub(crate) async fn get_compact_block(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     block_height: BlockHeight,
-) -> Result<CompactBlock, ServerError> {
+) -> Result<protocol::CompactBlock, ServerError> {
     let (reply_sender, reply_receiver) = oneshot::channel();
     fetch_request_sender
         .send(FetchRequest::CompactBlock(reply_sender, block_height))
@@ -233,7 +234,7 @@ pub(crate) async fn get_subtree_roots(
     mut start_index: u32,
     shielded_protocol: i32,
     max_entries: u32,
-) -> Result<Vec<SubtreeRoot>, ServerError> {
+) -> Result<Vec<protocol::SubtreeRoot>, ServerError> {
     let mut subtree_roots = Vec::new();
     let mut retry_count = 0;
 
@@ -376,7 +377,7 @@ pub(crate) async fn get_utxo_metadata(
     fetch_request_sender: UnboundedSender<FetchRequest>,
     transparent_addresses: Vec<String>,
     start_height: BlockHeight,
-) -> Result<Vec<GetAddressUtxosReply>, ServerError> {
+) -> Result<Vec<protocol::GetAddressUtxosReply>, ServerError> {
     if transparent_addresses.is_empty() {
         return Ok(Vec::new());
     }
@@ -405,7 +406,7 @@ pub(crate) async fn get_transparent_address_transactions(
     transparent_address: String,
     block_range: Range<BlockHeight>,
 ) -> Result<Vec<(BlockHeight, Transaction)>, ServerError> {
-    let mut raw_transactions: Vec<RawTransaction> = Vec::new();
+    let mut raw_transactions: Vec<protocol::RawTransaction> = Vec::new();
     let mut retry_count = 0;
 
     'retry: loop {
@@ -565,7 +566,7 @@ mod tests {
     const SHORT_HASH_HEX: &str = "00ff";
     const HEIGHT_BEYOND_32_BITS: u64 = u32::MAX as u64 + 1;
 
-    async fn frontiers_of(tree_state: TreeState) -> Result<Frontiers, ServerError> {
+    async fn frontiers_of(tree_state: protocol::TreeState) -> Result<Frontiers, ServerError> {
         get_frontiers(
             mocks::spawn_tree_state_fetcher(move |_| tree_state.clone()),
             &NETWORK,
@@ -585,7 +586,7 @@ mod tests {
         let mut reversed_hash = [0; mocks::BLOCK_HASH_BYTES];
         reversed_hash[LAST_BYTE] = MARKED_BYTE;
 
-        let frontiers = frontiers_of(TreeState {
+        let frontiers = frontiers_of(protocol::TreeState {
             hash: hex::encode(wire_hash),
             ..mocks::empty_trees(IRONWOOD_ACTIVATION.into())
         })
@@ -604,21 +605,21 @@ mod tests {
         let well_formed = mocks::empty_trees(IRONWOOD_ACTIVATION.into());
         for (malformed, report) in [
             (
-                TreeState {
+                protocol::TreeState {
                     hash: MALFORMED_HASH_HEX.to_string(),
                     ..well_formed.clone()
                 },
                 "Block hash is not valid hex",
             ),
             (
-                TreeState {
+                protocol::TreeState {
                     height: HEIGHT_BEYOND_32_BITS,
                     ..well_formed.clone()
                 },
                 "Invalid block height",
             ),
             (
-                TreeState {
+                protocol::TreeState {
                     hash: SHORT_HASH_HEX.to_string(),
                     ..well_formed.clone()
                 },
@@ -641,7 +642,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_omitted_tree_is_reported_as_not_served_when_another_field_is_malformed() {
-        let frontiers = frontiers_of(TreeState {
+        let frontiers = frontiers_of(protocol::TreeState {
             hash: MALFORMED_HASH_HEX.to_string(),
             ironwood_tree: mocks::OMITTED_TREE_HEX.to_string(),
             ..mocks::empty_trees(IRONWOOD_ACTIVATION.into())

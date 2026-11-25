@@ -1,18 +1,15 @@
 use zcash_protocol::{ShieldedPool, TxId};
 
-use crate::protocol::CompactTx;
-
-#[cfg(test)]
-use crate::protocol::{CompactOrchardAction, CompactSaplingOutput, CompactSaplingSpend};
+use crate::protocol;
 
 /// Returns the transaction Id
-pub(crate) fn get_compact_txid(compact_tx: &CompactTx) -> TxId {
+pub(crate) fn get_compact_txid(compact_tx: &protocol::CompactTx) -> TxId {
     let mut txid_bytes = [0u8; 32];
     txid_bytes.copy_from_slice(&compact_tx.txid);
     TxId::from_bytes(txid_bytes)
 }
 
-pub(crate) fn shielded_output_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
+pub(crate) fn shielded_output_count(compact_tx: &protocol::CompactTx, pool: ShieldedPool) -> u32 {
     match pool {
         ShieldedPool::Sapling => compact_tx.outputs.len(),
         ShieldedPool::Orchard => compact_tx.actions.len(),
@@ -22,7 +19,7 @@ pub(crate) fn shielded_output_count(compact_tx: &CompactTx, pool: ShieldedPool) 
     .expect("note commitment tree sizes are u32; a transaction cannot carry more outputs")
 }
 
-pub(crate) fn shielded_input_count(compact_tx: &CompactTx, pool: ShieldedPool) -> u32 {
+pub(crate) fn shielded_input_count(compact_tx: &protocol::CompactTx, pool: ShieldedPool) -> u32 {
     match pool {
         ShieldedPool::Sapling => compact_tx.spends.len(),
         ShieldedPool::Orchard => compact_tx.actions.len(),
@@ -45,15 +42,15 @@ pub(crate) fn compact_tx(
     outputs: usize,
     actions: usize,
     ironwood_actions: usize,
-) -> CompactTx {
-    CompactTx {
+) -> protocol::CompactTx {
+    protocol::CompactTx {
         index: 0,
         txid: vec![0; 32],
         fee: 0,
-        spends: vec![CompactSaplingSpend::default(); spends],
-        outputs: vec![CompactSaplingOutput::default(); outputs],
-        actions: vec![CompactOrchardAction::default(); actions],
-        ironwood_actions: vec![CompactOrchardAction::default(); ironwood_actions],
+        spends: vec![protocol::CompactSaplingSpend::default(); spends],
+        outputs: vec![protocol::CompactSaplingOutput::default(); outputs],
+        actions: vec![protocol::CompactOrchardAction::default(); actions],
+        ironwood_actions: vec![protocol::CompactOrchardAction::default(); ironwood_actions],
         vin: vec![],
         vout: vec![],
     }

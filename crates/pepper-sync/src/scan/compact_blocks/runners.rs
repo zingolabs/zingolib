@@ -18,7 +18,7 @@ use zcash_protocol::consensus;
 use memuse::DynamicUsage;
 use zcash_protocol::ShieldedPool;
 
-use crate::protocol::CompactBlock;
+use crate::protocol;
 
 use crate::error::EncodingInvalid;
 use crate::keys::KeyId;
@@ -121,7 +121,7 @@ where
     pub(crate) fn add_block<P>(
         &mut self,
         params: &P,
-        block: CompactBlock,
+        block: protocol::CompactBlock,
     ) -> Result<(), EncodingInvalid>
     where
         P: consensus::Parameters + Send + 'static,

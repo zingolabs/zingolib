@@ -3,13 +3,13 @@ use sapling_crypto::{note::ExtractedNoteCommitment, note_encryption::CompactOutp
 use zcash_note_encryption::EphemeralKeyBytes;
 
 use crate::error::CompactFormatError;
-use crate::protocol::{CompactOrchardAction, CompactSaplingOutput};
+use crate::protocol;
 
 pub(crate) mod block;
 pub(crate) mod transaction;
 
 pub(crate) fn get_compact_output_description(
-    compact_sapling_output: &CompactSaplingOutput,
+    compact_sapling_output: &protocol::CompactSaplingOutput,
 ) -> Result<CompactOutputDescription, CompactFormatError> {
     let mut repr = [0; 32];
     repr.copy_from_slice(&compact_sapling_output.cmu[..]);
@@ -31,7 +31,7 @@ pub(crate) fn get_compact_output_description(
 }
 
 pub(crate) fn get_compact_action(
-    compact_orchard_action: &CompactOrchardAction,
+    compact_orchard_action: &protocol::CompactOrchardAction,
 ) -> Result<CompactAction, CompactFormatError> {
     let nf_bytes: [u8; 32] = compact_orchard_action.nullifier[..]
         .try_into()

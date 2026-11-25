@@ -31,8 +31,8 @@ fingerprint = "1d3e910a75e571b6"
 reason = "baseline at 639986655: exact group of 3, first member pepper-sync/src/client/fetch.rs:170"
 
 [[ignore]]
-fingerprint = "1eee3061850146e7"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/block.rs:59"
+fingerprint = "18c4d006464079b4"
+reason = "baseline at 639986655, fingerprinted again when the signatures named protocol::CompactBlock: exact group of 2, first member pepper-sync/src/utils/block.rs:60"
 
 [[ignore]]
 fingerprint = "216e94f16edc52f6"
@@ -219,8 +219,8 @@ fingerprint = "bc1c399af51c0eda"
 reason = "baseline at 639986655: exact group of 2, first member zingo-price/src/lib.rs:682"
 
 [[ignore]]
-fingerprint = "bc38f6c3f30a56e8"
-reason = "baseline at 639986655: exact group of 2, first member pepper-sync/src/utils/transaction.rs:16"
+fingerprint = "632e98e36ee8ebc4"
+reason = "baseline at 639986655, fingerprinted again when the signatures named protocol::CompactTx: exact group of 2, first member pepper-sync/src/utils/transaction.rs:12"
 
 [[ignore]]
 fingerprint = "bc8a96c2f8c533a2"
