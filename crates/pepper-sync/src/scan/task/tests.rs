@@ -1,3 +1,5 @@
+use std::sync::atomic;
+
 use zcash_protocol::consensus::{MAIN_NETWORK, MainNetwork};
 use zcash_transparent::keys::NonHardenedChildIndex;
 
@@ -360,4 +362,43 @@ fn a_verify_task_splits_at_a_load_budget_like_any_other() {
 
     assert!(splittable_at(&verify, BlockHeight::from_u32(31)));
     assert!(!splittable_at(&verify, BlockHeight::from_u32(21)));
+}
+
+const MAX_LOAD_OUTPUTS: usize = 1;
+
+fn scan_task_that_holds_no_block() -> ScanTask {
+    let height = BlockHeight::from_u32(mocks::EMPTY_RANGE_HEIGHT);
+
+    ScanTask::from_parts(
+        TaskId::first(),
+        ScanRange::from_parts(mocks::empty_block_range(), ScanPriority::FoundNote),
+        None,
+        None,
+        BTreeSet::new(),
+        HashMap::new(),
+        HashMap::new(),
+        height,
+        height,
+        height,
+    )
+}
+
+#[tokio::test]
+async fn a_scan_task_that_holds_no_block_ends_no_loader() {
+    let (fetch_request_sender, request_count) = mocks::spawn_request_counter();
+    let mut loader = Loader::new(MAIN_NETWORK, fetch_request_sender);
+    loader.run(MAX_LOAD_OUTPUTS);
+    loader.add_scan_task(scan_task_that_holds_no_block());
+
+    let ended = loader.shutdown().await;
+
+    assert!(
+        ended.is_ok(),
+        "a scan task that holds no block ended the loader with {ended:?}"
+    );
+    assert_eq!(
+        request_count.load(atomic::Ordering::Acquire),
+        mocks::NO_REQUESTS,
+        "a scan task that holds no block reached the fetcher"
+    );
 }
