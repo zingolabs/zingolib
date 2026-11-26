@@ -1526,6 +1526,24 @@ mod sync_error_channel_tests {
     }
 
     #[test]
+    fn a_sync_launch_without_an_indexer_is_offline() {
+        let error = sync_launch_error(LightClientError::Offline);
+        assert!(
+            matches!(error, ZingolibError::Offline),
+            "an indexerless launch must be the Offline variant: {error}"
+        );
+    }
+
+    #[test]
+    fn a_sync_launch_failure_with_an_indexer_is_sync() {
+        let error = sync_launch_error(LightClientError::SyncLaunchError);
+        assert!(
+            matches!(error, ZingolibError::Sync(_)),
+            "a failed launch must be the Sync variant: {error}"
+        );
+    }
+
+    #[test]
     fn run_sync_fails_typed_without_a_client() {
         assert_uninitialized(run_sync(), "run_sync");
     }
@@ -2301,6 +2319,13 @@ fn attach_pending_indexer() {
     }
 }
 
+fn sync_launch_error(error: LightClientError) -> ZingolibError {
+    match error {
+        LightClientError::Offline => ZingolibError::Offline,
+        other => ZingolibError::sync(&other),
+    }
+}
+
 #[uniffi::export]
 fn run_sync() -> Result<String, ZingolibError> {
     attach_pending_indexer();
@@ -2326,7 +2351,7 @@ fn run_sync() -> Result<String, ZingolibError> {
                     Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
                         Ok("Sync task already running.".to_string())
                     }
-                    Err(e) => Err(ZingolibError::sync(&e)),
+                    Err(e) => Err(sync_launch_error(e)),
                 }
             })
         }
