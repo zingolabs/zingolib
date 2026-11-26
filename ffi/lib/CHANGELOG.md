@@ -191,6 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dedicated migration transmission endpoint to set.
 
 ### Fixed
+- `run_sync` gives `Offline` for a wallet with no indexer. It gave `Sync`,
+  so a consumer that caught `Offline` never saw it.
 - An error message no longer repeats a cause that an outer error prints
   before other text of its own. It already did not repeat a cause printed at
   the end of the outer text.
