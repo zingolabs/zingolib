@@ -217,8 +217,9 @@ impl PrivateMigrationDriver {
         plan_hash_hex: String,
         per_bucket: Option<u32>,
     ) -> Result<String, ZingolibError> {
-        let hash = hex_to_hash32(&plan_hash_hex)
-            .ok_or_else(|| ZingolibError::InvalidInput("invalid plan hash".to_string()))?;
+        let hash = hex_to_hash32(&plan_hash_hex).ok_or_else(|| ZingolibError::InvalidInput {
+            detail: "invalid plan hash".to_string(),
+        })?;
         write_json_unarmed(async |lightclient| {
             lightclient
                 .start_ironwood_migration(
@@ -395,6 +396,9 @@ mod tests {
         let error = PrivateMigrationDriver::new()
             .start("zz".to_string(), None)
             .expect_err("two non-hex characters are not a consent hash");
-        assert!(matches!(error, ZingolibError::InvalidInput(_)), "{error}");
+        assert!(
+            matches!(error, ZingolibError::InvalidInput { .. }),
+            "{error}"
+        );
     }
 }
