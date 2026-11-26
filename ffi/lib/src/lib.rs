@@ -75,36 +75,36 @@ const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-#[uniffi(flat_error)]
+#[uniffi::export(Display)]
 pub enum ZingolibError {
     #[error("Error: Lightclient is not initialized")]
     LightclientNotInitialized,
     #[error("Error: Lightclient lock poisoned")]
     LightclientLockPoisoned,
-    #[error("Error: panic: {0}")]
-    Panic(String),
-    #[error("Error: saving wallet: {0}")]
-    Save(String),
-    #[error("Error: initializing wallet: {0}")]
-    Init(String),
-    #[error("Error: sync: {0}")]
-    Sync(String),
-    #[error("Error: rescan: {0}")]
-    Rescan(String),
-    #[error("Error: read: {0}")]
-    Read(String),
-    #[error("Error: send: {0}")]
-    Send(String),
-    #[error("Error: shield: {0}")]
-    Shield(String),
-    #[error("Error: send after deshield: {0}")]
-    SendAfterDeshield(String),
-    #[error("Error: invalid input: {0}")]
-    InvalidInput(String),
-    #[error("Error: wallet: {0}")]
-    Wallet(String),
-    #[error("Error: indexer: {0}")]
-    Indexer(String),
+    #[error("Error: panic: {detail}")]
+    Panic { detail: String },
+    #[error("Error: saving wallet: {detail}")]
+    Save { detail: String },
+    #[error("Error: initializing wallet: {detail}")]
+    Init { detail: String },
+    #[error("Error: sync: {detail}")]
+    Sync { detail: String },
+    #[error("Error: rescan: {detail}")]
+    Rescan { detail: String },
+    #[error("Error: read: {detail}")]
+    Read { detail: String },
+    #[error("Error: send: {detail}")]
+    Send { detail: String },
+    #[error("Error: shield: {detail}")]
+    Shield { detail: String },
+    #[error("Error: send after deshield: {detail}")]
+    SendAfterDeshield { detail: String },
+    #[error("Error: invalid input: {detail}")]
+    InvalidInput { detail: String },
+    #[error("Error: wallet: {detail}")]
+    Wallet { detail: String },
+    #[error("Error: indexer: {detail}")]
+    Indexer { detail: String },
     #[error("Error: offline: no indexer configured")]
     Offline,
     #[error("Error: progress side-channel lock poisoned")]
@@ -113,18 +113,18 @@ pub enum ZingolibError {
     MigrationNotInProgress,
     #[error("Error: a migration is already in progress")]
     MigrationAlreadyInProgress,
-    #[error("Error: consent stale: {0}")]
-    MigrationConsentStale(String),
-    #[error("Error: cadence fixed: {0}")]
-    MigrationCadenceFixed(String),
-    #[error("Error: note splitting: {0}")]
-    MigrationSplit(String),
-    #[error("Error: migration: {0}")]
-    Migration(String),
-    #[error("Error: mixnet: {0}")]
-    Mixnet(String),
-    #[error("Error: wallet chain mismatch: {0}")]
-    WalletChainMismatch(String),
+    #[error("Error: consent stale: {detail}")]
+    MigrationConsentStale { detail: String },
+    #[error("Error: cadence fixed: {detail}")]
+    MigrationCadenceFixed { detail: String },
+    #[error("Error: note splitting: {detail}")]
+    MigrationSplit { detail: String },
+    #[error("Error: migration: {detail}")]
+    Migration { detail: String },
+    #[error("Error: mixnet: {detail}")]
+    Mixnet { detail: String },
+    #[error("Error: wallet chain mismatch: {detail}")]
+    WalletChainMismatch { detail: String },
 }
 
 /// The separator between two layers of a rendered cause chain, and the one
@@ -185,7 +185,9 @@ fn open_error(error: &LightClientError) -> ZingolibError {
         .filter_map(std::io::Error::get_ref)
         .any(|inner| inner.is::<zingolib::wallet::disk::ChainMismatch>());
     if mismatch {
-        ZingolibError::WalletChainMismatch(chain_text(error))
+        ZingolibError::WalletChainMismatch {
+            detail: chain_text(error),
+        }
     } else {
         ZingolibError::init(chain_text(error))
     }
@@ -206,19 +208,9 @@ fn in_context<E: std::error::Error + 'static>(
 
 impl ZingolibError {
     fn init(e: impl ToString) -> Self {
-        Self::Init(e.to_string())
-    }
-
-    /// From an error, preserving its `source()` chain. `init` stays on
-    /// `ToString` because most of its callers compose their own message;
-    /// the ones that do hold an error pass `chain_text` themselves.
-    fn sync(e: &(dyn std::error::Error + 'static)) -> Self {
-        Self::Sync(chain_text(e))
-    }
-
-    /// From an error, preserving its `source()` chain.
-    fn read(e: &(dyn std::error::Error + 'static)) -> Self {
-        Self::Read(chain_text(e))
+        Self::Init {
+            detail: e.to_string(),
+        }
     }
 }
 
@@ -228,20 +220,22 @@ impl ZingolibError {
 fn ffi_error(e: LightClientError) -> ZingolibError {
     use zingolib::lightclient::error::MigrationError;
     use zingolib::mixnet::fetch::MixnetFetchError;
-    let text = chain_text(&e);
+    let detail = chain_text(&e);
     match e {
         LightClientError::SyncLaunchError
         | LightClientError::SyncNotRunning
         | LightClientError::SyncError(_)
-        | LightClientError::SyncModeError(_) => ZingolibError::Sync(text),
-        LightClientError::SyncPanicked(panic_message) => ZingolibError::Panic(panic_message),
+        | LightClientError::SyncModeError(_) => ZingolibError::Sync { detail },
+        LightClientError::SyncPanicked(panic_message) => ZingolibError::Panic {
+            detail: panic_message,
+        },
         LightClientError::SendError(inner) => match inner {
             SendError::ProposeShieldError(_) | SendError::CalculateShieldError(_) => {
-                ZingolibError::Shield(text)
+                ZingolibError::Shield { detail }
             }
             SendError::OpReturn(WalletError::ParseError(_))
             | SendError::OpReturn(WalletError::OpReturnRecipientNotTransparent) => {
-                ZingolibError::InvalidInput(text)
+                ZingolibError::InvalidInput { detail }
             }
             SendError::ProposeSendError(_)
             | SendError::CalculateSendError(_)
@@ -250,42 +244,42 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             | SendError::TransmissionError(_)
             | SendError::OpReturn(_)
             | SendError::OpReturnNotCalculable
-            | SendError::OpReturnSourceAddressStale => ZingolibError::Send(text),
+            | SendError::OpReturnSourceAddressStale => ZingolibError::Send { detail },
             SendError::OpReturnAfterDeshield { .. } | SendError::OpReturnResumePending { .. } => {
-                ZingolibError::SendAfterDeshield(text)
+                ZingolibError::SendAfterDeshield { detail }
             }
         },
         LightClientError::ClientError(_) | LightClientError::IndexerError(_) => {
-            ZingolibError::Indexer(text)
+            ZingolibError::Indexer { detail }
         }
-        LightClientError::FileError(_) => ZingolibError::Save(text),
-        LightClientError::WalletError(_) => ZingolibError::Wallet(text),
+        LightClientError::FileError(_) => ZingolibError::Save { detail },
+        LightClientError::WalletError(_) => ZingolibError::Wallet { detail },
         LightClientError::Offline => ZingolibError::Offline,
-        LightClientError::PriceError(_) => ZingolibError::Read(text),
-        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet(text),
-        LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer(text),
+        LightClientError::PriceError(_) => ZingolibError::Read { detail },
+        LightClientError::MixnetNotReady(_) => ZingolibError::Mixnet { detail },
+        LightClientError::IneligibleProbeTarget(_) => ZingolibError::Indexer { detail },
         LightClientError::MixnetFetch(inner) => match inner {
             MixnetFetchError::Ineligible(_) | MixnetFetchError::ZeroTimeout => {
-                ZingolibError::InvalidInput(text)
+                ZingolibError::InvalidInput { detail }
             }
             MixnetFetchError::DeadlineExceeded { .. }
             | MixnetFetchError::Transport(_)
             | MixnetFetchError::Request(_)
-            | MixnetFetchError::BodyTooLarge { .. } => ZingolibError::Mixnet(text),
+            | MixnetFetchError::BodyTooLarge { .. } => ZingolibError::Mixnet { detail },
         },
         LightClientError::MigrationError(inner) => match inner {
             MigrationError::NoMigration => ZingolibError::MigrationNotInProgress,
             MigrationError::AlreadyInProgress => ZingolibError::MigrationAlreadyInProgress,
-            MigrationError::ConsentStale => ZingolibError::MigrationConsentStale(text),
-            MigrationError::CadenceFixed => ZingolibError::MigrationCadenceFixed(text),
+            MigrationError::ConsentStale => ZingolibError::MigrationConsentStale { detail },
+            MigrationError::CadenceFixed => ZingolibError::MigrationCadenceFixed { detail },
             MigrationError::ScheduledMigrationExists => ZingolibError::MigrationAlreadyInProgress,
             MigrationError::PreSignedUnavailable
             | MigrationError::NoteSplittingRequired
             | MigrationError::DifferentAccount
-            | MigrationError::IronwoodEraTooYoung { .. } => ZingolibError::Migration(text),
+            | MigrationError::IronwoodEraTooYoung { .. } => ZingolibError::Migration { detail },
             MigrationError::SplitDidNotConverge(_)
             | MigrationError::SplitTransactionFailed(_)
-            | MigrationError::SplitConfirmationTimeout => ZingolibError::MigrationSplit(text),
+            | MigrationError::SplitConfirmationTimeout => ZingolibError::MigrationSplit { detail },
         },
     }
 }
@@ -297,7 +291,9 @@ where
     install_panic_hook_once();
     match panic::catch_unwind(f) {
         Ok(res) => res,
-        Err(payload) => Err(ZingolibError::Panic(format_panic_text(payload))),
+        Err(payload) => Err(ZingolibError::Panic {
+            detail: format_panic_text(payload),
+        }),
     }
 }
 
@@ -692,7 +688,7 @@ fn indexer_choice(choice: IndexerChoice) -> Result<config::IndexerChoice, Zingol
         IndexerChoice::Default => config::IndexerChoice::Default,
         IndexerChoice::Named { uri } => {
             config::IndexerChoice::Named(construct_indexer_uri(uri).map_err(in_context(
-                ZingolibError::InvalidInput,
+                |detail| ZingolibError::InvalidInput { detail },
                 "invalid server uri",
             ))?)
         }
@@ -741,7 +737,9 @@ fn performance_level_name(level: PerformanceLevel) -> Result<&'static str, Zingo
         .iter()
         .find(|(listed, _)| *listed == level)
         .map(|(_, name)| *name)
-        .ok_or_else(|| ZingolibError::Wallet(format!("performance level {level:?} has no name")))
+        .ok_or_else(|| ZingolibError::Wallet {
+            detail: format!("performance level {level:?} has no name"),
+        })
 }
 
 fn performance_level(name: &str) -> Option<PerformanceLevel> {
@@ -849,7 +847,9 @@ fn build_client_config(
         Some(uri) => builder.set_indexer_uri(uri),
         None => builder,
     };
-    builder.build().map_err(chained(ZingolibError::Init))
+    builder
+        .build()
+        .map_err(chained(|detail| ZingolibError::Init { detail }))
 }
 
 /// The shared spine of the wallet-init FFI functions: tear down any live
@@ -870,7 +870,7 @@ fn init_lightclient(
         let config = build_client_config(&params, wallet_config)?;
         let lightclient = RT
             .block_on(LightClient::new(config, false))
-            .map_err(chained(ZingolibError::Init))?;
+            .map_err(chained(|detail| ZingolibError::Init { detail }))?;
         let _ = store_client(lightclient);
 
         finish()
@@ -1099,7 +1099,7 @@ pub fn init_from_bytes(
 fn map_wallet_save(
     save_result: std::io::Result<Option<Vec<u8>>>,
 ) -> Result<Option<Vec<u8>>, ZingolibError> {
-    save_result.map_err(chained(ZingolibError::Save))
+    save_result.map_err(chained(|detail| ZingolibError::Save { detail }))
 }
 
 #[uniffi::export]
@@ -1121,7 +1121,7 @@ mod ffi_error_routing_tests {
             zingolib::mixnet::MixnetNotReady::Bootstrapping,
         ));
         assert!(
-            matches!(&mapped, ZingolibError::Mixnet(_)),
+            matches!(&mapped, ZingolibError::Mixnet { .. }),
             "a refusal must carry the owned mixnet marker: {mapped:?}"
         );
         assert!(mapped.to_string().starts_with("Error: mixnet:"));
@@ -1138,7 +1138,7 @@ mod ffi_error_routing_tests {
         ] {
             let mapped = ffi_error(LightClientError::MixnetFetch(inner));
             assert!(
-                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                matches!(&mapped, ZingolibError::InvalidInput { .. }),
                 "the caller corrects its own argument: {mapped:?}"
             );
         }
@@ -1151,7 +1151,7 @@ mod ffi_error_routing_tests {
         ] {
             let mapped = ffi_error(LightClientError::MixnetFetch(inner));
             assert!(
-                matches!(&mapped, ZingolibError::Mixnet(_)),
+                matches!(&mapped, ZingolibError::Mixnet { .. }),
                 "a fetch that ran and failed is a mixnet error: {mapped:?}"
             );
         }
@@ -1169,7 +1169,7 @@ mod ffi_error_routing_tests {
         ] {
             let mapped = ffi_error(LightClientError::SendError(SendError::OpReturn(inner)));
             assert!(
-                matches!(&mapped, ZingolibError::InvalidInput(_)),
+                matches!(&mapped, ZingolibError::InvalidInput { .. }),
                 "a refused vault address is the caller's input, which the app never retries: {mapped:?}"
             );
             assert!(mapped.to_string().starts_with("Error: invalid input:"));
@@ -1215,7 +1215,7 @@ mod cause_chain_tests {
         ));
         let error = open_error(&mismatch);
         assert!(
-            matches!(&error, ZingolibError::WalletChainMismatch(text)
+            matches!(&error, ZingolibError::WalletChainMismatch { detail: text }
                 if text.contains("wallet chain name mainnet doesn't match expected testnet")),
             "{error:?}"
         );
@@ -1224,7 +1224,7 @@ mod cause_chain_tests {
             std::io::ErrorKind::InvalidData,
             "invalid account id",
         ));
-        assert!(matches!(open_error(&other), ZingolibError::Init(_)));
+        assert!(matches!(open_error(&other), ZingolibError::Init { .. }));
     }
 
     #[test]
@@ -1239,7 +1239,7 @@ mod cause_chain_tests {
 
         assert!(matches!(
             read_wallet_chain(vec![1, 2, 3]),
-            Err(ZingolibError::Read(_))
+            Err(ZingolibError::Read { .. })
         ));
     }
 
@@ -1336,7 +1336,7 @@ mod wallet_export_tests {
         let error = map_wallet_save(Err(std::io::Error::other("disk full")))
             .expect_err("a failed save must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Save(_)),
+            matches!(error, ZingolibError::Save { .. }),
             "the failure must be the typed Save variant: {error}"
         );
     }
@@ -1421,7 +1421,7 @@ mod regtest_activation_heights_tests {
             Err(error) => error,
             Ok(_) => panic!("an unknown chain hint must be rejected"),
         };
-        assert!(matches!(error, ZingolibError::Init(_)));
+        assert!(matches!(error, ZingolibError::Init { .. }));
     }
 }
 
@@ -1442,7 +1442,7 @@ mod init_error_channel_tests {
         )
         .expect_err("an invalid lightwalletd uri must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
+            matches!(error, ZingolibError::Init { .. }),
             "the failure must be the typed Init variant: {error}"
         );
     }
@@ -1456,7 +1456,7 @@ mod init_error_channel_tests {
         )
         .expect_err("an invalid performance level must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
+            matches!(error, ZingolibError::Init { .. }),
             "the failure must be the typed Init variant: {error}"
         );
     }
@@ -1470,7 +1470,7 @@ mod init_error_channel_tests {
         )
         .expect_err("an invalid performance level must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
+            matches!(error, ZingolibError::Init { .. }),
             "the failure must be the typed Init variant: {error}"
         );
     }
@@ -1497,7 +1497,7 @@ mod init_error_channel_tests {
         )
         .expect_err("unreadable wallet bytes must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Init(_)),
+            matches!(error, ZingolibError::Init { .. }),
             "the failure must be the typed Init variant: {error}"
         );
         assert!(
@@ -1538,7 +1538,7 @@ mod sync_error_channel_tests {
     fn a_sync_launch_failure_with_an_indexer_is_sync() {
         let error = sync_launch_error(LightClientError::SyncLaunchError);
         assert!(
-            matches!(error, ZingolibError::Sync(_)),
+            matches!(error, ZingolibError::Sync { .. }),
             "a failed launch must be the Sync variant: {error}"
         );
     }
@@ -1612,7 +1612,7 @@ mod read_error_channel_tests {
         let error = get_latest_block_server("http://an invalid uri with spaces".to_string())
             .expect_err("an unparseable server uri must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::Read(_)),
+            matches!(error, ZingolibError::Read { .. }),
             "the failure must be the typed Read variant: {error}"
         );
     }
@@ -1642,34 +1642,34 @@ mod error_funnel_tests {
         let cases: Vec<FunnelCase> = vec![
             (
                 LightClientError::SyncLaunchError,
-                |e| matches!(e, ZingolibError::Sync(_)),
+                |e| matches!(e, ZingolibError::Sync { .. }),
                 "Sync",
             ),
             (
                 LightClientError::SyncNotRunning,
-                |e| matches!(e, ZingolibError::Sync(_)),
+                |e| matches!(e, ZingolibError::Sync { .. }),
                 "Sync",
             ),
             (
                 LightClientError::SendError(SendError::NoStoredProposal),
-                |e| matches!(e, ZingolibError::Send(_)),
+                |e| matches!(e, ZingolibError::Send { .. }),
                 "Send",
             ),
             (
                 LightClientError::SendError(SendError::TransmissionError(
                     TransmissionError::TransmissionFailed("node said no".to_string()),
                 )),
-                |e| matches!(e, ZingolibError::Send(_)),
+                |e| matches!(e, ZingolibError::Send { .. }),
                 "Send",
             ),
             (
                 LightClientError::FileError(std::io::Error::other("disk full")),
-                |e| matches!(e, ZingolibError::Save(_)),
+                |e| matches!(e, ZingolibError::Save { .. }),
                 "Save",
             ),
             (
                 LightClientError::WalletError(WalletError::MnemonicNotFound),
-                |e| matches!(e, ZingolibError::Wallet(_)),
+                |e| matches!(e, ZingolibError::Wallet { .. }),
                 "Wallet",
             ),
             (
@@ -1689,34 +1689,34 @@ mod error_funnel_tests {
             ),
             (
                 LightClientError::MigrationError(MigrationError::ConsentStale),
-                |e| matches!(e, ZingolibError::MigrationConsentStale(_)),
+                |e| matches!(e, ZingolibError::MigrationConsentStale { .. }),
                 "MigrationConsentStale",
             ),
             (
                 LightClientError::MigrationError(MigrationError::CadenceFixed),
-                |e| matches!(e, ZingolibError::MigrationCadenceFixed(_)),
+                |e| matches!(e, ZingolibError::MigrationCadenceFixed { .. }),
                 "MigrationCadenceFixed",
             ),
             (
                 LightClientError::MigrationError(MigrationError::PreSignedUnavailable),
-                |e| matches!(e, ZingolibError::Migration(_)),
+                |e| matches!(e, ZingolibError::Migration { .. }),
                 "Migration",
             ),
             (
                 LightClientError::MigrationError(MigrationError::SplitDidNotConverge(3)),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                |e| matches!(e, ZingolibError::MigrationSplit { .. }),
                 "MigrationSplit",
             ),
             (
                 LightClientError::MigrationError(MigrationError::SplitTransactionFailed(
                     TxId::from_bytes([0u8; 32]),
                 )),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                |e| matches!(e, ZingolibError::MigrationSplit { .. }),
                 "MigrationSplit",
             ),
             (
                 LightClientError::MigrationError(MigrationError::SplitConfirmationTimeout),
-                |e| matches!(e, ZingolibError::MigrationSplit(_)),
+                |e| matches!(e, ZingolibError::MigrationSplit { .. }),
                 "MigrationSplit",
             ),
         ];
@@ -1782,7 +1782,7 @@ mod parse_and_stub_error_channel_tests {
         let error = parse_address(String::new())
             .expect_err("an empty address must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::InvalidInput(_)),
+            matches!(error, ZingolibError::InvalidInput { .. }),
             "the failure must be the typed InvalidInput variant: {error}"
         );
     }
@@ -1792,7 +1792,7 @@ mod parse_and_stub_error_channel_tests {
         let error = parse_ufvk(String::new())
             .expect_err("an empty viewkey must be typed, not prose in the data channel");
         assert!(
-            matches!(error, ZingolibError::InvalidInput(_)),
+            matches!(error, ZingolibError::InvalidInput { .. }),
             "the failure must be the typed InvalidInput variant: {error}"
         );
     }
@@ -1805,7 +1805,7 @@ mod parse_and_stub_error_channel_tests {
         ] {
             let error = result.expect_err("an unimplemented endpoint must fail typed");
             assert!(
-                matches!(error, ZingolibError::Wallet(_)),
+                matches!(error, ZingolibError::Wallet { .. }),
                 "{ffi} must fail with the typed Wallet variant: {error}"
             );
         }
@@ -1825,17 +1825,17 @@ pub fn get_zennies_for_zingo_donation_address() -> Result<String, ZingolibError>
 #[uniffi::export]
 pub fn get_latest_block_server(serveruri: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
-        let lightwalletd_uri: http::Uri = serveruri
-            .parse()
-            .map_err(|e| ZingolibError::Read(format!("failed to parse uri. {}", chain_text(&e))))?;
+        let lightwalletd_uri: http::Uri = serveruri.parse().map_err(|e| ZingolibError::Read {
+            detail: format!("failed to parse uri. {}", chain_text(&e)),
+        })?;
         RT.block_on(async move {
             let mut indexer = GrpcIndexer::new(lightwalletd_uri)
                 .await
-                .map_err(|e| ZingolibError::read(&e))?;
+                .map_err(chained(|detail| ZingolibError::Read { detail }))?;
             let block_id = indexer
                 .get_latest_block(INDEXER_REQUEST_TIMEOUT)
                 .await
-                .map_err(|e| ZingolibError::read(&e))?;
+                .map_err(chained(|detail| ZingolibError::Read { detail }))?;
             Ok(block_id.height.to_string())
         })
     })
@@ -2035,12 +2035,13 @@ impl Report for Probe {
 #[uniffi::export]
 pub fn probe_server(server_uri: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
-        let uri = construct_indexer_uri(server_uri)
-            .map_err(|e| ZingolibError::InvalidInput(chain_text(&e)))?;
+        let uri = construct_indexer_uri(server_uri).map_err(|e| ZingolibError::InvalidInput {
+            detail: chain_text(&e),
+        })?;
         if uri.host().is_none_or(str::is_empty) {
-            return Err(ZingolibError::InvalidInput(
-                "the server address has no host".to_string(),
-            ));
+            return Err(ZingolibError::InvalidInput {
+                detail: "the server address has no host".to_string(),
+            });
         }
         RT.block_on(Probe::of(uri)).report()
     })
@@ -2153,7 +2154,7 @@ mod probe_server_tests {
             assert!(
                 matches!(
                     probe_server(server.to_string()),
-                    Err(ZingolibError::InvalidInput(_))
+                    Err(ZingolibError::InvalidInput { .. })
                 ),
                 "{server:?} has no host"
             );
@@ -2250,7 +2251,7 @@ pub fn get_latest_block_wallet() -> Result<String, ZingolibError> {
 #[uniffi::export]
 pub fn get_value_transfers() -> Result<String, ZingolibError> {
     let value_transfers = with_wallet(|wallet| RT.block_on(wallet.value_transfers(true)))?
-        .map_err(|e| ZingolibError::read(&e))?;
+        .map_err(chained(|detail| ZingolibError::Read { detail }))?;
     Ok(json::JsonValue::from(value_transfers).pretty(2))
 }
 
@@ -2259,7 +2260,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.poll_sync() {
         PollReport::NoHandle => Ok("Sync task has not been launched.".to_string()),
         PollReport::NotReady => Ok("Sync task is not complete.".to_string()),
-        PollReport::Panicked(text) => Err(ZingolibError::Panic(text)),
+        PollReport::Panicked(text) => Err(ZingolibError::Panic { detail: text }),
         PollReport::Ready(result) => match result {
             Ok(sync_result) => {
                 // A bucket boundary's tree state is witnessable only while its
@@ -2274,7 +2275,7 @@ pub fn poll_sync() -> Result<String, ZingolibError> {
                 }
                 .pretty(2))
             }
-            Err(e) => Err(ZingolibError::sync(&e)),
+            Err(e) => Err(chained(|detail| ZingolibError::Sync { detail })(e)),
         },
     })
 }
@@ -2322,7 +2323,7 @@ fn attach_pending_indexer() {
 fn sync_launch_error(error: LightClientError) -> ZingolibError {
     match error {
         LightClientError::Offline => ZingolibError::Offline,
-        other => ZingolibError::sync(&other),
+        other => chained(|detail| ZingolibError::Sync { detail })(other),
     }
 }
 
@@ -2336,7 +2337,7 @@ fn run_sync() -> Result<String, ZingolibError> {
             // instead of `expect` — panicking would poison LIGHTCLIENT.
             match lightclient.resume_sync() {
                 Ok(_) => Ok("Resuming sync task...".to_string()),
-                Err(e) => Err(ZingolibError::sync(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Sync { detail })(e)),
             }
         } else {
             RT.block_on(async {
@@ -2362,7 +2363,7 @@ fn run_sync() -> Result<String, ZingolibError> {
 pub fn pause_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| match lightclient.pause_sync() {
         Ok(_) => Ok("Pausing sync task...".to_string()),
-        Err(e) => Err(ZingolibError::sync(&e)),
+        Err(e) => Err(chained(|detail| ZingolibError::Sync { detail })(e)),
     })
 }
 
@@ -2374,7 +2375,7 @@ pub fn stop_sync() -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| match lightclient.stop_sync() {
         Ok(_) => Ok("Stopping sync task...".to_string()),
         Err(SyncModeError::SyncNotRunning) => Ok("Sync already stopped.".to_string()),
-        Err(e) => Err(ZingolibError::sync(&e)),
+        Err(e) => Err(chained(|detail| ZingolibError::Sync { detail })(e)),
     })
 }
 
@@ -2416,7 +2417,7 @@ fn status_sync() -> Result<String, ZingolibError> {
                 Ok(status) => {
                     Ok(json::JsonValue::from(sync_progress::SyncProgress::from(status)).pretty(2))
                 }
-                Err(e) => Err(ZingolibError::sync(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Sync { detail })(e)),
             }
         })
     })
@@ -2428,7 +2429,9 @@ pub fn run_rescan() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.rescan().await {
                 Ok(_) => Ok("Launching rescan...".to_string()),
-                Err(e) => Err(ZingolibError::Rescan(chain_text(&e))),
+                Err(e) => Err(ZingolibError::Rescan {
+                    detail: chain_text(&e),
+                }),
             }
         })
     })
@@ -2501,9 +2504,9 @@ impl Seed {
 impl Report for Seed {
     fn report(self) -> Result<String, ZingolibError> {
         match self {
-            Self::LoadedFromKey => Err(ZingolibError::Read(
-                "get seed. no mnemonic found. wallet loaded from key.".to_string(),
-            )),
+            Self::LoadedFromKey => Err(ZingolibError::Read {
+                detail: "get seed. no mnemonic found. wallet loaded from key.".to_string(),
+            }),
             Self::Recoverable {
                 recovery_info,
                 chain,
@@ -2519,7 +2522,7 @@ impl Report for Seed {
                     );
                 }
                 serde_json::to_string_pretty(&val).map_err(in_context(
-                    ZingolibError::Read,
+                    |detail| ZingolibError::Read { detail },
                     "get seed. failed to serialize",
                 ))
             }
@@ -2578,7 +2581,9 @@ impl Report for ViewingKey {
                 }
                 Ok(val.pretty(2))
             }
-            Self::Unavailable(unavailable) => Err(ZingolibError::Read(chain_text(&unavailable))),
+            Self::Unavailable(unavailable) => Err(ZingolibError::Read {
+                detail: chain_text(&unavailable),
+            }),
         }
     }
 }
@@ -2589,7 +2594,7 @@ wallet_report!(pub fn get_ufvk() => report_wallet(ViewingKey::of));
 #[uniffi::export]
 pub fn read_wallet_chain(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
     let chain = zingolib::wallet::LightWallet::read_chain(&wallet_bytes)
-        .map_err(chained(ZingolibError::Read))?;
+        .map_err(chained(|detail| ZingolibError::Read { detail }))?;
     Ok(match chain {
         ChainType::Mainnet => "main",
         ChainType::Testnet => "test",
@@ -2603,8 +2608,8 @@ pub fn read_wallet_chain(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError>
 #[uniffi::export]
 pub fn read_wallet_recovery_info(wallet_bytes: Vec<u8>) -> Result<String, ZingolibError> {
     let salvaged = zingolib::wallet::LightWallet::read_recovery_info(wallet_bytes.as_slice())
-        .map_err(chained(ZingolibError::Read))?;
-    serde_json::to_string(&salvaged).map_err(chained(ZingolibError::Read))
+        .map_err(chained(|detail| ZingolibError::Read { detail }))?;
+    serde_json::to_string(&salvaged).map_err(chained(|detail| ZingolibError::Read { detail }))
 }
 
 /// Confirms the bytes parse as a complete wallet under one of the supported
@@ -2629,7 +2634,7 @@ pub fn validate_wallet_bytes(wallet_bytes: Vec<u8>) -> Result<(), ZingolibError>
             }
         }
     }
-    Err(ZingolibError::Read(deepest.1))
+    Err(ZingolibError::Read { detail: deepest.1 })
 }
 
 /// The salvage contract: a wallet file cut anywhere past its stable prefix
@@ -2674,7 +2679,7 @@ mod wallet_salvage_tests {
         for garbage in [vec![0x20; 47], vec![0x28; 40]] {
             assert!(matches!(
                 read_wallet_recovery_info(garbage),
-                Err(ZingolibError::Read(_))
+                Err(ZingolibError::Read { .. })
             ));
         }
     }
@@ -2685,7 +2690,7 @@ mod wallet_salvage_tests {
         bytes.truncate(20);
         assert!(matches!(
             read_wallet_recovery_info(bytes),
-            Err(ZingolibError::Read(_))
+            Err(ZingolibError::Read { .. })
         ));
     }
 }
@@ -2721,7 +2726,7 @@ mod wallet_validation_tests {
             assert!(
                 matches!(
                     validate_wallet_bytes(bytes[..cut].to_vec()),
-                    Err(ZingolibError::Read(_))
+                    Err(ZingolibError::Read { .. })
                 ),
                 "the wallet cut to {cut} of {} bytes must fail validation",
                 bytes.len()
@@ -2737,7 +2742,7 @@ mod wallet_validation_tests {
         bytes.extend([0x07; 400]);
         assert!(matches!(
             validate_wallet_bytes(bytes),
-            Err(ZingolibError::Read(_))
+            Err(ZingolibError::Read { .. })
         ));
     }
 }
@@ -2755,7 +2760,9 @@ pub fn change_server(choice: IndexerChoice) -> Result<String, ZingolibError> {
                 .await
                 .map_err(|e| match e {
                     lightclient::ChooseIndexerError::NoDefaultIndexer(no_default) => {
-                        ZingolibError::InvalidInput(no_default.to_string())
+                        ZingolibError::InvalidInput {
+                            detail: no_default.to_string(),
+                        }
                     }
                     lightclient::ChooseIndexerError::Connect(connect) => ffi_error(connect.into()),
                 })?;
@@ -2811,7 +2818,7 @@ impl Report for keys::WalletKind {
 #[uniffi::export]
 pub fn wallet_kind() -> Result<String, ZingolibError> {
     with_wallet(|wallet| wallet.kind())?
-        .map_err(|e| ZingolibError::read(&e))?
+        .map_err(chained(|detail| ZingolibError::Read { detail }))?
         .report()
 }
 
@@ -2819,9 +2826,9 @@ pub fn wallet_kind() -> Result<String, ZingolibError> {
 pub fn parse_address(address: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if address.is_empty() {
-            Err(ZingolibError::InvalidInput(
-                "the address is empty".to_string(),
-            ))
+            Err(ZingolibError::InvalidInput {
+                detail: "the address is empty".to_string(),
+            })
         } else {
             fn make_decoded_chain_pair(
                 address: &str,
@@ -2904,7 +2911,9 @@ pub fn parse_address(address: String) -> Result<String, ZingolibError> {
 pub fn parse_ufvk(ufvk: String) -> Result<String, ZingolibError> {
     with_panic_guard(|| {
         if ufvk.is_empty() {
-            Err(ZingolibError::InvalidInput("the ufvk is empty".to_string()))
+            Err(ZingolibError::InvalidInput {
+                detail: "the ufvk is empty".to_string(),
+            })
         } else {
             Ok(json::stringify_pretty(
                 match Ufvk::decode(&ufvk) {
@@ -2965,7 +2974,7 @@ pub fn get_messages(address: String) -> Result<String, ZingolibError> {
                 .await
             {
                 Ok(value_transfers) => Ok(json::JsonValue::from(value_transfers).pretty(2)),
-                Err(e) => Err(ZingolibError::read(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Read { detail })(e)),
             }
         })
     })
@@ -2977,7 +2986,7 @@ pub fn get_balance() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.account_balance(AccountId::ZERO).await {
                 Ok(bal) => Ok(json::JsonValue::from(bal).pretty(2)),
-                Err(e) => Err(ZingolibError::read(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Read { detail })(e)),
             }
         })
     })
@@ -2989,7 +2998,7 @@ pub fn get_total_memobytes_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_memobytes_to_address().await {
                 Ok(total_memo_bytes) => Ok(json::JsonValue::from(total_memo_bytes).pretty(2)),
-                Err(e) => Err(ZingolibError::read(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Read { detail })(e)),
             }
         })
     })
@@ -3001,7 +3010,7 @@ pub fn get_total_value_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_value_to_address().await {
                 Ok(total_values) => Ok(json::JsonValue::from(total_values).pretty(2)),
-                Err(e) => Err(ZingolibError::read(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Read { detail })(e)),
             }
         })
     })
@@ -3013,7 +3022,7 @@ pub fn get_total_spends_to_address() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.do_total_spends_to_address().await {
                 Ok(total_spends) => Ok(json::JsonValue::from(total_spends).pretty(2)),
-                Err(e) => Err(ZingolibError::read(&e)),
+                Err(e) => Err(chained(|detail| ZingolibError::Read { detail })(e)),
             }
         })
     })
@@ -3043,7 +3052,9 @@ pub fn mixnet_fetch(url: String, timeout_ms: u64) -> Result<String, ZingolibErro
     let fetch = with_initialized_lightclient_read(|lightclient| {
         let url = url
             .parse::<http::Uri>()
-            .map_err(|error| ZingolibError::InvalidInput(format!("url: {error}")))?;
+            .map_err(|error| ZingolibError::InvalidInput {
+                detail: format!("url: {error}"),
+            })?;
         RT.block_on(async move {
             lightclient
                 .fetch_over_mixnet(url, std::time::Duration::from_millis(timeout_ms))
@@ -3084,8 +3095,12 @@ impl Report for Removal {
     fn report(self) -> Result<String, ZingolibError> {
         match self {
             Self::Removed => Ok("Successfully removed transaction.".to_string()),
-            Self::InvalidTxid(invalid) => Err(ZingolibError::InvalidInput(chain_text(&invalid))),
-            Self::Refused(refusal) => Err(ZingolibError::Wallet(chain_text(&refusal))),
+            Self::InvalidTxid(invalid) => Err(ZingolibError::InvalidInput {
+                detail: chain_text(&invalid),
+            }),
+            Self::Refused(refusal) => Err(ZingolibError::Wallet {
+                detail: chain_text(&refusal),
+            }),
         }
     }
 }
@@ -3106,7 +3121,7 @@ wallet_report!(pub fn remove_transaction(txid: String) => report_wallet_mut_with
 pub fn get_spendable_balance_with_address(address: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient_read(|lightclient| {
         let address = address_from_str(&address).map_err(in_context(
-            ZingolibError::InvalidInput,
+            |detail| ZingolibError::InvalidInput { detail },
             "unknown address format",
         ))?;
         RT.block_on(async move {
@@ -3125,21 +3140,29 @@ pub fn get_spendable_balance_with_address(address: String) -> Result<String, Zin
 #[uniffi::export]
 pub fn get_spendable_balance_total() -> Result<String, ZingolibError> {
     let balance = with_wallet(|wallet| wallet.shielded_spendable_balance(AccountId::ZERO, false))?
-        .map_err(|e| ZingolibError::read(&e))?;
+        .map_err(chained(|detail| ZingolibError::Read { detail }))?;
     Ok(object! {
         "spendable_balance" => balance.into_u64(),
     }
     .pretty(2))
 }
 
+fn unimplemented_option() -> Result<String, ZingolibError> {
+    with_panic_guard(|| {
+        Err(ZingolibError::Wallet {
+            detail: "unimplemented".to_string(),
+        })
+    })
+}
+
 #[uniffi::export]
 pub fn set_option_wallet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
+    unimplemented_option()
 }
 
 #[uniffi::export]
 pub fn get_option_wallet() -> Result<String, ZingolibError> {
-    with_panic_guard(|| Err(ZingolibError::Wallet("unimplemented".to_string())))
+    unimplemented_option()
 }
 
 #[uniffi::export]
@@ -3206,7 +3229,9 @@ impl Report for NewUnifiedAddress {
                 "encoded_address" => encoded_address,
             }
             .pretty(2)),
-            Self::Refused(refusal) => Err(ZingolibError::Wallet(chain_text(&refusal))),
+            Self::Refused(refusal) => Err(ZingolibError::Wallet {
+                detail: chain_text(&refusal),
+            }),
         }
     }
 }
@@ -3297,7 +3322,9 @@ impl Report for NewTransparentAddress {
                 "encoded_address" => encoded_address,
             }
             .pretty(2)),
-            Self::Refused(refusal) => Err(ZingolibError::Wallet(chain_text(&refusal))),
+            Self::Refused(refusal) => Err(ZingolibError::Wallet {
+                detail: chain_text(&refusal),
+            }),
         }
     }
 }
@@ -3353,7 +3380,9 @@ fn ownership_report(
 ) -> Result<String, ZingolibError> {
     let ownership = match ownership {
         Err(unreadable) => {
-            return Err(ZingolibError::Wallet(chain_text(&unreadable)));
+            return Err(ZingolibError::Wallet {
+                detail: chain_text(&unreadable),
+            });
         }
         Ok(None) => json::object! { "is_wallet_address" => false },
         Ok(Some(WalletAddressRef::Unified {
@@ -3453,10 +3482,14 @@ pub fn set_config_wallet_to_test() -> Result<String, ZingolibError> {
 pub fn set_config_wallet_to_prod(settings: SyncSettings) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         let level = performance_level(&settings.performance_level).ok_or_else(|| {
-            ZingolibError::InvalidInput("not a valid performance level".to_string())
+            ZingolibError::InvalidInput {
+                detail: "not a valid performance level".to_string(),
+            }
         })?;
         let min_confirmations = NonZeroU32::try_from(settings.min_confirmations).map_err(|_| {
-            ZingolibError::InvalidInput("min_confirmations must be greater than 0".to_string())
+            ZingolibError::InvalidInput {
+                detail: "min_confirmations must be greater than 0".to_string(),
+            }
         })?;
         RT.block_on(async move {
             let mut wallet = lightclient.wallet().write().await;
@@ -3558,33 +3591,42 @@ fn proposal_destination_pools<FeeRuleT, NoteRef>(
 /// `{ address, amount, memo? }` receivers.
 fn send_request_from_json(send_json: &str) -> Result<TransactionRequest, ZingolibError> {
     let json_args = json::parse(send_json).map_err(in_context(
-        ZingolibError::InvalidInput,
+        |detail| ZingolibError::InvalidInput { detail },
         "it is not a valid JSON",
     ))?;
 
     let mut receivers = Receivers::new();
     for j in json_args.members() {
         let recipient_address = match j["address"].as_str() {
-            Some(addr) => ZcashAddress::try_from_encoded(addr)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?,
+            Some(addr) => ZcashAddress::try_from_encoded(addr).map_err(in_context(
+                |detail| ZingolibError::InvalidInput { detail },
+                "invalid address",
+            ))?,
             None => {
-                return Err(ZingolibError::InvalidInput("missing address".to_string()));
+                return Err(ZingolibError::InvalidInput {
+                    detail: "missing address".to_string(),
+                });
             }
         };
 
         let amount = match j["amount"].as_u64() {
-            Some(a) => Zatoshis::from_u64(a)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?,
+            Some(a) => Zatoshis::from_u64(a).map_err(in_context(
+                |detail| ZingolibError::InvalidInput { detail },
+                "invalid amount",
+            ))?,
             None => {
-                return Err(ZingolibError::InvalidInput("missing amount".to_string()));
+                return Err(ZingolibError::InvalidInput {
+                    detail: "missing amount".to_string(),
+                });
             }
         };
 
         let memo = match j["memo"].as_str() {
-            Some(m) => Some(
-                interpret_memo_string(m.to_string())
-                    .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
-            ),
+            Some(m) => Some(interpret_memo_string(m.to_string()).map_err(|e| {
+                ZingolibError::InvalidInput {
+                    detail: format!("invalid memo: {e}"),
+                }
+            })?),
             None => None,
         };
 
@@ -3595,8 +3637,10 @@ fn send_request_from_json(send_json: &str) -> Result<TransactionRequest, Zingoli
         });
     }
 
-    transaction_request_from_receivers(receivers)
-        .map_err(in_context(ZingolibError::InvalidInput, "request error"))
+    transaction_request_from_receivers(receivers).map_err(in_context(
+        |detail| ZingolibError::InvalidInput { detail },
+        "request error",
+    ))
 }
 
 /// The arguments `send_all` and `preview_send_all` take: the recipient, and
@@ -3605,14 +3649,17 @@ fn send_all_request(
     address: String,
     memo: String,
 ) -> Result<(ZcashAddress, Option<MemoBytes>), ZingolibError> {
-    let address = ZcashAddress::try_from_encoded(&address)
-        .map_err(in_context(ZingolibError::InvalidInput, "invalid address"))?;
+    let address = ZcashAddress::try_from_encoded(&address).map_err(in_context(
+        |detail| ZingolibError::InvalidInput { detail },
+        "invalid address",
+    ))?;
     let memo = if memo.is_empty() {
         None
     } else {
         Some(
-            interpret_memo_string(memo)
-                .map_err(|e| ZingolibError::InvalidInput(format!("invalid memo: {e}")))?,
+            interpret_memo_string(memo).map_err(|e| ZingolibError::InvalidInput {
+                detail: format!("invalid memo: {e}"),
+            })?,
         )
     };
     Ok((address, memo))
@@ -3624,7 +3671,7 @@ fn send_answer(
     proposed: Result<ProportionalFeeProposal, ProposeSendError>,
 ) -> Result<String, ZingolibError> {
     let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
-    let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
+    let fee = total_fee(&proposal).map_err(chained(|detail| ZingolibError::Send { detail }))?;
     Ok(object! {
         "fee" => fee.into_u64(),
         "source_pools" => proposal_source_pools(&proposal),
@@ -3639,7 +3686,7 @@ fn send_all_answer(
     proposed: Result<ProportionalFeeProposal, ProposeSendError>,
 ) -> Result<String, ZingolibError> {
     let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
-    let fee = total_fee(&proposal).map_err(chained(ZingolibError::Send))?;
+    let fee = total_fee(&proposal).map_err(chained(|detail| ZingolibError::Send { detail }))?;
     let amount = proposal_recipient_amount(&proposal);
     Ok(object! {
         "amount" => amount.into_u64(),
@@ -3657,9 +3704,9 @@ fn shield_answer(
 ) -> Result<String, ZingolibError> {
     let proposal = proposed.map_err(|e| ffi_error(SendError::from(e).into()))?;
     if proposal.steps().len() != 1 {
-        return Err(ZingolibError::InvalidInput(
-            "shielding transactions should not have multiple proposal steps".to_string(),
-        ));
+        return Err(ZingolibError::InvalidInput {
+            detail: "shielding transactions should not have multiple proposal steps".to_string(),
+        });
     }
     let step = proposal.steps().first();
     let value_to_shield = step
@@ -3667,8 +3714,8 @@ fn shield_answer(
         .proposed_change()
         .iter()
         .try_fold(Zatoshis::ZERO, |acc, c| acc + c.value())
-        .ok_or_else(|| {
-            ZingolibError::InvalidInput("shield amount outside valid range of zatoshis".to_string())
+        .ok_or_else(|| ZingolibError::InvalidInput {
+            detail: "shield amount outside valid range of zatoshis".to_string(),
         })?;
     let fee = step.balance().fee_required();
     Ok(object! {
@@ -3814,12 +3861,18 @@ pub fn send_swap_deposit(
 ) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         RT.block_on(async move {
-            let amount = Zatoshis::from_u64(amount)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid amount"))?;
-            let memo = hex::decode(&memo_hex)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo hex"))?;
-            let memo = wallet::transparent::OpReturnData::new(memo)
-                .map_err(in_context(ZingolibError::InvalidInput, "invalid memo"))?;
+            let amount = Zatoshis::from_u64(amount).map_err(in_context(
+                |detail| ZingolibError::InvalidInput { detail },
+                "invalid amount",
+            ))?;
+            let memo = hex::decode(&memo_hex).map_err(in_context(
+                |detail| ZingolibError::InvalidInput { detail },
+                "invalid memo hex",
+            ))?;
+            let memo = wallet::transparent::OpReturnData::new(memo).map_err(in_context(
+                |detail| ZingolibError::InvalidInput { detail },
+                "invalid memo",
+            ))?;
             lightclient
                 .propose_send_with_op_return(&vault_address, amount, memo, AccountId::ZERO)
                 .await
@@ -4218,14 +4271,14 @@ fn mixnet_indicator_json(lightclient: &LightClient) -> String {
 pub fn attach_mixnet(socks5_addr: String, exit_node: String) -> Result<String, ZingolibError> {
     with_initialized_lightclient(|lightclient| {
         let exit = zingolib::mixnet::ExitNodeId::parse(&exit_node).map_err(in_context(
-            ZingolibError::Mixnet,
+            |detail| ZingolibError::Mixnet { detail },
             "the shim reported no exit node",
         ))?;
         RT.block_on(async move {
             lightclient
                 .attach_mixnet(&socks5_addr, &[exit])
                 .await
-                .map_err(chained(ZingolibError::Mixnet))?;
+                .map_err(chained(|detail| ZingolibError::Mixnet { detail }))?;
             Ok(mixnet_indicator_json(lightclient))
         })
     })
@@ -4241,7 +4294,7 @@ pub fn enable_mixnet(proxy_path: String) -> Result<String, ZingolibError> {
             lightclient
                 .enable_mixnet(std::path::Path::new(&proxy_path))
                 .await
-                .map_err(chained(ZingolibError::Mixnet))?;
+                .map_err(chained(|detail| ZingolibError::Mixnet { detail }))?;
             Ok(mixnet_indicator_json(lightclient))
         })
     })

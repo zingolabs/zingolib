@@ -12,7 +12,7 @@ fn a_guarded_panic_reports_its_message_and_location() {
         }
         Ok(())
     });
-    let Err(ZingolibError::Panic(text)) = outcome else {
+    let Err(ZingolibError::Panic { detail: text }) = outcome else {
         panic!("a panic under the guard must come back as the typed Panic error");
     };
     assert!(text.contains(GUARDED_PANIC), "{text}");

@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step failed, it answers `ZingolibError::SendAfterDeshield` and the proposal
   stays stored with the deshield's txid: `confirm` resumes it and answers the
   vault payment's txid alone, and proposing again is refused until then.
-- `ZingolibError::SendAfterDeshield(String)`, the answer above. Its text
+- `ZingolibError::SendAfterDeshield { detail }`, the answer above. Its text
   names the deshield's txid.
 - `reserve_refund_address()` reserves the wallet's next refund address and
   reports it in the shape of `create_new_transparent_address`, for a swap
@@ -89,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three proposing calls now say so.
 
 ### Changed
+- **Breaking:** `ZingolibError` exposes its fields to Kotlin and Swift. Each
+  variant that held a `String` holds it in the field `detail`. The whole
+  text, such as `Error: send: ...`, is `toString()` in Kotlin and
+  `description` in Swift. `message` in Kotlin is `detail=...`, where it was
+  the whole text.
 - **Breaking:** the package is `zingolib-ffi`, renamed from `zingo`, and its
   proxy feature is `zingolib-nym-proxy-ffi`, renamed from `zingo-nym-proxy-ffi`.
   The `[lib]` table pins the library name `zingo`, so the built libraries

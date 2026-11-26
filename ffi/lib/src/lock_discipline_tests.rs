@@ -396,7 +396,7 @@ fn a_panic_inside_a_guarded_call_poisons_the_client_until_the_next_init() {
     init_offline_wallet();
     let outcome: Result<String, ZingolibError> =
         with_initialized_lightclient(|_lightclient| panic!("a guarded call panics"));
-    let Err(ZingolibError::Panic(text)) = outcome else {
+    let Err(ZingolibError::Panic { detail: text }) = outcome else {
         panic!("a panic under the guard must come back as the typed Panic error");
     };
     assert!(text.contains("a guarded call panics"), "{text}");
@@ -423,7 +423,7 @@ fn preview_send_refuses_beside_a_held_read_guard() {
         preview_send(format!(r#"[{{"address":"{address}","amount":50000}}]"#))
     });
     assert!(
-        matches!(outcome, Err(ZingolibError::Send(_))),
+        matches!(outcome, Err(ZingolibError::Send { .. })),
         "a never-synced wallet cannot size a send: {outcome:?}"
     );
 }
@@ -437,7 +437,7 @@ fn preview_send_all_refuses_beside_a_held_read_guard() {
         preview_send_all(address, String::new())
     });
     assert!(
-        matches!(outcome, Err(ZingolibError::Send(_))),
+        matches!(outcome, Err(ZingolibError::Send { .. })),
         "a never-synced wallet cannot size a send-all: {outcome:?}"
     );
 }
@@ -448,7 +448,7 @@ fn preview_shield_refuses_beside_a_held_read_guard() {
     init_offline_wallet();
     let outcome = outcome_under_held_read_lock(preview_shield);
     assert!(
-        matches!(outcome, Err(ZingolibError::Shield(_))),
+        matches!(outcome, Err(ZingolibError::Shield { .. })),
         "a never-synced wallet cannot size a shield: {outcome:?}"
     );
 }
