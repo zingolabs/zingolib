@@ -1548,22 +1548,46 @@ mod sync_error_channel_tests {
         );
     }
 
+    /// (the variant of the launch, is-that-variant, its name).
+    type Launch = (
+        fn(String) -> ZingolibError,
+        fn(&ZingolibError) -> bool,
+        &'static str,
+    );
+
+    const LAUNCHES: [Launch; 2] = [
+        (
+            |detail| ZingolibError::Sync { detail },
+            |error| matches!(error, ZingolibError::Sync { .. }),
+            "Sync",
+        ),
+        (
+            |detail| ZingolibError::Rescan { detail },
+            |error| matches!(error, ZingolibError::Rescan { .. }),
+            "Rescan",
+        ),
+    ];
+
     #[test]
-    fn a_sync_launch_without_an_indexer_is_offline() {
-        let error = sync_launch_error(LightClientError::Offline);
-        assert!(
-            matches!(error, ZingolibError::Offline),
-            "an indexerless launch must be the Offline variant: {error}"
-        );
+    fn a_launch_without_an_indexer_is_offline() {
+        for (variant, _, name) in LAUNCHES {
+            let error = launch_error(variant)(LightClientError::Offline);
+            assert!(
+                matches!(error, ZingolibError::Offline),
+                "an indexerless {name} launch must be the Offline variant: {error}"
+            );
+        }
     }
 
     #[test]
-    fn a_sync_launch_failure_with_an_indexer_is_sync() {
-        let error = sync_launch_error(LightClientError::SyncLaunchError);
-        assert!(
-            matches!(error, ZingolibError::Sync { .. }),
-            "a failed launch must be the Sync variant: {error}"
-        );
+    fn a_launch_failure_with_an_indexer_keeps_the_variant_of_the_launch() {
+        for (variant, is_variant, name) in LAUNCHES {
+            let error = launch_error(variant)(LightClientError::SyncLaunchError);
+            assert!(
+                is_variant(&error),
+                "a failed launch must be the {name} variant: {error}"
+            );
+        }
     }
 
     #[test]
@@ -2366,10 +2390,12 @@ fn attach_pending_indexer() {
     }
 }
 
-fn sync_launch_error(error: LightClientError) -> ZingolibError {
-    match error {
+fn launch_error(
+    variant: fn(String) -> ZingolibError,
+) -> impl FnOnce(LightClientError) -> ZingolibError {
+    move |error| match error {
         LightClientError::Offline => ZingolibError::Offline,
-        other => chained(|detail| ZingolibError::Sync { detail })(other),
+        other => chained(variant)(other),
     }
 }
 
@@ -2398,7 +2424,7 @@ fn run_sync() -> Result<String, ZingolibError> {
                     Err(LightClientError::SyncModeError(SyncModeError::SyncAlreadyRunning)) => {
                         Ok("Sync task already running.".to_string())
                     }
-                    Err(e) => Err(sync_launch_error(e)),
+                    Err(e) => Err(launch_error(|detail| ZingolibError::Sync { detail })(e)),
                 }
             })
         }
@@ -2475,9 +2501,7 @@ pub fn run_rescan() -> Result<String, ZingolibError> {
         RT.block_on(async move {
             match lightclient.rescan().await {
                 Ok(_) => Ok("Launching rescan...".to_string()),
-                Err(e) => Err(ZingolibError::Rescan {
-                    detail: chain_text(&e),
-                }),
+                Err(e) => Err(launch_error(|detail| ZingolibError::Rescan { detail })(e)),
             }
         })
     })
