@@ -49,7 +49,7 @@ use zingolib::data::receivers::Receivers;
 use zingolib::data::receivers::transaction_request_from_receivers;
 use zingolib::lightclient;
 use zingolib::lightclient::LightClient;
-use zingolib::lightclient::error::{LightClientError, SendError};
+use zingolib::lightclient::error::{LightClientError, SendError, TransmissionError};
 use zingolib::netutils::{self, GrpcIndexer, Indexer, time};
 use zingolib::perspective::sync_progress;
 use zingolib::utils;
@@ -74,6 +74,12 @@ const INDEXER_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 // Bounds the pending-URI redial in attach_pending_indexer.
 const PENDING_INDEXER_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NodeReject {
+    pub code: u8,
+    pub reason: String,
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 #[uniffi::export(Display)]
 pub enum ZingolibError {
@@ -95,6 +101,11 @@ pub enum ZingolibError {
     Read { detail: String },
     #[error("Error: send: {detail}")]
     Send { detail: String },
+    #[error("Error: transmission: {detail}")]
+    Transmission {
+        detail: String,
+        reject: Option<NodeReject>,
+    },
     #[error("Error: shield: {detail}")]
     Shield { detail: String },
     #[error("Error: send after deshield: {detail}")]
@@ -241,10 +252,22 @@ fn ffi_error(e: LightClientError) -> ZingolibError {
             | SendError::CalculateSendError(_)
             | SendError::RetargetError(_)
             | SendError::NoStoredProposal
-            | SendError::TransmissionError(_)
             | SendError::OpReturn(_)
             | SendError::OpReturnNotCalculable
             | SendError::OpReturnSourceAddressStale => ZingolibError::Send { detail },
+            SendError::TransmissionError(transmission) => ZingolibError::Transmission {
+                detail,
+                reject: match transmission {
+                    TransmissionError::TransmissionFailed { reject, .. } => {
+                        reject.map(|reject| NodeReject {
+                            code: reject.code,
+                            reason: reject.reason,
+                        })
+                    }
+                    TransmissionError::IncorrectTransactionStatus(_)
+                    | TransmissionError::IncorrectTxidFromServer(..) => None,
+                },
+            },
             SendError::OpReturnAfterDeshield { .. } | SendError::OpReturnResumePending { .. } => {
                 ZingolibError::SendAfterDeshield { detail }
             }
@@ -1631,8 +1654,17 @@ mod read_error_channel_tests {
 mod error_funnel_tests {
     use super::*;
     use zcash_protocol::TxId;
-    use zingolib::lightclient::error::{MigrationError, TransmissionError};
+    use zingolib::lightclient::error::{MigrationError, NodeReject, TransmissionError};
     use zingolib::wallet::error::WalletError;
+
+    fn failed_transmission(reject: Option<NodeReject>) -> LightClientError {
+        LightClientError::SendError(SendError::TransmissionError(
+            TransmissionError::TransmissionFailed {
+                detail: "node said no".to_string(),
+                reject,
+            },
+        ))
+    }
 
     /// (input, is-the-pinned-variant, the pinned variant's name).
     type FunnelCase = (LightClientError, fn(&ZingolibError) -> bool, &'static str);
@@ -1656,11 +1688,9 @@ mod error_funnel_tests {
                 "Send",
             ),
             (
-                LightClientError::SendError(SendError::TransmissionError(
-                    TransmissionError::TransmissionFailed("node said no".to_string()),
-                )),
-                |e| matches!(e, ZingolibError::Send { .. }),
-                "Send",
+                failed_transmission(None),
+                |e| matches!(e, ZingolibError::Transmission { reject: None, .. }),
+                "Transmission",
             ),
             (
                 LightClientError::FileError(std::io::Error::other("disk full")),
@@ -1731,12 +1761,28 @@ mod error_funnel_tests {
     }
 
     #[test]
+    fn a_transmission_the_node_rejected_carries_the_reject_code() {
+        const DUPLICATE: u8 = 18;
+        let reject = NodeReject {
+            code: DUPLICATE,
+            reason: "bad-txns-orchard-duplicate-nullifier".to_string(),
+        };
+        let mapped = ffi_error(failed_transmission(Some(reject.clone())));
+        assert!(
+            matches!(
+                &mapped,
+                ZingolibError::Transmission { reject: Some(crossed), .. }
+                    if crossed.code == reject.code && crossed.reason == reject.reason
+            ),
+            "the reject must cross whole: {mapped:?}"
+        );
+    }
+
+    #[test]
     fn the_funnel_preserves_the_upstream_message_verbatim_in_the_variant() {
         // The bridges forward the Display text as the rejection message, so
         // the funnel must not paraphrase or truncate the upstream prose.
-        let upstream = LightClientError::SendError(SendError::TransmissionError(
-            TransmissionError::TransmissionFailed("node said no".to_string()),
-        ));
+        let upstream = failed_transmission(None);
         let upstream_text = upstream.to_string();
         let mapped = ffi_error(upstream);
         assert!(

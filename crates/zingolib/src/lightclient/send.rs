@@ -17,14 +17,14 @@ use zl_netutils::request;
 
 use crate::config::ChainType;
 use crate::data::proposal::{OpReturnProposal, ZingoProposal};
-use crate::lightclient::error::{LightClientError, SendError, TransmissionError};
+use crate::lightclient::error::{LightClientError, NodeReject, SendError, TransmissionError};
 use crate::lightclient::indexer_history::{
     AttemptKind, AttemptRoute, FailureKind, FaultDomain, IndexerAttempt, IndexerHistoryHandle,
     fault_domain, now_unix_secs,
 };
 use crate::lightclient::transmit::{
-    TransmitFailed, TransmitProgressHandle, TransmitProgressScope, TransmitTarget,
-    resilient_transmit,
+    SubmitFailure as _, TransmitFailed, TransmitProgressHandle, TransmitProgressScope,
+    TransmitTarget, resilient_transmit,
 };
 
 /// Records one finished send attempt against `host` into the cross-session
@@ -57,6 +57,7 @@ fn record_send_attempt(
 pub(crate) struct TransmitError {
     host: String,
     failure: zl_netutils::diag::NetOpFailure,
+    reject: Option<NodeReject>,
 }
 
 use crate::lightclient::{DEFAULT_REQUEST_TIMEOUT, LightClient};
@@ -366,7 +367,7 @@ where
     F: Fn(&T::Failure, &crate::destination::Host) -> zl_netutils::diag::NetOpFailure,
 {
     let started = std::time::Instant::now();
-    let outcome = resilient_transmit(
+    let (outcome, reject) = match resilient_transmit(
         target,
         tx_bytes,
         height,
@@ -375,7 +376,13 @@ where
         |event| context.progress.set(format!("destination {host}: {event}")),
     )
     .await
-    .map_err(|TransmitFailed(failure)| describe_failure(&failure, host));
+    {
+        Ok(server_txid) => (Ok(server_txid), None),
+        Err(TransmitFailed(failure)) => (
+            Err(describe_failure(&failure, host)),
+            failure.rejection_text().and_then(NodeReject::parse),
+        ),
+    };
     record_send_attempt(
         context.history,
         host,
@@ -392,6 +399,7 @@ where
         Err(failure) => Err(TransmitError {
             host: host.to_string(),
             failure,
+            reject,
         }),
     }
 }
@@ -956,7 +964,10 @@ impl LightClient {
                     // The typed failure is rendered only here, at the
                     // report's existing prose field.
                     return Err(SendError::TransmissionError(
-                        TransmissionError::TransmissionFailed(failure.to_string()),
+                        TransmissionError::TransmissionFailed {
+                            detail: failure.to_string(),
+                            reject: failure.reject,
+                        },
                     )
                     .into());
                 }
