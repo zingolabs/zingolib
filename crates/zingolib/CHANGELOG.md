@@ -84,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same path as the wallet's.
 
 ### Changed
+- **Breaking:** `TransmissionError::TransmissionFailed` holds the fields
+  `detail` and `reject`, where it held one `String`. `reject` is the new
+  `lightclient::error::NodeReject`, the code and the reason of a verdict
+  that opens with a reject code, such as `18: bad-txns-orchard-duplicate-nullifier`.
+  The error text is the same.
 - Indexer connections, the untunneled price fetch and the sync-server
   probe resolve host names over DNS-over-HTTPS and DNS-over-TLS through
   `netutils::dns`, where they asked the operating system's resolver. No

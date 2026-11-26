@@ -94,6 +94,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text, such as `Error: send: ...`, is `toString()` in Kotlin and
   `description` in Swift. `message` in Kotlin is `detail=...`, where it was
   the whole text.
+- **Breaking:** a failed transmission gives
+  `ZingolibError::Transmission { detail, reject }`, where it gave `Send`.
+  `reject` is a `NodeReject { code, reason }` when the verdict of the node
+  opens with a reject code, such as `18: bad-txns-orchard-duplicate-nullifier`.
 - **Breaking:** the package is `zingolib-ffi`, renamed from `zingo`, and its
   proxy feature is `zingolib-nym-proxy-ffi`, renamed from `zingo-nym-proxy-ffi`.
   The `[lib]` table pins the library name `zingo`, so the built libraries

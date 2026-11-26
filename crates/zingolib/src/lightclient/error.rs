@@ -200,11 +200,32 @@ pub enum SendError {
     },
 }
 
+const REJECT_CODE_SEPARATOR: &str = ": ";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeReject {
+    pub code: u8,
+    pub reason: String,
+}
+
+impl NodeReject {
+    pub(crate) fn parse(verdict: &str) -> Option<Self> {
+        let (code, reason) = verdict.split_once(REJECT_CODE_SEPARATOR)?;
+        Some(Self {
+            code: code.parse().ok()?,
+            reason: reason.to_string(),
+        })
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TransmissionError {
     /// Transmission failed.
-    #[error("Transmission failed. {0}")]
-    TransmissionFailed(String),
+    #[error("Transmission failed. {detail}")]
+    TransmissionFailed {
+        detail: String,
+        reject: Option<NodeReject>,
+    },
     /// Transaction to transmit does not have `Calculated` status: {0}
     #[error("Transaction to transmit does not have `Calculated` status: {0}")]
     IncorrectTransactionStatus(TxId),
@@ -213,4 +234,27 @@ pub enum TransmissionError {
         "Server error: txid reported by the server does not match calculated txid.\ncalculated txid:\n{0}\ntxid from server: {1}"
     )]
     IncorrectTxidFromServer(TxId, TxId),
+}
+
+#[cfg(test)]
+mod node_reject_tests {
+    use super::NodeReject;
+
+    #[test]
+    fn a_verdict_that_opens_with_a_code_is_a_node_reject() {
+        assert_eq!(
+            NodeReject::parse("18: bad-txns-orchard-duplicate-nullifier"),
+            Some(NodeReject {
+                code: 18,
+                reason: "bad-txns-orchard-duplicate-nullifier".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_verdict_with_no_leading_code_is_no_node_reject() {
+        for verdict in ["", "failed to validate", "transport: 18: dust", "-26: dust"] {
+            assert_eq!(NodeReject::parse(verdict), None, "{verdict:?}");
+        }
+    }
 }
