@@ -4,10 +4,7 @@ use std::{
     fs::File,
     io::{BufReader, Cursor, Read},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8},
-    },
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use json::JsonValue;
@@ -22,7 +19,7 @@ use pepper_sync::{
     error::SyncError,
     keys::transparent::TransparentAddressId,
     sync::{SyncResult, SyncStatus},
-    wallet::SyncMode,
+    wallet::SyncModeHandle,
 };
 use zl_netutils::Indexer as _;
 
@@ -54,6 +51,7 @@ pub mod sync;
 pub(crate) mod transmit;
 
 pub use save::SaveShutdown;
+pub use sync::SyncModeRequest;
 pub use transmit::TransmitProgressHandle;
 
 #[cfg(test)]
@@ -143,7 +141,7 @@ pub enum ChooseIndexerError {
 pub struct LightClient {
     network: zl_netutils::NetworkAccess,
     wallet: WalletMeta,
-    sync_mode: Arc<AtomicU8>,
+    sync_mode: SyncModeHandle,
     sync_handle: Option<JoinHandle<Result<SyncResult, SyncError<WalletError>>>>,
     /// The receiving end of the sync engine's progress channel, answering status queries without the wallet lock.
     sync_progress: tokio::sync::watch::Receiver<Option<SyncStatus>>,
@@ -314,7 +312,7 @@ impl LightClient {
         LightClient {
             network,
             wallet: WalletMeta::new(wallet_path, wallet),
-            sync_mode: Arc::new(AtomicU8::new(SyncMode::NotRunning as u8)),
+            sync_mode: SyncModeHandle::default(),
             sync_handle: None,
             sync_progress: tokio::sync::watch::channel(None).1,
             save_active: Arc::new(AtomicBool::new(false)),

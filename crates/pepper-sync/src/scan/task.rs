@@ -1,11 +1,9 @@
 use std::{
-    borrow::BorrowMut,
     collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
     time::Duration,
 };
 
-use futures::FutureExt;
 use tokio::{
     sync::mpsc,
     task::{JoinError, JoinHandle},
@@ -37,6 +35,14 @@ const MAX_WORKER_POOLSIZE: usize = 2;
 const MAX_LOAD_NULLIFIERS: usize = 2usize.pow(14);
 
 use zl_netutils::time::SCANNER_SHUTDOWN_TIMEOUT;
+
+/// An event the loader sends to the scanner.
+pub(crate) enum LoaderEvent {
+    /// A load is ready for a worker.
+    Load(Box<ScanTask>),
+    /// The loader task has ended, with the error it ended on.
+    Exited(Result<(), ServerError>),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanTaskRunnerActivity {
@@ -238,13 +244,34 @@ where
         self.loader = Some(loader);
     }
 
-    fn check_loader_error(&mut self) -> Result<(), ServerError> {
-        let loader = self.loader.take();
-        if let Some(mut loader) = loader {
-            loader.check_error()?;
-            self.loader = Some(loader);
-        }
+    /// Returns whether the loader task runs.
+    pub(crate) fn loader_running(&self) -> bool {
+        self.loader
+            .as_ref()
+            .is_some_and(|loader| loader.runner.handle.is_some())
+    }
 
+    /// Awaits the loader's next event. Never resolves when no loader task runs.
+    pub(crate) async fn loader_event(&mut self) -> LoaderEvent {
+        match self.loader.as_mut() {
+            Some(loader) => loader.event().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    /// Applies a loader event. Returns the error the loader ended on.
+    pub(crate) fn apply_loader_event(&mut self, event: LoaderEvent) -> Result<(), ServerError> {
+        match event {
+            LoaderEvent::Load(load) => {
+                let loader = self.loader.as_mut().expect(
+                    "the scanner launches its loader before its first update and takes it only at shutdown",
+                );
+                let arrived = (load.task_id, load.scan_range.block_range().end);
+                loader.runner.arrived(&arrived);
+                loader.load = Some(*load);
+            }
+            LoaderEvent::Exited(outcome) => outcome?,
+        }
         Ok(())
     }
 
@@ -314,52 +341,44 @@ where
     where
         W: SyncWallet + SyncBlocks + SyncNullifiers + SyncTransactions,
     {
-        self.check_loader_error()?;
+        loop {
+            match self.state {
+                ScannerState::Verification => {
+                    self.update_workers();
 
-        match self.state {
-            ScannerState::Verification => {
-                self.loader
-                    .as_mut()
-                    .expect("loader should be running")
-                    .update_load_store();
-                self.update_workers();
-
-                let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
-                if !sync_state
-                    .scan_ranges()
-                    .iter()
-                    .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
-                {
-                    if sync_state
+                    let sync_state = wallet.get_sync_state().map_err(SyncError::WalletError)?;
+                    if !sync_state
                         .scan_ranges()
                         .iter()
-                        .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
+                        .any(|scan_range| scan_range.priority() == ScanPriority::Verify)
                     {
-                        // the last scan ranges with `Verify` priority are currently being scanned.
-                        return Ok(());
+                        if sync_state
+                            .scan_ranges()
+                            .iter()
+                            .any(|scan_range| scan_range.priority() == ScanPriority::Scanning)
+                        {
+                            // the last scan ranges with `Verify` priority are currently being scanned.
+                            return Ok(());
+                        }
+                        // verification complete
+                        self.state.verified();
+                        continue;
                     }
-                    // verification complete
-                    self.state.verified();
-                    return Ok(());
+
+                    // scan ranges with `Verify` priority
+                    self.update_loader(wallet, nullifier_map_limit_exceeded)
+                        .map_err(SyncError::WalletError)?;
                 }
+                ScannerState::Scan => {
+                    self.update_workers();
+                    self.update_loader(wallet, nullifier_map_limit_exceeded)
+                        .map_err(SyncError::WalletError)?;
+                }
+                ScannerState::Complete => {}
+            }
 
-                // scan ranges with `Verify` priority
-                self.update_loader(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
-            }
-            ScannerState::Scan => {
-                self.loader
-                    .as_mut()
-                    .expect("loader should be running")
-                    .update_load_store();
-                self.update_workers();
-                self.update_loader(wallet, nullifier_map_limit_exceeded)
-                    .map_err(SyncError::WalletError)?;
-            }
-            ScannerState::Complete => {}
+            return Ok(());
         }
-
-        Ok(())
     }
 
     fn update_workers(&mut self) {
@@ -711,30 +730,19 @@ where
         self.runner.send(scan_task, awaited_final_load);
     }
 
-    fn update_load_store(&mut self) {
-        let load_receiver = self
-            .load_receiver
-            .as_mut()
-            .expect("loader should be running");
-        if self.load.is_none()
-            && let Ok(load) = load_receiver.try_recv()
-        {
-            let arrived = (load.task_id, load.scan_range.block_range().end);
-            self.runner.arrived(&arrived);
-            self.load = Some(load);
-        }
-    }
-
-    fn check_error(&mut self) -> Result<(), ServerError> {
-        if let Some(mut handle) = self.runner.handle.take() {
-            if let Some(result) = handle.borrow_mut().now_or_never() {
-                result.expect("task panicked")?;
-            } else {
-                self.runner.handle = Some(handle);
+    /// Awaits the next event of the loader task.
+    ///
+    /// A load is awaited while none is held. The exit of the loader task is awaited while it runs. Its handle is
+    /// taken on exit.
+    async fn event(&mut self) -> LoaderEvent {
+        let awaiting_load = self.load.is_none();
+        tokio::select! {
+            Some(load) = receive(&mut self.load_receiver), if awaiting_load => LoaderEvent::Load(Box::new(load)),
+            exit = join(&mut self.runner.handle) => {
+                self.runner.handle = None;
+                LoaderEvent::Exited(exit.expect("task panicked"))
             }
         }
-
-        Ok(())
     }
 
     /// Shuts down loader by dropping the sender to the loader task and awaiting the handle.
@@ -749,11 +757,9 @@ where
             drop(receiver);
         }
 
-        let mut handle = self
-            .runner
-            .handle
-            .take()
-            .expect("loader should always have a handle to take!");
+        let Some(mut handle) = self.runner.handle.take() else {
+            return Ok(());
+        };
 
         match tokio::time::timeout(SCANNER_SHUTDOWN_TIMEOUT, &mut handle).await {
             Ok(res) => res.expect("task panicked")?,
@@ -765,6 +771,22 @@ where
         }
 
         Ok(())
+    }
+}
+
+/// Receives from `receiver`. Never resolves when there is none.
+async fn receive<T>(receiver: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+    match receiver {
+        Some(receiver) => receiver.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Joins `handle`. Never resolves when there is none.
+async fn join<T>(handle: &mut Option<JoinHandle<T>>) -> Result<T, JoinError> {
+    match handle {
+        Some(handle) => handle.await,
+        None => std::future::pending().await,
     }
 }
 

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wallet::SyncModeHandle`, the sync mode shared between the engine and its
+  consumer: `get`, `set`, `apply` and `transition` read and write the one
+  mode from every clone, and `subscribe` returns a watch receiver that
+  sends a notification on each change.
 - `pending_spends` reports the wallet's outputs that its pending transactions
   spend, derived from each pending transaction's inputs every time it is
   called.
@@ -20,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SyncState::set_shard_ranges_for_test`.
 
 ### Changed
+- BREAKING: `sync` takes the sync mode as `wallet::SyncModeHandle` in place
+  of `Arc<AtomicU8>`. The engine awaits the mode, so a pause, a resume and
+  a shutdown request are handled when they are made. The 50 ms tick, the
+  one-second pause tick and the 50 ms shutdown polls of the session-start
+  requests and of the mempool monitor are gone with it.
+- The scanner dispatches loads and scan tasks on the events the loader and
+  the workers send: a load ready, the loader idle, a worker's results. The
+  wallet write lock is taken on those events alone, where a timer took it
+  twenty times a second for the length of every session, idle or not.
 - **Breaking:** `wallet::WalletTransaction` is renamed to
   `wallet::TransactionRecord`. The type holds the wallet's record of a
   transaction, whose status can be calculated, transmitted, in the mempool,
@@ -56,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 ### Removed
+- `SyncMode::from_u8`, `SyncMode::from_atomic_u8`, `SyncMode::apply` and
+  `SyncMode::transition`, whose work `wallet::SyncModeHandle` does, and
+  `SyncModeError::InvalidSyncMode`, which a typed mode cannot produce.
 - BREAKING: `SyncError::recommend_same_server` and
   `ServerError::recommend_same_server`. Call `recovery_recommendation`
   instead. It returns `SyncRecoveryObservables::MaybeRecoverableServer`
@@ -69,6 +85,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enables it through `zl-common/serialization`.
 
 ### Fixed
+- The mempool stream request is held until the server answers it or the
+  session shuts down. A three-second tick dropped and reissued the pending
+  request, so an indexer that took longer to answer never served the
+  mempool stream and new blocks were noticed by the ten-second check alone.
 - A fetch of a block range that holds no block sends no request. The fetcher
   computed the last block as the end height minus one and did not compare it
   with the start, so an empty range such as `5..5` asked the indexer for

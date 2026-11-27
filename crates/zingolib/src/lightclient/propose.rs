@@ -1851,8 +1851,6 @@ mod proposal_shape {
 /// pause discipline lands later on this branch.
 #[cfg(test)]
 mod sync_pause_contract {
-    use std::sync::atomic;
-
     use pepper_sync::wallet::SyncMode;
     use zcash_protocol::PoolType;
     use zcash_protocol::value::Zatoshis;
@@ -1862,15 +1860,13 @@ mod sync_pause_contract {
     use crate::testutils::synthetic_wallet::{self, SyntheticWalletBuilder};
     use crate::wallet::LightWallet;
 
-    /// A synthetic-wallet client whose sync-mode atomic reads `Running`,
+    /// A synthetic-wallet client whose sync mode reads `Running`,
     /// simulating a consumer whose background sync engine is between
     /// batches. No engine task exists, so every mode transition observed
     /// (or leaked) is the code under test's own.
     async fn client_with_running_engine(wallet: LightWallet) -> LightClient {
         let client = LightClient::new_for_test(wallet).await;
-        client
-            .sync_mode
-            .store(SyncMode::Running as u8, atomic::Ordering::Release);
+        client.sync_mode.set(SyncMode::Running);
         client
     }
 
@@ -1945,7 +1941,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+            sync_mode.get(),
             SyncMode::Running,
             "quick_shield began its wallet reads while the engine ran"
         );
@@ -1980,7 +1976,7 @@ mod sync_pause_contract {
         tokio::task::yield_now().await;
 
         assert_ne!(
-            SyncMode::from_atomic_u8(&sync_mode).unwrap(),
+            sync_mode.get(),
             SyncMode::Running,
             "the send-all sizing began while the engine ran"
         );

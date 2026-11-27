@@ -118,6 +118,7 @@ tonic = { version = "0.14", features = ["tls-webpki-roots", "tls-aws-lc"] }
 ### Async
 futures = "0.3"
 tokio = "1"
+tokio-util = "0.7"
 
 ### Error interface
 thiserror = "2"
