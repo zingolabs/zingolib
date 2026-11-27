@@ -4,6 +4,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use tracing::instrument;
 use zcash_protocol::consensus::BlockHeight;
+use zl_common::chain;
 use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::{client::FetchRequest, protocol};
@@ -20,7 +21,12 @@ pub(crate) async fn fetch<C>(
     mut fetch_request_receiver: UnboundedReceiver<FetchRequest>,
     mut client: C,
 ) where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = chain::TreeStateReply>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     let mut fetch_request_queue: Vec<FetchRequest> = Vec::new();
 
@@ -87,7 +93,12 @@ fn select_fetch_request(fetch_request_queue: &mut Vec<FetchRequest>) -> Option<F
 //
 async fn fetch_from_server<C>(client: &mut C, fetch_request: FetchRequest)
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = chain::TreeStateReply>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     match fetch_request {
         FetchRequest::ChainTip(sender) => {
@@ -109,23 +120,23 @@ where
                 include_transparent
             );
             let pool_types = protocol::pool_types(include_transparent);
-            let block_stream = match protocol::block_range(block_range, pool_types) {
-                Ok(range) => client.get_block_range(range, FINITE_STREAM_TIMEOUT).await,
-                Err(refusal) => Err(refusal),
-            };
+            let block_stream = client
+                .get_block_range(
+                    protocol::block_range(block_range, pool_types),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::NullifierRange(sender, block_range) => {
             tracing::debug!("Fetching nullifiers. {:?}", &block_range);
             #[allow(deprecated)]
-            let block_stream = match protocol::nullifier_range(block_range) {
-                Ok(range) => {
-                    client
-                        .get_block_range_nullifiers(range, FINITE_STREAM_TIMEOUT)
-                        .await
-                }
-                Err(refusal) => Err(refusal),
-            };
+            let block_stream = client
+                .get_block_range_nullifiers(
+                    protocol::nullifier_range(block_range),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(block_stream);
         }
         FetchRequest::SubtreeRoots(sender, start_index, shielded_protocol, max_entries) => {
@@ -180,15 +191,12 @@ where
                 &address
             );
             #[allow(deprecated)]
-            let raw_transaction_stream = match protocol::address_block_filter(address, block_range)
-            {
-                Ok(filter) => {
-                    client
-                        .get_taddress_txids(filter, FINITE_STREAM_TIMEOUT)
-                        .await
-                }
-                Err(refusal) => Err(refusal),
-            };
+            let raw_transaction_stream = client
+                .get_taddress_txids(
+                    protocol::address_block_filter(address, block_range),
+                    FINITE_STREAM_TIMEOUT,
+                )
+                .await;
             let _ignore_error = sender.send(raw_transaction_stream);
         }
     }
@@ -216,9 +224,14 @@ where
 async fn get_tree_state<C>(
     client: &mut C,
     block_height: BlockHeight,
-) -> Result<protocol::TreeState, protocol::Status>
+) -> Result<chain::TreeStateReply, protocol::Status>
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = chain::TreeStateReply>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
 {
     client
         .get_tree_state(protocol::block_id_at(block_height), UNARY_RPC_TIMEOUT)

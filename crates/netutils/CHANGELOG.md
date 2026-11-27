@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The `wire` module. The trait `wire::Vocabulary` names the type a consumer
+  receives for a reply, and one total function maps the generated reply to
+  that type. Its first reply is the tree state. `wire::Generated` is the
+  vocabulary that returns each generated type unchanged. `GrpcIndexer` takes
+  a vocabulary as a type parameter, which defaults to `wire::Generated`.
+  `GrpcIndexer::with_vocabulary` returns the same connection with another
+  vocabulary.
 - `ConduitDial::fetch_response`, under the `socks5-fetch` feature, GETs a
   URL through the conduit and returns `socks5_fetch::HttpResponse`: the HTTP
   status code and the body as text. Every status is a response. A body over
@@ -44,13 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DNS-over-HTTPS and DNS-over-TLS alone, against Cloudflare and Quad9 dialed
   by IP address, with one answer cache shared by the process. It never asks
   the system resolver and has no plaintext fallback. IP literals, `localhost`
-  and hosts-file names answer without a query. `dns::hyper_resolver()` is
-  the same lookup as a hyper resolver. `dns::EncryptedResolver`, under the
-  `socks5-fetch` feature, is the same lookup as a reqwest resolver.
+  and hosts-file names answer without a query. `dns::hyper_resolver(resolver)`
+  is the lookup as a hyper resolver. `dns::EncryptedResolver`, under the
+  `socks5-fetch` feature, is the encrypted lookup as a reqwest resolver.
+- `dns::Resolver`, with the variants `Encrypted` and `System`. `Encrypted` is
+  the default. `System` is an opt-in that sends a lookup to the operating
+  system's resolver, as plaintext DNS, so that a host name only the local
+  network can answer resolves. `dns::lookup_through(resolver, host)` looks a
+  name up through either. `GrpcIndexer::new_with_resolver` and
+  `GrpcIndexer::new_lazy_with_resolver` take the resolver for one indexer
+  connection; `GrpcIndexer::new` and `GrpcIndexer::new_lazy` keep `Encrypted`.
 - `request` module: `block_id`, `block_range` and `tx_filter` build the
   three requests that a caller made as struct literals.
 
 ### Changed
+- BREAKING: `Indexer` has the associated type `TreeState`.
+  `get_tree_state` and `get_latest_tree_state` return it in place of
+  `lightwallet_protocol::TreeState`. An out-of-tree `Indexer` implementor
+  must name the type.
 - Every host name netutils dials directly resolves through `dns`: the
   `GrpcIndexer` connection and the untunneled `socks5_fetch` request.
   Neither sends a plaintext DNS query, where both asked the operating
@@ -60,8 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolves. A LAN name, an mDNS `.local` name, a Tailscale MagicDNS name and
   a Docker Compose service name all went to the operating system's resolver
   before; each now goes to Cloudflare and Quad9, which answer that the name
-  is absent. Dial such an indexer by IP address, or give the name an entry
-  in the hosts file.
+  is absent. Dial such an indexer by IP address, give the name an entry in
+  the hosts file, or build its `GrpcIndexer` with `dns::Resolver::System`.
 - BREAKING: the package is `zl-netutils` and its library
   `zl_netutils`, renamed from `zingo-netutils` and `zingo_netutils`.
 - BREAKING: `GrpcIndexer::get_clear_net_client` is renamed

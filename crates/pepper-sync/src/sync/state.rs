@@ -146,6 +146,14 @@ where
         .get_sync_state_mut()?
         .select_scan_range(consensus_parameters, nullifier_map_limit_exceeded)
     {
+        if selected_range.is_empty() {
+            wallet
+                .get_sync_state_mut()?
+                .set_scan_priority(selected_range.block_range(), ScanPriority::Scanned);
+
+            return Ok(None);
+        }
+
         let transparent_scan_floor = wallet
             .get_sync_state()?
             .transparent_scan_floor()
@@ -564,6 +572,49 @@ pub(super) fn add_shard_ranges(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod create_scan_task {
+        use zcash_protocol::consensus::MAIN_NETWORK;
+
+        use crate::mocks;
+
+        use super::*;
+
+        const NULLIFIER_MAP_LIMIT_EXCEEDED: bool = false;
+
+        #[test]
+        fn a_selected_range_that_holds_no_block_is_scanned_and_gives_no_task() {
+            let mut wallet = mocks::MockWalletBuilder::new()
+                .sync_state(SyncState::new_for_test(vec![ScanRange::from_parts(
+                    mocks::empty_block_range(),
+                    ScanPriority::FoundNote,
+                )]))
+                .create_mock_wallet();
+
+            let scan_task = create_scan_task(
+                &MAIN_NETWORK,
+                &mut wallet,
+                NULLIFIER_MAP_LIMIT_EXCEEDED,
+                HashMap::new(),
+                TaskId::first(),
+            );
+
+            assert!(
+                matches!(scan_task, Ok(None)),
+                "a range that holds no block gave a scan task"
+            );
+            let scan_ranges = wallet
+                .get_sync_state()
+                .map(|sync_state| sync_state.scan_ranges().to_vec());
+            assert!(
+                matches!(
+                    scan_ranges.as_deref(),
+                    Ok([scan_range]) if scan_range.priority() == ScanPriority::Scanned
+                ),
+                "a range that holds no block was left unscanned"
+            );
+        }
+    }
 
     /// Where a load's scan results stand once they return, decided from the wallet's scan ranges, the tasks selected
     /// after the load's task, the load's task, and the load's own blocks.

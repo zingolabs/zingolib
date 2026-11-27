@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend, derived from each pending transaction's inputs every time it is
   called.
 - `wallet::serialization::write_string`.
+- `vocabulary::Zcash`, the `zl_netutils::wire::Vocabulary` whose tree state
+  is `zl_common::chain::TreeStateReply`.
 - The `test-features` feature adds
   `WalletBlock::clear_pool_tree_bounds_for_test`,
   `TransactionRecord::clear_pool_notes_for_test` and
@@ -39,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: the crate depends on `zl-netutils`, renamed from
   `zingo-netutils`. A consumer that names a type of that crate moves to
   the new package name.
+- BREAKING: `sync` bounds its client by
+  `Indexer<TreeState = zl_common::chain::TreeStateReply>`. A `GrpcIndexer`
+  meets the bound after `with_vocabulary::<vocabulary::Zcash>()`.
 - `scan_pending_transaction` records no spend on the wallet's outputs. A
   pending transaction's spends derive through `pending_spends` from its
   inputs, so `set_transactions_failed` releases them by the record's status
@@ -67,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SyncMode::from_u8`, `SyncMode::from_atomic_u8`, `SyncMode::apply` and
   `SyncMode::transition`, whose work `wallet::SyncModeHandle` does, and
   `SyncModeError::InvalidSyncMode`, which a typed mode cannot produce.
+- BREAKING: `SyncError::recommend_same_server` and
+  `ServerError::recommend_same_server`. Call `recovery_recommendation`
+  instead. It returns `SyncRecoveryObservables::MaybeRecoverableServer`
+  where `recommend_same_server` returned `true`.
 - The `byteorder`, `zcash_encoding` and `jubjub` dependencies, which the
   codecs in `zl-common` use now.
 - The `zingo-memo` and `zingo-status` dependencies. Their code is the `memo`
@@ -80,10 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session shuts down. A three-second tick dropped and reissued the pending
   request, so an indexer that took longer to answer never served the
   mempool stream and new blocks were noticed by the ten-second check alone.
-- A fetch of a block range that ends at height 0 is refused with a
-  `tonic::Status` of code `InvalidArgument`. The fetcher subtracted one from
-  the end height unchecked, which panicked in a debug build and asked the
-  indexer for a range up to `u64::MAX` in a release build.
+- A fetch of a block range that holds no block sends no request. The fetcher
+  computed the last block as the end height minus one and did not compare it
+  with the start, so an empty range such as `5..5` asked the indexer for
+  blocks 5 down to 4, and a range that ends at height 0 panicked in a debug
+  build. A scan range that holds no block now gives no scan task: the sync
+  state marks it `Scanned`. A fetch of the transactions of a transparent
+  address returns none for such a range.
 - A Sync Session with `shutdown_on_completion` set no longer runs forever
   after its last scan range is scanned. The scanner set the loader's
   loading flag after it sent the scan task, so a loader that finished the

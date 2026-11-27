@@ -24,7 +24,9 @@
 //! | `ping-very-insecure` | `Indexer::ping` method. Name mirrors the server-side `--ping-very-insecure` CLI flag. Testing only. |
 //!
 
+use std::fmt;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
@@ -36,7 +38,7 @@ use tower::ServiceExt;
 use lightwallet_protocol::{
     BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, CompactTxStreamerClient, Empty,
     GetMempoolTxRequest, GetSubtreeRootsArg, LightdInfo, RawTransaction, StandardFee, SubtreeRoot,
-    TreeState, TxFilter,
+    TxFilter,
 };
 
 #[cfg(feature = "ping-very-insecure")]
@@ -73,6 +75,7 @@ mod rpc;
 // The temporal parameters of every crate that can see this one, including
 // the values owned by tests (`time::test`). See the module's registry.
 pub mod time;
+pub mod wire;
 pub use error::*;
 pub use lightwallet_protocol;
 pub use network_access::NetworkAccess;
@@ -187,6 +190,7 @@ fn require_h2(stream: IndexerStream) -> Result<IndexerStream, IndexerDialError> 
 fn indexer_endpoint(
     uri: http::Uri,
     roots: rustls::RootCertStore,
+    resolver: dns::Resolver,
 ) -> Result<
     (
         Endpoint,
@@ -207,7 +211,7 @@ fn indexer_endpoint(
         .with_tls_config(client_tls_config(roots))
         .https_or_http() // plaintext only for `http://` URIs, never a fallback
         .enable_http2()
-        .wrap_connector(indexer_connector(dns::hyper_resolver()));
+        .wrap_connector(indexer_connector(dns::hyper_resolver(resolver)));
     let dial = tower::service_fn(move |_tonic_dial: http::Uri| {
         let dialed = https.clone().oneshot(uri.clone());
         async move { dialed.await.and_then(require_h2) }
@@ -223,6 +227,8 @@ fn indexer_endpoint(
 /// - Each method opens a fresh connection (or reuses a pooled one) — no
 ///   persistent session state is assumed between calls.
 pub trait Indexer {
+    type TreeState;
+
     /// Return server metadata (chain name, block height, version, etc.).
     ///
     /// The returned [`LightdInfo`] includes the chain name, current block height,
@@ -274,7 +280,7 @@ pub trait Indexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<Self::TreeState, tonic::Status>> + Send;
 
     /// Return the compact block at the given height.
     ///
@@ -364,7 +370,7 @@ pub trait Indexer {
     fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> impl Future<Output = Result<TreeState, tonic::Status>> + Send;
+    ) -> impl Future<Output = Result<Self::TreeState, tonic::Status>> + Send;
 
     /// Return a stream of subtree roots for the given shielded protocol.
     ///
@@ -390,34 +396,79 @@ pub trait Indexer {
     ) -> impl Future<Output = Result<PingResponse, tonic::Status>> + Send;
 }
 
-#[derive(Debug, Clone)]
-pub struct GrpcIndexer {
+pub struct GrpcIndexer<V = wire::Generated> {
     nakednet_client: CompactTxStreamerClient<Channel>,
+    vocabulary: PhantomData<fn() -> V>,
+}
+
+impl<V> Clone for GrpcIndexer<V> {
+    fn clone(&self) -> Self {
+        Self {
+            nakednet_client: self.nakednet_client.clone(),
+            vocabulary: PhantomData,
+        }
+    }
+}
+
+impl<V> fmt::Debug for GrpcIndexer<V> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GrpcIndexer")
+            .field("nakednet_client", &self.nakednet_client)
+            .field("vocabulary", &self.vocabulary)
+            .finish()
+    }
+}
+
+impl<V> GrpcIndexer<V> {
+    #[must_use]
+    pub fn with_vocabulary<W>(self) -> GrpcIndexer<W> {
+        GrpcIndexer {
+            nakednet_client: self.nakednet_client,
+            vocabulary: PhantomData,
+        }
+    }
+
+    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
+        self.nakednet_client.clone()
+    }
 }
 
 impl GrpcIndexer {
     pub async fn new(uri: http::Uri) -> Result<Self, GetClientError> {
-        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
+        Self::new_with_resolver(uri, dns::Resolver::Encrypted).await
+    }
+
+    pub async fn new_with_resolver(
+        uri: http::Uri,
+        resolver: dns::Resolver,
+    ) -> Result<Self, GetClientError> {
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots(), resolver)?;
         let channel = endpoint.connect_with_connector(dial).await?;
-        Ok(Self {
-            nakednet_client: CompactTxStreamerClient::new(channel),
-        })
+        Ok(Self::over(channel))
     }
 
     /// As [`Self::new`], but the underlying channel connects on first use
     /// instead of eagerly. Useful when the indexer may not be reachable at
     /// construction time, including offline tests that never issue an RPC.
     pub fn new_lazy(uri: http::Uri) -> Result<Self, GetClientError> {
-        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots())?;
-        let channel = endpoint.connect_with_connector_lazy(dial);
-        Ok(Self {
-            nakednet_client: CompactTxStreamerClient::new(channel),
-        })
+        Self::new_lazy_with_resolver(uri, dns::Resolver::Encrypted)
     }
 
-    /// Returns the "surface net" gRPC client where the IP address is not obfuscated.
-    pub async fn get_nakednet_client(&self) -> CompactTxStreamerClient<Channel> {
-        self.nakednet_client.clone()
+    pub fn new_lazy_with_resolver(
+        uri: http::Uri,
+        resolver: dns::Resolver,
+    ) -> Result<Self, GetClientError> {
+        let (endpoint, dial) = indexer_endpoint(uri, mozilla_roots(), resolver)?;
+        let channel = endpoint.connect_with_connector_lazy(dial);
+        Ok(Self::over(channel))
+    }
+
+    fn over(channel: Channel) -> Self {
+        Self {
+            nakednet_client: CompactTxStreamerClient::new(channel),
+            vocabulary: PhantomData,
+        }
     }
 }
 
@@ -504,7 +555,9 @@ mod send_response_parsing {
     }
 }
 
-impl Indexer for GrpcIndexer {
+impl<V: wire::Vocabulary> Indexer for GrpcIndexer<V> {
+    type TreeState = V::TreeState;
+
     async fn get_lightd_info(&mut self, timeout: Duration) -> Result<LightdInfo, tonic::Status> {
         rpc::call(Empty {}, timeout, |request| {
             self.nakednet_client.get_lightd_info(request)
@@ -545,11 +598,12 @@ impl Indexer for GrpcIndexer {
         &mut self,
         block_id: BlockId,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<V::TreeState, tonic::Status> {
         rpc::call(block_id, timeout, |request| {
             self.nakednet_client.get_tree_state(request)
         })
         .await
+        .map(V::tree_state)
     }
 
     async fn get_block(
@@ -630,11 +684,12 @@ impl Indexer for GrpcIndexer {
     async fn get_latest_tree_state(
         &mut self,
         timeout: Duration,
-    ) -> Result<TreeState, tonic::Status> {
+    ) -> Result<V::TreeState, tonic::Status> {
         rpc::call(Empty {}, timeout, |request| {
             self.nakednet_client.get_latest_tree_state(request)
         })
         .await
+        .map(V::tree_state)
     }
 
     async fn get_subtree_roots(
@@ -704,6 +759,34 @@ mod tests {
                 .expect("the embedded localhost.pem holds an X.509 certificate");
             roots
         })
+    }
+
+    struct UnderivedVocabulary;
+
+    impl wire::Vocabulary for UnderivedVocabulary {
+        type TreeState = u64;
+
+        fn tree_state(reply: lightwallet_protocol::TreeState) -> Self::TreeState {
+            reply.height
+        }
+    }
+
+    fn require_clone_and_debug<T: Clone + fmt::Debug>() {}
+
+    #[test]
+    fn an_indexer_is_clone_and_debug_for_a_vocabulary_that_is_neither() {
+        require_clone_and_debug::<GrpcIndexer<UnderivedVocabulary>>();
+    }
+
+    #[tokio::test]
+    async fn an_indexer_yields_its_nakednet_client_under_any_vocabulary()
+    -> Result<(), GetClientError> {
+        let indexer = GrpcIndexer::new_lazy(http::Uri::from_static("https://127.0.0.1:1"))?
+            .with_vocabulary::<UnderivedVocabulary>();
+
+        let _client: CompactTxStreamerClient<Channel> = indexer.get_nakednet_client().await;
+
+        Ok(())
     }
 
     #[test]
@@ -978,7 +1061,7 @@ mod tests {
         let uri = base.parse::<http::Uri>().expect("bad base uri");
 
         let roots = with_localhost_cert(mozilla_roots());
-        let (endpoint, dial) = indexer_endpoint(uri, roots)
+        let (endpoint, dial) = indexer_endpoint(uri, roots, dns::Resolver::Encrypted)
             .expect("an https URI with a host and a port has a valid scheme and authority");
         let connect_res = endpoint.connect_with_connector(dial).await;
 
@@ -1090,7 +1173,7 @@ mod tests {
         let (listener, acceptor, uri) = localhost_h2_listener().await;
 
         let roots = with_localhost_cert(mozilla_roots());
-        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots)
+        let (_endpoint, dial) = indexer_endpoint(uri.clone(), roots, dns::Resolver::Encrypted)
             .expect("an https URI with a host and a port has a valid scheme and authority");
 
         let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
@@ -1113,7 +1196,9 @@ mod tests {
             .with_tls_config(resuming_config)
             .https_or_http()
             .enable_http2()
-            .wrap_connector(indexer_connector(dns::hyper_resolver()));
+            .wrap_connector(indexer_connector(dns::hyper_resolver(
+                dns::Resolver::Encrypted,
+            )));
 
         let kinds = handshake_kinds_over_redials(dial, uri, listener, acceptor).await;
 
@@ -1122,6 +1207,30 @@ mod tests {
             Some(&rustls::HandshakeKind::Resumed),
             "the control connector did not resume, so the test above proves nothing: {kinds:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_system_resolver_indexer_dials_its_host_name() -> std::io::Result<()> {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+        let port = listener.local_addr()?.port();
+        let uri: http::Uri = format!("http://localhost:{port}")
+            .parse()
+            .expect("a localhost authority with a bound port is a valid URI");
+        let mut indexer = GrpcIndexer::new_lazy_with_resolver(uri, dns::Resolver::System)
+            .expect("an http URI with an authority passes the endpoint checks");
+
+        let (accepted, _refused_call) = tokio::join!(
+            timeout(LOCAL_TLS_TEST_BOUND, async {
+                listener.accept().await.map(drop)
+            }),
+            indexer.get_latest_block(LOCAL_TLS_TEST_BOUND),
+        );
+
+        assert!(
+            matches!(accepted, Ok(Ok(()))),
+            "the listener must see the dial, got {accepted:?}"
+        );
+        Ok(())
     }
 
     /// A path that goes silent while the channel is connecting must fail the

@@ -25,7 +25,7 @@ use zl_netutils::{Indexer, TransparentIndexer};
 
 use crate::protocol;
 
-use zl_common::status::ConfirmationStatus;
+use zl_common::{chain, status::ConfirmationStatus};
 
 use crate::client::{self, FetchRequest};
 use crate::config::{PerformanceLevel, SyncConfig};
@@ -80,7 +80,6 @@ pub const CHECK_NEW_BLOCKS_INTERVAL: u64 = 10;
 
 /// A snapshot of the current state of sync. Useful for displaying the status of sync to a user / consumer.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncStatus {
     pub scan_ranges: Vec<ScanRange>,
     pub sync_start_height: BlockHeight,
@@ -163,7 +162,6 @@ impl SyncStatus {
 
 /// Returned when [`crate::sync::sync`] successfully completes.
 #[derive(Debug, Clone)]
-#[allow(missing_docs)]
 pub struct SyncResult {
     pub sync_start_height: BlockHeight,
     pub sync_end_height: BlockHeight,
@@ -227,7 +225,12 @@ pub async fn sync<C, P, W>(
     config: SyncConfig,
 ) -> Result<SyncResult, SyncError<W::Error>>
 where
-    C: Clone + Indexer + TransparentIndexer + Sync + Send + 'static,
+    C: Clone
+        + Indexer<TreeState = chain::TreeStateReply>
+        + TransparentIndexer
+        + Sync
+        + Send
+        + 'static,
     P: consensus::Parameters + Sync + Send + 'static,
     W: SyncWallet
         + SyncBlocks

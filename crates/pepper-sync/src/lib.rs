@@ -1,4 +1,3 @@
-#![warn(missing_docs)]
 #![allow(clippy::result_large_err)]
 #![doc = r#"
 # Pepper Sync
@@ -114,6 +113,7 @@ pub(crate) mod scan;
 pub use zl_common::shardtree_ext;
 pub mod sync;
 pub(crate) mod utils;
+pub mod vocabulary;
 pub mod wallet;
 pub(crate) mod witness;
 

@@ -83,7 +83,10 @@ impl LightClient {
             ));
         }
 
-        let client = self.require_indexer()?.clone();
+        let client = self
+            .require_indexer()?
+            .clone()
+            .with_vocabulary::<pepper_sync::vocabulary::Zcash>();
         let chain_type = self.chain_type();
         let wallet = self.wallet().clone();
         let sync_mode = self.sync_mode.clone();

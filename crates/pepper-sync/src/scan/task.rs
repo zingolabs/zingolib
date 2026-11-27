@@ -512,11 +512,16 @@ where
                 let mut current_block_ironwood_nullifier_count = 0;
                 let mut awaiting_first_block = true;
 
+                let block_range = scan_task.scan_range.block_range();
+                let Some(block_span) = protocol::BlockSpan::of(block_range) else {
+                    continue;
+                };
+
                 let mut block_stream = match open_block_stream(
                     fetch_request_sender.clone(),
-                    scan_task.scan_range.block_range().clone(),
+                    block_span,
                     fetch_nullifiers_only,
-                    scan_task.transparent_scan_floor,
+                    includes_blocks_above_floor(block_range, scan_task.transparent_scan_floor),
                 )
                 .await
                 {
@@ -538,13 +543,23 @@ where
                     let maybe_block = match msg_res {
                         Ok(b) => b,
                         Err(e) if stream_error_is_retryable(&e) => {
+                            let unfetched_blocks =
+                                retry_height..scan_task.scan_range.block_range().end;
+                            let Some(unfetched_span) = protocol::BlockSpan::of(&unfetched_blocks)
+                            else {
+                                break;
+                            };
+
                             tokio::time::sleep(Duration::from_secs(3)).await;
 
                             block_stream = match open_block_stream(
                                 fetch_request_sender.clone(),
-                                retry_height..scan_task.scan_range.block_range().end,
+                                unfetched_span,
                                 fetch_nullifiers_only,
-                                scan_task.transparent_scan_floor,
+                                includes_blocks_above_floor(
+                                    &unfetched_blocks,
+                                    scan_task.transparent_scan_floor,
+                                ),
                             )
                             .await
                             {
@@ -805,22 +820,16 @@ fn splittable_at(scan_range: &ScanRange, block_height: BlockHeight) -> bool {
     scan_range.block_range().start != block_height
 }
 
-/// Opens a stream of compact blocks for `block_range` (end exclusive), or of nullifiers only if `fetch_nullifiers_only`
-/// is true.
-///
-/// Compact block transparent data is only fetched if `block_range` contains blocks above the `transparent_scan_floor`.
 async fn open_block_stream(
     fetch_request_sender: mpsc::UnboundedSender<FetchRequest>,
-    block_range: Range<BlockHeight>,
+    block_span: protocol::BlockSpan,
     fetch_nullifiers_only: bool,
-    transparent_scan_floor: BlockHeight,
+    include_transparent: bool,
 ) -> Result<protocol::CompactBlocks, ServerError> {
     if fetch_nullifiers_only {
-        client::get_nullifier_range(fetch_request_sender, block_range).await
+        client::get_nullifier_range(fetch_request_sender, block_span).await
     } else {
-        let include_transparent = includes_blocks_above_floor(&block_range, transparent_scan_floor);
-        client::get_compact_block_range(fetch_request_sender, block_range, include_transparent)
-            .await
+        client::get_compact_block_range(fetch_request_sender, block_span, include_transparent).await
     }
 }
 

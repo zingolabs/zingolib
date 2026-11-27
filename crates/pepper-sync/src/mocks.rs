@@ -10,11 +10,17 @@ use crate::wallet::{
 use incrementalmerkletree::{Hashable as _, Level, Marking, Position, Retention};
 use orchard::tree::MerkleHashOrchard;
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
+use std::sync::{
+    Arc,
+    atomic::{self, AtomicUsize},
+};
 use tokio::sync::mpsc;
 use zcash_protocol::{ShieldedPool, TxId, consensus::BlockHeight};
 use zl_netutils::request;
+use zl_netutils::wire::Vocabulary as _;
 
-use crate::{client, protocol, witness};
+use crate::{client, protocol, vocabulary};
 
 pub(crate) const BLOCK_HASH_BYTES: usize = 32;
 pub(crate) const EMPTY_TREE_HEX: &str = "000000";
@@ -36,7 +42,12 @@ pub(crate) fn with_tree_hex(
     pool: ShieldedPool,
     tree_hex: &str,
 ) -> protocol::TreeState {
-    *witness::tree_hex_mut(&mut tree_state, pool) = tree_hex.to_string();
+    let pool_tree_hex = match pool {
+        ShieldedPool::Sapling => &mut tree_state.sapling_tree,
+        ShieldedPool::Orchard => &mut tree_state.orchard_tree,
+        ShieldedPool::Ironwood => &mut tree_state.ironwood_tree,
+    };
+    *pool_tree_hex = tree_hex.to_string();
 
     tree_state
 }
@@ -62,7 +73,8 @@ fn answer_tree_state(
 ) -> Result<(), client::FetchRequest> {
     match fetch_request {
         client::FetchRequest::TreeState(reply_sender, block_height) => {
-            let _ignore_error = reply_sender.send(Ok(tree_state_at(block_height)));
+            let reply = vocabulary::Zcash::tree_state(tree_state_at(block_height));
+            let _ignore_error = reply_sender.send(Ok(reply));
             Ok(())
         }
         other => Err(other),
@@ -118,6 +130,27 @@ pub(crate) fn spawn_chain_tip_fetcher(
         }
         other => Err(other),
     })
+}
+
+pub(crate) const NO_REQUESTS: usize = 0;
+pub(crate) const EMPTY_RANGE_HEIGHT: u32 = 5;
+
+pub(crate) fn empty_block_range() -> Range<BlockHeight> {
+    BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)..BlockHeight::from_u32(EMPTY_RANGE_HEIGHT)
+}
+
+pub(crate) fn spawn_request_counter() -> (
+    mpsc::UnboundedSender<client::FetchRequest>,
+    Arc<AtomicUsize>,
+) {
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let counted_requests = request_count.clone();
+    let fetch_request_sender = spawn_fetcher(move |_unanswered| {
+        counted_requests.fetch_add(1, atomic::Ordering::Release);
+        Ok(())
+    });
+
+    (fetch_request_sender, request_count)
 }
 
 pub(crate) fn subtree_root(completing_block_height: u64) -> protocol::SubtreeRoot {

@@ -11221,6 +11221,7 @@ dependencies = [
  "bip0039 0.14.0",
  "bip32 0.6.0",
  "byteorder",
+ "hex",
  "incrementalmerkletree",
  "jubjub",
  "memuse",

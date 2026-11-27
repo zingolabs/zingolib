@@ -9,6 +9,7 @@ use hickory_resolver::config;
 use hickory_resolver::net as resolver_net;
 use hickory_resolver::net::runtime;
 use hyper_util::client::legacy::connect::dns as hyper_dns;
+use tower::ServiceExt as _;
 
 const UPSTREAMS: [config::ServerGroup<'static>; 2] = [config::CLOUDFLARE, config::QUAD9];
 
@@ -68,11 +69,57 @@ async fn lookup_with(
     Ok(resolver.lookup_ip(host).await?.iter().collect())
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Resolver {
+    #[default]
+    Encrypted,
+    System,
+}
+
+fn ips(addrs: impl Iterator<Item = net::SocketAddr>) -> Vec<net::IpAddr> {
+    addrs.map(|addr| addr.ip()).collect()
+}
+
+fn hyper_name(host: &str) -> io::Result<hyper_dns::Name> {
+    host.parse()
+        .map_err(|invalid| io::Error::new(io::ErrorKind::InvalidInput, invalid))
+}
+
 /// - first call: installs the process crypto provider, builds the shared resolver
 /// - network: DoH/DoT query on cache miss
-pub async fn lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
+async fn encrypted_lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
     let resolver = shared_resolver().map_err(io_error)?;
     lookup_with(resolver, host).await.map_err(io_error)
+}
+
+async fn system_lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
+    hyper_dns::GaiResolver::new()
+        .oneshot(hyper_name(host)?)
+        .await
+        .map(ips)
+}
+
+async fn resolve_through<Encrypted, System>(
+    resolver: Resolver,
+    encrypted: Encrypted,
+    system: System,
+) -> io::Result<Vec<net::IpAddr>>
+where
+    Encrypted: Future<Output = io::Result<Vec<net::IpAddr>>>,
+    System: Future<Output = io::Result<Vec<net::IpAddr>>>,
+{
+    match resolver {
+        Resolver::Encrypted => encrypted.await,
+        Resolver::System => system.await,
+    }
+}
+
+pub async fn lookup_through(resolver: Resolver, host: &str) -> io::Result<Vec<net::IpAddr>> {
+    resolve_through(resolver, encrypted_lookup(host), system_lookup(host)).await
+}
+
+pub async fn lookup(host: &str) -> io::Result<Vec<net::IpAddr>> {
+    lookup_through(Resolver::Encrypted, host).await
 }
 
 fn uri_addrs(ips: Vec<net::IpAddr>) -> vec::IntoIter<net::SocketAddr> {
@@ -82,12 +129,16 @@ fn uri_addrs(ips: Vec<net::IpAddr>) -> vec::IntoIter<net::SocketAddr> {
         .into_iter()
 }
 
-/// - network: [`lookup`]
-async fn lookup_uri_addrs(name: hyper_dns::Name) -> io::Result<vec::IntoIter<net::SocketAddr>> {
-    lookup(name.as_str()).await.map(uri_addrs)
+async fn lookup_uri_addrs(
+    resolver: Resolver,
+    name: hyper_dns::Name,
+) -> io::Result<vec::IntoIter<net::SocketAddr>> {
+    lookup_through(resolver, name.as_str()).await.map(uri_addrs)
 }
 
-pub fn hyper_resolver() -> impl tower::Service<
+pub fn hyper_resolver(
+    resolver: Resolver,
+) -> impl tower::Service<
     hyper_dns::Name,
     Response = vec::IntoIter<net::SocketAddr>,
     Error = io::Error,
@@ -96,7 +147,7 @@ pub fn hyper_resolver() -> impl tower::Service<
 + Send
 + Sync
 + 'static {
-    tower::service_fn(lookup_uri_addrs)
+    tower::service_fn(move |name| lookup_uri_addrs(resolver, name))
 }
 
 #[cfg(feature = "socks5-fetch")]
@@ -118,6 +169,84 @@ impl reqwest::dns::Resolve for EncryptedResolver {
 mod tests {
     use super::*;
     use crate::default_indexer;
+
+    #[test]
+    fn the_default_resolver_is_encrypted() {
+        assert_eq!(Resolver::default(), Resolver::Encrypted);
+    }
+
+    #[test]
+    fn ips_drop_the_port_and_keep_the_order() {
+        let addrs = [
+            net::SocketAddr::new(net::Ipv6Addr::LOCALHOST.into(), URI_PORT),
+            net::SocketAddr::new(net::Ipv4Addr::LOCALHOST.into(), URI_PORT),
+        ];
+        assert_eq!(
+            ips(addrs.into_iter()),
+            vec![
+                net::IpAddr::from(net::Ipv6Addr::LOCALHOST),
+                net::IpAddr::from(net::Ipv4Addr::LOCALHOST),
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn a_system_lookup_answers_local_names() -> io::Result<()> {
+        let v4_literal =
+            lookup_through(Resolver::System, &net::Ipv4Addr::LOCALHOST.to_string()).await?;
+        let v6_literal =
+            lookup_through(Resolver::System, &net::Ipv6Addr::LOCALHOST.to_string()).await?;
+        let localhost = lookup_through(Resolver::System, "localhost").await?;
+
+        assert_eq!(
+            (v4_literal, v6_literal),
+            (
+                vec![net::IpAddr::from(net::Ipv4Addr::LOCALHOST)],
+                vec![net::IpAddr::from(net::Ipv6Addr::LOCALHOST)],
+            ),
+        );
+        assert!(
+            localhost.iter().any(net::IpAddr::is_loopback),
+            "localhost must answer a loopback address, got {localhost:?}"
+        );
+        Ok(())
+    }
+
+    async fn never_awaited() -> io::Result<Vec<net::IpAddr>> {
+        Err(io::Error::other("the resolver not chosen was awaited"))
+    }
+
+    async fn answers(ip: net::IpAddr) -> io::Result<Vec<net::IpAddr>> {
+        Ok(vec![ip])
+    }
+
+    #[tokio::test]
+    async fn each_resolver_awaits_its_own_lookup_and_never_the_other() -> io::Result<()> {
+        let v4 = net::IpAddr::from(net::Ipv4Addr::LOCALHOST);
+        let v6 = net::IpAddr::from(net::Ipv6Addr::LOCALHOST);
+
+        let through_system =
+            resolve_through(Resolver::System, never_awaited(), answers(v4)).await?;
+        let through_encrypted =
+            resolve_through(Resolver::Encrypted, answers(v6), never_awaited()).await?;
+
+        assert_eq!((through_system, through_encrypted), (vec![v4], vec![v6]));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn the_system_hyper_resolver_answers_at_the_placeholder_port() -> io::Result<()> {
+        let name = hyper_name(&net::Ipv4Addr::LOCALHOST.to_string())?;
+        let addrs = hyper_resolver(Resolver::System).oneshot(name).await?;
+        assert_eq!(
+            addrs.collect::<Vec<_>>(),
+            vec![net::SocketAddr::new(
+                net::Ipv4Addr::LOCALHOST.into(),
+                URI_PORT
+            )],
+        );
+        Ok(())
+    }
 
     #[test]
     fn every_upstream_is_encrypted() {

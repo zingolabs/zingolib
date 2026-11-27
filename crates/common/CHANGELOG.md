@@ -11,7 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The crate holds the types a zingo wallet file stores and a consumer needs
   without the wallet, split out of `zingolib`. `zingolib` re-exports each at
   its old path.
-- `chain` module: `ChainType` and `InvalidChainType`.
+- `chain` module: `ChainType` and `InvalidChainType`. It also holds the
+  tree state that an indexer serves, as `TreeStateReply`. The height is a
+  `BlockHeight` and the hash is a `BlockHash`, or the `InvalidTreeState` that
+  names the field. The tree of each pool is a `Tree`, which is `Omitted`,
+  `Served` with its bytes, or `Malformed` with the hex error. The crate
+  depends on `hex` for these types.
 - `keys` module: `UnifiedKeyStore`, `UnifiedAddressId`, `ReceiverSelection`,
   `KeyError`, `encode_ufvk` and the `KEY_TYPE_EMPTY`, `KEY_TYPE_VIEW` and
   `KEY_TYPE_SPEND` constants. `UnifiedKeyStore::determine_nth_valid_sapling_diversifier`
@@ -86,3 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+- `SyncState::read` keeps no scan range that holds no block. A wallet file
+  with a range such as `5..5` gave the sync engine a range with nothing to
+  scan, and `SyncState::highest_scanned_height` read the block below such a
+  range as scanned.

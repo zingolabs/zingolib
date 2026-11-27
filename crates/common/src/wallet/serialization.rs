@@ -1359,7 +1359,10 @@ impl SyncState {
             };
 
             Ok(ScanRange::from_parts(start..end, priority))
-        })?;
+        })?
+        .into_iter()
+        .filter(|scan_range| !scan_range.is_empty())
+        .collect();
         let sapling_shard_ranges = Vector::read(&mut reader, |r| {
             let start = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
             let end = BlockHeight::from_u32(r.read_u32::<LittleEndian>()?);
@@ -1945,5 +1948,33 @@ mod tests {
             let recovered = SyncState::read(bytes.as_slice()).expect("read should succeed");
             assert_eq!(recovered.transparent_scan_floor, transparent_scan_floor);
         }
+    }
+
+    const HELD_RANGE_START: u32 = 100;
+    const HELD_RANGE_END: u32 = 200;
+
+    #[test]
+    fn a_scan_range_that_holds_no_block_is_not_read() {
+        let held_range = ScanRange::from_parts(
+            BlockHeight::from_u32(HELD_RANGE_START)..BlockHeight::from_u32(HELD_RANGE_END),
+            ScanPriority::Historic,
+        );
+        let empty_range = ScanRange::from_parts(
+            BlockHeight::from_u32(HELD_RANGE_END)..BlockHeight::from_u32(HELD_RANGE_END),
+            ScanPriority::FoundNote,
+        );
+        let mut state = SyncState::new();
+        state.scan_ranges = vec![held_range.clone(), empty_range];
+        let mut bytes = Vec::new();
+        state
+            .write(&mut bytes)
+            .expect("a write to a vec cannot fail");
+
+        let recovered = SyncState::read(bytes.as_slice()).map(|state| state.scan_ranges);
+
+        assert!(
+            matches!(recovered.as_deref(), Ok([scan_range]) if *scan_range == held_range),
+            "the scan ranges read back are {recovered:?}"
+        );
     }
 }
